@@ -1,88 +1,120 @@
-# Meadowlight Farm 3D
+# Meadowlight Farm
 
-A playable 3D farming-sim core loop in the spirit of Stardew Valley: till soil, scatter seeds, water them, sleep, harvest, ship, and buy more seeds. Mushrooms and snozberries grow wild in the shade and spread on their own, ready to forage. It is built with Three.js (WebGL2) and strict TypeScript, rendered through an orthographic isometric camera in a flat-shaded, low-poly pastel style.
+**Welcome to the farm.** You've inherited a little cottage at the edge of the woods, a watering can, a bag of parsnip seeds and a wide meadow that nobody has tilled in years. The rest is up to you.
 
-```bash
-npm install
-npm run dev          # http://localhost:5173  (append ?new to start a fresh farm)
-npm test             # 534 Vitest tests
-npm run build        # typecheck + production bundle in dist/
-npm run build:single # one self-contained HTML file in dist-single/
-```
+### [Play it in your browser →](https://meadowlight-farm-3d.vercel.app)
+
+No download and no account. It runs on any laptop or desktop with a keyboard, and your farm saves itself every morning.
+
+---
+
+## Your first day
+
+1. **Step outside.** You wake up at 6:00 am on the doorstep. The white box on the ground shows the tile you're facing.
+2. **Till some soil.** With the hoe selected (slot 1), press **Space** on a patch of grass.
+3. **Scatter your seeds.** Pick the parsnip seeds (slot 6) and press **Space**. One handful covers the 3 × 3 patch in front of you and plants every tilled tile it lands on.
+4. **Water them.** Grab the watering can (slot 2). Thirsty seedlings show a little blue droplet. When the can runs dry, refill it at the pond.
+5. **Go to bed.** Walk up to your front door and press **E**. Watered crops grow a little every night.
+6. **Harvest and sell.** Four mornings later your parsnips are ready. Pick them with **E**, drop them in the shipping bin beside the house, and wake up to gold in your pocket.
+7. **Grow your farm.** Press **B** for the seed shop and plant something new.
+
+## Treasures in the shade
+
+Keep an eye on the darker grass along the woods and around the cottage. **Mushrooms** and **snozberries** sprout there all by themselves overnight, no tilling or watering needed. They spread to their shaded neighbours once they're fully grown, and fade away when their season ends. Wander over now and then and forage them with **E**.
+
+## What you can grow
+
+| Crop | Seasons | Days to grow | Good to know |
+| --- | --- | --- | --- |
+| Parsnip | Spring | 4 | Your starter crop |
+| Potato | Spring | 6 | Sometimes gives two |
+| Carrot | Spring, Fall | 5 | |
+| Cauliflower | Spring | 12 | Worth the wait |
+| Strawberry | Spring | 8 | Keeps fruiting every 4 days |
+| Spectraherb | Spring to Fall | 10 | Slow, rare and very valuable |
+| Wheat | Summer, Fall | 4 | Cheap and quick; scatter whole fields of it |
+| Blueberry | Summer | 13 | Keeps fruiting every 4 days |
+| Blackberry | Summer, Fall | 10 | Keeps fruiting every 3 days |
+| Melon | Summer | 12 | |
+| Corn | Summer, Fall | 14 | Keeps fruiting every 4 days |
+| Pumpkin | Fall | 13 | The prize of autumn |
+| Mushroom | Spring to Fall | 2 | Wild, grows in the shade |
+| Snozberry | Summer, Fall | 5 | Wild, grows in the shade |
+
+Each season lasts 28 days, and crops wither when their season ends. Rainy days water everything for you. Winter is for resting.
 
 ## Controls
 
-| Action | Keys |
+| To do this | Press |
 | --- | --- |
-| Walk (grid steps) | W A S D or arrow keys. North (W) points up-right on screen. |
-| Turn in place | Shift + direction |
-| Use the selected tool, or scatter seeds over the 3×3 patch ahead | Space, J, or left click |
-| Interact (harvest, forage, ship at the bin, sleep at the door, refill at the pond) | E, K, Enter, or right click |
-| Select hotbar slot | 1–9, 0, -, =, Tab, or mouse wheel |
+| Walk | W A S D or the arrow keys (W walks up and to the right) |
+| Turn without moving | Shift + a direction |
+| Use your tool, or scatter seeds | Space (or left click) |
+| Harvest, forage, ship, sleep, refill | E (or right click) |
+| Pick a hotbar slot | 1–9, 0, -, =, Tab or the mouse wheel |
 | Seed shop | B |
-| Zoom | Z / X, or Ctrl + wheel |
-| Time speed | T (1×, 2×, 4×, 8×, 16×) |
-| Sleep now | N |
-| Pause | P or Esc |
+| Zoom in / out | Z / X |
+| Speed up time | T |
+| Skip to tomorrow | N |
+| Pause and see all controls | P or Esc |
 
-A day runs from 6:00 am to 2:00 am (about 14 real minutes at 1×). Staying up past 2:00 am makes you pass out and wake with half energy. The game saves every morning and when the tab closes.
+**A few tips**
 
-## Crops
+- Every swing of a tool costs a little energy. Sleep to get it all back.
+- Stay up past 2:00 am and you'll pass out, waking with only half your energy.
+- Rocks need the pickaxe and stumps need the axe. Clearing them gives you stone and wood.
+- Tilling is how you choose where seeds go: scattering only plants the tilled tiles in the patch.
+- Want a fresh start? Pause and choose **New Farm**.
 
-| Crop | Seasons | Days | Notes |
-| --- | --- | --- | --- |
-| Parsnip | Spring | 4 | |
-| Potato | Spring | 6 | 1–2 per harvest |
-| Cauliflower | Spring | 12 | |
-| Strawberry | Spring | 8 | regrows every 4 days |
-| Carrot | Spring, Fall | 5 | |
-| Spectraherb | Spring–Fall | 10 | slow, very valuable |
-| Blueberry | Summer | 13 | regrows every 4 days |
-| Melon | Summer | 12 | |
-| Wheat | Summer, Fall | 4 | cheap; scatter it by the patch |
-| Blackberry | Summer, Fall | 10 | regrows every 3 days, 2–4 per harvest |
-| Corn | Summer, Fall | 14 | regrows every 4 days |
-| Pumpkin | Fall | 13 | |
-| Mushroom | Spring–Fall | 2 | wild, shade only, never sold as seeds |
-| Snozberry | Summer, Fall | 5 | wild, shade only, never sold as seeds |
+---
 
-**Scattering.** Seeds are thrown by the handful: one use covers the 3 × 3 patch in front of you and plants every empty tilled tile it reaches, nearest first, until the stack runs out. Till only the tiles you want planted.
+## For builders
 
-**Shade.** The strips along the woodland (the two far edges of the farm) and a ring around the farmhouse are shaded, with darker grass. Wild crops sprout there overnight, grow without water, spread to shaded neighbours of mature plants and disappear when their season ends. The farm holds at most 40 at a time.
+Meadowlight Farm is an open-source prototype built with [Three.js](https://threejs.org) (WebGL2) and strict TypeScript. The whole game is a deterministic state machine rendered in flat-shaded, low-poly 3D through an isometric orthographic camera.
 
-## How it works
+```bash
+npm install
+npm run dev          # http://localhost:5173  (add ?new to start a fresh farm)
+npm test             # 534 Vitest tests
+npm run build        # typecheck + production bundle in dist/
+npm run build:single # the whole game as one self-contained HTML file in dist-single/
+```
 
-**One deterministic state machine.** All game state lives in one immutable `GameState` (`src/core/types.ts`). It changes only through `gameReducer(state, action)` (`src/state/reducer.ts`), a pure function. The reducer never calls `Math.random` or reads the clock. Every random outcome (debris, weather, harvest yield, soil drying out) is a hash of the world seed and the coordinates of the decision (`src/core/hash.ts`), so replaying an action log reproduces the game exactly. The frame loop only turns real time into `time/tick` actions through a fixed-step clock (`src/core/loop.ts`).
+### How it works
 
-**Grid and chunks.** `src/world/grid.ts` holds the grid math: tile, chunk and world coordinates with half-open bounds, partial edge chunks (the 48 × 40 farm uses 16-tile chunks, so the last row of chunks is 8 tiles deep), and an Amanatides–Woo DDA raycast. The player's active tile is the result of casting a ray from the centre of their tile along their facing vector. Tiles are stored per chunk with structural sharing, so editing one tile copies one chunk and leaves every other chunk untouched.
+**One deterministic state machine.** All game state lives in one immutable `GameState` (`src/core/types.ts`). It changes only through `gameReducer(state, action)` (`src/state/reducer.ts`), a pure function. The reducer never calls `Math.random` or reads the clock: every random outcome (debris, weather, harvest yield, wild sprouting) is a hash of the world seed and the coordinates of the decision (`src/core/hash.ts`). So replaying an action log reproduces a game exactly. The frame loop only turns real time into `time/tick` actions through a fixed-step clock (`src/core/loop.ts`).
 
-**Planning before acting.** `src/state/intents.ts` works out what the selected tool would do on the active tile, without changing anything. The reducer carries out that same plan, and the highlight box and HUD hints preview it, so what the game shows and what it does always agree.
+**Grid and chunks.** `src/world/grid.ts` holds the grid math: tile, chunk and world coordinates with half-open bounds, and partial edge chunks (the 48 × 40 farm uses 16-tile chunks, so the last row is 8 tiles deep). It also has an Amanatides–Woo DDA raycast; the tile you're facing is found by casting a ray from the centre of your tile along your facing direction. Tiles are stored per chunk with structural sharing, so editing one tile copies one chunk and leaves every other chunk untouched.
 
-**Rendering reacts to diffs.** Each render system implements `sync(state, prev)` and `update(frame)` (`src/render/types.ts`). An unchanged chunk keeps its object identity, so a system finds dirty chunks with `!==` and then dirty tiles within them. Only those instances get new matrices or colours. Ground tiles use one `InstancedMesh` per chunk. Soil furrows, grass, rocks, stumps, crops (one mesh per growth-stage model), thirst droplets, trees, fence, particles and weather all use instanced meshes, and `InstanceSlotMap` keeps the live instances packed. Every lit material is flat-shaded.
+**Planning before acting.** `src/state/intents.ts` works out what the selected tool would do, without changing anything. The reducer carries out that same plan, and the highlight box and hints preview it, so what the game shows and what it does always agree.
 
-**Time, light and weather.** `LightingManager` blends keyframes (dawn, sunrise, morning, noon, golden hour, dusk, twilight, night) for the sun or moon directional light, the hemisphere ambient light, the sky and the fog. The sun arcs from east to west. Rain and storms dim and grey the scene, storms add lightning, and each night's weather roll decides whether the rain waters your crops for you.
+**Rendering reacts to diffs.** Each render system implements `sync(state, prev)` and `update(frame)` (`src/render/types.ts`). Unchanged chunks keep their object identity, so a system finds dirty chunks with `!==`, then dirty tiles within them, and only those instances get new matrices or colours. Ground tiles use one `InstancedMesh` per chunk. Crops, grass, rocks, stumps, trees, particles and weather all use instanced meshes too, kept packed by `InstanceSlotMap`.
 
-## Project map
+**Shade and wild crops.** `src/world/shade.ts` defines the shaded tiles as a pure function of the farm layout. `src/farming/wild.ts` sprouts and spreads wild crops overnight inside the same deterministic pipeline as everything else.
+
+**Time, light and weather.** `LightingManager` blends keyframes from dawn through noon and dusk to night for the sun (or moon), the ambient light, the sky and the fog. Rain and storms dim and grey the scene, and storms add lightning.
+
+### Project map
 
 ```
 src/
-  config.ts              tuning: world size, layout, time, energy, tools
-  core/                  types, store, deterministic hash, fixed-step clock
-  world/                 grid math + raycast, chunked tiles, world generation
-  time/                  calendar & clock formatting, weather rolls
-  farming/               crop registry, overnight growth pipeline
-  items/                 item registry (tools, seeds, produce, materials)
-  state/                 actions, intents (planning), reducer, selectors, inventory, save/load
-  render/                scene & camera, lighting, weather, terrain, structures, crops,
-                         player, tile highlighter, effects, instancing helpers, materials
-  input/                 keyboard & mouse → actions
-  ui/                    HUD (clock, hotbar, energy, toasts, shop, pause)
-tests/                   Vitest suites for grid math, reducers, growth, save validation, determinism…
+  config.ts   tuning: world size, layout, shade, time, energy, tools
+  core/       types, store, deterministic hash, fixed-step clock
+  world/      grid math + raycast, chunked tiles, shade map, world generation
+  time/       calendar & clock, weather rolls
+  farming/    crop registry, overnight growth, wild shade crops
+  items/      item registry (tools, seeds, produce, materials)
+  state/      actions, intents (planning), reducer, selectors, inventory, save/load
+  render/     camera, lighting, weather, terrain, structures, crops, player,
+              tile highlighter, effects, instancing helpers, materials
+  input/      keyboard & mouse → actions
+  ui/         HUD: clock, hotbar, energy, messages, shop, pause menu
+tests/        Vitest suites: grid math, reducer, growth, wild crops, saves, determinism…
 ```
 
-## Adding a crop
+### Adding a crop
 
 1. Add its id to `CROP_IDS` in `src/core/types.ts`.
-2. Add a `CropDefinition` to `CROPS` in `src/farming/crops.ts`, covering its seasons, days per stage, regrowth, prices and visual (colours, foliage form, produce shape, height).
+2. Add a `CropDefinition` to `CROPS` in `src/farming/crops.ts`: its seasons, days per stage, regrowth, prices and look (colours, foliage shape, produce shape, height).
 
-The seed item, produce item, shop listing, stage models and HUD icons all come from that entry. Set `habitat: 'shade'` for a crop that grows wild instead of being sold.
+The seeds, produce, shop listing, growth-stage models and HUD icons all come from that one entry. Set `habitat: 'shade'` to make a crop grow wild in the shade instead of being sold.
