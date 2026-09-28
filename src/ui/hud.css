@@ -1,0 +1,1709 @@
+/*
+ * Meadowlight HUD: cosy cream-and-wood panels over the 3D canvas.
+ *
+ * - Every colour is a --hud-* custom property declared on .hud; [data-phase] retunes a few of
+ *   them through the day (dimmer panels and a deeper sky dial at night).
+ * - #hud is pointer-events: none (an inherited property), so only pieces that need the mouse
+ *   opt back in with pointer-events: auto. Toasts, hints and the perf readout stay click-through.
+ * - Layout: a flex column with a top row (toasts, clock) and a bottom grid (help + perf, hint +
+ *   hotbar, energy). The hotbar sizes its slots from its column width with container query units
+ *   and folds into two rows of six when the column gets narrow. Under 720px the clock and toasts
+ *   stack full-width and the bottom row becomes a two-column grid.
+ * - Restartable animations use two identical keyframe sets bound to data-anim="a" / "b".
+ */
+
+/* -------------------------------------------------------------------------------------------
+ * Tokens
+ * ----------------------------------------------------------------------------------------- */
+
+.hud {
+  --hud-cream: #fff8ea;
+  --hud-cream-deep: #f6e7c8;
+  --hud-parchment: #fdf1d8;
+  --hud-wood: #c9925f;
+  --hud-wood-light: #deb07e;
+  --hud-wood-dark: #9a6a47;
+  --hud-wood-deep: #6e4a34;
+  --hud-ink: #5a3d2b;
+  --hud-ink-soft: #8b6b53;
+  --hud-ink-faint: #b39478;
+  --hud-line: #ead3b0;
+  --hud-highlight: rgba(255, 255, 255, 0.45);
+  --hud-mint: #a8e6bf;
+  --hud-mint-deep: #5fb883;
+  --hud-mint-wash: #effaf1;
+  --hud-sky: #a9dcf5;
+  --hud-sky-deep: #5ea8d6;
+  --hud-peach: #ffcfa8;
+  --hud-peach-wash: #fff0e0;
+  --hud-rose: #ffb8c9;
+  --hud-rose-deep: #e0708a;
+  --hud-butter: #ffe69a;
+  --hud-butter-deep: #f2b93b;
+  --hud-lilac: #d4c6ff;
+  --hud-lilac-deep: #8f7fd6;
+  --hud-gold: #ffd866;
+  --hud-success: #5fb883;
+  --hud-warn: #ee9b4a;
+  --hud-info: #6fa9dc;
+  --hud-danger: #e46a6a;
+  --hud-danger-glow: rgba(255, 120, 120, 0.55);
+  --hud-water: #7fc4f0;
+  --hud-water-deep: #4d93c9;
+  --hud-meter-bg: #4a3326;
+  --hud-scrim: rgba(58, 38, 26, 0.42);
+  --hud-night: #231a2e;
+  --hud-night-glow: #3d2f52;
+  --hud-night-ink: #fff4dc;
+  --hud-perf-bg: rgba(58, 38, 26, 0.38);
+  --hud-perf-ink: #fff4dc;
+  --hud-shadow-drop: rgba(74, 47, 31, 0.3);
+  --hud-shadow-soft: rgba(60, 38, 24, 0.22);
+  --hud-focus: #5ea8d6;
+
+  --hud-panel-bg: var(--hud-cream);
+  --hud-panel-edge: var(--hud-wood);
+  --hud-dial-sky: #c7ebfa;
+  --hud-dial-track: #8fb8cf;
+  --hud-dial-progress: #f2b93b;
+  --hud-dial-ground: #8fd18a;
+
+  /* Energy fill hue runs red (0) -> yellow (60) -> green (120) with the ratio set from JS. */
+  --hud-energy-hue-span: 122;
+  --hud-energy-saturation: 68%;
+  --hud-energy-lightness: 57%;
+
+  /* Geometry */
+  --hud-gutter: 16px;
+  --hud-gap: 12px;
+  --hud-radius: 18px;
+  --hud-radius-sm: 12px;
+  --hud-side: 176px;
+  --hud-bar-max: 760px;
+  --hud-slot-gap: 6px;
+  --hud-bar-pad: 8px;
+  --hud-energy-h: 168px;
+}
+
+.hud[data-phase='dawn'] {
+  --hud-dial-sky: #ffdcc6;
+  --hud-dial-track: #d9a489;
+}
+
+.hud[data-phase='dusk'] {
+  --hud-dial-sky: #f8bfa2;
+  --hud-dial-track: #cf8f7a;
+}
+
+.hud[data-phase='night'] {
+  --hud-panel-bg: #f6ead2;
+  --hud-parchment: #f4e5c6;
+  --hud-dial-sky: #4b4a7a;
+  --hud-dial-track: #8c89c7;
+  --hud-dial-progress: #c9b6ff;
+  --hud-dial-ground: #5d8a6a;
+  --hud-shadow-drop: rgba(22, 14, 34, 0.5);
+  --hud-shadow-soft: rgba(18, 10, 30, 0.4);
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Base
+ * ----------------------------------------------------------------------------------------- */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--hud-gap);
+  padding: var(--hud-gutter);
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--hud-ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.3;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hud [hidden] {
+  display: none !important;
+}
+
+.hud h2,
+.hud h3,
+.hud p,
+.hud ul {
+  margin: 0;
+}
+
+.hud ul {
+  padding: 0;
+  list-style: none;
+}
+
+.hud button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud button:focus-visible {
+  outline: 3px solid var(--hud-focus);
+  outline-offset: 2px;
+}
+
+.hud-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hud-inline-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  overflow: visible;
+}
+
+.hud-panel {
+  background: var(--hud-panel-bg);
+  border: 3px solid var(--hud-panel-edge);
+  border-radius: var(--hud-radius);
+  box-shadow:
+    inset 0 0 0 2px var(--hud-cream-deep),
+    0 4px 0 var(--hud-wood-dark),
+    0 10px 24px var(--hud-shadow-soft);
+  transition: background-color 0.8s ease;
+}
+
+.hud-kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px 0;
+  border: 2px solid var(--hud-wood-dark);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  background: var(--hud-cream);
+  color: var(--hud-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 5px;
+  border: 2px solid var(--hud-wood);
+  border-radius: 999px;
+  background: var(--hud-panel-bg);
+  box-shadow:
+    0 3px 0 var(--hud-wood-dark),
+    0 6px 14px var(--hud-shadow-soft);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 14px 4px;
+  border: 2px solid var(--hud-wood-dark);
+  border-bottom-width: 4px;
+  border-radius: var(--hud-radius-sm);
+  background: var(--hud-cream);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: auto;
+  transition:
+    transform 0.12s ease,
+    background-color 0.15s ease,
+    filter 0.15s ease;
+}
+
+.hud-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.hud-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  border-bottom-width: 2px;
+  margin-bottom: 2px;
+}
+
+.hud-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+.hud-btn--primary {
+  background: var(--hud-mint);
+  border-color: var(--hud-mint-deep);
+  color: var(--hud-ink);
+}
+
+.hud-btn--soft {
+  background: var(--hud-parchment);
+}
+
+.hud-btn--ghost {
+  background: transparent;
+  border-color: var(--hud-line);
+  color: var(--hud-ink-soft);
+}
+
+.hud-btn--danger {
+  background: var(--hud-rose);
+  border-color: var(--hud-rose-deep);
+}
+
+.hud-btn--buy {
+  min-width: 48px;
+  min-height: 32px;
+  padding: 4px 10px 3px;
+  background: var(--hud-butter);
+  border-color: var(--hud-butter-deep);
+}
+
+.hud-iconbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid var(--hud-wood-dark);
+  border-bottom-width: 4px;
+  border-radius: 50%;
+  background: var(--hud-parchment);
+  color: var(--hud-ink);
+  pointer-events: auto;
+  transition: transform 0.12s ease;
+}
+
+.hud-iconbtn:hover {
+  transform: rotate(8deg) scale(1.05);
+}
+
+.hud-iconbtn .hud-inline-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.hud-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--hud-cream-deep);
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hud-tag.is-regrow {
+  background: var(--hud-mint-wash);
+  color: var(--hud-mint-deep);
+  box-shadow: inset 0 0 0 1.5px var(--hud-mint);
+}
+
+.hud-tag.is-sell {
+  background: var(--hud-peach-wash);
+}
+
+.hud-tag.is-season {
+  background: var(--hud-lilac);
+  color: var(--hud-ink);
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Layout
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hud-gap);
+  min-width: 0;
+}
+
+.hud-bottom {
+  display: grid;
+  grid-template-columns:
+    minmax(var(--hud-side), 1fr)
+    minmax(0, var(--hud-bar-max))
+    minmax(var(--hud-side), 1fr);
+  grid-template-areas: 'left center right';
+  align-items: end;
+  gap: var(--hud-gap);
+  min-width: 0;
+}
+
+.hud-left {
+  grid-area: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hud-center {
+  grid-area: center;
+  container: hud-bar / inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hud-right {
+  grid-area: right;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Clock panel
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-clock {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  width: 244px;
+  margin-left: auto;
+  padding: 9px 13px 11px;
+  pointer-events: auto;
+}
+
+.hud-clock__date {
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hud-clock__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-dial {
+  display: block;
+  flex: none;
+  width: 64px;
+  height: 36px;
+  overflow: visible;
+}
+
+.hud-dial__sky {
+  fill: var(--hud-dial-sky);
+  transition: fill 1.2s ease;
+}
+
+.hud-dial__track {
+  stroke: var(--hud-dial-track);
+  stroke-width: 1.6;
+  stroke-dasharray: 2 3;
+  transition: stroke 1.2s ease;
+}
+
+.hud-dial__progress {
+  stroke: var(--hud-dial-progress);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke 1.2s ease;
+}
+
+.hud-dial__ground {
+  fill: var(--hud-dial-ground);
+  stroke: var(--hud-ink);
+  stroke-width: 1.2;
+  transition: fill 1.2s ease;
+}
+
+.hud-clock__time {
+  flex: 1;
+  color: var(--hud-ink);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  text-align: right;
+  white-space: nowrap;
+  transition: color 0.4s ease;
+}
+
+.hud-clock.is-late .hud-clock__time {
+  color: var(--hud-danger);
+}
+
+.hud-clock__speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px 1px 5px;
+  border: 2px solid var(--hud-butter-deep);
+  border-radius: 999px;
+  background: var(--hud-butter);
+  color: var(--hud-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hud-clock__speed-icon .hud-inline-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.hud-clock__weather {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 2px dashed var(--hud-line);
+}
+
+.hud-weather {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hud-weather__icon .hud-inline-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.hud-weather--tomorrow {
+  color: var(--hud-ink-soft);
+}
+
+.hud-weather--tomorrow .hud-weather__icon .hud-inline-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.hud-weather__caption {
+  color: var(--hud-ink-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hud-clock__money {
+  display: grid;
+  gap: 5px;
+}
+
+.hud-gold {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 7px;
+  border: 2px solid var(--hud-wood-deep);
+  border-radius: var(--hud-radius-sm);
+  background: linear-gradient(var(--hud-wood-dark), var(--hud-wood-deep));
+  box-shadow: inset 0 2px 0 var(--hud-highlight);
+  color: var(--hud-gold);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-gold__coin .hud-inline-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.hud-gold__value {
+  flex: 1;
+  text-align: right;
+}
+
+.hud-gold__unit {
+  font-size: 15px;
+  opacity: 0.85;
+}
+
+.hud-gold__delta {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 2px);
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--hud-panel-bg);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud-gold.is-gain .hud-gold__delta {
+  color: var(--hud-mint-deep);
+}
+
+.hud-gold.is-loss .hud-gold__delta {
+  color: var(--hud-rose-deep);
+}
+
+.hud-gold[data-anim='a'] .hud-gold__delta {
+  animation: hud-float-a 1.3s ease-out both;
+}
+
+.hud-gold[data-anim='b'] .hud-gold__delta {
+  animation: hud-float-b 1.3s ease-out both;
+}
+
+.hud-gold[data-anim='a'] .hud-gold__value {
+  animation: hud-bump-a 0.45s ease-out;
+}
+
+.hud-gold[data-anim='b'] .hud-gold__value {
+  animation: hud-bump-b 0.45s ease-out;
+}
+
+.hud-clock__pending {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hud-clock__pending-icon {
+  margin-right: 2px;
+}
+
+.hud-clock__pending-value {
+  color: var(--hud-mint-deep);
+  font-weight: 700;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Toasts
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-toasts {
+  display: flex;
+  flex: 0 1 380px;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.hud-toast {
+  display: grid;
+  grid-template-rows: 1fr;
+  max-width: 100%;
+  margin-bottom: 8px;
+  animation: hud-toast-in 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
+  transition:
+    grid-template-rows 0.35s ease,
+    margin-bottom 0.35s ease,
+    opacity 0.3s ease,
+    transform 0.35s ease;
+}
+
+.hud-toast.is-leaving {
+  grid-template-rows: 0fr;
+  margin-bottom: 0;
+  opacity: 0;
+  transform: translateX(-24px);
+}
+
+.hud-toast__clip {
+  min-height: 0;
+}
+
+.hud-toast__card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 12px 7px 8px;
+  border: 2px solid var(--hud-wood);
+  border-left-width: 6px;
+  border-radius: 14px;
+  background: var(--hud-panel-bg);
+  box-shadow:
+    0 3px 0 var(--hud-wood-dark),
+    0 8px 18px var(--hud-shadow-soft);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.hud-toast--info .hud-toast__card {
+  border-left-color: var(--hud-info);
+}
+
+.hud-toast--success .hud-toast__card {
+  border-left-color: var(--hud-success);
+  background: var(--hud-mint-wash);
+}
+
+.hud-toast--warn .hud-toast__card {
+  border-left-color: var(--hud-warn);
+  background: var(--hud-peach-wash);
+}
+
+.hud-toast__icon {
+  margin-top: 1px;
+}
+
+.hud-toast__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Context hint + hotbar
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-hint {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.hud-hint__item {
+  padding-left: 12px;
+  background: var(--hud-parchment);
+  color: var(--hud-ink-soft);
+}
+
+.hud-hint__item.is-empty {
+  font-style: italic;
+}
+
+.hud-hint__alt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hud-hint__sep {
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+}
+
+.hud-hint__verb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-hotbar {
+  --cols: 12;
+  --slot: clamp(
+    26px,
+    calc((100cqi - (var(--cols) - 1) * var(--hud-slot-gap) - 2 * var(--hud-bar-pad) - 6px) / var(--cols)),
+    56px
+  );
+  display: grid;
+  grid-template-columns: repeat(var(--cols), var(--slot));
+  gap: var(--hud-slot-gap);
+  padding: var(--hud-bar-pad);
+  border: 3px solid var(--hud-wood-deep);
+  border-radius: calc(var(--slot) * 0.28 + 8px);
+  background: linear-gradient(var(--hud-wood-light), var(--hud-wood));
+  box-shadow:
+    inset 0 2px 0 var(--hud-highlight),
+    0 5px 0 var(--hud-wood-deep),
+    0 12px 26px var(--hud-shadow-soft);
+  pointer-events: auto;
+}
+
+@container hud-bar (max-width: 500px) {
+  .hud-hotbar {
+    --cols: 6;
+  }
+}
+
+.hud-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--slot);
+  height: var(--slot);
+  padding: 0;
+  border: 2px solid var(--hud-wood-dark);
+  border-radius: calc(var(--slot) * 0.24);
+  background: var(--hud-parchment);
+  box-shadow: inset 0 -3px 0 var(--hud-cream-deep);
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hud-slot:hover {
+  transform: translateY(-2px);
+  background: var(--hud-cream);
+}
+
+.hud-slot.is-empty {
+  background: var(--hud-cream-deep);
+  box-shadow: inset 0 3px 0 var(--hud-line);
+}
+
+.hud-slot.is-selected {
+  z-index: 1;
+  border-color: var(--hud-butter-deep);
+  background: var(--hud-butter);
+  box-shadow:
+    inset 0 -3px 0 var(--hud-butter-deep),
+    0 0 0 3px var(--hud-cream),
+    0 0 0 5px var(--hud-butter-deep);
+  transform: translateY(-5px) scale(1.05);
+}
+
+.hud-slot__icon {
+  display: block;
+  width: 70%;
+  height: 70%;
+  filter: drop-shadow(0 1.5px 0 var(--hud-shadow-drop));
+  transition: transform 0.18s ease;
+}
+
+.hud-slot.is-selected .hud-slot__icon {
+  transform: rotate(-6deg) scale(1.06);
+}
+
+.hud-slot__key {
+  position: absolute;
+  top: 1px;
+  left: 4px;
+  color: var(--hud-ink-faint);
+  font-size: max(9px, calc(var(--slot) * 0.2));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-slot.is-selected .hud-slot__key {
+  color: var(--hud-wood-dark);
+}
+
+.hud-slot__qty {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 18px;
+  padding: 1px 5px 0;
+  border: 2px solid var(--hud-cream);
+  border-radius: 999px;
+  background: var(--hud-wood-deep);
+  color: var(--hud-cream);
+  font-size: max(10px, calc(var(--slot) * 0.22));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.hud-slot__water {
+  position: absolute;
+  top: 28%;
+  bottom: 12%;
+  right: 4px;
+  width: max(4px, calc(var(--slot) * 0.1));
+  overflow: hidden;
+  border: 1.5px solid var(--hud-water-deep);
+  border-radius: 999px;
+  background: var(--hud-cream);
+}
+
+.hud-slot__water-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--hud-water);
+  transform: scaleY(var(--hud-water-level, 1));
+  transform-origin: 50% 100%;
+  transition: transform 0.3s ease;
+}
+
+.hud-slot__water.is-empty {
+  border-color: var(--hud-danger);
+  animation: hud-blink 1.1s ease-in-out infinite alternate;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Energy bar
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-energy {
+  --hud-energy-ratio: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 7px 8px;
+  border: 3px solid var(--hud-wood-deep);
+  border-radius: 16px;
+  background: linear-gradient(var(--hud-wood-light), var(--hud-wood));
+  box-shadow:
+    inset 0 2px 0 var(--hud-highlight),
+    0 5px 0 var(--hud-wood-deep),
+    0 12px 26px var(--hud-shadow-soft);
+  pointer-events: auto;
+}
+
+.hud-energy__label {
+  color: var(--hud-cream);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 2px 0 var(--hud-wood-deep);
+}
+
+.hud-energy__track {
+  position: relative;
+  width: 20px;
+  height: var(--hud-energy-h);
+  overflow: hidden;
+  border: 2px solid var(--hud-wood-deep);
+  border-radius: 10px;
+  background: var(--hud-meter-bg);
+}
+
+.hud-energy__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  background-color: hsl(
+    calc(var(--hud-energy-ratio) * var(--hud-energy-hue-span)) var(--hud-energy-saturation)
+      var(--hud-energy-lightness)
+  );
+  box-shadow: inset 4px 0 0 var(--hud-highlight);
+  transform: scaleY(var(--hud-energy-ratio));
+  transform-origin: 50% 100%;
+  transition:
+    transform 0.35s ease,
+    background-color 0.35s ease;
+}
+
+.hud-energy__track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--hud-danger-glow);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud-energy.is-low .hud-energy__track::after {
+  animation: hud-blink 0.9s ease-in-out infinite alternate;
+}
+
+.hud-energy__tip {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 10px);
+  padding: 4px 10px;
+  border: 2px solid var(--hud-wood);
+  border-radius: 10px;
+  background: var(--hud-panel-bg);
+  box-shadow: 0 3px 0 var(--hud-wood-dark);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(6px, -50%);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.hud-energy:hover .hud-energy__tip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Help chip + perf readout
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-help {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.hud-help__toggle {
+  padding: 3px 12px 3px 4px;
+  pointer-events: auto;
+  transition: transform 0.12s ease;
+}
+
+.hud-help__toggle:hover {
+  transform: translateY(-1px);
+}
+
+.hud-help__badge {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--hud-sky);
+  color: var(--hud-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.hud-help__chevron {
+  width: 8px;
+  height: 8px;
+  margin-left: 2px;
+  border-right: 2.5px solid var(--hud-ink-soft);
+  border-bottom: 2.5px solid var(--hud-ink-soft);
+  transform: translateY(2px) rotate(-135deg);
+  transition: transform 0.2s ease;
+}
+
+.hud-help.is-collapsed .hud-help__chevron {
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.hud-help__panel {
+  display: grid;
+  gap: 5px;
+  width: min(220px, 100%);
+  padding: 9px 11px;
+  border-radius: 14px;
+  font-size: 13px;
+  animation: hud-pop-in 0.22s ease-out backwards;
+}
+
+.hud-help__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-help__row .hud-kbd {
+  min-width: 46px;
+}
+
+.hud-help__action {
+  min-width: 0;
+  color: var(--hud-ink-soft);
+  font-weight: 600;
+}
+
+.hud-perf {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--hud-perf-bg);
+  color: var(--hud-perf-ink);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0.85;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.hud-perf__value {
+  font-weight: 700;
+}
+
+.hud-perf__unit {
+  opacity: 0.75;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Modals (shop, pause)
+ * ----------------------------------------------------------------------------------------- */
+
+/*
+ * Cards are anchored near the top rather than centred, so content that appears inside them
+ * (the New Farm warning, "In your bag" lines) grows downward and never moves the buttons the
+ * player is about to click.
+ */
+.hud-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: start center;
+  padding: max(var(--hud-gutter), 8vh) var(--hud-gutter) var(--hud-gutter);
+  pointer-events: auto;
+}
+
+.hud-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--hud-scrim);
+  backdrop-filter: blur(2px);
+  animation: hud-fade-in 0.2s ease-out backwards;
+}
+
+.hud-modal__card {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  width: min(580px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 20px;
+  animation: hud-pop-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.25) backwards;
+}
+
+.hud-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hud-modal__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.hud-modal__title {
+  color: var(--hud-ink);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.hud-modal__subtitle {
+  margin-top: 2px;
+  color: var(--hud-ink-soft);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Seed shop ------------------------------------------------------------------------------- */
+
+.hud-shop__gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 6px;
+  border: 2px solid var(--hud-wood-deep);
+  border-radius: var(--hud-radius-sm);
+  background: linear-gradient(var(--hud-wood-dark), var(--hud-wood-deep));
+  color: var(--hud-gold);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hud-shop__gold-coin .hud-inline-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.hud-shop__list {
+  display: grid;
+  gap: 10px;
+}
+
+.hud-shop__item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  grid-template-areas: 'icon info buy';
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 2px solid var(--hud-line);
+  border-radius: 14px;
+  background: var(--hud-parchment);
+  box-shadow: inset 0 -3px 0 var(--hud-cream-deep);
+}
+
+.hud-shop__icon {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 5px;
+  border: 2px solid var(--hud-wood-light);
+  border-radius: 12px;
+  background: var(--hud-cream);
+}
+
+.hud-shop__info {
+  grid-area: info;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hud-shop__name-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hud-shop__name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hud-shop__price {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--hud-butter);
+  color: var(--hud-ink);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-shop__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hud-shop__owned {
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-shop__buy {
+  grid-area: buy;
+  display: flex;
+  gap: 6px;
+}
+
+.hud-shop__empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 18px 12px 12px;
+  border: 2px dashed var(--hud-line);
+  border-radius: 14px;
+  background: var(--hud-parchment);
+  text-align: center;
+}
+
+.hud-shop__empty-art {
+  display: block;
+  width: 84px;
+  height: 84px;
+}
+
+.hud-shop__empty-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.hud-shop__empty-text {
+  max-width: 34ch;
+  color: var(--hud-ink-soft);
+  line-height: 1.45;
+}
+
+.hud-shop__footer {
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Pause ----------------------------------------------------------------------------------- */
+
+.hud-pause__card {
+  width: min(520px, 100%);
+}
+
+.hud-pause__header .hud-modal__title::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 18px;
+  margin-right: 10px;
+  border-left: 4px solid var(--hud-ink);
+  border-right: 4px solid var(--hud-ink);
+  vertical-align: -1px;
+}
+
+.hud-pause__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hud-pause__actions .hud-btn--primary {
+  min-width: 120px;
+}
+
+.hud-pause__warning {
+  padding: 8px 12px;
+  border: 2px solid var(--hud-rose);
+  border-radius: var(--hud-radius-sm);
+  background: var(--hud-peach-wash);
+  color: var(--hud-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.hud-pause__section {
+  padding-top: 10px;
+  border-top: 2px dashed var(--hud-line);
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hud-controls {
+  display: grid;
+  gap: 7px;
+}
+
+.hud-controls__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.hud-controls__keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.hud-controls__sep {
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+}
+
+.hud-controls__action {
+  display: grid;
+  font-size: 14px;
+}
+
+.hud-controls__detail {
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Day transition
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-daywipe {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--hud-gutter);
+  background: radial-gradient(circle at 50% 45%, var(--hud-night-glow), var(--hud-night) 70%);
+  color: var(--hud-night-ink);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud-daywipe[data-anim='a'] {
+  animation: hud-daywipe-a 1.2s ease-in-out both;
+}
+
+.hud-daywipe[data-anim='b'] {
+  animation: hud-daywipe-b 1.2s ease-in-out both;
+}
+
+.hud-daywipe__content {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.hud-daywipe[data-anim='a'] .hud-daywipe__content {
+  animation: hud-rise-a 0.7s ease-out both;
+}
+
+.hud-daywipe[data-anim='b'] .hud-daywipe__content {
+  animation: hud-rise-b 0.7s ease-out both;
+}
+
+.hud-daywipe__eyebrow {
+  color: var(--hud-butter);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hud-daywipe__date {
+  font-size: clamp(22px, 5vw, 36px);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.hud-daywipe__weather {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.hud-daywipe__weather-icon .hud-inline-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Frozen (paused or shopping): the hint hides in JS; the hotbar settles back a touch.
+ * ----------------------------------------------------------------------------------------- */
+
+.hud.is-frozen .hud-hotbar,
+.hud.is-frozen .hud-energy {
+  filter: saturate(0.85);
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Keyframes
+ * ----------------------------------------------------------------------------------------- */
+
+@keyframes hud-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes hud-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+@keyframes hud-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-28px) scale(0.96);
+  }
+}
+
+@keyframes hud-blink {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes hud-float-a {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1);
+  }
+}
+
+@keyframes hud-float-b {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1);
+  }
+}
+
+@keyframes hud-bump-a {
+  40% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes hud-bump-b {
+  40% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes hud-daywipe-a {
+  0% {
+    opacity: 0.55;
+  }
+  14% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes hud-daywipe-b {
+  0% {
+    opacity: 0.55;
+  }
+  14% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes hud-rise-a {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes hud-rise-b {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Narrow screens: clock and toasts stack full width; help + perf sit above the hotbar and the
+ * energy bar spans the bottom-right. The hotbar folds to 6 columns via its container query.
+ * ----------------------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .hud {
+    --hud-gap: 10px;
+    --hud-energy-h: 128px;
+    --hud-slot-gap: 5px;
+    --hud-bar-pad: 6px;
+  }
+
+  .hud-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hud-clock {
+    order: -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    width: auto;
+    margin-left: 0;
+    padding: 7px 11px 9px;
+  }
+
+  .hud-clock__date {
+    flex: 1 0 100%;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .hud-clock__main {
+    flex: 1 1 auto;
+  }
+
+  .hud-clock__time {
+    flex: none;
+    font-size: 22px;
+    text-align: left;
+  }
+
+  .hud-clock__weather {
+    flex: 1 1 auto;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .hud-clock__money {
+    flex: 1 1 100%;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .hud-gold {
+    font-size: 18px;
+  }
+
+  .hud-toasts {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .hud-toast:nth-last-child(n + 4) {
+    display: none;
+  }
+
+  .hud-bottom {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'left right'
+      'center right';
+  }
+
+  .hud-left {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .hud-help__panel {
+    width: min(260px, calc(100vw - 2 * var(--hud-gutter)));
+  }
+
+  .hud-shop__item {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      'icon info'
+      'buy buy';
+    gap: 8px 10px;
+  }
+
+  .hud-shop__icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hud-shop__buy .hud-btn {
+    flex: 1;
+  }
+
+  .hud-modal__header {
+    flex-wrap: wrap;
+  }
+
+  .hud-modal__title {
+    font-size: 22px;
+  }
+
+  .hud-controls__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+}
+
+@media (max-height: 560px) {
+  .hud {
+    --hud-energy-h: 104px;
+  }
+
+  .hud-toast:nth-last-child(n + 3) {
+    display: none;
+  }
+
+  .hud-help__panel {
+    gap: 3px;
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Reduced motion: keep fades (they carry meaning, e.g. the day change) but drop movement.
+ * ----------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-toast,
+  .hud-modal__card,
+  .hud-help__panel,
+  .hud-daywipe__content {
+    animation-name: hud-fade-in !important;
+  }
+
+  .hud-toast.is-leaving {
+    transform: none;
+  }
+
+  .hud-gold .hud-gold__value,
+  .hud-energy.is-low .hud-energy__track::after,
+  .hud-slot__water.is-empty {
+    animation: none !important;
+  }
+
+  .hud-slot,
+  .hud-slot__icon,
+  .hud-btn,
+  .hud-iconbtn,
+  .hud-help__toggle {
+    transition: none;
+  }
+
+  .hud-slot.is-selected,
+  .hud-slot:hover,
+  .hud-slot.is-selected .hud-slot__icon {
+    transform: none;
+  }
+}

@@ -1,0 +1,67 @@
+:root {
+  --font-ui: 'Fredoka', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --page-bg: #bfe6f2;
+  --fatal-bg: #fff6ea;
+  --fatal-ink: #5a3d2b;
+  --fatal-border: #e7c9a4;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--page-bg);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fatal-error {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 24px 28px;
+  border-radius: 18px;
+  background: var(--fatal-bg);
+  color: var(--fatal-ink);
+  border: 3px solid var(--fatal-border);
+  font-family: var(--font-ui);
+  text-align: center;
+}
+
+.fatal-error h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.fatal-error p {
+  margin: 0;
+  line-height: 1.5;
+}
