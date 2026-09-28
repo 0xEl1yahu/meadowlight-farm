@@ -4,7 +4,11 @@
 import { LAYOUT, PLAYER, TOOLS, type FarmLayout, type PondSpec } from '../config';
 import { Salt, hashFloat } from '../core/hash';
 import { Blocker, type GridSpec, type Tile, type TileRect, type WorldState } from '../core/types';
+import { initialWildCrop } from '../farming/wild';
+import { shadeCropsInSeason } from '../farming/crops';
+import { seasonOfDay } from '../time/clock';
 import { inBounds, rectContains, rectInBounds } from './grid';
+import { isShadedTile } from './shade';
 import { EMPTY_TILE, blockedTile, createWorld } from './tiles';
 
 export function isPondTile(pond: PondSpec, tx: number, tz: number): boolean {
@@ -50,5 +54,12 @@ export function generateTile(seed: number, layout: FarmLayout, tx: number, tz: n
 
 export function generateWorld(seed: number, grid: GridSpec, layout: FarmLayout = LAYOUT): WorldState {
   assertLayout(grid, layout);
-  return createWorld(grid, (tx, tz) => generateTile(seed, layout, tx, tz));
+  const wildCrops = shadeCropsInSeason(seasonOfDay(0)).map((def) => def.id);
+  return createWorld(grid, (tx, tz) => {
+    const tile = generateTile(seed, layout, tx, tz);
+    const isSpawn = tx === PLAYER.spawn.tx && tz === PLAYER.spawn.tz;
+    if (tile !== EMPTY_TILE || isSpawn || !isShadedTile(grid, tx, tz, layout)) return tile;
+    const crop = initialWildCrop(seed, 0, wildCrops, tx, tz);
+    return crop === null ? tile : { ...tile, crop };
+  });
 }

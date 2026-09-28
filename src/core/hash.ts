@@ -13,6 +13,8 @@ export const Salt = {
   Untill: 0x297a2d39,
   Yield: 0x7ed55d16,
   Cosmetic: 0x165667b1,
+  Wild: 0x5bd1e995,
+  WildPick: 0x3c6ef372,
 } as const;
 
 /**

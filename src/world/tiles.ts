@@ -136,10 +136,13 @@ export function isSoil(tile: Tile): boolean {
   return tile.state === TileState.Plowed || tile.state === TileState.Watered;
 }
 
-/** Enforces the Blocked ⇔ blocker ≠ None invariant and crop-on-soil rules. */
+/** Enforces the Blocked ⇔ blocker ≠ None invariant and the crop placement rules. */
 export function assertTileConsistent(tile: Tile): void {
   const blocked = tile.state === TileState.Blocked;
   invariant(blocked === (tile.blocker !== Blocker.None), `tile state ${tile.state} inconsistent with blocker ${tile.blocker}`);
-  invariant(tile.crop === null || isSoil(tile), 'crops may only exist on plowed or watered soil');
+  invariant(
+    tile.crop === null || isSoil(tile) || (tile.crop.wild && tile.state === TileState.Unplowed),
+    'crops may only exist on plowed or watered soil (wild crops also on grass)',
+  );
   invariant(Number.isInteger(tile.blockerHp) && tile.blockerHp >= 0, `invalid blockerHp ${tile.blockerHp}`);
 }

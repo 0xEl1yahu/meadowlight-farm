@@ -219,9 +219,13 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
     case 'untill':
       return withTile(state, target, EMPTY_TILE);
 
-    case 'plant': {
-      const next = withTile(state, target, { ...tile, crop: createCropInstance(intent.cropId, state.time.absoluteDay) });
-      return { ...next, inventory: removeFromSlot(next.inventory, next.inventory.selected, 1) };
+    case 'scatter': {
+      let world = state.world;
+      for (const coord of intent.tiles) {
+        const soil = requireTile(world, coord.tx, coord.tz);
+        world = setTile(world, coord.tx, coord.tz, { ...soil, crop: createCropInstance(intent.cropId, state.time.absoluteDay) });
+      }
+      return { ...state, world, inventory: removeFromSlot(state.inventory, state.inventory.selected, intent.tiles.length) };
     }
 
     case 'harvest':

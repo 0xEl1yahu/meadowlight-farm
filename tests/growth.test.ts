@@ -92,9 +92,9 @@ describe('crop registry', () => {
 
   it('lists the crops each season can grow', () => {
     const ids = (season: Season): CropId[] => cropsInSeason(season).map((def) => def.id);
-    expect(ids(Season.Spring)).toEqual(['parsnip', 'potato', 'cauliflower', 'strawberry']);
-    expect(ids(Season.Summer)).toEqual(['blueberry', 'melon', 'corn']);
-    expect(ids(Season.Fall)).toEqual(['corn', 'pumpkin']);
+    expect(ids(Season.Spring)).toEqual(['parsnip', 'potato', 'cauliflower', 'strawberry', 'carrot', 'spectraherb', 'mushroom']);
+    expect(ids(Season.Summer)).toEqual(['blueberry', 'melon', 'corn', 'wheat', 'blackberry', 'spectraherb', 'mushroom', 'snozberry']);
+    expect(ids(Season.Fall)).toEqual(['corn', 'pumpkin', 'carrot', 'wheat', 'blackberry', 'spectraherb', 'mushroom', 'snozberry']);
     expect(ids(Season.Winter)).toEqual([]);
     for (const id of CROP_IDS) {
       for (const season of [Season.Spring, Season.Summer, Season.Fall, Season.Winter]) {
@@ -113,6 +113,7 @@ describe('crop registry', () => {
       dead: false,
       plantedDay: 17,
       harvestCount: 0,
+      wild: false,
     });
   });
 
@@ -382,17 +383,18 @@ describe('advanceTileOvernight', () => {
 describe('advanceWorldOvernight', () => {
   const grid = createGridSpec(48, 40, 16);
 
+  // Winter: no shade crop is in season, so nothing sprouts wild and only field soil can change.
   it('returns the same world when there is no soil at all', () => {
     const world = createWorld(grid, (tx, tz) => ((tx + tz) % 7 === 0 ? blockedTile(Blocker.Rock, 2) : EMPTY_TILE));
     for (const weather of [Weather.Sunny, Weather.Rain]) {
-      expect(advanceWorldOvernight(world, ctx({ weather, seasonChanged: true, season: Season.Summer }))).toBe(world);
+      expect(advanceWorldOvernight(world, ctx({ weather, seasonChanged: true, season: Season.Winter }))).toBe(world);
     }
   });
 
   it('touches only chunks with soil that actually changed', () => {
     let world = createWorld(grid, () => EMPTY_TILE);
     world = setTile(world, 20, 20, soilTile(TileState.Watered, cropOf('parsnip')));
-    const next = advanceWorldOvernight(world, ctx());
+    const next = advanceWorldOvernight(world, ctx({ season: Season.Winter }));
     expect(worldChangesOutside(world, next, { tx: 20, tz: 20 })).toEqual([]);
     expect(next.chunks[4]).not.toBe(world.chunks[4]);
     expect(requireTile(next, 20, 20).crop?.stage).toBe(1);

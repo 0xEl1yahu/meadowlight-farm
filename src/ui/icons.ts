@@ -30,6 +30,7 @@ export const ICON_CLASS = 'hud-icon';
 export const INLINE_ICON_CLASS = 'hud-inline-icon';
 
 const COLORS = {
+  mushroomStem: 0xf6ead6,
   handle: 0xc4945f,
   metal: 0xb9c1d6,
   gold: 0xf7c948,
@@ -417,6 +418,31 @@ function gourdParts(color: number, leaf: number): SVGElement[] {
   ];
 }
 
+/** A sheaf of wheat: three stalks, each topped with a faceted ear of kernels. */
+function earsParts(color: number, leaf: number): SVGElement[] {
+  const ear = (x: number, tilt: number): SVGElement =>
+    svgNode('g', { transform: `rotate(${tilt} ${x} 27)` }, [
+      line(x, 27, x, 13, hex(leaf), 1.4),
+      faceted(`${x},3.5 ${x + 2.6},7.5 ${x + 2.2},13 ${x},15.5 ${x - 2.2},13 ${x - 2.6},7.5`, hex(color), [
+        facet(`${x},3.5 ${x - 2.6},7.5 ${x - 2.2},13 ${x},15.5`, light(color, 0.3)),
+        facet(`${x - 2.4},10 ${x + 2.4},10 ${x + 2.2},11 ${x - 2.2},11`, dark(color, 0.2)),
+      ]),
+    ]);
+  return [ear(16, -16), ear(16, 16), ear(16, 0), line(11.5, 23, 20.5, 23, dark(leaf, 0.1), 2.2)];
+}
+
+/** Two faceted toadstools of different sizes: pale stems under domed caps. */
+function mushroomParts(color: number): SVGElement[] {
+  const cap = (cx: number, cy: number, r: number): SVGElement =>
+    faceted(`${cx - r},${cy} ${cx - r * 0.7},${cy - r * 0.62} ${cx},${cy - r * 0.85} ${cx + r * 0.7},${cy - r * 0.62} ${cx + r},${cy}`, hex(color), [
+      facet(`${cx - r},${cy} ${cx - r * 0.7},${cy - r * 0.62} ${cx},${cy - r * 0.85} ${cx - r * 0.2},${cy - r * 0.3}`, light(color, 0.3)),
+      facet(`${cx + r * 0.7},${cy - r * 0.62} ${cx + r},${cy} ${cx + r * 0.3},${cy - r * 0.25}`, dark(color, 0.18)),
+    ]);
+  const stem = (cx: number, top: number, bottom: number, w: number): SVGElement =>
+    outlined(`${cx - w},${top} ${cx + w},${top} ${cx + w * 1.2},${bottom} ${cx - w * 1.2},${bottom}`, hex(COLORS.mushroomStem));
+  return [stem(20.5, 17, 27, 2), cap(20.5, 17.5, 6.5), stem(11, 12, 27, 2.6), cap(11, 12.5, 8.5)];
+}
+
 function produceParts(visual: CropVisual): SVGElement[] {
   const color = visual.produceColor;
   const leaf = visual.foliageColor;
@@ -431,6 +457,10 @@ function produceParts(visual: CropVisual): SVGElement[] {
       return cobParts(color, leaf);
     case 'gourd':
       return gourdParts(color, leaf);
+    case 'ears':
+      return earsParts(color, leaf);
+    case 'none':
+      return visual.form === 'fungus' ? mushroomParts(color) : headParts(color, leaf);
   }
 }
 

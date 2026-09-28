@@ -114,6 +114,27 @@ export const INVENTORY = {
 export const FARMING = {
   /** Chance that an empty, un-watered plowed tile reverts to grass overnight. */
   untillChance: 0.1,
+  /** Seed scattering: a handful covers the `depth` rows in front of the player, `width` wide. */
+  scatter: { width: 3, depth: 3 },
+} as const;
+
+/**
+ * Shade and the wild crops that grow in it. Shaded tiles are the strips under the woodland on
+ * the far (-X / -Z) edges and a ring around the farmhouse.
+ */
+export const SHADE = {
+  /** Tiles with tx < edgeBand or tz < edgeBand lie under the border woodland. */
+  edgeBand: 2,
+  /** Chebyshev distance around the house footprint that its shadow covers. */
+  houseRing: 1,
+  /** Nightly chance that an empty shaded grass tile sprouts a wild crop by itself. */
+  sproutChance: 0.015,
+  /** Extra nightly chance per orthogonal neighbour holding a mature wild crop (spreading). */
+  spreadChancePerNeighbor: 0.12,
+  /** Upper bound on wild crops on the farm, so shade never fills up completely. */
+  maxWild: 40,
+  /** Share of empty shaded tiles that already hold a wild crop on a brand-new farm. */
+  initialDensity: 0.12,
 } as const;
 
 export const MESSAGES = {

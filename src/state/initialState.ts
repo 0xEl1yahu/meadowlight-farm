@@ -38,14 +38,14 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
       entries: [
         {
           id: 0,
-          text: 'Welcome to Meadowlight Farm! Till soil, plant your parsnip seeds, water them, then sleep.',
+          text: 'Welcome to Meadowlight Farm! Till soil, scatter your parsnip seeds, water them, then sleep.',
           tone: 'info',
           day: time.absoluteDay,
           minute: time.minuteOfDay,
         },
         {
           id: 1,
-          text: 'Space uses the selected tool · E interacts · B opens the seed shop.',
+          text: 'Mushrooms sprout on their own in the shade by the woods and the house. Forage them with E.',
           tone: 'info',
           day: time.absoluteDay,
           minute: time.minuteOfDay,

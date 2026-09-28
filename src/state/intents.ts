@@ -19,7 +19,7 @@ import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type SeedItem, type ToolItem } from '../items/items';
 import { getTile, isSoil } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
-import { selectTargetTile } from './selectors';
+import { selectScatterPatch, selectTargetTile } from './selectors';
 
 export type Intent =
   | { readonly kind: 'till' }
@@ -28,7 +28,8 @@ export type Intent =
   | { readonly kind: 'mine' }
   | { readonly kind: 'chop' }
   | { readonly kind: 'untill' }
-  | { readonly kind: 'plant'; readonly cropId: CropId }
+  /** Seeds land on every listed tile (empty tilled soil in the scatter patch, nearest first). */
+  | { readonly kind: 'scatter'; readonly cropId: CropId; readonly tiles: readonly TileCoord[] }
   | { readonly kind: 'harvest'; readonly quantity: number }
   | { readonly kind: 'clearCrop' }
   | { readonly kind: 'ship' }
@@ -114,6 +115,9 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
   switch (tool) {
     case 'hoe':
       if (tile.crop !== null && tile.crop.dead) return plan(target, { kind: 'clearCrop' }, tool, cost);
+      if (tile.crop !== null && tile.crop.wild) {
+        return blocked(target, tool, `Forage the ${CROPS[tile.crop.cropId].name.toLowerCase()} first (E).`);
+      }
       if (tile.state === TileState.Unplowed) return plan(target, { kind: 'till' }, tool, cost);
       if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
@@ -151,17 +155,32 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
   }
 }
 
-function planPlanting(state: GameState, item: SeedItem, target: TileCoord | null): ActionPlan {
+/**
+ * Scattering: one handful covers the scatter patch (selectScatterPatch) and plants a seed on
+ * every empty tilled tile it reaches, nearest first, until the stack runs out. Tilling is the
+ * precision tool: till a single tile and the handful plants just that one.
+ */
+function planScatter(state: GameState, item: SeedItem, target: TileCoord | null): ActionPlan {
   if (target === null) return blocked(null, 'plant');
-  const tile = getTile(state.world, target.tx, target.tz);
-  if (tile === null) return blocked(null, 'plant');
-  if (tile.state === TileState.Unplowed) return blocked(target, 'plant', 'Till the soil with the hoe first.');
-  if (tile.state === TileState.Blocked || tile.crop !== null) return blocked(target, 'plant');
   const def = CROPS[item.cropId];
+  if (def.habitat === 'shade') return blocked(target, 'plant', `${def.name}s only grow wild in the shade.`);
   if (!isInSeason(def, state.time.season)) {
     return blocked(target, 'plant', `${def.name} won't grow in ${SEASON_NAMES[state.time.season]}.`);
   }
-  return plan(target, { kind: 'plant', cropId: item.cropId }, 'plant');
+  const stack = selectedStack(state.inventory);
+  const available = stack === null ? 0 : stack.quantity;
+  const patch = selectScatterPatch(state);
+  const tiles: TileCoord[] = [];
+  let untilled = false;
+  for (const coord of patch) {
+    if (tiles.length >= available) break;
+    const tile = getTile(state.world, coord.tx, coord.tz);
+    if (tile === null || tile.crop !== null) continue;
+    if (isSoil(tile)) tiles.push(coord);
+    else if (tile.state === TileState.Unplowed) untilled = true;
+  }
+  if (tiles.length === 0) return blocked(target, 'plant', untilled ? 'Till the soil with the hoe first.' : null);
+  return plan(target, { kind: 'scatter', cropId: item.cropId, tiles }, 'plant');
 }
 
 /** Plan for the context action (E): harvest, clear, ship, sleep, refill. */
@@ -207,7 +226,7 @@ export function planPrimaryAction(state: GameState): ActionPlan {
     case 'tool':
       return withEnergy(state, planTool(state, item, target));
     case 'seed':
-      return planPlanting(state, item, target);
+      return planScatter(state, item, target);
     case 'produce':
     case 'material':
       return planInteraction(state);
@@ -229,8 +248,8 @@ export function describeIntent(intent: Intent): string | null {
       return 'Chop stump';
     case 'untill':
       return 'Clear soil';
-    case 'plant':
-      return `Plant ${CROPS[intent.cropId].name}`;
+    case 'scatter':
+      return `Scatter ${CROPS[intent.cropId].name}${intent.tiles.length > 1 ? ` ×${intent.tiles.length}` : ''}`;
     case 'harvest':
       return 'Harvest';
     case 'clearCrop':

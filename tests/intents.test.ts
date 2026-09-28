@@ -195,26 +195,33 @@ describe('planPrimaryAction — tools', () => {
 });
 
 describe('planPrimaryAction — seeds', () => {
-  it('plants in-season seeds on empty soil for free', () => {
+  it('scatters in-season seeds on empty soil for free', () => {
     expect(planFor(plowed, 'parsnip_seeds')).toEqual({
       target: TARGET,
-      intent: { kind: 'plant', cropId: 'parsnip' },
+      intent: { kind: 'scatter', cropId: 'parsnip', tiles: [TARGET] },
       feedback: 'plant',
       energyCost: 0,
     });
-    expect(planFor(watered, 'strawberry_seeds').intent).toEqual({ kind: 'plant', cropId: 'strawberry' });
+    expect(planFor(watered, 'strawberry_seeds').intent).toEqual({ kind: 'scatter', cropId: 'strawberry', tiles: [TARGET] });
   });
 
-  it('explains unplowed ground and out-of-season seeds', () => {
+  it('explains unplowed ground, out-of-season seeds and shade-only crops', () => {
     expect(planFor(EMPTY_TILE, 'parsnip_seeds').intent).toEqual({ kind: 'blocked', reason: 'Till the soil with the hoe first.' });
     expect(planFor(plowed, 'pumpkin_seeds').intent).toEqual({ kind: 'blocked', reason: "Pumpkin won't grow in Spring." });
     expect(planFor(plowed, 'parsnip_seeds', atDay(BASE, 30)).intent).toEqual({ kind: 'blocked', reason: "Parsnip won't grow in Summer." });
-    expect(planFor(plowed, 'corn_seeds', atDay(BASE, 60)).intent).toEqual({ kind: 'plant', cropId: 'corn' });
+    expect(planFor(plowed, 'corn_seeds', atDay(BASE, 60)).intent).toEqual({ kind: 'scatter', cropId: 'corn', tiles: [TARGET] });
+    expect(planFor(plowed, 'mushroom_seeds').intent).toEqual({ kind: 'blocked', reason: 'Mushrooms only grow wild in the shade.' });
   });
 
-  it('silently refuses occupied soil and blocked tiles', () => {
+  it('refuses occupied soil and blocked tiles when nothing else in the patch is tilled', () => {
+    // The rest of the patch is grass, so the handful has nowhere to land.
     for (const tile of [soilTile(TileState.Plowed, cropOf('parsnip')), blockedTile(Blocker.Rock, 2), blockedTile(Blocker.ShippingBin)]) {
-      expect(planFor(tile, 'parsnip_seeds')).toEqual({ target: TARGET, intent: { kind: 'blocked', reason: null }, feedback: 'plant', energyCost: 0 });
+      expect(planFor(tile, 'parsnip_seeds')).toEqual({
+        target: TARGET,
+        intent: { kind: 'blocked', reason: 'Till the soil with the hoe first.' },
+        feedback: 'plant',
+        energyCost: 0,
+      });
     }
   });
 });
@@ -347,7 +354,8 @@ describe('harvestQuantity / describeIntent / isActionable', () => {
     expect(describeIntent({ kind: 'mine' })).toBe('Break rock');
     expect(describeIntent({ kind: 'chop' })).toBe('Chop stump');
     expect(describeIntent({ kind: 'untill' })).toBe('Clear soil');
-    expect(describeIntent({ kind: 'plant', cropId: 'cauliflower' })).toBe('Plant Cauliflower');
+    expect(describeIntent({ kind: 'scatter', cropId: 'cauliflower', tiles: [{ tx: 1, tz: 1 }] })).toBe('Scatter Cauliflower');
+    expect(describeIntent({ kind: 'scatter', cropId: 'wheat', tiles: [{ tx: 1, tz: 1 }, { tx: 2, tz: 1 }] })).toBe('Scatter Wheat ×2');
     expect(describeIntent({ kind: 'harvest', quantity: 2 })).toBe('Harvest');
     expect(describeIntent({ kind: 'clearCrop' })).toBe('Clear withered crop');
     expect(describeIntent({ kind: 'ship' })).toBe('Ship');
@@ -405,8 +413,23 @@ describe('selectors', () => {
   });
 
   it('stocks the seeds of every crop in season', () => {
-    expect(selectShopStock(BASE).map((item) => item.id)).toEqual(['parsnip_seeds', 'potato_seeds', 'cauliflower_seeds', 'strawberry_seeds']);
-    expect(selectShopStock(atDay(BASE, 56)).map((item) => item.id)).toEqual(['corn_seeds', 'pumpkin_seeds']);
+    // Field crops only: mushrooms and snozberries grow wild and are never sold.
+    expect(selectShopStock(BASE).map((item) => item.id)).toEqual([
+      'parsnip_seeds',
+      'potato_seeds',
+      'cauliflower_seeds',
+      'strawberry_seeds',
+      'carrot_seeds',
+      'spectraherb_seeds',
+    ]);
+    expect(selectShopStock(atDay(BASE, 56)).map((item) => item.id)).toEqual([
+      'corn_seeds',
+      'pumpkin_seeds',
+      'carrot_seeds',
+      'wheat_seeds',
+      'blackberry_seeds',
+      'spectraherb_seeds',
+    ]);
     expect(selectShopStock(atDay(BASE, 90))).toEqual([]);
     for (const item of selectShopStock(atDay(BASE, 30))) expect(item.kind).toBe('seed');
   });
@@ -570,10 +593,14 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
       v.equal('untilled tile', after, EMPTY_TILE);
       v.same('inventory', next.inventory, state.inventory);
       break;
-    case 'plant':
-      v.equal('planted on empty soil', before.crop, null);
-      v.equal('planted tile', after, { ...before, crop: createCropInstance(intent.cropId, state.time.absoluteDay) });
-      v.equal('seed consumed', count(next, seedItemId(intent.cropId)), count(state, seedItemId(intent.cropId)) - 1);
+    case 'scatter':
+      v.check(intent.tiles.length > 0, 'scatter plants at least one tile');
+      for (const coord of intent.tiles) {
+        const soilBefore = tileAt(state, coord);
+        v.equal('scattered on empty soil', soilBefore.crop, null);
+        v.equal('scattered tile', tileAt(next, coord), { ...soilBefore, crop: createCropInstance(intent.cropId, state.time.absoluteDay) });
+      }
+      v.equal('one seed per tile', count(next, seedItemId(intent.cropId)), count(state, seedItemId(intent.cropId)) - intent.tiles.length);
       break;
     case 'harvest': {
       const crop = before.crop;
@@ -641,7 +668,7 @@ describe('property: the planned outcome always matches what the reducer does', (
       }
       expect(violations.head()).toEqual([]);
       // The generator really exercised every branch.
-      for (const kind of ['till', 'water', 'refill', 'mine', 'chop', 'untill', 'plant', 'harvest', 'clearCrop', 'ship', 'sleep', 'blocked', 'silent'] as const) {
+      for (const kind of ['till', 'water', 'refill', 'mine', 'chop', 'untill', 'scatter', 'harvest', 'clearCrop', 'ship', 'sleep', 'blocked', 'silent'] as const) {
         expect(kinds.get(kind) ?? 0, `intent ${kind}`).toBeGreaterThan(10);
       }
       expect(nullTargets).toBeGreaterThan(10);

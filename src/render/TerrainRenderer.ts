@@ -12,7 +12,11 @@
  *   colour jitter plus a soft low-frequency field make the grid read as tiles without drawn
  *   lines. The ground shader paints the slab walls earth-brown with a little fake occlusion, so
  *   height steps (soil beds, the pond bank, the edge of the farm) read as cut earth.
+ * - Shade (world/shade.ts): grass on shaded tiles, and the tufts on it, blend toward a cool
+ *   blue-green and darken a little, deepest where the tile's neighbours are shaded too, so the
+ *   patches where wild crops grow read as soft shadow rather than a painted stripe.
  * - Furrows, tufts, flowers, rocks and stumps: global InstanceSlotMaps keyed by tileIndex.
+ *   Tufts and flowers make way for a crop growing wild on their grass tile.
  * - Pond: tile-sized water quads rippled in the vertex shader (sharedUniforms.uTime), tinted
  *   deeper away from the shore, plus pebbles along the bank. Rebuilt only when a water tile
  *   changes, which in normal play happens only on a full rebuild.
@@ -40,6 +44,7 @@ import {
   tileIndex,
   type ChunkRect,
 } from '../world/grid';
+import { isShadedTile } from '../world/shade';
 import { HEIGHTS } from './constants';
 import { InstanceSlotMap } from './InstanceSlotMap';
 import { createFlatMaterial, createSwayMaterial, sharedUniforms } from './materials';
@@ -98,6 +103,18 @@ const POND = {
   depthRings: 3,
   /** How much darker the pond bed gets at full depth. */
   bedDarkening: 0.3,
+} as const;
+
+/** Cool tint of shaded grass (see world/shade.ts). */
+const SHADE_TINT = {
+  /** Soft blue-green the grass blends toward. */
+  color: 0x5c9a92,
+  /** Blend toward `color` at full shade. */
+  mix: 0.3,
+  /** Brightness multiplier at full shade. */
+  darken: 0.86,
+  /** Share of full shade on a shaded tile with no shaded neighbours; enclosed tiles reach 1. */
+  edge: 0.6,
 } as const;
 
 /** Independent cosmetic hash channels (combined with tile coordinates and Salt.Cosmetic). */
@@ -162,6 +179,7 @@ const WATER_DEEP = new THREE.Color(PALETTE.waterDeep);
 const ROCK_LIGHT = new THREE.Color(PALETTE.rock);
 const ROCK_DARK = new THREE.Color(PALETTE.rockDark);
 const TUFT_GREEN = new THREE.Color(PALETTE.grassTuft);
+const SHADE_COLOR = new THREE.Color(SHADE_TINT.color);
 
 const UP = new THREE.Vector3(0, 1, 0);
 /** Collapses an instance to nothing (only used for tiles missing from a malformed chunk). */
@@ -251,6 +269,32 @@ function soilColor(tx: number, tz: number, wet: boolean, target: THREE.Color): T
 function pondBedColor(tx: number, tz: number, depth: number, target: THREE.Color): THREE.Color {
   const shade = (1 - POND.bedDarkening * depth) * (0.96 + 0.08 * cosmetic(tx, tz, Channel.BedShade));
   return target.copy(POND_BED).multiplyScalar(shade);
+}
+
+/**
+ * How shaded a tile looks, in [0, 1]: 0 in the open, SHADE_TINT.edge on a lone shaded tile,
+ * rising to 1 as its eight neighbours (orthogonal ones weighted double) are shaded too. Tiles
+ * beyond the grid count as shaded so the farm's edge does not show a lighter rim.
+ */
+function shadeAmount(grid: GridSpec, tx: number, tz: number): number {
+  if (!isShadedTile(grid, tx, tz)) return 0;
+  let weight = 0;
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dz === 0) continue;
+      const x = tx + dx;
+      const z = tz + dz;
+      if (!inBounds(grid, x, z) || isShadedTile(grid, x, z)) weight += dx === 0 || dz === 0 ? 2 : 1;
+    }
+  }
+  return SHADE_TINT.edge + (1 - SHADE_TINT.edge) * (weight / 12);
+}
+
+/** Blends `target` toward the cool shade colour and darkens it by `amount` ∈ [0, 1]. */
+function applyShade(amount: number, target: THREE.Color): THREE.Color {
+  if (amount <= 0) return target;
+  target.lerp(SHADE_COLOR, SHADE_TINT.mix * amount);
+  return target.multiplyScalar(1 - (1 - SHADE_TINT.darken) * amount);
 }
 
 function furrowColor(tx: number, tz: number, wet: boolean, target: THREE.Color): THREE.Color {
@@ -897,7 +941,7 @@ export class TerrainRenderer implements RenderSystem {
       pondBedColor(tx, tz, 0, scratchColor);
     } else {
       top = HEIGHTS.grassTop;
-      grassColor(tx, tz, scratchColor);
+      applyShade(shadeAmount(this.grid, tx, tz), grassColor(tx, tz, scratchColor));
     }
     const ts = this.grid.tileSize;
     scratchMatrix.makeScale(ts, 1, ts).setPosition(tileCenterX(this.grid, tx), top, tileCenterZ(this.grid, tz));
@@ -920,16 +964,22 @@ export class TerrainRenderer implements RenderSystem {
     );
   }
 
-  /** Tufts and flowers live on a fixed subset of unplowed tiles and return when soil reverts. */
+  /**
+   * Tufts and flowers live on a fixed subset of unplowed tiles and return when soil reverts. A
+   * crop growing wild on the grass takes the tile over, so they step aside until it is gone.
+   */
   private syncMeadow(key: number, tx: number, tz: number, tile: Tile): void {
-    const unplowed = tile.state === TileState.Unplowed;
+    const meadow = tile.state === TileState.Unplowed && tile.crop === null;
     const { tufts, flowers } = this.layers;
-    if (unplowed && hasTuft(tx, tz)) {
-      if (!tufts.has(key)) tufts.set(key, tuftMatrix(this.grid, tx, tz, scratchMatrix), tuftColor(tx, tz, scratchColor));
+    if (meadow && hasTuft(tx, tz)) {
+      if (!tufts.has(key)) {
+        const color = applyShade(shadeAmount(this.grid, tx, tz), tuftColor(tx, tz, scratchColor));
+        tufts.set(key, tuftMatrix(this.grid, tx, tz, scratchMatrix), color);
+      }
     } else {
       tufts.remove(key);
     }
-    if (unplowed && hasFlower(tx, tz)) {
+    if (meadow && hasFlower(tx, tz)) {
       if (!flowers.has(key)) {
         flowers.set(key, flowerMatrix(this.grid, tx, tz, scratchMatrix), flowerColor(tx, tz, scratchColor));
       }

@@ -1,13 +1,13 @@
 /**
  * Read-only derivations from GameState, shared by reducers, render systems and the HUD.
  */
-import { PLAYER, TIME } from '../config';
+import { FARMING, PLAYER, TIME } from '../config';
 import type { GameState, Tile, TileCoord, Weather } from '../core/types';
 import { cropsInSeason, seedItemId } from '../farming/crops';
 import { getItem, type ItemDefinition, type SeedItem } from '../items/items';
 import { formatClock, formatDate } from '../time/clock';
 import { rollWeather } from '../time/weather';
-import { forwardTile } from '../world/grid';
+import { DIRECTION_STEPS, forwardTile, inBounds } from '../world/grid';
 import { getTile } from '../world/tiles';
 import { selectedStack } from './inventory';
 
@@ -18,6 +18,30 @@ import { selectedStack } from './inventory';
 export function selectTargetTile(state: GameState): TileCoord | null {
   const { player, world } = state;
   return forwardTile(world.grid, player, player.facing, PLAYER.toolReachTiles);
+}
+
+/**
+ * The patch a handful of scattered seeds covers: FARMING.scatter.depth rows starting at the
+ * active tile and running away from the player, FARMING.scatter.width tiles wide, centred on
+ * the facing line. Out-of-bounds tiles are dropped. Ordered nearest row first and, within a
+ * row, centre first, so a partial handful lands closest to the player.
+ */
+export function selectScatterPatch(state: GameState): readonly TileCoord[] {
+  const { player, world } = state;
+  const { dx, dz } = DIRECTION_STEPS[player.facing];
+  const half = Math.floor(FARMING.scatter.width / 2);
+  const laterals: number[] = [0];
+  for (let k = 1; k <= half; k++) laterals.push(-k, k);
+  const patch: TileCoord[] = [];
+  for (let row = 1; row <= FARMING.scatter.depth; row++) {
+    for (const lateral of laterals) {
+      // The lateral axis is the facing vector rotated a quarter turn: (dx, dz) -> (-dz, dx).
+      const tx = player.tx + dx * row - dz * lateral;
+      const tz = player.tz + dz * row + dx * lateral;
+      if (inBounds(world.grid, tx, tz)) patch.push({ tx, tz });
+    }
+  }
+  return patch;
 }
 
 export function selectTargetTileData(state: GameState): Tile | null {
@@ -56,13 +80,15 @@ export function selectPendingShipmentValue(state: GameState): number {
   return total;
 }
 
-/** Seeds the shop sells today: everything that can grow in the current season. */
+/** Seeds the shop sells today: every field crop that can grow in the current season. */
 export function selectShopStock(state: GameState): readonly SeedItem[] {
-  return cropsInSeason(state.time.season).map((crop) => {
-    const item = getItem(seedItemId(crop.id));
-    if (item.kind !== 'seed') throw new Error(`Item ${item.id} is not a seed`);
-    return item;
-  });
+  return cropsInSeason(state.time.season)
+    .filter((crop) => crop.habitat === 'field')
+    .map((crop) => {
+      const item = getItem(seedItemId(crop.id));
+      if (item.kind !== 'seed') throw new Error(`Item ${item.id} is not a seed`);
+      return item;
+    });
 }
 
 /** Minutes left before the player passes out. */

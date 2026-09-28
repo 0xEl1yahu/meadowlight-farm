@@ -6,6 +6,7 @@
  * Blocked tile must carry a blocker with the hit points the tools expect.
  */
 import { describe, expect, it } from 'vitest';
+import { isShadedTile } from '../src/world/shade';
 import { LAYOUT, PLAYER, TOOLS, WORLD, type FarmLayout } from '../src/config';
 import { Blocker, DIRECTIONS, TileState, type WorldState } from '../src/core/types';
 import { createInitialState } from '../src/state/initialState';
@@ -52,10 +53,17 @@ describe('generateWorld determinism', () => {
     }
   });
 
-  it('generateTile agrees with every tile of the generated world', () => {
+  it('generateTile agrees with every tile of the generated world, apart from wild shade crops', () => {
     const world = generateWorld(WORLD.seed, grid);
     forEachTile(world, (tile, tx, tz) => {
-      expect(generateTile(WORLD.seed, LAYOUT, tx, tz)).toEqual(tile);
+      const expected = generateTile(WORLD.seed, LAYOUT, tx, tz);
+      if (tile.crop !== null && tile.crop.wild) {
+        expect(expected).toBe(EMPTY_TILE);
+        expect(isShadedTile(grid, tx, tz)).toBe(true);
+        expect({ ...tile, crop: null }).toEqual(expected);
+      } else {
+        expect(tile).toEqual(expected);
+      }
     });
   });
 });
@@ -144,9 +152,10 @@ describe('debris', () => {
   it.each(SEEDS)('gives every Blocked tile a blocker with the correct hit points (seed %i)', (seed) => {
     const world = generateWorld(seed, grid);
     forEachTile(world, (tile) => {
-      expect(tile.crop).toBeNull();
       if (tile.state !== TileState.Blocked) {
-        expect(tile).toBe(EMPTY_TILE);
+        // Open ground is plain grass, or grass with a wild shade crop on it.
+        expect(tile.crop === null ? tile : { ...tile, crop: null }).toEqual(EMPTY_TILE);
+        if (tile.crop !== null) expect(tile.crop.wild).toBe(true);
         return;
       }
       switch (tile.blocker) {

@@ -10,7 +10,7 @@
  *   code erasable (no TypeScript runtime enums) and JSON-serialisable.
  */
 
-export const SAVE_VERSION = 1 as const;
+export const SAVE_VERSION = 2 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -88,6 +88,12 @@ export const CROP_IDS = [
   'melon',
   'corn',
   'pumpkin',
+  'carrot',
+  'wheat',
+  'blackberry',
+  'spectraherb',
+  'mushroom',
+  'snozberry',
 ] as const;
 export type CropId = (typeof CROP_IDS)[number];
 
@@ -156,6 +162,8 @@ export interface CropInstance {
   readonly dead: boolean;
   readonly plantedDay: number;
   readonly harvestCount: number;
+  /** Sprouted on its own in the shade (see farming/wild.ts): grows on grass without water. */
+  readonly wild: boolean;
 }
 
 export interface Tile {

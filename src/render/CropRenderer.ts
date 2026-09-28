@@ -7,18 +7,23 @@
  *   tile shows one foliage part, chosen by form and growth stage, plus at most one accent part:
  *   the soil mound of a freshly sown seed, or the produce once the crop is mature. When the
  *   stage bucket changes, the tile's key moves from one foliage map to another.
- * - Stage → model: stage 0 is a seedling in a soil mound, stage 1 a sprout, then the form's
- *   growing foliage until 70 % of the stages are done, then the form's mature foliage (also
- *   used by regrowing crops between harvests); mature crops add their produce. Growing and
- *   mature foliage scale uniformly with growthProgress (0.4 → 1) × the crop's visual height,
- *   so every stage reads differently. Attached produce (head, berries, cob) shares the foliage
- *   transform and sway; ground produce (bulb, gourd) sits on the soil, nudged toward the
+ * - Stage → model: stage 0 is a seedling (in a soil mound when sown), stage 1 a sprout, then
+ *   the form's growing foliage until 70 % of the stages are done, then the form's mature
+ *   foliage (also used by regrowing crops between harvests); mature crops add their produce,
+ *   unless the plant itself is the harvest (produce 'none'). Fungi skip the seedling and
+ *   sprout: a mushroom is a small button from the day it appears. Growing and mature foliage
+ *   scale uniformly with growthProgress (0.4 → 1) × the crop's visual height, so every stage
+ *   reads differently. Attached produce (head, berries, cob, ears) shares the foliage
+ *   transform and sway; ground produce (bulb, gourd) sits on the ground, nudged toward the
  *   camera when a canopy would hide it.
- * - A separate droplet map marks thirsty crops: every living, not-yet-mature crop on dry
- *   (Plowed) soil. Droplets bob and spin in the vertex shader, so they cost nothing per frame.
+ * - Wild crops (shade habitat) grow on untilled grass: they stand on HEIGHTS.grassTop, were
+ *   never sown (no soil mound) and need no water (never dry-tinted, never thirsty).
+ * - A separate droplet map marks thirsty crops: every living, not-yet-mature, non-wild crop on
+ *   dry (Plowed) soil. Droplets bob and spin in the vertex shader, so they cost nothing per
+ *   frame.
  *
- * Conditions: watered crops show their full colour; dry growing crops are yellowed (more so
- * after consecutive dry nights) and slightly wilted; dead crops droop, lean and turn a
+ * Conditions: watered crops show their full colour; dry growing field crops are yellowed (more
+ * so after consecutive dry nights) and slightly wilted; dead crops droop, lean and turn a
  * desaturated brown-grey, and lose their produce.
  *
  * Diffing and animation
@@ -51,7 +56,12 @@ import {
   createBushGrowingGeometry,
   createBushMatureGeometry,
   createCobGeometry,
+  createEarsGeometry,
+  createFungusGrowingGeometry,
+  createFungusMatureGeometry,
   createGourdGeometry,
+  createGrainGrowingGeometry,
+  createGrainMatureGeometry,
   createHeadGeometry,
   createLeafyGrowingGeometry,
   createLeafyMatureGeometry,
@@ -86,10 +96,15 @@ const PART_IDS = [
   'stalkMature',
   'vineGrowing',
   'vineMature',
+  'grainGrowing',
+  'grainMature',
+  'fungusGrowing',
+  'fungusMature',
   'bulb',
   'head',
   'berries',
   'cob',
+  'ears',
   'gourd',
   'droplet',
 ] as const;
@@ -120,10 +135,16 @@ const PART_SPECS: Readonly<Record<PartId, PartSpec>> = {
   stalkMature: { role: 'foliage', build: createStalkMatureGeometry, swayReach: 0.07 },
   vineGrowing: { role: 'foliage', build: createVineGrowingGeometry, swayReach: 0.018 },
   vineMature: { role: 'foliage', build: createVineMatureGeometry, swayReach: 0.02 },
+  grainGrowing: { role: 'foliage', build: createGrainGrowingGeometry, swayReach: 0.04 },
+  grainMature: { role: 'foliage', build: createGrainMatureGeometry, swayReach: 0.06 },
+  // Mushrooms are firm: a barely visible tremble rather than a sway.
+  fungusGrowing: { role: 'foliage', build: createFungusGrowingGeometry, swayReach: 0.003, roughness: 0.75 },
+  fungusMature: { role: 'foliage', build: createFungusMatureGeometry, swayReach: 0.005, roughness: 0.75 },
   bulb: { role: 'produce', build: createBulbGeometry, roughness: 0.8 },
   head: { role: 'produce', build: createHeadGeometry, swayWith: 'leafyMature', roughness: 0.85 },
   berries: { role: 'produce', build: createBerryClusterGeometry, swayWith: 'bushMature', roughness: 0.45 },
   cob: { role: 'produce', build: createCobGeometry, swayWith: 'stalkMature', roughness: 0.7 },
+  ears: { role: 'produce', build: createEarsGeometry, swayWith: 'grainMature', roughness: 0.75 },
   gourd: { role: 'produce', build: createGourdGeometry, roughness: 0.6 },
   droplet: { role: 'indicator', build: createThirstDropletGeometry },
 };
@@ -143,25 +164,42 @@ interface Part {
   dirty: boolean;
 }
 
+interface FormParts {
+  readonly growing: PartId;
+  readonly mature: PartId;
+  /** Whether stages 0 and 1 use the shared seedling and sprout models (fungi go straight to growing). */
+  readonly seedlings: boolean;
+}
+
 /** Foliage parts of each form. */
-const FORM_PARTS: Readonly<Record<CropForm, { readonly growing: PartId; readonly mature: PartId }>> = {
-  leafy: { growing: 'leafyGrowing', mature: 'leafyMature' },
-  bush: { growing: 'bushGrowing', mature: 'bushMature' },
-  stalk: { growing: 'stalkGrowing', mature: 'stalkMature' },
-  vine: { growing: 'vineGrowing', mature: 'vineMature' },
+const FORM_PARTS: Readonly<Record<CropForm, FormParts>> = {
+  leafy: { growing: 'leafyGrowing', mature: 'leafyMature', seedlings: true },
+  bush: { growing: 'bushGrowing', mature: 'bushMature', seedlings: true },
+  stalk: { growing: 'stalkGrowing', mature: 'stalkMature', seedlings: true },
+  vine: { growing: 'vineGrowing', mature: 'vineMature', seedlings: true },
+  grain: { growing: 'grainGrowing', mature: 'grainMature', seedlings: true },
+  fungus: { growing: 'fungusGrowing', mature: 'fungusMature', seedlings: false },
 };
+
+interface ProducePart {
+  readonly part: PartId;
+  readonly placement: 'attached' | 'ground';
+}
 
 /**
  * Produce parts. `attached` produce is authored on its canonical foliage (head on the leafy
- * rosette, berries in the bush, cob on the stalk) and shares the foliage transform; `ground`
- * produce rests on the soil with its own yaw.
+ * rosette, berries in the bush, cob on the stalk, ears on the grain) and shares the foliage
+ * transform; `ground` produce rests on the ground with its own yaw. null: the mature plant is
+ * itself the harvest and shows no produce part.
  */
-const PRODUCE_PARTS: Readonly<Record<ProduceForm, { readonly part: PartId; readonly placement: 'attached' | 'ground' }>> = {
+const PRODUCE_PARTS: Readonly<Record<ProduceForm, ProducePart | null>> = {
   bulb: { part: 'bulb', placement: 'ground' },
   head: { part: 'head', placement: 'attached' },
   berries: { part: 'berries', placement: 'attached' },
   cob: { part: 'cob', placement: 'attached' },
+  ears: { part: 'ears', placement: 'attached' },
   gourd: { part: 'gourd', placement: 'ground' },
+  none: null,
 };
 
 /** How far ground produce slides toward the camera (× crop scale) so the canopy can't hide it. */
@@ -170,6 +208,8 @@ const GROUND_NUDGE: Readonly<Record<CropForm, number>> = {
   bush: 0.3,
   stalk: 0.14,
   vine: 0.12,
+  grain: 0.1,
+  fungus: 0.2,
 };
 
 // ---------------------------------------------------------------------------
@@ -385,8 +425,10 @@ function sameCrop(a: CropInstance, b: CropInstance): boolean {
 function foliageBucket(def: CropDefinition, crop: CropInstance): FoliageBucket {
   const stages = stageCount(def);
   if (crop.stage >= stages || crop.regrowing) return 'mature';
-  if (crop.stage === 0) return 'seedling';
-  if (crop.stage === 1) return 'sprout';
+  if (FORM_PARTS[def.visual.form].seedlings) {
+    if (crop.stage === 0) return 'seedling';
+    if (crop.stage === 1) return 'sprout';
+  }
   return crop.stage / stages >= LOOK.matureFoliageFraction ? 'mature' : 'growing';
 }
 
@@ -724,7 +766,10 @@ export class CropRenderer implements RenderSystem {
     // Placement ------------------------------------------------------------
     const x = tileCenterX(grid, tx) + (cosmetic(tx, tz, day, Channel.OffsetX) * 2 - 1) * LOOK.placementJitter;
     const z = tileCenterZ(grid, tz) + (cosmetic(tx, tz, day, Channel.OffsetZ) * 2 - 1) * LOOK.placementJitter;
-    look.position.set(x, HEIGHTS.soilTop, z);
+    // Wild crops stand on untilled grass; everything else on the sunken soil.
+    const untilled = tile.state === TileState.Unplowed;
+    const ground = untilled ? HEIGHTS.grassTop : HEIGHTS.soilTop;
+    look.position.set(x, ground, z);
     look.quaternion.setFromAxisAngle(UP, cosmetic(tx, tz, day, Channel.Yaw) * TAU);
 
     // Foliage model and scale ------------------------------------------------
@@ -746,7 +791,8 @@ export class CropRenderer implements RenderSystem {
     }
     look.foliageScale.setScalar(scale);
 
-    const dry = !dead && !mature && tile.state === TileState.Plowed;
+    // Wild crops need no water, so they never yellow, wilt or ask for a drink.
+    const dry = !dead && !mature && !crop.wild && tile.state === TileState.Plowed;
     const dryNights = Math.min(crop.dryDays, LOOK.maxDryNights);
     if (dry) look.foliageScale.y *= 1 - LOOK.wiltPerNight * dryNights;
     if (dead) {
@@ -766,16 +812,17 @@ export class CropRenderer implements RenderSystem {
       if (dry) look.foliageColor.lerp(DRY_TINT, LOOK.dryTintBase + LOOK.dryTintPerNight * dryNights);
     }
 
-    // Accent: soil mound of a fresh seed, or the produce of a mature crop ------
+    // Accent: soil mound of a freshly sown seed, or the produce of a mature crop -
     look.accent = null;
-    if (crop.stage === 0 && !crop.regrowing) {
+    const produce = PRODUCE_PARTS[visual.produce];
+    const sown = !crop.wild && !untilled && forms.seedlings;
+    if (crop.stage === 0 && !crop.regrowing && sown) {
       look.accent = 'soilMound';
       look.accentPosition.copy(look.position);
       look.accentQuaternion.setFromAxisAngle(UP, cosmetic(tx, tz, day, Channel.MoundYaw) * TAU);
       look.accentScale.setScalar(0.92 + 0.16 * cosmetic(tx, tz, day, Channel.MoundSize));
       look.accentColor.copy(tile.state === TileState.Watered ? SOIL_WET : SOIL_DRY);
-    } else if (mature) {
-      const produce = PRODUCE_PARTS[visual.produce];
+    } else if (mature && produce !== null) {
       look.accent = produce.part;
       look.accentScale.setScalar(cropScale);
       if (produce.placement === 'attached') {
@@ -783,7 +830,7 @@ export class CropRenderer implements RenderSystem {
         look.accentQuaternion.copy(look.quaternion);
       } else {
         const nudge = GROUND_NUDGE[visual.form] * cropScale;
-        look.accentPosition.set(x + VIEW_X * nudge, HEIGHTS.soilTop, z + VIEW_Z * nudge);
+        look.accentPosition.set(x + VIEW_X * nudge, ground, z + VIEW_Z * nudge);
         look.accentQuaternion.setFromAxisAngle(UP, cosmetic(tx, tz, day, Channel.ProduceYaw) * TAU);
       }
       look.accentColor
@@ -795,7 +842,7 @@ export class CropRenderer implements RenderSystem {
     look.thirsty = dry;
     if (dry) {
       const top = Math.max(LOOK.dropletMinTop, this.parts[look.foliage].top * look.foliageScale.y);
-      look.dropletPosition.set(x, HEIGHTS.soilTop + top + LOOK.dropletClearance, z);
+      look.dropletPosition.set(x, ground + top + LOOK.dropletClearance, z);
     }
     return look;
   }

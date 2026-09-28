@@ -45,7 +45,9 @@ function isValidCrop(v: unknown): v is CropInstance {
     isBool(v.regrowing) &&
     isBool(v.dead) &&
     isIntIn(v.plantedDay, 0, Number.MAX_SAFE_INTEGER) &&
-    isIntIn(v.harvestCount, 0, Number.MAX_SAFE_INTEGER)
+    isIntIn(v.harvestCount, 0, Number.MAX_SAFE_INTEGER) &&
+    isBool(v.wild) &&
+    (!v.wild || def.habitat === 'shade')
   );
 }
 
@@ -56,7 +58,8 @@ function isValidTile(v: unknown): v is Tile {
   if ((v.state === TileState.Blocked) !== (v.blocker !== Blocker.None)) return false;
   if (!isIntIn(v.blockerHp, 0, 100)) return false;
   if (v.crop === null) return true;
-  return (v.state === TileState.Plowed || v.state === TileState.Watered) && isValidCrop(v.crop);
+  if (!isValidCrop(v.crop)) return false;
+  return v.state === TileState.Plowed || v.state === TileState.Watered || (v.state === TileState.Unplowed && v.crop.wild);
 }
 
 function isValidGrid(v: unknown): v is GridSpec {
@@ -201,9 +204,28 @@ export function serializeGame(state: GameState): string {
   return JSON.stringify(state);
 }
 
+/**
+ * Upgrades older save formats to the current one. Version 1 predates wild crops: every crop
+ * it holds was sown by the player, so each gains `wild: false`. Unknown shapes pass through
+ * untouched and are then rejected by the validator.
+ */
+export function migrateSave(value: unknown): unknown {
+  if (!isObj(value) || value.version !== 1) return value;
+  const world = value.world;
+  if (!isObj(world) || !Array.isArray(world.chunks)) return value;
+  const chunks = world.chunks.map((chunk: unknown) => {
+    if (!isObj(chunk) || !Array.isArray(chunk.tiles)) return chunk;
+    const tiles = chunk.tiles.map((tile: unknown) =>
+      isObj(tile) && isObj(tile.crop) ? { ...tile, crop: { ...tile.crop, wild: false } } : tile,
+    );
+    return { ...chunk, tiles };
+  });
+  return { ...value, version: SAVE_VERSION, world: { ...world, chunks } };
+}
+
 export function deserializeGame(json: string): GameState | null {
   try {
-    const parsed: unknown = JSON.parse(json);
+    const parsed: unknown = migrateSave(JSON.parse(json));
     if (!isValidGameState(parsed)) return null;
     return { ...parsed, ui: { ...parsed.ui, shopOpen: false, paused: false } };
   } catch {

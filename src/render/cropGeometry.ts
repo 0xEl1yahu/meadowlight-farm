@@ -19,6 +19,8 @@
  * - Vertex colours are linear-space multipliers of the per-instance colour. White takes the full
  *   instance colour (the foliage or produce colour); accents such as a corn husk or a gourd stem
  *   are darker multipliers of it. A soft vertical shade bakes contact darkening toward the base.
+ *   Mushrooms invert this: the instance colour is the pale stem and the cap bakes a darker,
+ *   speckled multiplier, so the stem always reads lighter than the cap.
  * - Leaf headings follow Object3D.rotateY: heading 0 points along +X, heading θ points along
  *   (cos θ, 0, −sin θ).
  */
@@ -42,6 +44,18 @@ const GOURD_STEM_TINT = 0x7d6b4c;
 const HEAD_STALK_TINT = 0xb9dfa4;
 /** Soil clods beside a seed mound, a shade darker than the mound itself. */
 const CLOD_TINT = 0xcfc5b8;
+/** Wheat straw: lifts the grain's green toward a ripening yellow-green. */
+const STRAW_TINT = 0xfff2c4;
+/** Every other wheat grain, a touch deeper so the ear reads as separate kernels. */
+const GRAIN_SHADE_TINT = 0xf0dfbc;
+/** Wheat awns: paler than the grains so the bristles catch the light. */
+const AWN_TINT = 0xfff8e6;
+/** Mushroom stem: close to the full (pale) instance colour. */
+const FUNGUS_STEM_TINT = 0xfff6ec;
+/** Mushroom cap: a darker, warmer multiplier of the instance colour. */
+const FUNGUS_CAP_TINT = 0xae8670;
+/** Pale speckles on the mushroom cap. */
+const FUNGUS_SPOT_TINT = 0xf2e4d4;
 
 const TAU = Math.PI * 2;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -325,6 +339,46 @@ export const BERRY_RADIUS = 0.055;
 /** Height of the corn stalk prism in the mature stalk (tassel excluded). */
 const STALK_HEIGHT = 1;
 
+/** Unit vector tilted `lean` radians away from +Y toward `heading`. */
+function leanDirection(heading: number, lean: number): THREE.Vector3 {
+  const out = radial(heading, Math.sin(lean));
+  return v(out.x, Math.cos(lean), out.z);
+}
+
+/** One straight, slightly leaning wheat straw of the mature grain clump. */
+interface Culm {
+  readonly base: THREE.Vector3;
+  readonly tip: THREE.Vector3;
+  /** Axis of the ear: the head nods a little further out than the straw. */
+  readonly nod: THREE.Vector3;
+}
+
+/** Straws of the mature grain clump, fanning out from the root (tips 0.74–0.9 high). */
+const GRAIN_CULMS: readonly Culm[] = Array.from({ length: 6 }, (_, i): Culm => {
+  const heading = 0.4 + i * GOLDEN_ANGLE;
+  const foot = radial(heading, 0.022 + 0.01 * (i % 3));
+  const lean = 0.09 + 0.05 * (i % 3);
+  const length = 0.9 - 0.035 * ((i * 2) % 5);
+  const base = v(foot.x, 0, foot.z);
+  return {
+    base,
+    tip: base.clone().addScaledVector(leanDirection(heading, lean), length),
+    nod: leanDirection(heading, lean + 0.22),
+  };
+});
+
+/** Wheat ear layout: grain rows up the rachis and the size of one grain. */
+const EAR = {
+  rows: 4,
+  rowSpacing: 0.03,
+  firstRow: 0.02,
+  grainLength: 0.034,
+  grainWidth: 0.017,
+  grainDepth: 0.013,
+  /** Outward tilt of each grain from the rachis (radians). */
+  grainTilt: 0.38,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Builders: generic
 // ---------------------------------------------------------------------------
@@ -591,6 +645,147 @@ export function createVineMatureGeometry(): THREE.BufferGeometry {
   );
 }
 
+/** Young wheat: a clump of eight thin, tapered grass blades (~0.58 tall) around a short sheath. */
+export function createGrainGrowingGeometry(): THREE.BufferGeometry {
+  const pieces = [piece(new THREE.ConeGeometry(0.028, 0.08, 5).translate(0, 0.04, 0))];
+  for (let i = 0; i < 8; i++) {
+    const yaw = 0.2 + i * GOLDEN_ANGLE;
+    pieces.push(
+      leaf({
+        length: 0.62 - 0.04 * (i % 4),
+        width: 0.048,
+        pitch: 1.34 - 0.08 * (i % 3),
+        droop: 0.28 + 0.12 * (i % 2),
+        widest: 0.28,
+        thickness: 0.012,
+        yaw,
+        ...radial(yaw, 0.02),
+      }),
+    );
+  }
+  return assemble(pieces, { floor: 0.72, height: 0.3 });
+}
+
+/**
+ * Mature wheat: six straw-tinted culms (tips 0.74–0.9 high, see GRAIN_CULMS) over five low
+ * arching blades. The ears (createEarsGeometry) sit exactly on the culm tips.
+ */
+export function createGrainMatureGeometry(): THREE.BufferGeometry {
+  const pieces = [piece(new THREE.ConeGeometry(0.034, 0.1, 5).translate(0, 0.05, 0))];
+  for (const culm of GRAIN_CULMS) pieces.push(stem(culm.base, culm.tip, 0.011, 0.007, 4, STRAW_TINT));
+  for (let i = 0; i < 5; i++) {
+    const yaw = 1.1 + (i * TAU) / 5;
+    pieces.push(
+      leaf({
+        length: 0.38 - 0.03 * (i % 2),
+        width: 0.05,
+        pitch: 0.95,
+        droop: 0.65,
+        widest: 0.3,
+        thickness: 0.012,
+        yaw,
+        y: 0.05 + 0.03 * (i % 3),
+        ...radial(yaw, 0.022),
+      }),
+    );
+  }
+  return assemble(pieces, { floor: 0.7, height: 0.35 });
+}
+
+interface MushroomSpec {
+  /** Foot of the stem on the ground. */
+  readonly x: number;
+  readonly z: number;
+  readonly stemHeight: number;
+  readonly stemRadius: number;
+  readonly capRadius: number;
+  readonly capHeight: number;
+  /** Lean of the whole mushroom away from vertical (radians), toward `heading`. */
+  readonly tilt: number;
+  readonly heading: number;
+}
+
+/**
+ * Recolours scattered faces on the upper part of a cap with `tint` (every `stride`-th face
+ * above `minY`, offset by `phase`), so flat shading shows a few pale speckles.
+ */
+function speckle(geometry: THREE.BufferGeometry, tint: THREE.ColorRepresentation, minY: number, stride: number, phase: number): void {
+  const position = geometry.getAttribute('position');
+  const color = geometry.getAttribute('color');
+  const spot = new THREE.Color(tint);
+  let upper = 0;
+  for (let face = 0; face * 3 < position.count; face++) {
+    const i = face * 3;
+    const centroidY = (position.getY(i) + position.getY(i + 1) + position.getY(i + 2)) / 3;
+    if (centroidY < minY) continue;
+    if ((upper++ + phase) % stride !== 0) continue;
+    for (let k = 0; k < 3; k++) color.setXYZ(i + k, spot.r, spot.g, spot.b);
+  }
+  color.needsUpdate = true;
+}
+
+/**
+ * One mushroom: a six-sided tapered stem (FUNGUS_STEM_TINT) under a closed seven-sided domed
+ * cap (FUNGUS_CAP_TINT with pale speckles), both leaning along the spec's tilt.
+ */
+function mushroomPieces(spec: MushroomSpec, phase: number): THREE.BufferGeometry[] {
+  const axis = leanDirection(spec.heading, spec.tilt);
+  const foot = v(spec.x, 0, spec.z);
+  const top = foot.clone().addScaledVector(axis, spec.stemHeight);
+  const r = spec.capRadius;
+  const h = spec.capHeight;
+  const profile = [
+    new THREE.Vector2(0, h * 0.12),
+    new THREE.Vector2(r * 0.9, 0),
+    new THREE.Vector2(r, h * 0.2),
+    new THREE.Vector2(r * 0.86, h * 0.6),
+    new THREE.Vector2(r * 0.48, h * 0.92),
+    new THREE.Vector2(0, h),
+  ];
+  const cap = piece(new THREE.LatheGeometry(profile, 7), FUNGUS_CAP_TINT);
+  speckle(cap, FUNGUS_SPOT_TINT, h * 0.45, 4, phase);
+  cap.rotateY(spec.heading);
+  cap.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, axis));
+  // Sink the cap onto the stem so the gills hide the stem's top.
+  const seat = top.clone().addScaledVector(axis, -h * 0.1);
+  cap.translate(seat.x, seat.y, seat.z);
+  return [stem(foot, top, spec.stemRadius * 1.12, spec.stemRadius * 0.85, 6, FUNGUS_STEM_TINT), cap];
+}
+
+/** Young fungus: one button mushroom (~0.13 tall) with a round cap nearly closed over its stem. */
+export function createFungusGrowingGeometry(): THREE.BufferGeometry {
+  return assemble(
+    mushroomPieces({ x: 0, z: 0, stemHeight: 0.06, stemRadius: 0.028, capRadius: 0.064, capHeight: 0.072, tilt: 0, heading: 0 }, 0),
+    { floor: 0.8, height: 0.05 },
+  );
+}
+
+/**
+ * Mature fungus: a cluster of three mushrooms (large, medium, small; ~0.23 tall, ~0.4 wide),
+ * the smaller two leaning out from under the large cap.
+ */
+export function createFungusMatureGeometry(): THREE.BufferGeometry {
+  const medium = radial(0.35, 0.13);
+  const small = radial(4.3, 0.12);
+  return assemble(
+    [
+      ...mushroomPieces(
+        { x: -0.02, z: 0.01, stemHeight: 0.15, stemRadius: 0.03, capRadius: 0.11, capHeight: 0.075, tilt: 0.06, heading: 2.4 },
+        0,
+      ),
+      ...mushroomPieces(
+        { ...medium, stemHeight: 0.09, stemRadius: 0.022, capRadius: 0.074, capHeight: 0.055, tilt: 0.24, heading: 0.35 },
+        1,
+      ),
+      ...mushroomPieces(
+        { ...small, stemHeight: 0.05, stemRadius: 0.016, capRadius: 0.05, capHeight: 0.042, tilt: 0.3, heading: 4.3 },
+        2,
+      ),
+    ],
+    { floor: 0.8, height: 0.06 },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Builders: produce
 // ---------------------------------------------------------------------------
@@ -733,6 +928,46 @@ export function createGourdGeometry(): THREE.BufferGeometry {
     [piece(body), stem(v(0, 0.2, 0), v(0.028, 0.285, 0.012), 0.022, 0.014, 5, GOURD_STEM_TINT)],
     { floor: 0.8, height: 0.2 },
   );
+}
+
+/**
+ * Golden wheat heads: on every culm tip of the mature grain clump (GRAIN_CULMS) an ear of nine
+ * faceted, elongated grains (four alternating pairs up the rachis and one at the tip) with two
+ * pale awns, nodding slightly further out than the straw. Aligns with
+ * createGrainMatureGeometry at any scale.
+ */
+export function createEarsGeometry(): THREE.BufferGeometry {
+  const pieces: THREE.BufferGeometry[] = [];
+  const orient = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const unit = new THREE.Vector3(1, 1, 1);
+  GRAIN_CULMS.forEach((culm, c) => {
+    quaternion.setFromUnitVectors(UP, culm.nod);
+    const start = culm.tip.clone().addScaledVector(culm.nod, -0.012);
+    orient.compose(start, quaternion, unit);
+    const ear: THREE.BufferGeometry[] = [];
+    for (let row = 0; row < EAR.rows; row++) {
+      for (let side = 0; side < 2; side++) {
+        const grain = new THREE.OctahedronGeometry(1, 0);
+        grain.scale(EAR.grainWidth, EAR.grainLength, EAR.grainDepth);
+        grain.rotateZ(-EAR.grainTilt);
+        grain.translate(EAR.grainWidth * 0.8, EAR.firstRow + row * EAR.rowSpacing + EAR.grainLength * 0.5, 0);
+        grain.rotateY(c * 0.7 + row * (Math.PI / 2) + side * Math.PI);
+        ear.push(piece(grain, (row + side) % 2 === 0 ? WHITE : GRAIN_SHADE_TINT));
+      }
+    }
+    const crownY = EAR.firstRow + EAR.rows * EAR.rowSpacing;
+    const crown = new THREE.OctahedronGeometry(1, 0);
+    crown.scale(EAR.grainWidth * 0.85, EAR.grainLength, EAR.grainDepth * 0.85);
+    crown.translate(0, crownY + EAR.grainLength * 0.45, 0);
+    ear.push(piece(crown));
+    for (const splay of [-1, 1]) {
+      const awnTip = v(splay * 0.024, crownY + 0.08, splay * 0.01);
+      ear.push(stem(v(0, crownY + 0.02, 0), awnTip, 0.0035, 0.001, 3, AWN_TINT));
+    }
+    for (const part of ear) pieces.push(part.applyMatrix4(orient));
+  });
+  return assemble(pieces, null);
 }
 
 // ---------------------------------------------------------------------------

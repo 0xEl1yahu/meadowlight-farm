@@ -2,27 +2,33 @@
  * TileHighlighter — the 3D bounding-box indicator of the active tile.
  *
  * - Target: selectTargetTile(state) (a DDA ray from the centre of the player's tile along the
- *   facing vector), recomputed on every sync in O(1).
- * - Shape: a wireframe box slightly larger than the tile, drawn as 12 thin box "beams" in ONE
- *   InstancedMesh (thicker and more legible than GL lines), plus a small diamond floating above
- *   it. The box stands on the tile's own ground (soil, grass or water surface) and is taller
- *   when the tile holds something (rock, stump, crop, water, shipping bin, house).
+ *   facing vector), recomputed on every sync in O(1). While seeds are selected the box frames
+ *   the whole scatter patch instead (the axis-aligned bounds of selectScatterPatch), since a
+ *   handful lands on every tile of it.
+ * - Shape: a wireframe box slightly larger than the framed tiles, drawn as 12 thin box "beams"
+ *   in ONE InstancedMesh (thicker and more legible than GL lines), plus a small diamond
+ *   floating above its centre. The box stands on the tiles' ground (soil, grass or water
+ *   surface; the highest one for a patch) and is taller when a tile holds something (rock,
+ *   stump, crop, water, shipping bin, house).
  * - Colour, unlit so it reads at night: cream-white when the selected item's primary action
  *   would do something, warm gold when only the context interaction would (harvest, ship,
  *   sleep, refill), soft red and dimmer otherwise. Validity comes from state/intents.ts — the
  *   same planner the reducer executes — so the preview and the outcome never disagree.
- * - Motion: exponential easing of position, size and colour between targets (~0.08 s), a gentle
- *   pulse, and a quick springy pop whenever the player acts. Hidden with a short fade when there
+ * - Motion: exponential easing of position, footprint, height and colour between targets
+ *   (~0.08 s), a gentle pulse, and a quick springy pop whenever the player acts. Pulse and pop
+ *   move the box edges by the same distance whatever its footprint. Hidden with a short fade when there
  *   is no target or a menu freezes the game.
  *
- * Nothing here allocates per frame; beam matrices are rewritten only while the box height is
- * animating.
+ * Nothing here allocates per frame; beam matrices are rewritten only while the box footprint or
+ * height is animating.
  */
 import * as THREE from 'three';
 import { Blocker, type GameState, type Tile } from '../core/types';
 import { CROPS, growthProgress } from '../farming/crops';
+import { getItem } from '../items/items';
 import { isActionable, planInteraction, planPrimaryAction } from '../state/intents';
-import { selectIsFrozen, selectTargetTile } from '../state/selectors';
+import { selectedStack } from '../state/inventory';
+import { selectIsFrozen, selectScatterPatch, selectTargetTile } from '../state/selectors';
 import { tileCenterX, tileCenterZ } from '../world/grid';
 import { getTile, isSoil } from '../world/tiles';
 import { HEIGHTS } from './constants';
@@ -37,6 +43,8 @@ import type { FrameContext, RenderSystem } from './types';
 const BEAM_COUNT = 12;
 /** Box footprint in tiles (slightly larger than the tile so it frames the contents). */
 const FOOTPRINT = 1.04;
+/** Extra footprint (tiles) around a multi-tile patch, matching the single-tile margin. */
+const MARGIN = FOOTPRINT - 1;
 const BEAM_THICKNESS = 0.045;
 
 /** Box heights (world units) by tile contents. */
@@ -153,6 +161,12 @@ function affectsHighlight(state: GameState, prev: GameState): boolean {
   );
 }
 
+/** Whether the selected hotbar item is a seed, whose handful covers the whole scatter patch. */
+function holdsSeeds(state: GameState): boolean {
+  const stack = selectedStack(state.inventory);
+  return stack !== null && getItem(stack.itemId).kind === 'seed';
+}
+
 /** Whether using the selected item, or failing that the context interaction, would do anything. */
 function validityFor(state: GameState): Validity {
   if (isActionable(planPrimaryAction(state))) return 'valid';
@@ -183,8 +197,15 @@ export class TileHighlighter implements RenderSystem {
   private readonly targetPosition = new THREE.Vector3();
   private height: number = BOX_HEIGHT.ground;
   private targetHeight: number = BOX_HEIGHT.ground;
-  /** Height the beam matrices were last laid out for (NaN = never). */
+  /** Box footprint along X and Z (world units). */
+  private sizeX: number;
+  private sizeZ: number;
+  private targetSizeX: number;
+  private targetSizeZ: number;
+  /** Height and footprint the beam matrices were last laid out for (NaN = never). */
   private layoutHeight = Number.NaN;
+  private layoutSizeX = Number.NaN;
+  private layoutSizeZ = Number.NaN;
   private readonly targetColor = new THREE.Color(PALETTE.highlightValid);
   private opacity = 0;
   private targetOpacity = 0;
@@ -194,6 +215,11 @@ export class TileHighlighter implements RenderSystem {
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
+    const tileFootprint = FOOTPRINT * ctx.grid.tileSize;
+    this.sizeX = tileFootprint;
+    this.sizeZ = tileFootprint;
+    this.targetSizeX = tileFootprint;
+    this.targetSizeZ = tileFootprint;
 
     this.material = new THREE.MeshBasicMaterial({
       color: PALETTE.highlightValid,
@@ -228,7 +254,7 @@ export class TileHighlighter implements RenderSystem {
     this.group.name = 'tile-highlight';
     this.group.add(this.beams, this.marker);
     this.group.visible = false;
-    this.layoutBeams(this.height);
+    this.layoutBeams();
     ctx.scene.add(this.group);
   }
 
@@ -239,17 +265,13 @@ export class TileHighlighter implements RenderSystem {
     const actionChanged = player.actionSeq !== this.actionSeq;
     this.actionSeq = player.actionSeq;
 
-    const target = selectIsFrozen(state) ? null : selectTargetTile(state);
-    const tile = target === null ? null : getTile(state.world, target.tx, target.tz);
-    if (target === null || tile === null) {
+    const framed = !selectIsFrozen(state) && (holdsSeeds(state) ? this.framePatch(state) : this.frameTile(state));
+    if (!framed) {
       this.active = false;
       if (rebuild) this.hideNow();
       return;
     }
 
-    const grid = state.world.grid;
-    this.targetPosition.set(tileCenterX(grid, target.tx), highlightGroundHeight(tile), tileCenterZ(grid, target.tz));
-    this.targetHeight = highlightBoxHeight(tile);
     const style = STYLES[validityFor(state)];
     this.targetColor.setHex(style.color);
     this.targetOpacity = style.opacity;
@@ -259,6 +281,8 @@ export class TileHighlighter implements RenderSystem {
     if (rebuild || this.presence < 0.05) {
       this.group.position.copy(this.targetPosition);
       this.height = this.targetHeight;
+      this.sizeX = this.targetSizeX;
+      this.sizeZ = this.targetSizeZ;
       this.material.color.copy(this.targetColor);
       this.opacity = this.targetOpacity;
     }
@@ -283,8 +307,17 @@ export class TileHighlighter implements RenderSystem {
       const follow = damp(MOVE_RATE, dt);
       this.group.position.lerp(this.targetPosition, follow);
       this.height += (this.targetHeight - this.height) * follow;
+      this.sizeX += (this.targetSizeX - this.sizeX) * follow;
+      this.sizeZ += (this.targetSizeZ - this.sizeZ) * follow;
     }
-    if (!(Math.abs(this.height - this.layoutHeight) <= 1e-4)) this.layoutBeams(this.height);
+    // Negated comparisons so a NaN layout (never laid out) always counts as stale.
+    if (
+      !(Math.abs(this.height - this.layoutHeight) <= 1e-4) ||
+      !(Math.abs(this.sizeX - this.layoutSizeX) <= 1e-4) ||
+      !(Math.abs(this.sizeZ - this.layoutSizeZ) <= 1e-4)
+    ) {
+      this.layoutBeams();
+    }
 
     const tint = damp(COLOR_RATE, dt);
     this.material.color.lerp(this.targetColor, tint);
@@ -299,9 +332,15 @@ export class TileHighlighter implements RenderSystem {
 
     const elapsed = frame.elapsed;
     const wave = Math.sin(elapsed * PULSE_RATE);
-    const footprint = 1 + PULSE_SCALE * wave + pop;
+    // Scale relative to a single tile's box so a wide patch breathes by the same distance.
+    const swell = PULSE_SCALE * wave + pop;
+    const tileFootprint = FOOTPRINT * this.ctx.grid.tileSize;
     const lift = 1 + pop * 0.6;
-    this.beams.scale.set(footprint, lift, footprint);
+    this.beams.scale.set(
+      1 + (swell * tileFootprint) / this.sizeX,
+      lift,
+      1 + (swell * tileFootprint) / this.sizeZ,
+    );
     this.material.opacity = clamp(this.opacity * (1 + PULSE_OPACITY * wave) * this.presence, 0, 1);
 
     this.marker.position.y = this.height * lift + MARKER_HOVER + MARKER_BOB * Math.sin(elapsed * MARKER_BOB_RATE);
@@ -318,6 +357,56 @@ export class TileHighlighter implements RenderSystem {
     this.material.dispose();
   }
 
+  /** Targets the active tile alone. Returns false when there is none. */
+  private frameTile(state: GameState): boolean {
+    const target = selectTargetTile(state);
+    const tile = target === null ? null : getTile(state.world, target.tx, target.tz);
+    if (target === null || tile === null) return false;
+    const grid = state.world.grid;
+    const footprint = FOOTPRINT * grid.tileSize;
+    this.targetPosition.set(tileCenterX(grid, target.tx), highlightGroundHeight(tile), tileCenterZ(grid, target.tz));
+    this.targetHeight = highlightBoxHeight(tile);
+    this.targetSizeX = footprint;
+    this.targetSizeZ = footprint;
+    return true;
+  }
+
+  /**
+   * Targets the bounding rectangle of the scatter patch, standing on the highest ground under it
+   * and as tall as its tallest contents. Returns false when the patch is empty (off the grid).
+   */
+  private framePatch(state: GameState): boolean {
+    const { world } = state;
+    const grid = world.grid;
+    let minTx = Number.POSITIVE_INFINITY;
+    let maxTx = Number.NEGATIVE_INFINITY;
+    let minTz = Number.POSITIVE_INFINITY;
+    let maxTz = Number.NEGATIVE_INFINITY;
+    let ground = Number.NEGATIVE_INFINITY;
+    let height = 0;
+    for (const coord of selectScatterPatch(state)) {
+      const tile = getTile(world, coord.tx, coord.tz);
+      if (tile === null) continue;
+      minTx = Math.min(minTx, coord.tx);
+      maxTx = Math.max(maxTx, coord.tx);
+      minTz = Math.min(minTz, coord.tz);
+      maxTz = Math.max(maxTz, coord.tz);
+      ground = Math.max(ground, highlightGroundHeight(tile));
+      height = Math.max(height, highlightBoxHeight(tile));
+    }
+    if (ground === Number.NEGATIVE_INFINITY) return false;
+    const ts = grid.tileSize;
+    this.targetPosition.set(
+      (tileCenterX(grid, minTx) + tileCenterX(grid, maxTx)) / 2,
+      ground,
+      (tileCenterZ(grid, minTz) + tileCenterZ(grid, maxTz)) / 2,
+    );
+    this.targetHeight = height;
+    this.targetSizeX = (maxTx - minTx + 1 + MARGIN) * ts;
+    this.targetSizeZ = (maxTz - minTz + 1 + MARGIN) * ts;
+    return true;
+  }
+
   private hideNow(): void {
     this.presence = 0;
     this.popElapsed = Number.POSITIVE_INFINITY;
@@ -326,31 +415,34 @@ export class TileHighlighter implements RenderSystem {
   }
 
   /**
-   * Places the 12 beams of a box with footprint FOOTPRINT tiles and the given height, standing
-   * on the group origin: 4 bottom edges, 4 top edges, then 4 vertical edges.
+   * Places the 12 beams of a box with the current footprint (sizeX × sizeZ) and height, centred
+   * on and standing on the group origin: 4 bottom edges, 4 top edges, then 4 vertical edges.
    */
-  private layoutBeams(height: number): void {
-    const tileSize = this.ctx.grid.tileSize;
+  private layoutBeams(): void {
     const t = BEAM_THICKNESS;
-    const half = (FOOTPRINT * tileSize) / 2;
-    const span = FOOTPRINT * tileSize + t;
-    const h = Math.max(height, t * 2);
+    const halfX = this.sizeX / 2;
+    const halfZ = this.sizeZ / 2;
+    const spanX = this.sizeX + t;
+    const spanZ = this.sizeZ + t;
+    const h = Math.max(this.height, t * 2);
     let index = 0;
     for (let ring = 0; ring < 2; ring++) {
       const y = ring === 0 ? t / 2 : h - t / 2;
       for (let side = -1; side <= 1; side += 2) {
-        this.setBeam(index++, 0, y, side * half, span, t, t);
-        this.setBeam(index++, side * half, y, 0, t, t, span);
+        this.setBeam(index++, 0, y, side * halfZ, spanX, t, t);
+        this.setBeam(index++, side * halfX, y, 0, t, t, spanZ);
       }
     }
     for (let sx = -1; sx <= 1; sx += 2) {
       for (let sz = -1; sz <= 1; sz += 2) {
-        this.setBeam(index++, sx * half, h / 2, sz * half, t, h, t);
+        this.setBeam(index++, sx * halfX, h / 2, sz * halfZ, t, h, t);
       }
     }
     this.beams.instanceMatrix.needsUpdate = true;
     this.beams.computeBoundingSphere();
-    this.layoutHeight = height;
+    this.layoutHeight = this.height;
+    this.layoutSizeX = this.sizeX;
+    this.layoutSizeZ = this.sizeZ;
   }
 
   private setBeam(index: number, x: number, y: number, z: number, sx: number, sy: number, sz: number): void {

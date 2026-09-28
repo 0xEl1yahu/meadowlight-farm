@@ -10,13 +10,18 @@
  *   2. Moisture evaporates: Watered → Plowed.
  *   3. Empty, un-watered plowed soil may revert to grass (deterministic chance).
  *   4. Rain or storm today → every plowed tile starts the day Watered.
+ * Wild shade crops skip all of that: they grow every night without water while they stay in
+ * shade and in season, and quietly disappear otherwise. After the per-tile pass, new wild crops
+ * sprout and spread on shaded grass (farming/wild.ts).
  */
 import { FARMING } from '../config';
 import { Salt, hashFloat } from '../core/hash';
 import { TileState, type CropInstance, type Season, type Tile, type Weather, type WorldState } from '../core/types';
 import { weatherWaters } from '../time/weather';
+import { isShadedTile } from '../world/shade';
 import { mapTiles } from '../world/tiles';
 import { CROPS, daysRequiredForStage, isInSeason, stageCount } from './crops';
+import { spreadWildCrops } from './wild';
 
 export interface DayContext {
   readonly seed: number;
@@ -40,7 +45,17 @@ export function growCrop(crop: CropInstance, watered: boolean): CropInstance {
   return { ...crop, daysInStage, dryDays: 0 };
 }
 
-export function advanceTileOvernight(tile: Tile, tx: number, tz: number, ctx: DayContext): Tile {
+/** One night for a wild shade crop: grows without water in shade and in season, else vanishes. */
+function advanceWildCrop(crop: CropInstance, shaded: boolean, ctx: DayContext): CropInstance | null {
+  if (!shaded || !isInSeason(CROPS[crop.cropId], ctx.season)) return null;
+  return growCrop(crop, true);
+}
+
+export function advanceTileOvernight(tile: Tile, tx: number, tz: number, ctx: DayContext, shaded = false): Tile {
+  if (tile.crop !== null && tile.crop.wild) {
+    const crop = advanceWildCrop(tile.crop, shaded, ctx);
+    return crop === tile.crop ? tile : { ...tile, crop };
+  }
   if (tile.state === TileState.Blocked || tile.state === TileState.Unplowed) return tile;
 
   const wasWatered = tile.state === TileState.Watered;
@@ -61,5 +76,8 @@ export function advanceTileOvernight(tile: Tile, tx: number, tz: number, ctx: Da
 }
 
 export function advanceWorldOvernight(world: WorldState, ctx: DayContext): WorldState {
-  return mapTiles(world, (tile, tx, tz) => advanceTileOvernight(tile, tx, tz, ctx));
+  const grown = mapTiles(world, (tile, tx, tz) =>
+    advanceTileOvernight(tile, tx, tz, ctx, isShadedTile(world.grid, tx, tz)),
+  );
+  return spreadWildCrops(grown, ctx);
 }

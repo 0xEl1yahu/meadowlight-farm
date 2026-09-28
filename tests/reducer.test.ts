@@ -282,8 +282,9 @@ describe('seeds', () => {
     expectFailedAttempt(outOfSeason, useTool(outOfSeason), 'plant', TARGET, "Pumpkin won't grow in Spring.");
     const grass = holding(scenario(EMPTY_TILE), 'parsnip_seeds', 4);
     expectFailedAttempt(grass, useTool(grass), 'plant', TARGET, 'Till the soil with the hoe first.');
+    // The rest of the patch is grass, so the only advice left is to till.
     const occupied = holding(scenario(soilTile(TileState.Plowed, cropOf('parsnip'))), 'parsnip_seeds', 4);
-    expectFailedAttempt(occupied, useTool(occupied), 'plant', TARGET, null);
+    expectFailedAttempt(occupied, useTool(occupied), 'plant', TARGET, 'Till the soil with the hoe first.');
     const winter = holding(scenario(soilTile(TileState.Plowed), atDay(BASE, 100)), 'corn_seeds', 4);
     expectFailedAttempt(winter, useTool(winter), 'plant', TARGET, "Corn won't grow in Winter.");
   });
