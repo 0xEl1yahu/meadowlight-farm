@@ -37,6 +37,8 @@ const HEART_EVENT_LEVELS: readonly HeartEventLevel[] = [2, 4, 6];
 const MAX_ANIMALS_PER_BUILDING = 4;
 /** Which building houses each animal kind. */
 const HOME_OF: Readonly<Record<AnimalKind, FarmBuildingKind>> = { chicken: 'coop', cow: 'barn' };
+/** Which of the farm layout's plots each building kind stands on; each plot is sized for its kind. */
+const PLOT_OF: Readonly<Record<FarmBuildingKind, number>> = { coop: 0, barn: 1 };
 const MAX_HAPPINESS = 255;
 /** Blossom Fair has 12 eggs, stored as a bitmask. */
 const MAX_EGG_MASK = 0xfff;
@@ -129,6 +131,7 @@ function isValidBuildings(buildings: unknown, nextEntityId: unknown): boolean {
   for (const building of buildings as readonly unknown[]) {
     if (!isObj(building) || !claim(building.id) || !isOneOf(building.kind, FARM_BUILDING_KINDS)) return false;
     if (!isIntIn(building.plot, 0, LAYOUT.plots.length - 1) || plots.has(building.plot)) return false;
+    if (building.plot !== PLOT_OF[building.kind]) return false;
     plots.add(building.plot);
     if (!isCount(building.readyDay) || !isCount(building.troughWheat)) return false;
     const animals = building.animals;
