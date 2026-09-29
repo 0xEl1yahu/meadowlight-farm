@@ -20,14 +20,17 @@ import { getItem, type SeedItem, type ToolItem } from '../items/items';
 import { mapSeed } from '../world/maps';
 import { getTile, isSoil } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
-import { selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
+import { selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
 
 export type Intent =
   | { readonly kind: 'till' }
   | { readonly kind: 'water' }
   | { readonly kind: 'refill' }
   | { readonly kind: 'mine' }
-  | { readonly kind: 'chop' }
+  /** One axe hit on a tree (which falls into a stump) or on a stump (which clears). */
+  | { readonly kind: 'chop'; readonly blocker: typeof Blocker.Tree | typeof Blocker.Stump }
+  /** The scythe cuts weeds down to grass, for free and without a drop. */
+  | { readonly kind: 'clearWeeds' }
   | { readonly kind: 'untill' }
   /** Seeds land on every listed tile (empty tilled soil in the scatter patch, nearest first). */
   | { readonly kind: 'scatter'; readonly cropId: CropId; readonly tiles: readonly TileCoord[] }
@@ -91,16 +94,28 @@ function planHarvest(
   return plan(target, { kind: 'harvest', quantity }, feedback, energyCost);
 }
 
+/** Why a tool can't clear this blocker, naming the tool that can; null for blockers that never clear. */
 function blockerHint(blocker: Blocker): string | null {
   switch (blocker) {
     case Blocker.Rock:
       return 'This rock needs a pickaxe.';
     case Blocker.Stump:
       return 'This stump needs an axe.';
-    default:
+    case Blocker.Tree:
+      return 'Chop this tree with the axe.';
+    case Blocker.Weeds:
+      return 'Cut these weeds with the scythe.';
+    case Blocker.None:
+    case Blocker.Water:
+    case Blocker.House:
+    case Blocker.ShippingBin:
+    case Blocker.Building:
       return null;
   }
 }
+
+/** Shown when the hoe or seeds are used on a map that isn't the player's own land. */
+export const FARM_ONLY_REASON = 'You can only farm on your own land.';
 
 function withEnergy(state: GameState, actionPlan: ActionPlan): ActionPlan {
   if (actionPlan.energyCost > 0 && state.player.energy < actionPlan.energyCost) {
@@ -118,20 +133,26 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
 
   switch (tool) {
     case 'hoe':
+      // A placed object (a path, a chest, a sprinkler on soil) is never dug up.
+      if (tile.object !== null) return blocked(target, tool);
       if (tile.crop !== null && tile.crop.dead) return plan(target, { kind: 'clearCrop' }, tool, cost);
       if (tile.crop !== null && tile.crop.wild) {
         return blocked(target, tool, `Forage the ${CROPS[tile.crop.cropId].name.toLowerCase()} first (E).`);
       }
-      if (tile.state === TileState.Unplowed) return plan(target, { kind: 'till' }, tool, cost);
+      if (tile.state === TileState.Unplowed) {
+        return selectActiveMap(state).allowsTilling ? plan(target, { kind: 'till' }, tool, cost) : blocked(target, tool, FARM_ONLY_REASON);
+      }
       if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
 
     case 'wateringCan':
+      // Any water on any map refills the can: the farm pond, the forest brook, the town river.
       if (tile.blocker === Blocker.Water) {
         return state.inventory.water < state.inventory.waterCapacity
           ? plan(target, { kind: 'refill' }, 'refill')
           : blocked(target, 'refill', 'Your watering can is already full.');
       }
+      // Soil under a placed object (a sprinkler) is watered too; the object stays.
       if (tile.state === TileState.Plowed) {
         return state.inventory.water > 0
           ? plan(target, { kind: 'water' }, tool, cost)
@@ -140,21 +161,27 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
       return blocked(target, tool);
 
     case 'pickaxe':
+      // Clearing soil under a placed object would delete the object (and a chest's items).
+      if (tile.object !== null) return blocked(target, tool);
       if (tile.blocker === Blocker.Rock) return plan(target, { kind: 'mine' }, tool, cost);
       if (isSoil(tile) && (tile.crop === null || tile.crop.dead)) return plan(target, { kind: 'untill' }, tool, cost);
-      if (tile.blocker === Blocker.Stump) return blocked(target, tool, blockerHint(tile.blocker));
+      if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
 
     case 'axe':
-      if (tile.blocker === Blocker.Stump) return plan(target, { kind: 'chop' }, tool, cost);
-      if (tile.blocker === Blocker.Rock) return blocked(target, tool, blockerHint(tile.blocker));
+      if (tile.blocker === Blocker.Tree || tile.blocker === Blocker.Stump) {
+        return plan(target, { kind: 'chop', blocker: tile.blocker }, tool, cost);
+      }
+      if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
 
     case 'scythe':
+      if (tile.blocker === Blocker.Weeds) return plan(target, { kind: 'clearWeeds' }, tool, 0);
       if (tile.crop !== null) {
         if (tile.crop.dead) return plan(target, { kind: 'clearCrop' }, tool, cost);
         if (isMature(tile.crop)) return planHarvest(state, target, tile.crop, tool, cost);
       }
+      if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
   }
 }
@@ -162,10 +189,12 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
 /**
  * Scattering: one handful covers the scatter patch (selectScatterPatch) and plants a seed on
  * every empty tilled tile it reaches, nearest first, until the stack runs out. Tilling is the
- * precision tool: till a single tile and the handful plants just that one.
+ * precision tool: till a single tile and the handful plants just that one. Seeds are only
+ * scattered on maps that allow tilling (the farm).
  */
 function planScatter(state: GameState, item: SeedItem, target: TileCoord | null): ActionPlan {
   if (target === null) return blocked(null, 'plant');
+  if (!selectActiveMap(state).allowsTilling) return blocked(target, 'plant', FARM_ONLY_REASON);
   const def = CROPS[item.cropId];
   if (def.habitat === 'shade') return blocked(target, 'plant', `${def.name}s only grow wild in the shade.`);
   if (!isInSeason(def, state.time.season)) {
@@ -179,7 +208,8 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
   for (const coord of patch) {
     if (tiles.length >= available) break;
     const tile = getTile(selectActiveWorld(state), coord.tx, coord.tz);
-    if (tile === null || tile.crop !== null) continue;
+    // Occupied soil and placed objects (a sprinkler on soil, a path on grass) take no seed.
+    if (tile === null || tile.crop !== null || tile.object !== null) continue;
     if (isSoil(tile)) tiles.push(coord);
     else if (tile.state === TileState.Unplowed) untilled = true;
   }
@@ -215,7 +245,14 @@ export function planInteraction(state: GameState): ActionPlan {
         return plan(target, { kind: 'refill' }, 'refill');
       }
       return blocked(target, 'none');
-    default:
+    // Debris waits for the right tool, and town buildings, the notice board, hedges and props
+    // have nothing to interact with yet: silent, so no toast.
+    case Blocker.None:
+    case Blocker.Rock:
+    case Blocker.Stump:
+    case Blocker.Tree:
+    case Blocker.Weeds:
+    case Blocker.Building:
       return blocked(target, 'none');
   }
 }
@@ -249,7 +286,9 @@ export function describeIntent(intent: Intent): string | null {
     case 'mine':
       return 'Break rock';
     case 'chop':
-      return 'Chop stump';
+      return intent.blocker === Blocker.Tree ? 'Chop tree' : 'Chop stump';
+    case 'clearWeeds':
+      return 'Cut weeds';
     case 'untill':
       return 'Clear soil';
     case 'scatter':

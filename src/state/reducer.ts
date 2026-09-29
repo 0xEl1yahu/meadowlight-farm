@@ -10,6 +10,7 @@
 import { PLAYER, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
 import {
+  Blocker,
   DIRECTIONS,
   MAP_IDS,
   SEASON_NAMES,
@@ -28,14 +29,15 @@ import { advanceWorldOvernight } from '../farming/growth';
 import { getItem, isSeedItemId } from '../items/items';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
-import { stepTile } from '../world/grid';
-import { getMap, mapSeed } from '../world/maps';
-import { EMPTY_TILE, getTile, isWalkable, requireTile, setTile, setTiles } from '../world/tiles';
+import { inBounds, stepTile } from '../world/grid';
+import { findWarp, getMap, mapSeed, type Warp } from '../world/maps';
+import { EMPTY_TILE, blockedTile, getTile, isWalkable, requireTile, setTile, setTiles } from '../world/tiles';
 import type { GameAction } from './actions';
 import { planInteraction, planPrimaryAction, type ActionPlan, type Intent } from './intents';
 import { addItem, capacityFor, mergeStacks, removeFromSlot, selectedStack } from './inventory';
 import { pushMessage } from './messages';
 import {
+  selectActiveMap,
   selectActiveWorld,
   selectIsFrozen,
   selectPendingShipmentValue,
@@ -150,18 +152,42 @@ function isDirection(value: number): value is Direction {
   return (DIRECTIONS as readonly number[]).includes(value);
 }
 
+/**
+ * One grid step. Inside the grid the destination must be walkable. Stepping off the edge takes
+ * the map's warp from this tile in this direction, if there is one: the player lands on the
+ * warp's arrival tile on the other map, facing into it (a teleport, so `moveSeq` is untouched).
+ * A warp whose arrival tile isn't walkable is refused like any blocked step.
+ */
 function movePlayer(state: GameState, direction: Direction): GameState {
   if (selectIsFrozen(state) || !isDirection(direction)) return state;
   const { player } = state;
   const destination = stepTile(player, direction);
-  const tile = getTile(selectActiveWorld(state), destination.tx, destination.tz);
-  if (tile !== null && isWalkable(tile)) {
-    return {
-      ...state,
-      player: { ...player, tx: destination.tx, tz: destination.tz, facing: direction, moveSeq: player.moveSeq + 1 },
-    };
+  const world = selectActiveWorld(state);
+  if (inBounds(world.grid, destination.tx, destination.tz)) {
+    if (isWalkable(requireTile(world, destination.tx, destination.tz))) {
+      return {
+        ...state,
+        player: { ...player, tx: destination.tx, tz: destination.tz, facing: direction, moveSeq: player.moveSeq + 1 },
+      };
+    }
+  } else {
+    const warp = findWarp(selectActiveMap(state), player.tx, player.tz, direction);
+    if (warp !== null) {
+      const arrival = getTile(state.maps[warp.to.mapId], warp.to.tx, warp.to.tz);
+      if (arrival !== null && isWalkable(arrival)) return takeWarp(state, warp);
+    }
   }
   return player.facing === direction ? state : { ...state, player: { ...player, facing: direction } };
+}
+
+function takeWarp(state: GameState, warp: Warp): GameState {
+  const { mapId, tx, tz, facing } = warp.to;
+  const next: GameState = {
+    ...state,
+    player: { ...state.player, mapId, tx, tz, facing, teleportSeq: state.player.teleportSeq + 1 },
+  };
+  if (mapId !== 'town' || state.stats.visitedTown) return next;
+  return { ...next, stats: { ...next.stats, visitedTown: true } };
 }
 
 function facePlayer(state: GameState, direction: Direction): GameState {
@@ -220,10 +246,11 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       return { ...state, inventory: { ...state.inventory, water: state.inventory.waterCapacity } };
 
     case 'mine':
-      return hitBlocker(state, target, tile, 'stone', TOOLS.stoneFromRock);
-
     case 'chop':
-      return hitBlocker(state, target, tile, 'wood', TOOLS.woodFromStump);
+      return hitBlocker(state, target, tile);
+
+    case 'clearWeeds':
+      return countDebrisCleared(withTile(state, target, EMPTY_TILE));
 
     case 'untill':
       return withTile(state, target, EMPTY_TILE);
@@ -253,13 +280,38 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
   }
 }
 
-function hitBlocker(state: GameState, target: TileCoord, tile: Tile, drop: ItemId, quantity: number): GameState {
+/** What a hittable blocker leaves behind when its last hit lands, and what it drops. */
+function blockerRemains(blocker: Blocker): { readonly tile: Tile; readonly drop: ItemId; readonly quantity: number } {
+  switch (blocker) {
+    case Blocker.Rock:
+      return { tile: EMPTY_TILE, drop: 'stone', quantity: TOOLS.stoneFromRock };
+    case Blocker.Stump:
+      return { tile: EMPTY_TILE, drop: 'wood', quantity: TOOLS.woodFromStump };
+    case Blocker.Tree:
+      return { tile: blockedTile(Blocker.Stump, TOOLS.stumpHits), drop: 'wood', quantity: TOOLS.woodFromTree };
+    default:
+      throw new RangeError(`blocker ${blocker} takes no hits`);
+  }
+}
+
+/** Every Rock, Stump, Tree or Weeds blocker fully cleared counts once (a felled tree, then its stump). */
+function countDebrisCleared(state: GameState): GameState {
+  return { ...state, stats: { ...state.stats, debrisCleared: state.stats.debrisCleared + 1 } };
+}
+
+/**
+ * One hit on a Rock, Stump or Tree. Each hit lowers its hp by 1; the last one replaces the tile
+ * with the blocker's remains (a tree falls into a fresh stump, rocks and stumps clear) and drops
+ * its items, as many as fit.
+ */
+function hitBlocker(state: GameState, target: TileCoord, tile: Tile): GameState {
   const hp = tile.blockerHp - 1;
   if (hp > 0) return withTile(state, target, { ...tile, blockerHp: hp });
-  const cleared = withTile(state, target, EMPTY_TILE);
-  const { inventory, added } = addItem(cleared.inventory, drop, quantity);
+  const remains = blockerRemains(tile.blocker);
+  const cleared = countDebrisCleared(withTile(state, target, remains.tile));
+  const { inventory, added } = addItem(cleared.inventory, remains.drop, remains.quantity);
   const next = { ...cleared, inventory };
-  return added < quantity ? pushMessage(next, `No room for ${getItem(drop).name}.`, 'warn') : next;
+  return added < remains.quantity ? pushMessage(next, `No room for ${getItem(remains.drop).name}.`, 'warn') : next;
 }
 
 function harvest(state: GameState, target: TileCoord, tile: Tile, quantity: number): GameState {

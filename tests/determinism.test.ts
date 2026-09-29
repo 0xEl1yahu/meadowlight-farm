@@ -5,47 +5,120 @@
  * pauses) is generated with mulberry32 and played twice through a freezing store with an
  * action recorder. Both runs must end in identical states, replaying the recorded log must
  * reproduce that state, the deep-frozen states must never be mutated, and every transition
- * must honour the render contract (unchanged chunks and tiles keep their identity).
- * Also covers the seeded hash primitives everything stochastic is built on.
+ * must honour the render contract (unchanged chunks and tiles keep their identity) on every
+ * map. A second, state-aware "traveller" session keeps walking to the gates, so warps between
+ * all three maps are replayed and checked the same way. Also covers the seeded hash primitives everything stochastic is built on.
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, TIME } from '../src/config';
 import { hash32, hashFloat, hashRange, mulberry32, Salt } from '../src/core/hash';
 import { createActionRecorder, createStore } from '../src/core/store';
-import { CROP_IDS, DIRECTIONS, MAP_IDS, TileState, type GameState, type MapId, type Tile, type WorldState } from '../src/core/types';
+import {
+  CROP_IDS,
+  DIRECTIONS,
+  MAP_IDS,
+  TileState,
+  type Direction,
+  type GameState,
+  type MapId,
+  type Tile,
+  type TileCoord,
+  type WorldState,
+} from '../src/core/types';
 import { seedItemId } from '../src/farming/crops';
 import { actions, type GameAction } from '../src/state/actions';
 import { createInitialState } from '../src/state/initialState';
 import { serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
-import { countTiles } from '../src/world/tiles';
+import { selectActiveWorld } from '../src/state/selectors';
+import { stepTile } from '../src/world/grid';
+import { MAPS, type Warp } from '../src/world/maps';
+import { countTiles, getTile, isWalkable } from '../src/world/tiles';
 import { HEAVY_TEST_TIMEOUT_MS, must } from './testUtils';
 
 function pick<T>(rng: () => number, values: readonly T[]): T {
   return must(values[Math.floor(rng() * values.length)]);
 }
 
-/** A plausible, busy play session: mostly walking and tool use, with days passing. */
+/** One action of a plausible, busy play session: mostly walking and tool use, with days passing. */
+function randomAction(rng: () => number): GameAction {
+  const roll = rng();
+  if (roll < 0.34) return actions.move(pick(rng, DIRECTIONS));
+  if (roll < 0.38) return actions.face(pick(rng, DIRECTIONS));
+  if (roll < 0.6) return actions.useTool();
+  if (roll < 0.68) return actions.interact();
+  if (roll < 0.75) return actions.selectSlot(Math.floor(rng() * (INVENTORY.hotbarSize + 2)) - 1);
+  if (roll < 0.78) return actions.cycleSlot(pick(rng, [-1, 1, 3, -13]));
+  if (roll < 0.87) return actions.tick(1 + Math.floor(rng() * 60));
+  if (roll < 0.885) return actions.sleep();
+  if (roll < 0.905) return actions.setShopOpen(rng() < 0.6);
+  if (roll < 0.93) return actions.buy(seedItemId(pick(rng, CROP_IDS)), 1 + Math.floor(rng() * 5));
+  if (roll < 0.945) return actions.setPaused(rng() < 0.4);
+  if (roll < 0.955) return actions.setTimeScale(pick(rng, [1, 2, 3, 4, 8, 16]));
+  return actions.tick(TIME.maxTickMinutes);
+}
+
+/** A random session, fixed up front. Its random walk may reach a gate and warp. */
 function randomSession(seed: number, length: number): GameAction[] {
   const rng = mulberry32(seed);
-  const session: GameAction[] = [];
-  for (let i = 0; i < length; i++) {
-    const roll = rng();
-    if (roll < 0.34) session.push(actions.move(pick(rng, DIRECTIONS)));
-    else if (roll < 0.38) session.push(actions.face(pick(rng, DIRECTIONS)));
-    else if (roll < 0.6) session.push(actions.useTool());
-    else if (roll < 0.68) session.push(actions.interact());
-    else if (roll < 0.75) session.push(actions.selectSlot(Math.floor(rng() * (INVENTORY.hotbarSize + 2)) - 1));
-    else if (roll < 0.78) session.push(actions.cycleSlot(pick(rng, [-1, 1, 3, -13])));
-    else if (roll < 0.87) session.push(actions.tick(1 + Math.floor(rng() * 60)));
-    else if (roll < 0.885) session.push(actions.sleep());
-    else if (roll < 0.905) session.push(actions.setShopOpen(rng() < 0.6));
-    else if (roll < 0.93) session.push(actions.buy(seedItemId(pick(rng, CROP_IDS)), 1 + Math.floor(rng() * 5)));
-    else if (roll < 0.945) session.push(actions.setPaused(rng() < 0.4));
-    else if (roll < 0.955) session.push(actions.setTimeScale(pick(rng, [1, 2, 3, 4, 8, 16])));
-    else session.push(actions.tick(TIME.maxTickMinutes));
+  return Array.from({ length }, () => randomAction(rng));
+}
+
+/** Walking distance from every tile of `world` to `goal` over walkable tiles (-1: unreachable). */
+function distanceField(world: WorldState, goal: TileCoord): Int32Array {
+  const { width } = world.grid;
+  const dist = new Int32Array(width * world.grid.depth).fill(-1);
+  dist[goal.tz * width + goal.tx] = 0;
+  const queue: TileCoord[] = [goal];
+  for (let head = 0; head < queue.length; head++) {
+    const current = must(queue[head]);
+    const d = must(dist[current.tz * width + current.tx]);
+    for (const direction of DIRECTIONS) {
+      const next = stepTile(current, direction);
+      const tile = getTile(world, next.tx, next.tz);
+      if (tile === null || !isWalkable(tile) || dist[next.tz * width + next.tx] !== -1) continue;
+      dist[next.tz * width + next.tx] = d + 1;
+      queue.push(next);
+    }
   }
-  return session;
+  return dist;
+}
+
+/** The step that brings `from` one tile closer to the field's goal, or null when the goal is unreachable. */
+function stepDown(world: WorldState, dist: Int32Array, from: TileCoord): Direction | null {
+  const { width } = world.grid;
+  const here = dist[from.tz * width + from.tx] ?? -1;
+  if (here <= 0) return null;
+  for (const direction of DIRECTIONS) {
+    const next = stepTile(from, direction);
+    if (getTile(world, next.tx, next.tz) !== null && dist[next.tz * width + next.tx] === here - 1) return direction;
+  }
+  return null;
+}
+
+/**
+ * A traveller: like a random session, but most of its actions close any open menu, walk the
+ * shortest path to one of the active map's warps and take it, so the session keeps crossing
+ * between maps. It looks at the state to pick each action; the recorder captures its choices.
+ */
+function traveller(seed: number): (state: GameState) => GameAction {
+  const rng = mulberry32(seed);
+  let goal: { readonly mapId: MapId; readonly warp: Warp } | null = null;
+  /** The distance field to the goal, rebuilt whenever the goal or the active world changes. */
+  let field: { readonly world: WorldState; readonly warp: Warp; readonly dist: Int32Array } | null = null;
+  return (state) => {
+    if (rng() >= 0.7) return randomAction(rng);
+    // A traveller doesn't wait for menus: it closes them and walks on.
+    if (state.ui.paused) return actions.setPaused(false);
+    if (state.ui.shopOpen) return actions.setShopOpen(false);
+    const { player } = state;
+    if (goal === null || goal.mapId !== player.mapId) goal = { mapId: player.mapId, warp: pick(rng, MAPS[player.mapId].warps) };
+    const { warp } = goal;
+    if (player.tx === warp.from.tx && player.tz === warp.from.tz) return actions.move(warp.exit);
+    const world = selectActiveWorld(state);
+    if (field === null || field.world !== world || field.warp !== warp) field = { world, warp, dist: distanceField(world, warp.from) };
+    return actions.move(stepDown(world, field.dist, player) ?? pick(rng, DIRECTIONS));
+  };
 }
 
 function sameTileContent(a: Tile, b: Tile): boolean {
@@ -91,24 +164,41 @@ interface Run {
   readonly notifications: number;
   readonly violations: readonly string[];
   readonly maxPlowed: number;
+  /** Warps taken: teleports within a day (sleeping and passing out teleport too, but start a new day). */
+  readonly warps: number;
+  /** Every map the player stood on at some point. */
+  readonly visited: ReadonlySet<MapId>;
 }
 
-function play(session: readonly GameAction[], freeze: boolean, worldSeed?: number): Run {
+/** Plays a fixed session, or `length` actions chosen by a state-aware policy. */
+function play(session: readonly GameAction[] | { readonly policy: (state: GameState) => GameAction; readonly length: number }, freeze: boolean, worldSeed?: number): Run {
   const recorder = createActionRecorder<GameState, GameAction>();
   const store = createStore(gameReducer, createInitialState(worldSeed), { middleware: [recorder.middleware], freeze });
   let notifications = 0;
   let maxPlowed = 0;
+  let warps = 0;
+  const visited = new Set<MapId>([store.getState().player.mapId]);
   const violations: string[] = [];
   store.subscribe((next, prev) => {
     notifications++;
     if (next === prev) violations.push('notified without a change');
     violations.push(...sharingViolations(next, prev));
+    visited.add(next.player.mapId);
+    if (next.player.teleportSeq !== prev.player.teleportSeq && next.time.absoluteDay === prev.time.absoluteDay) {
+      warps++;
+      if (next.player.mapId === prev.player.mapId) violations.push('a warp that stayed on the same map');
+      if (next.maps !== prev.maps) violations.push('a warp that changed a world');
+    }
     if (next.maps.farm !== prev.maps.farm) {
       maxPlowed = Math.max(maxPlowed, countTiles(next.maps.farm, (tile) => tile.state === TileState.Plowed || tile.state === TileState.Watered));
     }
   });
-  for (const action of session) store.dispatch(action);
-  return { state: store.getState(), recorded: [...recorder.actions], notifications, violations, maxPlowed };
+  if ('policy' in session) {
+    for (let i = 0; i < session.length; i++) store.dispatch(session.policy(store.getState()));
+  } else {
+    for (const action of session) store.dispatch(action);
+  }
+  return { state: store.getState(), recorded: [...recorder.actions], notifications, violations, maxPlowed, warps, visited };
 }
 
 describe('deterministic replay', () => {
@@ -143,12 +233,13 @@ describe('deterministic replay', () => {
   it(
     'exercises real gameplay (not a trivially idle session)',
     () => {
-      const { state, notifications, maxPlowed } = reference();
+      const { state, notifications, maxPlowed, warps } = reference();
       expect(notifications).toBeGreaterThan(2000);
       expect(state.time.absoluteDay).toBeGreaterThanOrEqual(5);
       expect(state.player.moveSeq).toBeGreaterThan(200);
       expect(state.player.actionSeq).toBeGreaterThan(200);
-      expect(state.player.teleportSeq).toBe(state.time.absoluteDay);
+      // One teleport per morning, plus one per warp taken.
+      expect(state.player.teleportSeq).toBe(state.time.absoluteDay + warps);
       expect(maxPlowed).toBeGreaterThan(3);
     },
     HEAVY_TEST_TIMEOUT_MS,
@@ -186,6 +277,41 @@ describe('deterministic replay', () => {
         const short = randomSession(seed, 400);
         expect(play(short, true).state).toEqual(short.reduce(gameReducer, createInitialState()));
       }
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('deterministic replay across maps', () => {
+  let cached: Run | null = null;
+  /** A traveller's run through a freezing store, computed once. */
+  const travel = (): Run => {
+    cached ??= play({ policy: traveller(0x7a11), length: 5000 }, true);
+    return cached;
+  };
+
+  it(
+    'keeps warping between all three maps, one teleport per warp or morning',
+    () => {
+      const { state, warps, visited } = travel();
+      expect(warps).toBeGreaterThan(20);
+      expect([...visited].sort()).toEqual(['farm', 'forest', 'town']);
+      expect(state.player.teleportSeq).toBe(state.time.absoluteDay + warps);
+      expect(state.stats.visitedTown).toBe(true);
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'replays its recorded log to the same state, never mutates state and keeps every map shared',
+    () => {
+      const first = travel();
+      expect(first.violations).toEqual([]);
+      const replayed = first.recorded.reduce(gameReducer, createInitialState());
+      expect(replayed).toEqual(first.state);
+      expect(serializeGame(replayed)).toBe(serializeGame(first.state));
+      // Replaying the log through a non-freezing store gives the same result.
+      expect(play(first.recorded, false).state).toEqual(first.state);
     },
     HEAVY_TEST_TIMEOUT_MS,
   );

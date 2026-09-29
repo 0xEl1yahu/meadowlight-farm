@@ -18,12 +18,13 @@ import {
   TileState,
   type GameState,
   type ItemStack,
+  type MapId,
   type TileCoord,
 } from '../src/core/types';
 import { CROPS, createCropInstance, isMature, stageCount } from '../src/farming/crops';
 import { actions, type GameAction } from '../src/state/actions';
 import { createInitialState } from '../src/state/initialState';
-import { harvestQuantity } from '../src/state/intents';
+import { FARM_ONLY_REASON, harvestQuantity, planInteraction, planPrimaryAction } from '../src/state/intents';
 import { gameReducer } from '../src/state/reducer';
 import { formatDate } from '../src/time/clock';
 import { rollWeather } from '../src/time/weather';
@@ -87,19 +88,20 @@ function expectFailedAttempt(prev: GameState, next: GameState, kind: string, tar
   else expect(lastMessage(next)).toMatchObject({ text: message, tone: 'warn' });
 }
 
-/** The walkable tile next to the generated pond and the direction that faces the water. */
-function pondShore(state: GameState): { readonly at: TileCoord; readonly facing: Direction } {
+/** A walkable tile next to water on `mapId` (the farm pond by default) and the direction that faces the water. */
+function waterShore(state: GameState, mapId: MapId = 'farm'): { readonly at: TileCoord; readonly facing: Direction } {
+  const world = state.maps[mapId];
   const shores: { readonly at: TileCoord; readonly facing: Direction }[] = [];
-  forEachTile(state.maps.farm, (tile, tx, tz) => {
+  forEachTile(world, (tile, tx, tz) => {
     if (!isWalkable(tile)) return;
     for (const direction of DIRECTIONS) {
       const next = stepTile({ tx, tz }, direction);
-      if (inBounds(state.maps.farm.grid, next.tx, next.tz) && requireTile(state.maps.farm, next.tx, next.tz).blocker === Blocker.Water) {
+      if (inBounds(world.grid, next.tx, next.tz) && requireTile(world, next.tx, next.tz).blocker === Blocker.Water) {
         shores.push({ at: { tx, tz }, facing: direction });
       }
     }
   });
-  return must(shores[0], 'no pond shore found');
+  return must(shores[0], `no shore found on ${mapId}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,9 +189,11 @@ describe('pickaxe', () => {
     expect(tileAt(state, TARGET)).toEqual(blockedTile(Blocker.Rock, 1));
     expect(count(state, 'stone')).toBe(0);
     expect(state.player.energy).toBe(PLAYER.maxEnergy - TOOLS.energyCost.pickaxe);
+    expect(state.stats.debrisCleared).toBe(0);
     state = useTool(state);
     expect(tileAt(state, TARGET)).toBe(EMPTY_TILE);
     expect(count(state, 'stone')).toBe(TOOLS.stoneFromRock);
+    expect(state.stats.debrisCleared).toBe(1);
     expect(state.player.energy).toBe(PLAYER.maxEnergy - 2 * TOOLS.energyCost.pickaxe);
     expect(state.player.actionSeq).toBe(2);
     // The target is now grass, which the pickaxe ignores.
@@ -227,17 +231,58 @@ describe('axe', () => {
       expect(tileAt(state, TARGET)).toEqual(blockedTile(Blocker.Stump, hp));
       expect(count(state, 'wood')).toBe(0);
     }
+    expect(state.stats.debrisCleared).toBe(0);
     state = useTool(state);
     expect(tileAt(state, TARGET)).toBe(EMPTY_TILE);
     expect(count(state, 'wood')).toBe(TOOLS.woodFromStump);
+    expect(state.stats.debrisCleared).toBe(1);
     expect(state.player.energy).toBe(PLAYER.maxEnergy - TOOLS.stumpHits * TOOLS.energyCost.axe);
     // Wood lands in the first empty slot.
     expect(state.inventory.slots[6]).toEqual({ itemId: 'wood', quantity: TOOLS.woodFromStump });
   });
 
-  it('refuses rocks with a hint', () => {
+  it('fells a tree into a fresh stump, then clears the stump: wood and cleared debris add up', () => {
+    let state = holding(scenario(blockedTile(Blocker.Tree, TOOLS.treeHits)), 'axe');
+    expect(planPrimaryAction(state).intent).toEqual({ kind: 'chop', blocker: Blocker.Tree });
+    for (let hp = TOOLS.treeHits - 1; hp >= 1; hp--) {
+      state = useTool(state);
+      expect(tileAt(state, TARGET)).toEqual(blockedTile(Blocker.Tree, hp));
+      expect(count(state, 'wood')).toBe(0);
+    }
+    state = useTool(state);
+    // The tree falls: its stump takes the usual stump hits, and the tree counts as cleared once.
+    expect(tileAt(state, TARGET)).toEqual(blockedTile(Blocker.Stump, TOOLS.stumpHits));
+    expect(count(state, 'wood')).toBe(TOOLS.woodFromTree);
+    expect(state.stats.debrisCleared).toBe(1);
+    expect(state.player.lastAction).toMatchObject({ kind: 'axe', success: true, target: TARGET });
+    expect(planPrimaryAction(state).intent).toEqual({ kind: 'chop', blocker: Blocker.Stump });
+    for (let hit = 0; hit < TOOLS.stumpHits; hit++) state = useTool(state);
+    expect(tileAt(state, TARGET)).toBe(EMPTY_TILE);
+    expect(count(state, 'wood')).toBe(TOOLS.woodFromTree + TOOLS.woodFromStump);
+    expect(state.stats.debrisCleared).toBe(2);
+    expect(state.player.energy).toBe(PLAYER.maxEnergy - (TOOLS.treeHits + TOOLS.stumpHits) * TOOLS.energyCost.axe);
+    expect(state.player.actionSeq).toBe(TOOLS.treeHits + TOOLS.stumpHits);
+    // Grass now: the axe has nothing left to do.
+    expectFailedAttempt(state, useTool(state), 'axe', TARGET, null);
+  });
+
+  it('fells the tree even without room for its wood, and says so', () => {
+    const state = withSlots(scenario(blockedTile(Blocker.Tree, 1)), [
+      { itemId: 'axe', quantity: 1 },
+      ...fullOf({ itemId: 'stone', quantity: INVENTORY.maxStack }).slice(1),
+    ]);
+    const next = useTool(state);
+    expect(tileAt(next, TARGET)).toEqual(blockedTile(Blocker.Stump, TOOLS.stumpHits));
+    expect(count(next, 'wood')).toBe(0);
+    expect(next.stats.debrisCleared).toBe(1);
+    expect(lastMessage(next)).toMatchObject({ text: 'No room for Wood.', tone: 'warn' });
+  });
+
+  it('refuses rocks and weeds with a hint', () => {
     const rock = holding(scenario(blockedTile(Blocker.Rock, 2)), 'axe');
     expectFailedAttempt(rock, useTool(rock), 'axe', TARGET, 'This rock needs a pickaxe.');
+    const weeds = holding(scenario(blockedTile(Blocker.Weeds)), 'axe');
+    expectFailedAttempt(weeds, useTool(weeds), 'axe', TARGET, 'Cut these weeds with the scythe.');
   });
 });
 
@@ -257,6 +302,109 @@ describe('scythe', () => {
     expectFailedAttempt(growing, useTool(growing), 'scythe', TARGET, null);
     const withered = holding(scenario(soilTile(TileState.Plowed, cropOf('parsnip', { dead: true }))), 'scythe');
     expect(tileAt(useTool(withered), TARGET)).toEqual(soilTile(TileState.Plowed));
+  });
+
+  it('cuts weeds down to grass for no energy and no drop, counting the cleared debris', () => {
+    const state = withEnergy(holding(scenario(blockedTile(Blocker.Weeds)), 'scythe'), 0);
+    const next = useTool(state);
+    expect(tileAt(next, TARGET)).toBe(EMPTY_TILE);
+    expect(next.player.energy).toBe(0);
+    expect(next.inventory).toBe(state.inventory);
+    expect(next.stats.debrisCleared).toBe(state.stats.debrisCleared + 1);
+    expect(next.player.lastAction).toEqual({ seq: 1, kind: 'scythe', target: TARGET, success: true });
+    expect(next.messages).toBe(state.messages);
+    expect(worldChangesOutside(state.maps.farm, next.maps.farm, TARGET)).toEqual([]);
+    // Now grass: nothing more to cut.
+    expectFailedAttempt(next, useTool(next), 'scythe', TARGET, null);
+  });
+
+  it('leaves weeds to the scythe: every other tool explains, interacting does nothing', () => {
+    for (const tool of ['hoe', 'pickaxe', 'axe'] as const) {
+      const state = holding(scenario(blockedTile(Blocker.Weeds)), tool);
+      expectFailedAttempt(state, useTool(state), tool, TARGET, 'Cut these weeds with the scythe.');
+    }
+    const hands = emptyHanded(scenario(blockedTile(Blocker.Weeds)));
+    expect(interact(hands)).toBe(hands);
+  });
+});
+
+describe('per-map rules', () => {
+  /** A bare trail tile in the forest and a bare cobble tile on the town's main street, with the tile south of each. */
+  const OFF_FARM = [
+    { mapId: 'forest', stand: { tx: 30, tz: 15 }, target: { tx: 30, tz: 16 } },
+    { mapId: 'town', stand: { tx: 10, tz: 16 }, target: { tx: 10, tz: 17 } },
+  ] as const;
+
+  it('refuses the hoe and seeds off the farm, with no energy spent', () => {
+    for (const { mapId, stand, target } of OFF_FARM) {
+      const there = withPlayer(BASE, stand, Direction.South, mapId);
+      expect(tileAt(there, target)).toBe(EMPTY_TILE);
+      const hoe = holding(there, 'hoe');
+      expectFailedAttempt(hoe, useTool(hoe), 'hoe', target, FARM_ONLY_REASON);
+      // Even on soil (which no map but the farm can have), seeds are refused.
+      const seeded = holding(withTile(there, target, soilTile(TileState.Plowed)), 'parsnip_seeds', 5);
+      expectFailedAttempt(seeded, useTool(seeded), 'plant', target, FARM_ONLY_REASON);
+    }
+    // The same actions work on the farm.
+    expect(tileAt(useTool(holding(scenario(EMPTY_TILE), 'hoe')), TARGET)).toEqual(soilTile(TileState.Plowed));
+  });
+
+  it('refills the watering can at the forest brook and the town river', () => {
+    for (const mapId of ['forest', 'town'] as const) {
+      const shore = waterShore(BASE, mapId);
+      const state = withWater(withPlayer(BASE, shore.at, shore.facing, mapId), 3);
+      const target = stepTile(shore.at, shore.facing);
+      for (const next of [useTool(holding(state, 'wateringCan')), interact(state)]) {
+        expect(next.inventory.water).toBe(TOOLS.wateringCanCapacity);
+        expect(next.player.lastAction).toMatchObject({ kind: 'refill', success: true, target });
+        expect(next.maps).toBe(state.maps);
+      }
+    }
+  });
+
+  it('does nothing, silently, when interacting with a town building', () => {
+    // The general store's door, faced from the square in front of it.
+    const state = emptyHanded(withPlayer(BASE, { tx: 6, tz: 7 }, Direction.North, 'town'));
+    expect(tileAt(state, { tx: 6, tz: 6 }).blocker).toBe(Blocker.Building);
+    expect(planInteraction(state).intent).toEqual({ kind: 'blocked', reason: null });
+    expect(interact(state)).toBe(state);
+    const hoe = holding(state, 'hoe');
+    expectFailedAttempt(hoe, useTool(hoe), 'hoe', { tx: 6, tz: 6 }, null);
+  });
+});
+
+describe('tiles holding a placed object', () => {
+  const sprinklerSoil = { ...soilTile(TileState.Plowed), object: { kind: 'sprinkler' } } as const;
+
+  it('never lets the pickaxe or the hoe clear or dig a tile with an object (no energy spent)', () => {
+    const chest = { ...EMPTY_TILE, object: { kind: 'chest', slots: Array.from({ length: INVENTORY.chestSlots }, () => null) } } as const;
+    const path = { ...EMPTY_TILE, object: { kind: 'woodPath' } } as const;
+    for (const tile of [sprinklerSoil, { ...soilTile(TileState.Watered), object: { kind: 'scarecrow' } } as const, chest, path]) {
+      for (const tool of ['pickaxe', 'hoe'] as const) {
+        const state = holding(scenario(tile), tool);
+        expect(planPrimaryAction(state).energyCost).toBe(0);
+        expectFailedAttempt(state, useTool(state), tool, TARGET, null);
+      }
+    }
+  });
+
+  it('waters the soil under a sprinkler and keeps the sprinkler', () => {
+    const state = holding(scenario(sprinklerSoil), 'wateringCan');
+    const next = useTool(state);
+    expect(tileAt(next, TARGET)).toEqual({ ...sprinklerSoil, state: TileState.Watered });
+    expect(next.inventory.water).toBe(state.inventory.water - 1);
+  });
+
+  it('scatters seeds around a tile with an object, never onto it', () => {
+    const beyond = { tx: TARGET.tx, tz: TARGET.tz + 1 };
+    const state = holding(withTile(scenario(sprinklerSoil), beyond, soilTile(TileState.Plowed)), 'parsnip_seeds', 5);
+    const next = useTool(state);
+    expect(tileAt(next, TARGET)).toBe(tileAt(state, TARGET));
+    expect(tileAt(next, beyond).crop).toEqual(createCropInstance('parsnip', 0));
+    expect(count(next, 'parsnip_seeds')).toBe(4);
+    // With only the object's tile tilled, there is nothing to plant.
+    const alone = holding(scenario(sprinklerSoil), 'parsnip_seeds', 5);
+    expect(planPrimaryAction(alone).intent.kind).toBe('blocked');
   });
 });
 
@@ -448,7 +596,7 @@ describe('interact: house and pond', () => {
   });
 
   it('refills the watering can at the generated pond', () => {
-    const shore = pondShore(BASE);
+    const shore = waterShore(BASE);
     const state = withWater(withPlayer(BASE, shore.at, shore.facing), 3);
     const next = interact(state);
     expect(next.inventory.water).toBe(TOOLS.wateringCanCapacity);

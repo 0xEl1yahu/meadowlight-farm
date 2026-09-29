@@ -14,6 +14,7 @@ import {
   Blocker,
   CROP_IDS,
   DIRECTIONS,
+  MAP_IDS,
   TOOL_TYPES,
   Direction,
   Season,
@@ -23,6 +24,8 @@ import {
   type GameState,
   type ItemId,
   type ItemStack,
+  type MapId,
+  type PlacedObject,
   type Tile,
 } from '../src/core/types';
 import { CROPS, createCropInstance, seedItemId, stageCount } from '../src/farming/crops';
@@ -53,6 +56,7 @@ import {
 } from '../src/state/selectors';
 import { rollWeather } from '../src/time/weather';
 import { forwardTile } from '../src/world/grid';
+import { getMap } from '../src/world/maps';
 import { EMPTY_TILE, blockedTile, getTile, isWalkable } from '../src/world/tiles';
 import {
   BASE,
@@ -101,6 +105,9 @@ describe('planPrimaryAction — tools', () => {
     });
     expect(planFor(blockedTile(Blocker.Rock, 2), 'hoe').intent).toEqual({ kind: 'blocked', reason: 'This rock needs a pickaxe.' });
     expect(planFor(blockedTile(Blocker.Stump, 3), 'hoe').intent).toEqual({ kind: 'blocked', reason: 'This stump needs an axe.' });
+    expect(planFor(blockedTile(Blocker.Tree, 4), 'hoe').intent).toEqual({ kind: 'blocked', reason: 'Chop this tree with the axe.' });
+    expect(planFor(blockedTile(Blocker.Weeds), 'hoe').intent).toEqual({ kind: 'blocked', reason: 'Cut these weeds with the scythe.' });
+    expect(planFor(blockedTile(Blocker.Building), 'hoe').intent).toEqual({ kind: 'blocked', reason: null });
     for (const tile of [plowed, watered, soilTile(TileState.Plowed, cropOf('parsnip')), blockedTile(Blocker.House), blockedTile(Blocker.Water)]) {
       expect(planFor(tile, 'hoe')).toEqual({ target: TARGET, intent: { kind: 'blocked', reason: null }, feedback: 'hoe', energyCost: 0 });
     }
@@ -146,17 +153,27 @@ describe('planPrimaryAction — tools', () => {
     expect(planFor(soilTile(TileState.Watered, cropOf('melon', { dead: true })), 'pickaxe').intent.kind).toBe('untill');
     expect(planFor(soilTile(TileState.Watered, cropOf('melon')), 'pickaxe').intent).toEqual({ kind: 'blocked', reason: null });
     expect(planFor(blockedTile(Blocker.Stump, 3), 'pickaxe').intent).toEqual({ kind: 'blocked', reason: 'This stump needs an axe.' });
+    expect(planFor(blockedTile(Blocker.Tree, 4), 'pickaxe').intent).toEqual({ kind: 'blocked', reason: 'Chop this tree with the axe.' });
+    expect(planFor(blockedTile(Blocker.Weeds), 'pickaxe').intent).toEqual({ kind: 'blocked', reason: 'Cut these weeds with the scythe.' });
     expect(planFor(EMPTY_TILE, 'pickaxe').intent).toEqual({ kind: 'blocked', reason: null });
   });
 
-  it('axe: chops stumps, explains rocks', () => {
+  it('axe: chops stumps and trees, explains rocks and weeds', () => {
     expect(planFor(blockedTile(Blocker.Stump, 1), 'axe')).toEqual({
       target: TARGET,
-      intent: { kind: 'chop' },
+      intent: { kind: 'chop', blocker: Blocker.Stump },
+      feedback: 'axe',
+      energyCost: TOOLS.energyCost.axe,
+    });
+    expect(planFor(blockedTile(Blocker.Tree, TOOLS.treeHits), 'axe')).toEqual({
+      target: TARGET,
+      intent: { kind: 'chop', blocker: Blocker.Tree },
       feedback: 'axe',
       energyCost: TOOLS.energyCost.axe,
     });
     expect(planFor(blockedTile(Blocker.Rock, 2), 'axe').intent).toEqual({ kind: 'blocked', reason: 'This rock needs a pickaxe.' });
+    expect(planFor(blockedTile(Blocker.Weeds), 'axe').intent).toEqual({ kind: 'blocked', reason: 'Cut these weeds with the scythe.' });
+    expect(planFor(blockedTile(Blocker.Building), 'axe').intent).toEqual({ kind: 'blocked', reason: null });
     expect(planFor(EMPTY_TILE, 'axe').intent).toEqual({ kind: 'blocked', reason: null });
     expect(planFor(soilTile(TileState.Plowed, matureCrop('parsnip')), 'axe').intent).toEqual({ kind: 'blocked', reason: null });
   });
@@ -168,6 +185,17 @@ describe('planPrimaryAction — tools', () => {
     expect(planFor(soilTile(TileState.Plowed, cropOf('parsnip', { stage: 3 })), 'scythe').intent).toEqual({ kind: 'blocked', reason: null });
     expect(planFor(soilTile(TileState.Plowed, cropOf('parsnip', { dead: true })), 'scythe').intent.kind).toBe('clearCrop');
     expect(planFor(EMPTY_TILE, 'scythe').intent).toEqual({ kind: 'blocked', reason: null });
+  });
+
+  it('scythe: cuts weeds for free, explains the debris it cannot clear', () => {
+    expect(planFor(blockedTile(Blocker.Weeds), 'scythe')).toEqual({ target: TARGET, intent: { kind: 'clearWeeds' }, feedback: 'scythe', energyCost: 0 });
+    expect(planFor(blockedTile(Blocker.Weeds), 'scythe', withEnergy(BASE, 0)).intent.kind).toBe('clearWeeds');
+    expect(planFor(blockedTile(Blocker.Tree, 4), 'scythe').intent).toEqual({ kind: 'blocked', reason: 'Chop this tree with the axe.' });
+    expect(planFor(blockedTile(Blocker.Rock, 2), 'scythe').intent).toEqual({ kind: 'blocked', reason: 'This rock needs a pickaxe.' });
+    expect(planFor(blockedTile(Blocker.Stump, 3), 'scythe').intent).toEqual({ kind: 'blocked', reason: 'This stump needs an axe.' });
+    for (const blocker of [Blocker.Water, Blocker.House, Blocker.ShippingBin, Blocker.Building] as const) {
+      expect(planFor(blockedTile(blocker), 'scythe').intent).toEqual({ kind: 'blocked', reason: null });
+    }
   });
 
   it('blocks tools that cost more energy than the player has, but not free actions', () => {
@@ -352,7 +380,9 @@ describe('harvestQuantity / describeIntent / isActionable', () => {
     expect(describeIntent({ kind: 'water' })).toBe('Water');
     expect(describeIntent({ kind: 'refill' })).toBe('Refill can');
     expect(describeIntent({ kind: 'mine' })).toBe('Break rock');
-    expect(describeIntent({ kind: 'chop' })).toBe('Chop stump');
+    expect(describeIntent({ kind: 'chop', blocker: Blocker.Stump })).toBe('Chop stump');
+    expect(describeIntent({ kind: 'chop', blocker: Blocker.Tree })).toBe('Chop tree');
+    expect(describeIntent({ kind: 'clearWeeds' })).toBe('Cut weeds');
     expect(describeIntent({ kind: 'untill' })).toBe('Clear soil');
     expect(describeIntent({ kind: 'scatter', cropId: 'cauliflower', tiles: [{ tx: 1, tz: 1 }] })).toBe('Scatter Cauliflower');
     expect(describeIntent({ kind: 'scatter', cropId: 'wheat', tiles: [{ tx: 1, tz: 1 }, { tx: 2, tz: 1 }] })).toBe('Scatter Wheat ×2');
@@ -457,16 +487,32 @@ function randomCrop(rng: () => number, day: number): CropInstance {
   return { ...createCropInstance(cropId, day), stage: Math.floor(rng() * stageCount(def)), daysInStage: 0 };
 }
 
+/** A placed object that may legally sit on `tile` (paths only on grass), or null. */
+function randomObject(rng: () => number, tile: Tile): PlacedObject | null {
+  if (tile.crop !== null || tile.blocker !== Blocker.None || rng() < 0.6) return null;
+  const roll = rng();
+  if (roll < 0.3) return { kind: 'sprinkler' };
+  if (roll < 0.5) return { kind: 'scarecrow' };
+  if (roll < 0.7) return { kind: 'chest', slots: Array.from({ length: INVENTORY.chestSlots }, () => null) };
+  return tile.state === TileState.Unplowed ? { kind: 'stonePath' } : { kind: 'qualitySprinkler' };
+}
+
 function randomTile(rng: () => number, day: number): Tile {
   const roll = rng();
-  if (roll < 0.12) return EMPTY_TILE;
-  if (roll < 0.22) return soilTile(rng() < 0.5 ? TileState.Plowed : TileState.Watered);
-  if (roll < 0.52) return soilTile(rng() < 0.5 ? TileState.Plowed : TileState.Watered, randomCrop(rng, day));
-  if (roll < 0.62) return blockedTile(Blocker.Rock, 1 + Math.floor(rng() * TOOLS.rockHits));
-  if (roll < 0.72) return blockedTile(Blocker.Stump, 1 + Math.floor(rng() * TOOLS.stumpHits));
-  if (roll < 0.82) return blockedTile(Blocker.Water);
-  if (roll < 0.9) return blockedTile(Blocker.ShippingBin);
-  return blockedTile(Blocker.House);
+  let tile: Tile;
+  if (roll < 0.12) tile = EMPTY_TILE;
+  else if (roll < 0.22) tile = soilTile(rng() < 0.5 ? TileState.Plowed : TileState.Watered);
+  else if (roll < 0.47) tile = soilTile(rng() < 0.5 ? TileState.Plowed : TileState.Watered, randomCrop(rng, day));
+  else if (roll < 0.55) tile = blockedTile(Blocker.Rock, 1 + Math.floor(rng() * TOOLS.rockHits));
+  else if (roll < 0.62) tile = blockedTile(Blocker.Stump, 1 + Math.floor(rng() * TOOLS.stumpHits));
+  else if (roll < 0.69) tile = blockedTile(Blocker.Tree, 1 + Math.floor(rng() * TOOLS.treeHits));
+  else if (roll < 0.75) tile = blockedTile(Blocker.Weeds);
+  else if (roll < 0.83) tile = blockedTile(Blocker.Water);
+  else if (roll < 0.88) tile = blockedTile(Blocker.ShippingBin);
+  else if (roll < 0.93) tile = blockedTile(Blocker.Building);
+  else tile = blockedTile(Blocker.House);
+  const object = randomObject(rng, tile);
+  return object === null ? tile : { ...tile, object };
 }
 
 function randomStack(rng: () => number, forceFull: boolean, itemId: ItemId = pick(rng, ALL_ITEMS)): ItemStack {
@@ -487,14 +533,17 @@ function randomSelection(rng: () => number): ItemStack | null {
 function randomSituation(rng: () => number): GameState {
   const day = Math.floor(rng() * 224);
   let state = atDay(BASE, day, 360 + Math.floor(rng() * 1000));
+  // Mostly the farm, where every intent is possible; sometimes a map that forbids farming.
+  const mapId: MapId = rng() < 0.7 ? 'farm' : pick(rng, ['forest', 'town'] as const);
+  const { grid } = state.maps[mapId];
   const facing = pick(rng, DIRECTIONS);
   // Bias toward edges so null targets are exercised too.
-  const tx = rng() < 0.1 ? pick(rng, [0, state.maps.farm.grid.width - 1]) : Math.floor(rng() * state.maps.farm.grid.width);
-  const tz = rng() < 0.1 ? pick(rng, [0, state.maps.farm.grid.depth - 1]) : Math.floor(rng() * state.maps.farm.grid.depth);
-  const standing = must(getTile(state.maps.farm, tx, tz));
-  if (!isWalkable(standing)) state = withTile(state, { tx, tz }, EMPTY_TILE);
-  state = withPlayer(state, { tx, tz }, facing);
-  const target = forwardTile(state.maps.farm.grid, { tx, tz }, facing, PLAYER.toolReachTiles);
+  const tx = rng() < 0.1 ? pick(rng, [0, grid.width - 1]) : Math.floor(rng() * grid.width);
+  const tz = rng() < 0.1 ? pick(rng, [0, grid.depth - 1]) : Math.floor(rng() * grid.depth);
+  const standing = must(getTile(state.maps[mapId], tx, tz));
+  if (!isWalkable(standing)) state = withTile(state, { tx, tz }, EMPTY_TILE, mapId);
+  state = withPlayer(state, { tx, tz }, facing, mapId);
+  const target = forwardTile(grid, { tx, tz }, facing, PLAYER.toolReachTiles);
   if (target !== null && rng() < 0.9) state = withTile(state, target, randomTile(rng, day));
 
   const full = rng() < 0.15;
@@ -555,19 +604,27 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
   v.equal('position', [next.player.tx, next.player.tz], [state.player.tx, state.player.tz]);
   v.equal('gold', next.player.gold, state.player.gold);
   v.same('time', next.time, state.time);
-  v.equal('world changes outside the target', worldChangesOutside(state.maps.farm, next.maps.farm, at), []);
-  v.same('forest', next.maps.forest, state.maps.forest);
-  v.same('town', next.maps.town, state.maps.town);
+  const active = state.player.mapId;
+  v.equal('map', next.player.mapId, active);
+  for (const id of MAP_IDS) {
+    if (id === active) v.equal('world changes outside the target', worldChangesOutside(state.maps[id], next.maps[id], at), []);
+    else v.same(`inactive map ${id}`, next.maps[id], state.maps[id]);
+  }
+  const clearsDebris = intent.kind === 'clearWeeds' || ((intent.kind === 'mine' || intent.kind === 'chop') && tileAt(state, at).blockerHp === 1);
+  v.equal('debris cleared', next.stats.debrisCleared, state.stats.debrisCleared + (clearsDebris ? 1 : 0));
+  if (!clearsDebris) v.same('stats', next.stats, state.stats);
 
   const before = tileAt(state, at);
   const after = tileAt(next, at);
   switch (intent.kind) {
     case 'till':
-      v.equal('tilled tile was grass', before.state, TileState.Unplowed);
+      v.check(getMap(active).allowsTilling, `tilled on ${active}`);
+      v.equal('tilled tile was bare grass', [before.state, before.object], [TileState.Unplowed, null]);
       v.equal('tilled tile', after, { ...before, state: TileState.Plowed });
       v.same('inventory', next.inventory, state.inventory);
       break;
     case 'water':
+      // A sprinkler standing on the soil stays where it is.
       v.equal('watered tile', after, { ...before, state: TileState.Watered });
       v.equal('water left', next.inventory.water, state.inventory.water - 1);
       v.same('slots', next.inventory.slots, state.inventory.slots);
@@ -579,27 +636,34 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
     case 'mine':
     case 'chop': {
       const drop = intent.kind === 'mine' ? 'stone' : 'wood';
-      const yieldQty = intent.kind === 'mine' ? TOOLS.stoneFromRock : TOOLS.woodFromStump;
-      v.equal('debris kind', before.blocker, intent.kind === 'mine' ? Blocker.Rock : Blocker.Stump);
+      const tree = intent.kind === 'chop' && intent.blocker === Blocker.Tree;
+      const yieldQty = intent.kind === 'mine' ? TOOLS.stoneFromRock : tree ? TOOLS.woodFromTree : TOOLS.woodFromStump;
+      v.equal('debris kind', before.blocker, intent.kind === 'mine' ? Blocker.Rock : intent.blocker);
       if (before.blockerHp > 1) {
         v.equal('damaged debris', after, { ...before, blockerHp: before.blockerHp - 1 });
         v.equal(`${drop} unchanged`, count(next, drop), count(state, drop));
       } else {
-        v.equal('cleared debris', after, EMPTY_TILE);
+        v.equal('debris remains', after, tree ? blockedTile(Blocker.Stump, TOOLS.stumpHits) : EMPTY_TILE);
         v.equal(`${drop} dropped`, count(next, drop), count(state, drop) + Math.min(yieldQty, capacityFor(state.inventory, drop)));
       }
       break;
     }
+    case 'clearWeeds':
+      v.equal('weeds cut', [before.blocker, after], [Blocker.Weeds, EMPTY_TILE]);
+      v.same('inventory', next.inventory, state.inventory);
+      break;
     case 'untill':
+      v.check(before.object === null, `untilled under a ${before.object?.kind ?? ''}`);
       v.check(before.crop === null || before.crop.dead, 'untilled a living crop');
       v.equal('untilled tile', after, EMPTY_TILE);
       v.same('inventory', next.inventory, state.inventory);
       break;
     case 'scatter':
       v.check(intent.tiles.length > 0, 'scatter plants at least one tile');
+      v.check(getMap(active).allowsTilling, `scattered on ${active}`);
       for (const coord of intent.tiles) {
         const soilBefore = tileAt(state, coord);
-        v.equal('scattered on empty soil', soilBefore.crop, null);
+        v.equal('scattered on empty soil', [soilBefore.crop, soilBefore.object], [null, null]);
         v.equal('scattered tile', tileAt(next, coord), { ...soilBefore, crop: createCropInstance(intent.cropId, state.time.absoluteDay) });
       }
       v.equal('one seed per tile', count(next, seedItemId(intent.cropId)), count(state, seedItemId(intent.cropId)) - intent.tiles.length);
@@ -670,7 +734,8 @@ describe('property: the planned outcome always matches what the reducer does', (
       }
       expect(violations.head()).toEqual([]);
       // The generator really exercised every branch.
-      for (const kind of ['till', 'water', 'refill', 'mine', 'chop', 'untill', 'scatter', 'harvest', 'clearCrop', 'ship', 'sleep', 'blocked', 'silent'] as const) {
+      const all = ['till', 'water', 'refill', 'mine', 'chop', 'clearWeeds', 'untill', 'scatter', 'harvest', 'clearCrop', 'ship', 'sleep'] as const;
+      for (const kind of [...all, 'blocked', 'silent'] as const) {
         expect(kinds.get(kind) ?? 0, `intent ${kind}`).toBeGreaterThan(10);
       }
       expect(nullTargets).toBeGreaterThan(10);
