@@ -135,6 +135,7 @@ const CONTROL_ROWS: readonly ControlRow[] = [
   { keys: ['T'], action: 'Time speed' },
   { keys: ['N'], action: 'Sleep' },
   { keys: ['P', 'Esc'], action: 'Pause' },
+  { keys: ['M'], action: 'Music on / off' },
 ];
 
 const HELP_HINTS: readonly (readonly [string, string])[] = [

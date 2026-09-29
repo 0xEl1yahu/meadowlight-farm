@@ -12,6 +12,7 @@
  * State changes reach render systems through `sync(state, prev)` from the store subscription,
  * never through polling, so the per-frame cost of an idle farm is animation only.
  */
+import { MusicPlayer } from './audio/music';
 import './style.css';
 import { TIME } from './config';
 import { FixedStepClock } from './core/loop';
@@ -73,6 +74,7 @@ function bootstrap(): () => void {
 
   const ctx = new SceneContext(container, selectActiveWorld(initial).grid);
   const player = new PlayerRenderer(ctx);
+  const music = new MusicPlayer();
   const systems: readonly RenderSystem[] = [
     player,
     new LightingManager(ctx),
@@ -165,11 +167,13 @@ function bootstrap(): () => void {
       if (system !== player) system.update(frameContext);
     }
     hud.update(frameContext);
+    music.update(state, frameContext.clockMinutes, selectIsFrozen(state));
     ctx.render();
   };
   rafId = requestAnimationFrame(frame);
 
   return () => {
+    music.dispose();
     cancelAnimationFrame(rafId);
     window.removeEventListener('pagehide', saveOnHide);
     unsubscribe();
