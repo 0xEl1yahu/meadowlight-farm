@@ -6,7 +6,7 @@
  *   1. input.update       – held-key movement pacing (dispatches player actions)
  *   2. fixed-step clock   – converts scaled real time into whole game minutes (time/tick)
  *   3. player.update      – lerps the character; the camera then follows it
- *   4. other systems      – lighting, weather, crops, effects… (animation only)
+ *   4. other systems      – lighting, weather, crops, placed objects, effects… (animation only)
  *   5. hud.update, render
  *
  * State changes reach render systems through `sync(state, prev)` from the store subscription,
@@ -22,6 +22,7 @@ import { CropRenderer } from './render/CropRenderer';
 import { EffectsRenderer } from './render/EffectsRenderer';
 import { LightingManager } from './render/LightingManager';
 import { updateSharedUniforms } from './render/materials';
+import { ObjectRenderer } from './render/ObjectRenderer';
 import { PlayerRenderer } from './render/PlayerRenderer';
 import { SceneContext } from './render/SceneContext';
 import { StructureRenderer } from './render/StructureRenderer';
@@ -78,6 +79,7 @@ function bootstrap(): () => void {
     new TerrainRenderer(ctx),
     new StructureRenderer(ctx),
     new CropRenderer(ctx),
+    new ObjectRenderer(ctx),
     new TileHighlighter(ctx),
     new WeatherRenderer(ctx),
     new EffectsRenderer(ctx),

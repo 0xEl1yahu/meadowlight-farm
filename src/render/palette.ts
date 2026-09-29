@@ -35,6 +35,8 @@ export const PALETTE = {
   treeCanopy: [0x7fc47a, 0x6fb877, 0x93cf7f, 0x86c98b] as const,
   flower: [0xffb3c7, 0xfff1a8, 0xc9b6ff, 0xffffff] as const,
   fence: 0xe6cfa6,
+  /** Player-built wood fence objects: a warmer, darker timber than the farm's boundary fence. */
+  woodFence: 0xc99b6b,
   highlightValid: 0xffffff,
   highlightInvalid: 0xff8a8a,
   player: {

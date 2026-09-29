@@ -3,7 +3,9 @@
  * - forest trees stay small enough not to bury the floor (height ≤ 1.5, canopy radius ≤ 0.55 tile);
  * - the highlight box checks a placed object first, treats paths as ground, and has heights for
  *   Tree, Weeds and Building tiles;
- * - the player stands on path planks.
+ * - the player stands on path planks;
+ * - rain splashes land on path planks and never on a blocking placed object;
+ * - meadow tufts and flowers step aside for placed objects.
  * three's geometry math runs in node without a WebGL context.
  */
 import * as THREE from 'three';
@@ -19,10 +21,14 @@ import {
   playerRootHeight,
 } from '../src/render/PlayerRenderer';
 import { createTreeGeometry, TREE_SHAPES, type TreeSpecies } from '../src/render/structureGeometry';
-import { TREE } from '../src/render/TerrainRenderer';
+import type { SceneContext } from '../src/render/SceneContext';
+import { TREE, TerrainRenderer } from '../src/render/TerrainRenderer';
 import { createWeedsGeometry } from '../src/render/terrainGeometry';
 import { highlightBoxHeight, highlightGroundHeight } from '../src/render/TileHighlighter';
-import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
+import { splashSurfaceHeight } from '../src/render/WeatherRenderer';
+import { selectActiveWorld } from '../src/state/selectors';
+import { EMPTY_TILE, blockedTile, forEachTile } from '../src/world/tiles';
+import { BASE, withTile } from './testUtils';
 
 const SPECIES = Object.keys(TREE_SHAPES) as TreeSpecies[];
 
@@ -159,5 +165,54 @@ describe('player ground height', () => {
       const blobWorld = playerRootHeight(surface) + playerBlobLocalHeight(surface);
       expect(blobWorld).toBeCloseTo(surface + BLOB_LIFT, 9);
     }
+  });
+});
+
+describe('rain splash surface', () => {
+  it('splashes on path planks, soil, grass and water, never on blocking objects or blockers', () => {
+    expect(splashSurfaceHeight(objectTile({ kind: 'woodPath' }))).toBe(HEIGHTS.pathTop);
+    expect(splashSurfaceHeight(objectTile({ kind: 'stonePath' }))).toBe(HEIGHTS.pathTop);
+    expect(splashSurfaceHeight({ ...EMPTY_TILE, state: TileState.Watered })).toBe(HEIGHTS.soilTop);
+    expect(splashSurfaceHeight(EMPTY_TILE)).toBe(HEIGHTS.grassTop);
+    expect(splashSurfaceHeight(blockedTile(Blocker.Water))).toBe(HEIGHTS.waterSurface);
+    expect(splashSurfaceHeight(blockedTile(Blocker.Tree, 4))).toBeNaN();
+    for (const kind of PLACED_OBJECT_KINDS) {
+      if (kind === 'woodPath' || kind === 'stonePath') continue;
+      expect(splashSurfaceHeight(objectTile(SAMPLE_OBJECTS[kind])), kind).toBeNaN();
+    }
+    // A sprinkler on soil blocks the splash too.
+    expect(splashSurfaceHeight({ ...EMPTY_TILE, state: TileState.Plowed, object: { kind: 'sprinkler' } })).toBeNaN();
+  });
+});
+
+describe('terrain meadow under placed objects', () => {
+  it('clears tufts and flowers from tiles with an object and brings them back when it goes', () => {
+    const scene = new THREE.Scene();
+    const grid = selectActiveWorld(BASE).grid;
+    const terrain = new TerrainRenderer({ scene, grid } as unknown as SceneContext);
+    terrain.sync(BASE, null);
+    const meadowCount = (): number => {
+      let total = 0;
+      for (const name of ['terrain-tufts', 'terrain-flowers']) {
+        const mesh = scene.getObjectByName(name);
+        if (!(mesh instanceof THREE.InstancedMesh)) throw new Error(`no ${name}`);
+        total += mesh.count;
+      }
+      return total;
+    };
+    const before = meadowCount();
+    expect(before).toBeGreaterThan(0);
+    // A path on every bare grass tile of the farm.
+    let paved = BASE;
+    forEachTile(selectActiveWorld(BASE), (tile, tx, tz) => {
+      if (tile.state === TileState.Unplowed && tile.crop === null && tile.object === null) {
+        paved = withTile(paved, { tx, tz }, { ...tile, object: { kind: 'stonePath' } });
+      }
+    });
+    terrain.sync(paved, BASE);
+    expect(meadowCount()).toBe(0);
+    terrain.sync(BASE, paved);
+    expect(meadowCount()).toBe(before);
+    terrain.dispose();
   });
 });

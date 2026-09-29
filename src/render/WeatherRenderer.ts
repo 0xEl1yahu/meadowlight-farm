@@ -22,7 +22,7 @@
  */
 import * as THREE from 'three';
 import { mulberry32 } from '../core/hash';
-import { Blocker, TileState, Weather, type GameState, type WorldState } from '../core/types';
+import { Blocker, TileState, Weather, type GameState, type Tile, type WorldState } from '../core/types';
 import { CAMERA, HEIGHTS } from './constants';
 import { sampleDaylight } from './LightingManager';
 import type { SceneContext } from './SceneContext';
@@ -185,6 +185,18 @@ function createSplashGeometry(): THREE.BufferGeometry {
 // ---------------------------------------------------------------------------
 // Scratch
 // ---------------------------------------------------------------------------
+
+/**
+ * Height a rain splash lands at on `tile`, or NaN where none should appear: blocked tiles and tiles
+ * with a blocking placed object. Paths splash on their planks, soil on its sunken surface.
+ */
+export function splashSurfaceHeight(tile: Tile): number {
+  if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
+  if (tile.object !== null) return isPathObject(tile.object) ? HEIGHTS.pathTop : Number.NaN;
+  if (tile.state === TileState.Plowed || tile.state === TileState.Watered) return HEIGHTS.soilTop;
+  if (tile.state === TileState.Blocked) return Number.NaN;
+  return GROUND_Y;
+}
 
 const scratchMatrix = new THREE.Matrix4();
 const scratchQuaternion = new THREE.Quaternion();
@@ -525,12 +537,7 @@ export class WeatherRenderer implements RenderSystem {
     const chunk = world.chunks[cz * grid.chunksX + cx];
     if (chunk === undefined) return GROUND_Y;
     const tile = chunk.tiles[(tz - chunk.z0) * chunk.width + (tx - chunk.x0)];
-    if (tile === undefined) return GROUND_Y;
-    if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
-    if (tile.object !== null) return isPathObject(tile.object) ? HEIGHTS.pathTop : Number.NaN;
-    if (tile.state === TileState.Plowed || tile.state === TileState.Watered) return HEIGHTS.soilTop;
-    if (tile.state === TileState.Blocked) return Number.NaN;
-    return GROUND_Y;
+    return tile === undefined ? GROUND_Y : splashSurfaceHeight(tile);
   }
 
   private trySplash(x: number, z: number): void {

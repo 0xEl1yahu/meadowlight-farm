@@ -26,6 +26,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import type { ProduceForm } from '../farming/crops';
 
 // ---------------------------------------------------------------------------
 // Accent multipliers (sRGB hex; multiplied by the instance colour)
@@ -986,4 +987,32 @@ export function createThirstDropletGeometry(): THREE.BufferGeometry {
     position.setY(i, y > 0 ? y * 1.85 : y * 1.05);
   }
   return assemble([piece(droplet)], null);
+}
+
+// ---------------------------------------------------------------------------
+// Lookup
+// ---------------------------------------------------------------------------
+
+/** Produce forms that have their own geometry (every form except 'none'). */
+export type ProduceGeometryForm = Exclude<ProduceForm, 'none'>;
+
+/**
+ * A fresh produce geometry for `form`, as the CropRenderer draws it on a mature crop. Used by the
+ * ObjectRenderer for giant crops (scaled up and tinted with the crop's produce colour).
+ */
+export function produceGeometryFor(form: ProduceGeometryForm): THREE.BufferGeometry {
+  switch (form) {
+    case 'bulb':
+      return createBulbGeometry();
+    case 'head':
+      return createHeadGeometry();
+    case 'berries':
+      return createBerryClusterGeometry();
+    case 'cob':
+      return createCobGeometry();
+    case 'gourd':
+      return createGourdGeometry();
+    case 'ears':
+      return createEarsGeometry();
+  }
 }
