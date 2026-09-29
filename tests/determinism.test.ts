@@ -21,6 +21,7 @@ import {
   type Direction,
   type GameState,
   type MapId,
+  type SlotRef,
   type Tile,
   type TileCoord,
   type WorldState,
@@ -56,6 +57,22 @@ function randomAction(rng: () => number): GameAction {
   if (roll < 0.945) return actions.setPaused(rng() < 0.4);
   if (roll < 0.955) return actions.setTimeScale(pick(rng, [1, 2, 3, 4, 8, 16]));
   return actions.tick(TIME.maxTickMinutes);
+}
+
+/**
+ * `randomAction` plus the backpack: opening the inventory screen, closing panels, and hotbar ↔
+ * backpack moves (including locked and out-of-range slots and odd quantities).
+ */
+function randomActionWithMoves(rng: () => number): GameAction {
+  const roll = rng();
+  // Panels freeze the game, so they close more often than they open.
+  if (roll < 0.06) return rng() < 0.3 ? actions.setInventoryOpen(true) : actions.closePanel();
+  if (roll < 0.3) {
+    const from: SlotRef = { container: 'player', index: Math.floor(rng() * 26) - 1 };
+    const to: SlotRef = { container: 'player', index: Math.floor(rng() * 26) - 1 };
+    return actions.moveItem(from, to, rng() < 0.5 ? null : Math.floor(rng() * 20) - 1);
+  }
+  return randomAction(rng);
 }
 
 /** A random session, fixed up front. Its random walk may reach a gate and warp. */
@@ -110,7 +127,7 @@ function traveller(seed: number): (state: GameState) => GameAction {
     if (rng() >= 0.7) return randomAction(rng);
     // A traveller doesn't wait for menus: it closes them and walks on.
     if (state.ui.paused) return actions.setPaused(false);
-    if (state.ui.shopOpen) return actions.setShopOpen(false);
+    if (state.ui.panel.kind !== 'none') return actions.closePanel();
     const { player } = state;
     if (goal === null || goal.mapId !== player.mapId) goal = { mapId: player.mapId, warp: pick(rng, MAPS[player.mapId].warps) };
     const { warp } = goal;
@@ -312,6 +329,36 @@ describe('deterministic replay across maps', () => {
       expect(serializeGame(replayed)).toBe(serializeGame(first.state));
       // Replaying the log through a non-freezing store gives the same result.
       expect(play(first.recorded, false).state).toEqual(first.state);
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('deterministic replay with the backpack', () => {
+  it(
+    'replays sessions full of inventory moves and panels identically, sharing what is unchanged',
+    () => {
+      const rng = mulberry32(0xbac7);
+      const session = Array.from({ length: 4000 }, () => randomActionWithMoves(rng));
+      const first = play(session, true);
+      const second = play(session, false);
+      expect(second.state).toEqual(first.state);
+      expect(session.reduce(gameReducer, createInitialState())).toEqual(first.state);
+      expect(first.violations).toEqual([]);
+      const { inventory } = first.state;
+      expect(inventory.slots).toHaveLength(INVENTORY.slotCount);
+      expect(inventory.slots.slice(inventory.unlockedSlots).every((slot) => slot === null)).toBe(true);
+      expect(inventory.selected).toBeLessThan(INVENTORY.hotbarSize);
+      // Moves really happened: something reached the backpack at some point.
+      const everInBackpack = session.reduce<{ state: GameState; seen: boolean }>(
+        (acc, action) => {
+          const state = gameReducer(acc.state, action);
+          const seen = acc.seen || state.inventory.slots.slice(INVENTORY.hotbarSize).some((slot) => slot !== null);
+          return { state, seen };
+        },
+        { state: createInitialState(), seen: false },
+      ).seen;
+      expect(everInBackpack).toBe(true);
     },
     HEAVY_TEST_TIMEOUT_MS,
   );

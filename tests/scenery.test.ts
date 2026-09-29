@@ -434,7 +434,7 @@ describe('StructureRenderer', () => {
     const { scene, renderer, root } = setup();
     renderer.sync(FARM, null);
     renderer.sync(TOWN, null);
-    const pending: GameState = { ...TOWN, shipping: { ...TOWN.shipping, pending: [{ itemId: 'parsnip', quantity: 1 }] } };
+    const pending: GameState = { ...TOWN, shipping: { ...TOWN.shipping, pending: [{ itemId: 'parsnip', quantity: 1, quality: 0 }] } };
     renderer.sync(pending, TOWN);
     renderer.update(frameAt(pending, 12 * 60));
     expect(root.getObjectByName('shipping-marker')?.visible).toBe(false);

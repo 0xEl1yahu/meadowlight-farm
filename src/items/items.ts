@@ -2,7 +2,7 @@
  * Item registry. Tools and materials are declared here; seed and produce items are derived
  * from the crop registry so new crops need no item boilerplate.
  */
-import { INVENTORY, TOOLS } from '../config';
+import { FARMING, INVENTORY, TOOLS } from '../config';
 import { CROPS, seedItemId } from '../farming/crops';
 import {
   CROP_IDS,
@@ -11,6 +11,7 @@ import {
   type CropId,
   type ItemId,
   type MaterialItemId,
+  type Quality,
   type SeedItemId,
   type ToolType,
 } from '../core/types';
@@ -26,6 +27,8 @@ interface ItemBase {
   readonly sellPrice: number | null;
   /** Representative colour for UI icons. */
   readonly color: number;
+  /** Whether stacks of this item carry a silver or gold quality (produce; later forage, food, animal products). */
+  readonly hasQuality: boolean;
 }
 
 export interface ToolItem extends ItemBase {
@@ -85,6 +88,7 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
       maxStack: 1,
       sellPrice: null,
       color: info.color,
+      hasQuality: false,
       energyCost: TOOLS.energyCost[tool],
     });
   }
@@ -100,6 +104,7 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
       maxStack: INVENTORY.maxStack,
       sellPrice: Math.max(1, Math.floor(crop.seedPrice / 2)),
       color: crop.visual.foliageColor,
+      hasQuality: false,
       price: crop.seedPrice,
     });
     registry.set(cropId, {
@@ -107,10 +112,12 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
       id: cropId,
       cropId,
       name: crop.name,
-      description: `Sells for ${crop.sellPrice}g.`,
+      // No price here: the price depends on the stack's quality (see sellPriceFor).
+      description: 'Ship it for gold. Silver and gold ones sell for more.',
       maxStack: INVENTORY.maxStack,
       sellPrice: crop.sellPrice,
       color: crop.visual.produceColor,
+      hasQuality: true,
     });
   }
   for (const material of MATERIAL_IDS) {
@@ -123,6 +130,7 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
       maxStack: INVENTORY.maxStack,
       sellPrice: info.sellPrice,
       color: info.color,
+      hasQuality: false,
     });
   }
   return registry;
@@ -142,4 +150,13 @@ export function isItemId(value: unknown): value is ItemId {
 
 export function isSeedItemId(value: unknown): value is SeedItemId {
   return isItemId(value) && getItem(value).kind === 'seed';
+}
+
+/**
+ * Shipping value of one unit of `itemId` at `quality`: the base price times the quality's
+ * multiplier, rounded down. 0 for items that can't be shipped.
+ */
+export function sellPriceFor(itemId: ItemId, quality: Quality): number {
+  const price = getItem(itemId).sellPrice;
+  return price === null ? 0 : Math.floor(price * FARMING.qualityMultipliers[quality]);
 }

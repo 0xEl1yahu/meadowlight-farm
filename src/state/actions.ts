@@ -2,7 +2,7 @@
  * Every way the game state can change. Actions are plain serialisable objects, so an action
  * log replayed from the same initial state reproduces the same game exactly.
  */
-import type { Direction, GameState, SeedItemId } from '../core/types';
+import type { Direction, GameState, SeedItemId, SlotRef } from '../core/types';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -15,7 +15,12 @@ export type GameAction =
   | { readonly type: 'player/interact' }
   | { readonly type: 'inventory/select'; readonly slot: number }
   | { readonly type: 'inventory/cycle'; readonly delta: number }
+  /** Moves `quantity` units (null = the whole stack) between two slots: player ↔ player or player ↔ open chest. */
+  | { readonly type: 'inventory/move'; readonly from: SlotRef; readonly to: SlotRef; readonly quantity: number | null }
   | { readonly type: 'shop/setOpen'; readonly open: boolean }
+  | { readonly type: 'ui/setInventoryOpen'; readonly open: boolean }
+  /** Closes whichever panel is open. */
+  | { readonly type: 'ui/closePanel' }
   | { readonly type: 'shop/buy'; readonly itemId: SeedItemId; readonly quantity: number }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
   | { readonly type: 'game/setTimeScale'; readonly timeScale: number }
@@ -32,7 +37,15 @@ export const actions = {
   interact: (): GameAction => ({ type: 'player/interact' }),
   selectSlot: (slot: number): GameAction => ({ type: 'inventory/select', slot }),
   cycleSlot: (delta: number): GameAction => ({ type: 'inventory/cycle', delta }),
+  moveItem: (from: SlotRef, to: SlotRef, quantity: number | null = null): GameAction => ({
+    type: 'inventory/move',
+    from,
+    to,
+    quantity,
+  }),
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
+  setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
+  closePanel: (): GameAction => ({ type: 'ui/closePanel' }),
   buy: (itemId: SeedItemId, quantity: number): GameAction => ({ type: 'shop/buy', itemId, quantity }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),

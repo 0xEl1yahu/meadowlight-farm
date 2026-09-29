@@ -2,7 +2,7 @@
  * Save / load. GameState is plain JSON-compatible data, so persistence is serialisation plus a
  * strict structural validator — a corrupted or outdated save is rejected, never half-loaded.
  */
-import { TIME } from '../config';
+import { INVENTORY, TIME } from '../config';
 import {
   Blocker,
   MAP_IDS,
@@ -153,13 +153,22 @@ function isValidPlayer(player: unknown, maps: GameState['maps']): boolean {
   return isValidActionEvent(player.lastAction) && player.lastAction.seq === player.actionSeq;
 }
 
+/** The two sizes the backpack comes in: the starting 24 slots, and all 36 after the upgrade. */
+const UNLOCKED_SLOT_COUNTS: readonly number[] = [INVENTORY.startingUnlockedSlots, INVENTORY.slotCount];
+
+/**
+ * INVENTORY.slotCount slots, each null or a valid stack; every slot at or above `unlockedSlots`
+ * is null; the selection is a hotbar slot; the water fits the can.
+ */
 function isValidInventory(inventory: unknown): boolean {
+  if (!isObj(inventory) || !Array.isArray(inventory.slots) || inventory.slots.length !== INVENTORY.slotCount) return false;
+  const unlocked = inventory.unlockedSlots;
+  if (!isOneOf(unlocked, UNLOCKED_SLOT_COUNTS)) return false;
   return (
-    isObj(inventory) &&
-    Array.isArray(inventory.slots) &&
-    inventory.slots.length >= 1 &&
-    inventory.slots.every((slot: unknown) => slot === null || isValidStack(slot, true)) &&
-    isIntIn(inventory.selected, 0, inventory.slots.length - 1) &&
+    (inventory.slots as readonly unknown[]).every(
+      (slot, i) => slot === null || (i < unlocked && isValidStack(slot, true)),
+    ) &&
+    isIntIn(inventory.selected, 0, INVENTORY.hotbarSize - 1) &&
     isIntIn(inventory.waterCapacity, 1, 100_000) &&
     isIntIn(inventory.water, 0, inventory.waterCapacity)
   );
@@ -174,10 +183,15 @@ function isValidShipping(shipping: unknown): boolean {
   );
 }
 
+/**
+ * The UI section. Only the panel's shape is checked (an object with a string `kind`): the loader
+ * resets it anyway, and later panel kinds must not need a migration.
+ */
 function isValidUi(ui: unknown): boolean {
   return (
     isObj(ui) &&
-    isBool(ui.shopOpen) &&
+    isObj(ui.panel) &&
+    typeof ui.panel.kind === 'string' &&
     isBool(ui.paused) &&
     typeof ui.timeScale === 'number' &&
     (TIME.timeScales as readonly number[]).includes(ui.timeScale)
@@ -260,20 +274,59 @@ function migrateFarmTile(tile: Obj, tx: number, tz: number): Obj {
   return { ...tile, object: null, fertilizer: null };
 }
 
+/** A saved v2 stack as a v3 stack: normal quality. Non-objects pass through for the validator to reject. */
+function migrateStack(stack: unknown): unknown {
+  return isObj(stack) ? { ...stack, quality: 0 } : stack;
+}
+
 /**
- * Version 2 predates multiple maps, placed objects, fertiliser and the later-workstream
- * sections. The old `world` becomes `maps.farm`: every tile gains `object: null, fertilizer:
- * null` (chunk revisions are kept), and Rock or Stump debris on the four farm reserved (gate)
- * tiles is cleared so the gates are passable; crops and soil there stay, being walkable. The
- * forest and the town are generated from the save's seed, the player stands on the farm, and
- * every section starts from `createDefaultSections()`, exactly as a new game would.
+ * A saved v2 inventory as a v3 one: every stack at normal quality, the slots padded with null
+ * to INVENTORY.slotCount, and the starting unlocked count. Null when it can't be expressed: more
+ * than slotCount slots, or anything held at or above the starting unlocked count.
+ */
+function migrateInventory(inventory: unknown): Obj | null {
+  if (!isObj(inventory) || !Array.isArray(inventory.slots)) return null;
+  const old = inventory.slots as readonly unknown[];
+  if (old.length > INVENTORY.slotCount) return null;
+  if (old.some((slot, i) => slot !== null && i >= INVENTORY.startingUnlockedSlots)) return null;
+  const slots = Array.from({ length: INVENTORY.slotCount }, (_, i) => {
+    const slot = old[i];
+    return slot === undefined || slot === null ? null : migrateStack(slot);
+  });
+  return { ...inventory, slots, unlockedSlots: INVENTORY.startingUnlockedSlots };
+}
+
+/**
+ * Version 2 predates multiple maps, placed objects, fertiliser, item quality, the 36-slot
+ * inventory, UI panels and the later-workstream sections. The old `world` becomes `maps.farm`:
+ * every tile gains `object: null, fertilizer: null` (chunk revisions are kept), and Rock or
+ * Stump debris on the four farm reserved (gate) tiles is cleared so the gates are passable;
+ * crops and soil there stay, being walkable. The forest and the town are generated from the
+ * save's seed and the player stands on the farm. Every inventory and shipping stack gets normal
+ * quality and the inventory grows to 36 slots (24 unlocked). The UI keeps a valid time scale
+ * with no panel open. Every section starts from `createDefaultSections()`, exactly as a new
+ * game would.
  */
 function migrateV2toV3(save: Obj): Obj {
   if (!isIntIn(save.seed, 0, 0xffffffff)) return save;
   const farm = mapSavedTiles(save.world, migrateFarmTile);
-  if (farm === null || !isObj(save.player)) return save;
+  const inventory = migrateInventory(save.inventory);
+  const { shipping } = save;
+  if (farm === null || inventory === null || !isObj(save.player)) return save;
+  if (!isObj(shipping) || !Array.isArray(shipping.pending)) return save;
   const maps = { farm, forest: MAPS.forest.generate(save.seed), town: MAPS.town.generate(save.seed) };
-  const migrated: Obj = { ...save, ...createDefaultSections(), version: 3, maps, player: { ...save.player, mapId: 'farm' } };
+  const oldScale = isObj(save.ui) ? save.ui.timeScale : undefined;
+  const timeScale = isOneOf(oldScale, TIME.timeScales as readonly number[]) ? oldScale : 1;
+  const migrated: Obj = {
+    ...save,
+    ...createDefaultSections(),
+    version: 3,
+    maps,
+    player: { ...save.player, mapId: 'farm' },
+    inventory,
+    shipping: { ...shipping, pending: (shipping.pending as readonly unknown[]).map(migrateStack) },
+    ui: { panel: { kind: 'none' }, paused: false, timeScale },
+  };
   delete migrated.world;
   return migrated;
 }
@@ -294,7 +347,7 @@ export function deserializeGame(json: string): GameState | null {
   try {
     const parsed: unknown = migrateSave(JSON.parse(json));
     if (!isValidGameState(parsed)) return null;
-    return { ...parsed, ui: { ...parsed.ui, shopOpen: false, paused: false } };
+    return { ...parsed, ui: { ...parsed.ui, panel: { kind: 'none' }, paused: false } };
   } catch {
     return null;
   }

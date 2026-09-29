@@ -26,13 +26,27 @@ import {
   deserializeGame,
   isValidGameState,
   loadGame,
+  migrateSave,
   saveGame,
   serializeGame,
 } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
-import { BASE, cropOf, holding, matureCrop, soilTile, withPlayer, withTile } from './testUtils';
+import {
+  BASE,
+  cropOf,
+  holding,
+  legacySave,
+  matureCrop,
+  must,
+  soilTile,
+  stack,
+  withPlayer,
+  withSlots,
+  withTile,
+  type SaveJson,
+} from './testUtils';
 
 type JsonPath = readonly (string | number)[];
 
@@ -71,11 +85,11 @@ function richState(): GameState {
   ];
   state = script.reduce(gameReducer, state);
   state = gameReducer(holding(withPlayer(state, { tx: 9, tz: 6 }, Direction.North), 'parsnip_seeds', 4), actions.interact());
-  return { ...state, ui: { shopOpen: true, paused: true, timeScale: 4 } };
+  return { ...state, ui: { panel: { kind: 'shop' }, paused: true, timeScale: 4 } };
 }
 
 function withMenusClosed(state: GameState): GameState {
-  return { ...state, ui: { ...state.ui, shopOpen: false, paused: false } };
+  return { ...state, ui: { ...state.ui, panel: { kind: 'none' }, paused: false } };
 }
 
 describe('serializeGame / deserializeGame round trip', () => {
@@ -117,7 +131,7 @@ describe('serializeGame / deserializeGame round trip', () => {
     const lateNight = { ...BASE, time: { ...BASE.time, minuteOfDay: TIME.passOutMinute } };
     expect(deserializeGame(serializeGame(lateNight))).toEqual(lateNight);
     // The shipping bin has no stack limit.
-    const bigShipment: GameState = { ...BASE, shipping: { pending: [{ itemId: 'parsnip', quantity: 5000 }], lastPayout: 0 } };
+    const bigShipment: GameState = { ...BASE, shipping: { pending: [{ itemId: 'parsnip', quantity: 5000, quality: 2 }], lastPayout: 0 } };
     expect(deserializeGame(serializeGame(bigShipment))).toEqual(bigShipment);
     const exhausted: GameState = { ...BASE, player: { ...BASE.player, energy: 0 }, inventory: { ...BASE.inventory, water: 0 } };
     expect(deserializeGame(serializeGame(exhausted))).toEqual(exhausted);
@@ -242,18 +256,42 @@ describe('deserializeGame rejects corrupted saves', () => {
     ['unknown item', ['inventory', 'slots', 5, 'itemId'], 'diamond'],
     ['slot that is not a stack', ['inventory', 'slots', 7], 'hoe'],
     ['no slots', ['inventory', 'slots'], []],
+    ['35 slots', ['inventory', 'slots'], Array.from({ length: 35 }, () => null)],
+    ['37 slots', ['inventory', 'slots'], Array.from({ length: 37 }, () => null)],
+    ['the old 12-slot hotbar', ['inventory', 'slots'], Array.from({ length: 12 }, () => null)],
+    ['missing unlockedSlots', ['inventory', 'unlockedSlots'], undefined],
+    ['30 unlocked slots', ['inventory', 'unlockedSlots'], 30],
+    ['string unlockedSlots', ['inventory', 'unlockedSlots'], '24'],
+    ['an item in a locked slot', ['inventory', 'slots', 24], { itemId: 'stone', quantity: 1, quality: 0 }],
+    ['an item in the last locked slot', ['inventory', 'slots', 35], { itemId: 'stone', quantity: 1, quality: 0 }],
+    ['a stack without quality', ['inventory', 'slots', 5, 'quality'], undefined],
+    ['quality 3', ['inventory', 'slots', 5, 'quality'], 3],
+    ['negative quality', ['inventory', 'slots', 5, 'quality'], -1],
+    ['fractional quality', ['inventory', 'slots', 5, 'quality'], 0.5],
+    ['string quality', ['inventory', 'slots', 5, 'quality'], '0'],
+    ['silver seeds', ['inventory', 'slots', 5, 'quality'], 1],
+    ['a gold hoe', ['inventory', 'slots', 0, 'quality'], 2],
+    ['a selection in the backpack', ['inventory', 'selected'], 20],
     ['selection past the hotbar', ['inventory', 'selected'], INVENTORY.hotbarSize],
     ['negative selection', ['inventory', 'selected'], -1],
     ['overfull watering can', ['inventory', 'water'], 41],
     ['zero can capacity', ['inventory', 'waterCapacity'], 0],
     // Shipping
     ['empty pending stack', ['shipping', 'pending'], [{ itemId: 'parsnip', quantity: 0 }]],
-    ['unknown pending item', ['shipping', 'pending'], [{ itemId: 'diamond', quantity: 1 }]],
+    ['unknown pending item', ['shipping', 'pending'], [{ itemId: 'diamond', quantity: 1, quality: 0 }]],
+    ['pending stack without quality', ['shipping', 'pending'], [{ itemId: 'parsnip', quantity: 1 }]],
+    ['silver stone pending', ['shipping', 'pending'], [{ itemId: 'stone', quantity: 1, quality: 1 }]],
+    ['pending quality 5', ['shipping', 'pending'], [{ itemId: 'parsnip', quantity: 1, quality: 5 }]],
     ['pending not an array', ['shipping', 'pending'], { itemId: 'parsnip', quantity: 1 }],
     ['negative last payout', ['shipping', 'lastPayout'], -1],
     // UI & messages
     ['unsupported time scale', ['ui', 'timeScale'], 3],
-    ['non-boolean shopOpen', ['ui', 'shopOpen'], 'yes'],
+    ['non-boolean paused', ['ui', 'paused'], 'yes'],
+    ['missing panel', ['ui', 'panel'], undefined],
+    ['a panel that is not an object', ['ui', 'panel'], 'shop'],
+    ['a panel without a kind', ['ui', 'panel'], {}],
+    ['a panel with a numeric kind', ['ui', 'panel'], { kind: 3 }],
+    ['a panel that is an array', ['ui', 'panel'], ['none']],
     ['missing ui', ['ui'], undefined],
     ['unknown message tone', ['messages', 'entries', 0, 'tone'], 'loud'],
     ['non-string message text', ['messages', 'entries', 1, 'text'], 5],
@@ -364,8 +402,9 @@ describe('placed objects and fertiliser in saves', () => {
   /** BASE plus one object of every kind, a fertilised planted tile and a 3×3 giant crop. */
   function furnished(): GameState {
     const slots: (ItemStack | null)[] = Array.from({ length: INVENTORY.chestSlots }, () => null);
-    slots[0] = { itemId: 'wood', quantity: 50 };
-    slots[INVENTORY.chestSlots - 1] = { itemId: 'parsnip', quantity: INVENTORY.maxStack };
+    slots[0] = { itemId: 'wood', quantity: 50, quality: 0 };
+    slots[1] = { itemId: 'parsnip', quantity: 3, quality: 1 };
+    slots[INVENTORY.chestSlots - 1] = { itemId: 'parsnip', quantity: INVENTORY.maxStack, quality: 2 };
     const tiles: readonly (readonly [number, number, Tile])[] = [
       [6, 10, { ...EMPTY_TILE, object: { kind: 'chest', slots } }],
       [7, 10, { ...soilTile(TileState.Watered), object: { kind: 'sprinkler' } }],
@@ -415,6 +454,10 @@ describe('placed objects and fertiliser in saves', () => {
     ['a chest stack above maxStack', [...tileAtPath(6, 10), 'object', 'slots', 35, 'quantity'], INVENTORY.maxStack + 1],
     ['an empty chest stack', [...tileAtPath(6, 10), 'object', 'slots', 0, 'quantity'], 0],
     ['an unknown item in a chest', [...tileAtPath(6, 10), 'object', 'slots', 0, 'itemId'], 'diamond'],
+    ['a chest stack without quality', [...tileAtPath(6, 10), 'object', 'slots', 1, 'quality'], undefined],
+    ['a chest stack of quality 3', [...tileAtPath(6, 10), 'object', 'slots', 1, 'quality'], 3],
+    ['silver wood in a chest', [...tileAtPath(6, 10), 'object', 'slots', 0, 'quality'], 1],
+    ['a fractional chest quality', [...tileAtPath(6, 10), 'object', 'slots', 35, 'quality'], 1.5],
     ['a chest without slots', [...tileAtPath(6, 10), 'object', 'slots'], undefined],
     ['an extra field on a sprinkler', [...tileAtPath(7, 10), 'object', 'radius'], 2],
     ['an extra field on a chest', [...tileAtPath(6, 10), 'object', 'owner'], 'bram'],
@@ -476,5 +519,83 @@ describe('ACTION_KINDS', () => {
     });
     for (const kind of ACTION_KINDS) expect(isValidGameState(withLastAction(kind)), kind).toBe(true);
     for (const kind of ['dance', 'chop', '']) expect(isValidGameState(withLastAction(kind)), kind).toBe(false);
+  });
+});
+
+describe('migrating inventory, shipping and UI to version 3', () => {
+  /** A state an old save can express: a full hotbar, an empty backpack, a mixed shipment, fast time. */
+  function stocked(): GameState {
+    const hotbar = [stack('hoe', 1), stack('parsnip', 7), null, stack('stone', 40), stack('wood', INVENTORY.maxStack)];
+    const state = withSlots(BASE, hotbar, 3);
+    return {
+      ...state,
+      shipping: { pending: [stack('parsnip', 12), stack('corn_seeds', 2)], lastPayout: 90 },
+      ui: { ...state.ui, timeScale: 8 },
+    };
+  }
+
+  it.each([1, 2] as const)('a version-%i inventory gains 36 slots, 24 unlocked, every stack at normal quality', (version) => {
+    const state = stocked();
+    const old = legacySave(state, version);
+    expect((old.inventory as { slots: unknown[] }).slots).toHaveLength(INVENTORY.hotbarSize);
+    expect((old.inventory as SaveJson).unlockedSlots).toBeUndefined();
+    const loaded = must(deserializeGame(JSON.stringify(old)));
+    expect(loaded.inventory).toEqual(state.inventory);
+    expect(loaded.inventory.slots).toHaveLength(INVENTORY.slotCount);
+    expect(loaded.inventory.unlockedSlots).toBe(INVENTORY.startingUnlockedSlots);
+    expect(loaded.inventory.selected).toBe(3);
+    expect(loaded.shipping).toEqual(state.shipping);
+    for (const held of [...loaded.inventory.slots, ...loaded.shipping.pending]) if (held !== null) expect(held.quality).toBe(0);
+  });
+
+  it('replaces shopOpen with a closed panel and keeps a valid time scale', () => {
+    const old = legacySave(stocked(), 2);
+    old.ui = { shopOpen: true, paused: true, timeScale: 8 };
+    expect((migrateSave(old) as SaveJson).ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 8 });
+    expect(must(deserializeGame(JSON.stringify(old))).ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 8 });
+  });
+
+  it('falls back to time scale 1 when the old one is invalid or missing', () => {
+    const old = legacySave(stocked(), 2);
+    for (const ui of [{ shopOpen: false, paused: false, timeScale: 3 }, { shopOpen: false, paused: false }, undefined, 'ui']) {
+      const save = { ...old, ui };
+      expect((migrateSave(save) as SaveJson).ui, JSON.stringify(ui)).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 1 });
+      expect(must(deserializeGame(JSON.stringify(save))).ui.timeScale).toBe(1);
+    }
+  });
+
+  it('pads a longer old inventory as long as nothing sits at or above slot 24', () => {
+    const old = legacySave(stocked(), 2);
+    const slots = [...((old.inventory as { slots: unknown[] }).slots), ...Array.from({ length: 18 }, () => null)];
+    slots[23] = { itemId: 'stone', quantity: 5 };
+    const loaded = must(deserializeGame(JSON.stringify({ ...old, inventory: { ...(old.inventory as SaveJson), slots } })));
+    expect(loaded.inventory.slots).toHaveLength(INVENTORY.slotCount);
+    expect(loaded.inventory.slots[23]).toEqual(stack('stone', 5));
+  });
+
+  it('leaves inventories it cannot express untouched, so validation rejects them', () => {
+    const old = legacySave(stocked(), 2);
+    const oldSlots = (old.inventory as { slots: unknown[] }).slots;
+    const beyond = [...oldSlots, ...Array.from({ length: 18 }, () => null)];
+    beyond[24] = { itemId: 'stone', quantity: 5 };
+    const tooLong = [...oldSlots, ...Array.from({ length: 25 }, () => null)];
+    for (const slots of [beyond, tooLong, 'slots']) {
+      const save = { ...old, inventory: { ...(old.inventory as SaveJson), slots } };
+      expect(migrateSave(save), JSON.stringify(slots).slice(0, 40)).toBe(save);
+      expect(deserializeGame(JSON.stringify(save))).toBeNull();
+    }
+    for (const broken of [{ ...old, inventory: 'bag' }, { ...old, shipping: { pending: 'bin', lastPayout: 0 } }, { ...old, shipping: null }]) {
+      expect(migrateSave(broken)).toBe(broken);
+      expect(deserializeGame(JSON.stringify(broken))).toBeNull();
+    }
+  });
+
+  it('gives a malformed old stack a quality but still rejects it', () => {
+    const old = legacySave(stocked(), 2);
+    const slots = [...(old.inventory as { slots: unknown[] }).slots];
+    slots[2] = { itemId: 'stone', quantity: 0 };
+    expect(deserializeGame(JSON.stringify({ ...old, inventory: { ...(old.inventory as SaveJson), slots } }))).toBeNull();
+    slots[2] = 'stone';
+    expect(deserializeGame(JSON.stringify({ ...old, inventory: { ...(old.inventory as SaveJson), slots } }))).toBeNull();
   });
 });

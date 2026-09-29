@@ -13,6 +13,7 @@ import {
   FORAGE_IDS,
   GIANT_CROP_IDS,
   PLACED_OBJECT_KINDS,
+  QUALITIES,
   TileState,
   type CropInstance,
   type ItemStack,
@@ -59,9 +60,15 @@ export function isCanonicalSubset<T>(v: unknown, ids: readonly T[]): v is readon
   return true;
 }
 
+/**
+ * An item stack: a known item, a quantity ≥ 1 (≤ maxStack when `enforceMaxStack`; the shipping
+ * bin has no limit), and a quality in {0, 1, 2} that is nonzero only for items with a quality.
+ */
 export function isValidStack(v: unknown, enforceMaxStack: boolean): v is ItemStack {
   if (!isObj(v) || !isItemId(v.itemId) || !isInt(v.quantity) || v.quantity < 1) return false;
-  return !enforceMaxStack || v.quantity <= getItem(v.itemId).maxStack;
+  const item = getItem(v.itemId);
+  if (!isOneOf(v.quality, QUALITIES) || (v.quality !== 0 && !item.hasQuality)) return false;
+  return !enforceMaxStack || v.quantity <= item.maxStack;
 }
 
 export function isValidCrop(v: unknown): v is CropInstance {

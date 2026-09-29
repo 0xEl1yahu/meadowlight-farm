@@ -257,7 +257,12 @@ function lively(): GameState {
       activeDay: 12,
       eggsFound: 4095,
       lanternReleased: true,
-      display: Array.from({ length: 9 }, (_, i) => ({ itemId: i % 2 === 0 ? 'pumpkin' : 'wood', quantity: i + 1 }) as const),
+      // Pumpkins (produce) at every quality; wood (a material) has none.
+      display: Array.from({ length: 9 }, (_, i) =>
+        i % 2 === 0
+          ? { itemId: 'pumpkin' as const, quantity: i + 1, quality: ((i / 2) % 3) as 0 | 1 | 2 }
+          : { itemId: 'wood' as const, quantity: i + 1, quality: 0 as const },
+      ),
       giftTarget: 'pip',
       giftGiven: true,
     },

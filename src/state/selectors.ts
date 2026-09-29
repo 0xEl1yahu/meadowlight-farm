@@ -2,9 +2,9 @@
  * Read-only derivations from GameState, shared by reducers, render systems and the HUD.
  */
 import { FARMING, PLAYER, TIME } from '../config';
-import type { GameState, MapId, Tile, TileCoord, Weather, WorldState } from '../core/types';
+import type { ChestSlots, GameState, MapId, Tile, TileCoord, Weather, WorldState } from '../core/types';
 import { cropsInSeason, seedItemId } from '../farming/crops';
-import { getItem, type ItemDefinition, type SeedItem } from '../items/items';
+import { getItem, sellPriceFor, type ItemDefinition, type SeedItem } from '../items/items';
 import { formatClock, formatDate } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { DIRECTION_STEPS, forwardTile, inBounds } from '../world/grid';
@@ -84,7 +84,18 @@ export function selectSelectedItem(state: GameState): ItemDefinition | null {
 
 /** True while a menu or pause freezes the clock and the player. */
 export function selectIsFrozen(state: GameState): boolean {
-  return state.ui.paused || state.ui.shopOpen;
+  return state.ui.paused || state.ui.panel.kind !== 'none';
+}
+
+/** The chest open in `ui.panel`, with its place; null when no chest panel is open or its tile holds no chest. */
+export function selectOpenChest(
+  state: GameState,
+): { readonly mapId: MapId; readonly tx: number; readonly tz: number; readonly slots: ChestSlots } | null {
+  const panel = state.ui.panel;
+  if (panel.kind !== 'chest') return null;
+  const tile = getTile(state.maps[panel.mapId], panel.tx, panel.tz);
+  if (tile === null || tile.object === null || tile.object.kind !== 'chest') return null;
+  return { mapId: panel.mapId, tx: panel.tx, tz: panel.tz, slots: tile.object.slots };
 }
 
 export function selectClockLabel(state: GameState): string {
@@ -103,7 +114,7 @@ export function selectForecast(state: GameState): Weather {
 export function selectPendingShipmentValue(state: GameState): number {
   let total = 0;
   for (const stack of state.shipping.pending) {
-    total += (getItem(stack.itemId).sellPrice ?? 0) * stack.quantity;
+    total += sellPriceFor(stack.itemId, stack.quality) * stack.quantity;
   }
   return total;
 }

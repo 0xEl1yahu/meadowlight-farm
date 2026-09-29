@@ -23,7 +23,7 @@
  * - Text is always written with textContent / text nodes; no dynamic HTML is ever parsed.
  */
 import './hud.css';
-import { TIME } from '../config';
+import { INVENTORY, TIME } from '../config';
 import type { Store } from '../core/store';
 import {
   SEASON_NAMES,
@@ -36,7 +36,7 @@ import {
   type Weather,
 } from '../core/types';
 import { CROPS, totalGrowDays } from '../farming/crops';
-import { getItem, isSeedItemId, type SeedItem } from '../items/items';
+import { getItem, isSeedItemId, sellPriceFor, type SeedItem } from '../items/items';
 import type { FrameContext } from '../render/types';
 import { actions, type GameAction } from '../state/actions';
 import { describeIntent, planInteraction, planPrimaryAction } from '../state/intents';
@@ -478,15 +478,21 @@ interface SlotView {
   itemId: ItemId | null;
 }
 
+/** "Silver " or "Gold " before an item name; empty for normal quality. */
+function qualityPrefix(stack: ItemStack): string {
+  return stack.quality === 2 ? 'Gold ' : stack.quality === 1 ? 'Silver ' : '';
+}
+
 function slotTitle(stack: ItemStack | null, keyLabel: string, inventory: InventoryState): string {
   if (stack === null) return `Empty slot · key ${keyLabel}`;
   const item = getItem(stack.itemId);
-  const lines = [stack.quantity > 1 ? `${item.name} ×${stack.quantity}` : item.name, item.description];
+  const name = `${qualityPrefix(stack)}${item.name}`;
+  const lines = [stack.quantity > 1 ? `${name} ×${stack.quantity}` : name, item.description];
   if (item.kind === 'tool') {
     if (item.tool === 'wateringCan') lines.push(`Water: ${inventory.water} / ${inventory.waterCapacity}`);
     if (item.energyCost > 0) lines.push(`Uses ${item.energyCost} energy`);
   } else if (item.sellPrice !== null) {
-    lines.push(`Ships for ${item.sellPrice}g each`);
+    lines.push(`Ships for ${sellPriceFor(stack.itemId, stack.quality)}g each`);
   }
   lines.push(`Key ${keyLabel}`);
   return lines.join('\n');
@@ -520,8 +526,9 @@ class Hotbar {
   sync(state: GameState, prev: GameState | null): void {
     const inventory = state.inventory;
     const previous = prev === null ? null : prev.inventory;
-    const rebuild = previous === null || inventory.slots.length !== this.views.length;
-    if (rebuild) this.build(inventory.slots.length);
+    // The hotbar always shows slots 0 … hotbarSize - 1; the backpack lives in its own screen.
+    const rebuild = previous === null || this.views.length !== INVENTORY.hotbarSize;
+    if (rebuild) this.build(INVENTORY.hotbarSize);
     else if (inventory === previous) return;
 
     const waterChanged = inventory.water !== this.water || inventory.waterCapacity !== this.waterCapacity;
@@ -591,7 +598,7 @@ class Hotbar {
     const label =
       stack === null
         ? `Slot ${view.keyLabel}: empty`
-        : `Slot ${view.keyLabel}: ${getItem(stack.itemId).name}${stack.quantity > 1 ? `, ${stack.quantity}` : ''}`;
+        : `Slot ${view.keyLabel}: ${qualityPrefix(stack)}${getItem(stack.itemId).name}${stack.quantity > 1 ? `, ${stack.quantity}` : ''}`;
     view.button.setAttribute('aria-label', label);
   }
 
@@ -849,10 +856,10 @@ class ShopModal {
   }
 
   sync(state: GameState, prev: GameState | null): void {
-    const open = state.ui.shopOpen;
+    const open = state.ui.panel.kind === 'shop';
     setHidden(this.element, !open);
     if (!open) return;
-    if (prev === null || !prev.ui.shopOpen || state.time.season !== prev.time.season) {
+    if (prev === null || prev.ui.panel.kind !== 'shop' || state.time.season !== prev.time.season) {
       this.buildStock(state);
       this.syncAvailability(state);
       return;
@@ -897,7 +904,7 @@ class ShopModal {
       crop.regrowDays === null
         ? metaTag('Single harvest')
         : metaTag(`Regrows every ${crop.regrowDays} ${crop.regrowDays === 1 ? 'day' : 'days'}`, 'is-regrow'),
-      metaTag(`Sells ${crop.sellPrice}g`, 'is-sell'),
+      metaTag(`Sells ${sellPriceFor(crop.id, 0)}g`, 'is-sell'),
     );
     if (crop.seasons.length > 1) {
       meta.append(metaTag(`Grows in ${crop.seasons.map((season) => SEASON_NAMES[season]).join(' & ')}`, 'is-season'));

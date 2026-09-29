@@ -21,6 +21,7 @@ import {
   type ItemId,
   type ItemStack,
   type MapId,
+  type Quality,
   type Tile,
   type TileCoord,
   type WorldState,
@@ -110,29 +111,38 @@ export function withPlayer(state: GameState, coord: TileCoord, facing: Direction
   return { ...state, player: { ...state.player, mapId, tx: coord.tx, tz: coord.tz, facing } };
 }
 
-/** Replaces the whole hotbar (padded with empty slots) and selects `selected`. */
+/** A stack of `quantity` × `itemId` at `quality` (normal by default). */
+export function stack(itemId: ItemId, quantity: number, quality: Quality = 0): ItemStack {
+  return { itemId, quantity, quality };
+}
+
+/**
+ * Replaces every inventory slot: `stacks` from slot 0 onwards, padded with empty slots to
+ * INVENTORY.slotCount, and selects hotbar slot `selected`.
+ */
 export function withSlots(state: GameState, stacks: readonly (ItemStack | null)[], selected = 0): GameState {
-  const slots = Array.from({ length: INVENTORY.hotbarSize }, (_, i) => stacks[i] ?? null);
+  const slots = Array.from({ length: INVENTORY.slotCount }, (_, i) => stacks[i] ?? null);
   return { ...state, inventory: { ...state.inventory, slots, selected } };
 }
 
 /**
- * Selects a stack of `itemId`: reuses the slot that already holds it (setting its quantity),
- * otherwise the first empty slot.
+ * Selects a stack of `itemId` at `quality` on the hotbar: reuses the hotbar slot that already
+ * holds that item (setting its quantity and quality), otherwise the first empty hotbar slot.
  */
-export function holding(state: GameState, itemId: ItemId, quantity = 1): GameState {
+export function holding(state: GameState, itemId: ItemId, quantity = 1, quality: Quality = 0): GameState {
   const slots = state.inventory.slots.slice();
-  let slot = slots.findIndex((stack) => stack !== null && stack.itemId === itemId);
-  if (slot === -1) slot = slots.findIndex((stack) => stack === null);
-  if (slot === -1) throw new Error('holding: no free slot');
-  slots[slot] = { itemId, quantity };
+  const hotbar = slots.slice(0, INVENTORY.hotbarSize);
+  let slot = hotbar.findIndex((held) => held !== null && held.itemId === itemId);
+  if (slot === -1) slot = hotbar.findIndex((held) => held === null);
+  if (slot === -1) throw new Error('holding: no free hotbar slot');
+  slots[slot] = { itemId, quantity, quality };
   return { ...state, inventory: { ...state.inventory, slots, selected: slot } };
 }
 
 /** Selects an empty hotbar slot (empty hands). */
 export function emptyHanded(state: GameState): GameState {
-  const slot = state.inventory.slots.findIndex((stack) => stack === null);
-  if (slot === -1) throw new Error('emptyHanded: no free slot');
+  const slot = state.inventory.slots.slice(0, INVENTORY.hotbarSize).findIndex((held) => held === null);
+  if (slot === -1) throw new Error('emptyHanded: no free hotbar slot');
   return { ...state, inventory: { ...state.inventory, selected: slot } };
 }
 
@@ -231,19 +241,39 @@ export function reachableFrom(world: WorldState, start: TileCoord): Set<string> 
 /** JSON object shape of a save, as parsed. */
 export type SaveJson = Record<string, unknown>;
 
+/** A saved stack without its quality; only normal-quality stacks exist before version 3. */
+function legacyStack(saved: SaveJson, version: 1 | 2): SaveJson {
+  if (saved.quality !== 0) throw new Error(`legacySave: a version-${version} save has no item quality`);
+  const { quality: _quality, ...rest } = saved;
+  return rest;
+}
+
 /**
  * Hand-transforms a current state back into the JSON of an older save version.
  * - Version 2 has a single `world` (the farm) instead of `maps`, no `player.mapId`, no
- *   later-workstream sections and no `object` / `fertilizer` on tiles.
+ *   later-workstream sections and no `object` / `fertilizer` on tiles. Its stacks have no
+ *   quality, its inventory is the 12-slot hotbar with no `unlockedSlots`, and its UI has
+ *   `shopOpen` instead of `panel`.
  * - Version 1 additionally predates wild crops: they are dropped, and sown crops lose `wild`.
  * The state must not hold anything an old save cannot express (a player off the farm, placed
- * objects, fertiliser).
+ * objects, fertiliser, silver or gold stacks, anything in the backpack).
  */
 export function legacySave(state: GameState, version: 1 | 2): SaveJson {
   if (state.player.mapId !== 'farm') throw new Error(`legacySave: a version-${version} save has only the farm`);
   const save = JSON.parse(serializeGame(state)) as SaveJson;
   for (const key of Object.keys(createDefaultSections())) delete save[key];
   save.version = version;
+  const inventory = save.inventory as SaveJson;
+  const slots = inventory.slots as (SaveJson | null)[];
+  if (slots.slice(INVENTORY.hotbarSize).some((slot) => slot !== null)) {
+    throw new Error(`legacySave: a version-${version} save has no backpack`);
+  }
+  inventory.slots = slots.slice(0, INVENTORY.hotbarSize).map((slot) => (slot === null ? null : legacyStack(slot, version)));
+  delete inventory.unlockedSlots;
+  const shipping = save.shipping as SaveJson;
+  shipping.pending = (shipping.pending as SaveJson[]).map((pending) => legacyStack(pending, version));
+  const ui = save.ui as SaveJson;
+  save.ui = { shopOpen: false, paused: ui.paused, timeScale: ui.timeScale };
   save.world = (save.maps as SaveJson).farm;
   delete save.maps;
   delete (save.player as SaveJson).mapId;

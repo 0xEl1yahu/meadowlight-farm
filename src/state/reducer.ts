@@ -7,7 +7,7 @@
  * hash in core/hash.ts, so an action log replayed from the same initial state reproduces the
  * exact same game.
  */
-import { PLAYER, TIME, TOOLS } from '../config';
+import { INVENTORY, PLAYER, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
 import {
   Blocker,
@@ -20,13 +20,17 @@ import {
   type Direction,
   type GameState,
   type ItemId,
+  type ItemStack,
+  type Quality,
   type SeedItemId,
+  type ShippingState,
+  type SlotRef,
   type Tile,
   type TileCoord,
 } from '../core/types';
 import { CROPS, stageCount, createCropInstance } from '../farming/crops';
 import { advanceWorldOvernight } from '../farming/growth';
-import { getItem, isSeedItemId } from '../items/items';
+import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
 import { inBounds, stepTile } from '../world/grid';
@@ -34,7 +38,16 @@ import { findWarp, getMap, mapSeed, type Warp } from '../world/maps';
 import { EMPTY_TILE, blockedTile, getTile, isWalkable, requireTile, setTile, setTiles } from '../world/tiles';
 import type { GameAction } from './actions';
 import { planInteraction, planPrimaryAction, type ActionPlan, type Intent } from './intents';
-import { addItem, capacityFor, mergeStacks, removeFromSlot, selectedStack } from './inventory';
+import {
+  addItem,
+  capacityFor,
+  mergeStacks,
+  moveAcrossSlots,
+  moveWithinSlots,
+  removeFromSlot,
+  selectedStack,
+  type Slots,
+} from './inventory';
 import { pushMessage } from './messages';
 import {
   selectActiveMap,
@@ -43,6 +56,7 @@ import {
   selectPendingShipmentValue,
   selectShopStock,
   withActiveWorld,
+  withMap,
 } from './selectors';
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
@@ -63,8 +77,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return selectSlot(state, action.slot);
     case 'inventory/cycle':
       return cycleSlot(state, action.delta);
+    case 'inventory/move':
+      return moveItem(state, action.from, action.to, action.quantity);
     case 'shop/setOpen':
-      return setShopOpen(state, action.open);
+      return setPanelOpen(state, { kind: 'shop' }, action.open);
+    case 'ui/setInventoryOpen':
+      return setPanelOpen(state, { kind: 'inventory' }, action.open);
+    case 'ui/closePanel':
+      return state.ui.panel.kind === 'none' ? state : { ...state, ui: { ...state.ui, panel: { kind: 'none' } } };
     case 'shop/buy':
       return buySeeds(state, action.itemId, action.quantity);
     case 'game/setPaused':
@@ -94,10 +114,23 @@ function tick(state: GameState, minutes: number): GameState {
   return { ...state, time: { ...state.time, minuteOfDay } };
 }
 
+/** Lifetime counters after a morning payout: gold earned and parsnips shipped (every quality). */
+function shippedStats(state: GameState, payout: number): GameState['stats'] {
+  let parsnips = 0;
+  for (const stack of state.shipping.pending) if (stack.itemId === 'parsnip') parsnips += stack.quantity;
+  if (payout === 0 && parsnips === 0) return state.stats;
+  return {
+    ...state.stats,
+    totalEarned: state.stats.totalEarned + payout,
+    parsnipsShipped: state.stats.parsnipsShipped + parsnips,
+  };
+}
+
 /**
- * Day transition: pay out the shipping bin, advance the calendar, roll the (global) weather,
- * run the overnight growth pipeline on every map with that map's seed, restore energy and put
- * the player back at the house on the farm.
+ * Day transition: pay out the shipping bin (each stack at its quality's price, counted into the
+ * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
+ * pipeline on every map with that map's seed, restore energy and put the player back at the
+ * house on the farm.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -130,6 +163,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
       teleportSeq: state.player.teleportSeq + 1,
     },
     shipping: { pending: [], lastPayout: payout },
+    stats: shippedStats(state, payout),
   };
 
   next = pushMessage(next, `Good morning! ${formatDate(time)}.`, 'info');
@@ -270,13 +304,19 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
     }
 
     case 'harvest':
-      return harvest(state, target, tile, intent.quantity);
+      return harvest(state, target, tile, intent.quantity, intent.quality);
 
     case 'clearCrop':
       return withTile(state, target, { ...tile, crop: null });
 
     case 'ship':
       return shipSelected(state);
+
+    case 'openChest':
+      return {
+        ...state,
+        ui: { ...state.ui, panel: { kind: 'chest', mapId: state.player.mapId, tx: target.tx, tz: target.tz } },
+      };
   }
 }
 
@@ -314,18 +354,23 @@ function hitBlocker(state: GameState, target: TileCoord, tile: Tile): GameState 
   return added < remains.quantity ? pushMessage(next, `No room for ${getItem(remains.drop).name}.`, 'warn') : next;
 }
 
-function harvest(state: GameState, target: TileCoord, tile: Tile, quantity: number): GameState {
+/** Prefix naming a silver or gold quality in messages ("Gold Parsnip"); empty for normal quality. */
+function qualityPrefix(quality: Quality): string {
+  return quality === 2 ? 'Gold ' : quality === 1 ? 'Silver ' : '';
+}
+
+function harvest(state: GameState, target: TileCoord, tile: Tile, quantity: number, quality: Quality): GameState {
   const crop = tile.crop;
   invariant(crop !== null, 'harvest target has no crop');
   const def = CROPS[crop.cropId];
-  const { inventory, added } = addItem(state.inventory, def.id, quantity);
+  const { inventory, added } = addItem(state.inventory, def.id, quantity, quality);
   invariant(added === quantity, 'harvest capacity is verified while planning');
   const regrown =
     def.regrowDays === null
       ? null
       : { ...crop, stage: stageCount(def) - 1, daysInStage: 0, dryDays: 0, regrowing: true, harvestCount: crop.harvestCount + 1 };
   const next = withTile(state, target, { ...tile, crop: regrown });
-  return pushMessage({ ...next, inventory }, `Harvested ${def.name} ×${quantity}.`, 'success');
+  return pushMessage({ ...next, inventory }, `Harvested ${qualityPrefix(quality)}${def.name} ×${quantity}.`, 'success');
 }
 
 function shipSelected(state: GameState): GameState {
@@ -333,38 +378,117 @@ function shipSelected(state: GameState): GameState {
   invariant(stack !== null, 'ship requires a selected stack');
   const item = getItem(stack.itemId);
   invariant(item.sellPrice !== null, `${item.id} cannot be shipped`);
+  const shipping: ShippingState = { ...state.shipping, pending: mergeStacks(state.shipping.pending, stack) };
   const next: GameState = {
     ...state,
     inventory: removeFromSlot(state.inventory, state.inventory.selected, stack.quantity),
-    shipping: { ...state.shipping, pending: mergeStacks(state.shipping.pending, stack) },
+    shipping,
   };
-  return pushMessage(next, `Shipped ${item.name} ×${stack.quantity} — ${item.sellPrice * stack.quantity}g tomorrow.`, 'success');
+  const value = sellPriceFor(stack.itemId, stack.quality) * stack.quantity;
+  return pushMessage(
+    next,
+    `Shipped ${qualityPrefix(stack.quality)}${item.name} ×${stack.quantity} — ${value}g tomorrow.`,
+    'success',
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Inventory, shop, UI
 // ---------------------------------------------------------------------------
 
+/** Only hotbar slots can be selected; the backpack is reached through the inventory screen. */
 function selectSlot(state: GameState, slot: number): GameState {
-  if (!Number.isInteger(slot) || slot < 0 || slot >= state.inventory.slots.length) return state;
+  if (!Number.isInteger(slot) || slot < 0 || slot >= INVENTORY.hotbarSize) return state;
   if (slot === state.inventory.selected) return state;
   return { ...state, inventory: { ...state.inventory, selected: slot } };
 }
 
 function cycleSlot(state: GameState, delta: number): GameState {
   if (!Number.isInteger(delta) || delta === 0) return state;
-  const size = state.inventory.slots.length;
+  const size = INVENTORY.hotbarSize;
   const selected = (((state.inventory.selected + delta) % size) + size) % size;
   return selectSlot(state, selected);
 }
 
-function setShopOpen(state: GameState, open: boolean): GameState {
-  if (state.ui.shopOpen === open || (open && state.ui.paused)) return state;
-  return { ...state, ui: { ...state.ui, shopOpen: open } };
+/**
+ * Opens `panel` only when no panel is open and the game isn't paused; closes it only when that
+ * kind of panel is the one open. Anything else is a no-op.
+ */
+function setPanelOpen(state: GameState, panel: { readonly kind: 'shop' | 'inventory' }, open: boolean): GameState {
+  const current = state.ui.panel;
+  if (open) {
+    if (current.kind !== 'none' || state.ui.paused) return state;
+    return { ...state, ui: { ...state.ui, panel } };
+  }
+  return current.kind === panel.kind ? { ...state, ui: { ...state.ui, panel: { kind: 'none' } } } : state;
+}
+
+/** A slot reference checked against the current state: the container's slots and where they live. */
+type ResolvedSlot =
+  | { readonly container: 'player'; readonly slots: Slots; readonly index: number }
+  | {
+      readonly container: 'chest';
+      readonly slots: Slots;
+      readonly index: number;
+      readonly target: TileCoord;
+      readonly mapId: GameState['player']['mapId'];
+    };
+
+/**
+ * Resolves a slot reference, or null when it is invalid: a non-integer index or coordinate, a
+ * player slot outside the unlocked ones, or a chest slot of any chest but the one open in
+ * `ui.panel` (whose tile must still hold a chest).
+ */
+function resolveSlot(state: GameState, ref: SlotRef): ResolvedSlot | null {
+  if (typeof ref !== 'object' || ref === null || !Number.isInteger(ref.index) || ref.index < 0) return null;
+  if (ref.container === 'player') {
+    return ref.index < state.inventory.unlockedSlots ? { container: 'player', slots: state.inventory.slots, index: ref.index } : null;
+  }
+  if (ref.container !== 'chest') return null;
+  const { mapId, tx, tz } = ref;
+  if (!Number.isInteger(tx) || !Number.isInteger(tz) || !(MAP_IDS as readonly unknown[]).includes(mapId)) return null;
+  const panel = state.ui.panel;
+  if (panel.kind !== 'chest' || panel.mapId !== mapId || panel.tx !== tx || panel.tz !== tz) return null;
+  const object = getTile(state.maps[mapId], tx, tz)?.object ?? null;
+  if (object === null || object.kind !== 'chest' || ref.index >= INVENTORY.chestSlots) return null;
+  return { container: 'chest', slots: object.slots, index: ref.index, target: { tx, tz }, mapId };
+}
+
+/** Writes a container's new slots: the player's inventory, or the chest object on its tile. */
+function writeSlots(state: GameState, where: ResolvedSlot, slots: Slots): GameState {
+  if (where.container === 'player') return { ...state, inventory: { ...state.inventory, slots } };
+  const world = state.maps[where.mapId];
+  const tile = requireTile(world, where.target.tx, where.target.tz);
+  return withMap(state, where.mapId, setTile(world, where.target.tx, where.target.tz, { ...tile, object: { kind: 'chest', slots } }));
+}
+
+/**
+ * `inventory/move`: moves `quantity` units (null = the whole stack) between two slots of the
+ * player's inventory, or between it and the open chest. Rejected (the same state comes back)
+ * while paused, for an invalid ref, an empty source or a quantity outside 1 … its size; a no-op
+ * for the same slot, a full target, or part of a stack onto a different item or quality. The
+ * selection and the watering can's water never change.
+ */
+function moveItem(state: GameState, from: SlotRef, to: SlotRef, quantity: number | null): GameState {
+  if (state.ui.paused) return state;
+  const src = resolveSlot(state, from);
+  const dst = resolveSlot(state, to);
+  if (src === null || dst === null) return state;
+  const stack: ItemStack | null = src.slots[src.index] ?? null;
+  if (stack === null) return state;
+  const q = quantity ?? stack.quantity;
+  if (!Number.isInteger(q) || q < 1 || q > stack.quantity) return state;
+  if (src.container === dst.container) {
+    if (src.index === dst.index) return state;
+    const slots = moveWithinSlots(src.slots, src.index, dst.index, q);
+    return slots === null ? state : writeSlots(state, src, slots);
+  }
+  const moved = moveAcrossSlots(src.slots, src.index, dst.slots, dst.index, q);
+  return moved === null ? state : writeSlots(writeSlots(state, src, moved.src), dst, moved.dst);
 }
 
 function buySeeds(state: GameState, itemId: SeedItemId, quantity: number): GameState {
-  if (!state.ui.shopOpen || !Number.isInteger(quantity) || quantity < 1 || !isSeedItemId(itemId)) return state;
+  if (state.ui.panel.kind !== 'shop' || !Number.isInteger(quantity) || quantity < 1 || !isSeedItemId(itemId)) return state;
   const item = getItem(itemId);
   if (item.kind !== 'seed') return state;
   if (!selectShopStock(state).some((stock) => stock.id === itemId)) {
@@ -383,11 +507,11 @@ function setTimeScale(state: GameState, timeScale: number): GameState {
   return { ...state, ui: { ...state.ui, timeScale } };
 }
 
-/** Replaces the whole state (new game / loaded save). The player is flagged as teleported. */
+/** Replaces the whole state (new game / loaded save): no panel open, unpaused, the player flagged as teleported. */
 function loadState(prev: GameState, loaded: GameState): GameState {
   return {
     ...loaded,
-    ui: { ...loaded.ui, shopOpen: false, paused: false },
+    ui: { ...loaded.ui, panel: { kind: 'none' }, paused: false },
     player: { ...loaded.player, teleportSeq: Math.max(prev.player.teleportSeq, loaded.player.teleportSeq) + 1 },
   };
 }

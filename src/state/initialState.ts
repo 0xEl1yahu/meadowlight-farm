@@ -64,9 +64,9 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
       actionSeq: 0,
       lastAction: null,
     },
-    inventory: createInventory(INVENTORY.hotbarSize, INVENTORY.starting, TOOLS.wateringCanCapacity),
+    inventory: createInventory(INVENTORY.starting, TOOLS.wateringCanCapacity),
     shipping: { pending: [], lastPayout: 0 },
-    ui: { shopOpen: false, paused: false, timeScale: 1 },
+    ui: { panel: { kind: 'none' }, paused: false, timeScale: 1 },
     messages: {
       nextId: 2,
       entries: [

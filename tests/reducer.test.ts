@@ -43,6 +43,7 @@ import {
   must,
   scenario,
   soilTile,
+  stack,
   tileAt,
   withEnergy,
   withGold,
@@ -73,8 +74,9 @@ function messageTexts(state: GameState): string[] {
   return state.messages.entries.map((entry) => entry.text);
 }
 
+/** Every unlocked slot (hotbar and backpack) holding `stack`. */
 function fullOf(stack: ItemStack): (ItemStack | null)[] {
-  return Array.from({ length: INVENTORY.hotbarSize }, () => stack);
+  return Array.from({ length: INVENTORY.startingUnlockedSlots }, () => stack);
 }
 
 /** Expects a failed attempt: feedback recorded, nothing else changed (apart from an optional message). */
@@ -202,8 +204,8 @@ describe('pickaxe', () => {
 
   it('clears the rock even without room for the stone, and says so', () => {
     const state = withSlots(scenario(blockedTile(Blocker.Rock, 1)), [
-      { itemId: 'pickaxe', quantity: 1 },
-      ...fullOf({ itemId: 'wood', quantity: INVENTORY.maxStack }).slice(1),
+      stack('pickaxe', 1),
+      ...fullOf(stack('wood', INVENTORY.maxStack)).slice(1),
     ]);
     const next = useTool(state);
     expect(tileAt(next, TARGET)).toBe(EMPTY_TILE);
@@ -238,7 +240,7 @@ describe('axe', () => {
     expect(state.stats.debrisCleared).toBe(1);
     expect(state.player.energy).toBe(PLAYER.maxEnergy - TOOLS.stumpHits * TOOLS.energyCost.axe);
     // Wood lands in the first empty slot.
-    expect(state.inventory.slots[6]).toEqual({ itemId: 'wood', quantity: TOOLS.woodFromStump });
+    expect(state.inventory.slots[6]).toEqual(stack('wood', TOOLS.woodFromStump));
   });
 
   it('fells a tree into a fresh stump, then clears the stump: wood and cleared debris add up', () => {
@@ -268,8 +270,8 @@ describe('axe', () => {
 
   it('fells the tree even without room for its wood, and says so', () => {
     const state = withSlots(scenario(blockedTile(Blocker.Tree, 1)), [
-      { itemId: 'axe', quantity: 1 },
-      ...fullOf({ itemId: 'stone', quantity: INVENTORY.maxStack }).slice(1),
+      stack('axe', 1),
+      ...fullOf(stack('stone', INVENTORY.maxStack)).slice(1),
     ]);
     const next = useTool(state);
     expect(tileAt(next, TARGET)).toEqual(blockedTile(Blocker.Stump, TOOLS.stumpHits));
@@ -531,7 +533,7 @@ describe('interact: harvest', () => {
   });
 
   it('refuses a harvest that does not fit, leaving the crop in place', () => {
-    const state = withSlots(scenario(soilTile(TileState.Plowed, matureCrop('melon')), atDay(BASE, 30)), fullOf({ itemId: 'stone', quantity: 999 }));
+    const state = withSlots(scenario(soilTile(TileState.Plowed, matureCrop('melon')), atDay(BASE, 30)), fullOf(stack('stone', 999)));
     expectFailedAttempt(state, interact(state), 'harvest', TARGET, 'Your inventory is full.');
   });
 
@@ -556,7 +558,7 @@ describe('interact: shipping bin', () => {
     let state = holding(atBin, 'parsnip', 5);
     state = interact(state);
     expect(state.inventory.slots[state.inventory.selected]).toBeNull();
-    expect(state.shipping.pending).toEqual([{ itemId: 'parsnip', quantity: 5 }]);
+    expect(state.shipping.pending).toEqual([stack('parsnip', 5)]);
     expect(state.player.gold).toBe(PLAYER.startingGold);
     expect(state.player.lastAction).toMatchObject({ kind: 'ship', success: true, target: { tx: 9, tz: 5 } });
     expect(lastMessage(state)).toMatchObject({ text: 'Shipped Parsnip ×5 — 175g tomorrow.', tone: 'success' });
@@ -564,8 +566,8 @@ describe('interact: shipping bin', () => {
     state = interact(holding(state, 'parsnip', 3));
     state = interact(holding(state, 'stone', 10));
     expect(state.shipping.pending).toEqual([
-      { itemId: 'parsnip', quantity: 8 },
-      { itemId: 'stone', quantity: 10 },
+      stack('parsnip', 8),
+      stack('stone', 10),
     ]);
 
     const payout = 8 * CROPS.parsnip.sellPrice + 10 * 2;
@@ -796,9 +798,11 @@ describe('movement', () => {
 // Frozen game
 // ---------------------------------------------------------------------------
 
-describe('frozen game (shop open or paused)', () => {
+describe('frozen game (a panel open or paused)', () => {
   const frozenStates: readonly (readonly [string, GameState])[] = [
     ['shop open', gameReducer(scenario(EMPTY_TILE), actions.setShopOpen(true))],
+    ['inventory open', gameReducer(scenario(EMPTY_TILE), actions.setInventoryOpen(true))],
+    ['chest open', { ...scenario(EMPTY_TILE), ui: { ...BASE.ui, panel: { kind: 'chest', mapId: 'farm', tx: 5, tz: 10 } } }],
     ['paused', gameReducer(scenario(EMPTY_TILE), actions.setPaused(true))],
   ];
 
@@ -826,7 +830,7 @@ describe('frozen game (shop open or paused)', () => {
     expect(gameReducer(paused, actions.setShopOpen(true))).toBe(paused);
     const shopping = gameReducer(BASE, actions.setShopOpen(true));
     const both = gameReducer(shopping, actions.setPaused(true));
-    expect(both.ui).toMatchObject({ shopOpen: true, paused: true });
+    expect(both.ui).toMatchObject({ panel: { kind: 'shop' }, paused: true });
     expect(gameReducer(both, actions.setPaused(true))).toBe(both);
     expect(gameReducer(BASE, actions.setPaused(false))).toBe(BASE);
     expect(gameReducer(BASE, actions.setShopOpen(false))).toBe(BASE);
@@ -847,13 +851,13 @@ describe('shop/buy', () => {
   it('buys in-season seeds, stacking onto an existing stack', () => {
     const next = gameReducer(open, actions.buy('parsnip_seeds', 5));
     expect(next.player.gold).toBe(PLAYER.startingGold - 5 * CROPS.parsnip.seedPrice);
-    expect(next.inventory.slots[5]).toEqual({ itemId: 'parsnip_seeds', quantity: 20 });
+    expect(next.inventory.slots[5]).toEqual(stack('parsnip_seeds', 20));
     expect(lastMessage(next)).toMatchObject({ text: 'Bought Parsnip Seeds ×5 for 100g.', tone: 'success' });
   });
 
   it('puts a new seed type in the first empty slot', () => {
     const next = gameReducer(open, actions.buy('potato_seeds', 2));
-    expect(next.inventory.slots[6]).toEqual({ itemId: 'potato_seeds', quantity: 2 });
+    expect(next.inventory.slots[6]).toEqual(stack('potato_seeds', 2));
     expect(next.player.gold).toBe(PLAYER.startingGold - 2 * CROPS.potato.seedPrice);
   });
 
@@ -877,7 +881,7 @@ describe('shop/buy', () => {
   });
 
   it('refuses purchases that do not fit in the inventory', () => {
-    const full = withSlots(open, [{ itemId: 'parsnip_seeds', quantity: 990 }, ...fullOf({ itemId: 'stone', quantity: 1 }).slice(1)]);
+    const full = withSlots(open, [stack('parsnip_seeds', 990), ...fullOf(stack('stone', 1)).slice(1)]);
     expect(count(gameReducer(full, actions.buy('parsnip_seeds', 9)), 'parsnip_seeds')).toBe(999);
     const refused = gameReducer(full, actions.buy('parsnip_seeds', 10));
     expect(refused.inventory).toBe(full.inventory);
@@ -935,14 +939,14 @@ describe('game/load', () => {
   it('replaces the state, closes menus and flags a teleport newer than either state', () => {
     const loaded: GameState = deepFreeze({
       ...createInitialState(7),
-      ui: { shopOpen: true, paused: true, timeScale: 4 },
+      ui: { panel: { kind: 'inventory' }, paused: true, timeScale: 4 },
       player: { ...createInitialState(7).player, teleportSeq: 3 },
     });
     const prev = { ...BASE, player: { ...BASE.player, teleportSeq: 9 } };
     const next = gameReducer(prev, actions.load(loaded));
     expect(next).toEqual({
       ...loaded,
-      ui: { shopOpen: false, paused: false, timeScale: 4 },
+      ui: { panel: { kind: 'none' }, paused: false, timeScale: 4 },
       player: { ...loaded.player, teleportSeq: 10 },
     });
     expect(next.maps).toBe(loaded.maps);
@@ -1016,7 +1020,9 @@ describe('initial state', () => {
     });
     expect(state.inventory.slots.filter((slot) => slot !== null)).toEqual(INVENTORY.starting);
     expect(state.weather).toBe(rollWeather(WORLD.seed, 0));
-    expect(state.ui).toEqual({ shopOpen: false, paused: false, timeScale: 1 });
+    expect(state.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 1 });
+    expect(state.inventory.slots).toHaveLength(INVENTORY.slotCount);
+    expect(state.inventory.unlockedSlots).toBe(INVENTORY.startingUnlockedSlots);
     expect(state.messages.entries).toHaveLength(2);
   });
 

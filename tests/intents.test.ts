@@ -29,10 +29,11 @@ import {
   type Tile,
 } from '../src/core/types';
 import { CROPS, createCropInstance, seedItemId, stageCount } from '../src/farming/crops';
-import { ITEMS, getItem } from '../src/items/items';
+import { ITEMS, getItem, sellPriceFor } from '../src/items/items';
 import { actions } from '../src/state/actions';
 import {
   describeIntent,
+  harvestQuality,
   harvestQuantity,
   isActionable,
   planInteraction,
@@ -73,6 +74,7 @@ import {
   must,
   scenario,
   soilTile,
+  stack,
   tileAt,
   withEnergy,
   withPlayer,
@@ -181,7 +183,8 @@ describe('planPrimaryAction — tools', () => {
   it('scythe: harvests mature crops for free, clears withered ones, ignores growing ones', () => {
     const mature = soilTile(TileState.Plowed, matureCrop('parsnip'));
     const plan = planFor(mature, 'scythe');
-    expect(plan).toEqual({ target: TARGET, intent: { kind: 'harvest', quantity: 1 }, feedback: 'scythe', energyCost: 0 });
+    const quality = harvestQuality(BASE, TARGET, matureCrop('parsnip'));
+    expect(plan).toEqual({ target: TARGET, intent: { kind: 'harvest', quantity: 1, quality }, feedback: 'scythe', energyCost: 0 });
     expect(planFor(soilTile(TileState.Plowed, cropOf('parsnip', { stage: 3 })), 'scythe').intent).toEqual({ kind: 'blocked', reason: null });
     expect(planFor(soilTile(TileState.Plowed, cropOf('parsnip', { dead: true })), 'scythe').intent.kind).toBe('clearCrop');
     expect(planFor(EMPTY_TILE, 'scythe').intent).toEqual({ kind: 'blocked', reason: null });
@@ -262,7 +265,7 @@ describe('planInteraction', () => {
   it('harvests mature crops and clears withered ones (feedback "harvest", no energy)', () => {
     expect(planInteraction(scenario(soilTile(TileState.Watered, matureCrop('parsnip'))))).toEqual({
       target: TARGET,
-      intent: { kind: 'harvest', quantity: 1 },
+      intent: { kind: 'harvest', quantity: 1, quality: harvestQuality(BASE, TARGET, matureCrop('parsnip')) },
       feedback: 'harvest',
       energyCost: 0,
     });
@@ -275,18 +278,22 @@ describe('planInteraction', () => {
   });
 
   it('refuses a harvest that does not fit in the inventory', () => {
+    const unlocked = INVENTORY.startingUnlockedSlots;
     const full = withSlots(
       scenario(soilTile(TileState.Plowed, matureCrop('parsnip'))),
-      Array.from({ length: INVENTORY.hotbarSize }, (): ItemStack => ({ itemId: 'stone', quantity: INVENTORY.maxStack })),
+      Array.from({ length: unlocked }, (): ItemStack => stack('stone', INVENTORY.maxStack)),
     );
     expect(planInteraction(full).intent).toEqual({ kind: 'blocked', reason: 'Your inventory is full.' });
     expect(planInteraction(full).feedback).toBe('harvest');
-    // A partially filled matching stack is enough room.
-    const almost = withSlots(full, [
-      { itemId: 'parsnip', quantity: INVENTORY.maxStack - 1 },
-      ...Array.from({ length: INVENTORY.hotbarSize - 1 }, (): ItemStack => ({ itemId: 'stone', quantity: 1 })),
-    ]);
+    // A partially filled stack of the same item and the rolled quality is enough room.
+    const quality = harvestQuality(full, TARGET, matureCrop('parsnip'));
+    const others = Array.from({ length: unlocked - 1 }, (): ItemStack => stack('stone', 1));
+    const almost = withSlots(full, [stack('parsnip', INVENTORY.maxStack - 1, quality), ...others]);
     expect(planInteraction(almost).intent.kind).toBe('harvest');
+    // One of another quality is not: stacks only merge at equal quality.
+    const otherQuality = quality === 0 ? 1 : 0;
+    const wrong = withSlots(full, [stack('parsnip', INVENTORY.maxStack - 1, otherQuality), ...others]);
+    expect(planInteraction(wrong).intent).toEqual({ kind: 'blocked', reason: 'Your inventory is full.' });
   });
 
   it('is a silent no-op on growing crops, grass and debris', () => {
@@ -319,7 +326,7 @@ describe('planInteraction', () => {
     const pond = scenario(blockedTile(Blocker.Water));
     expect(planInteraction(withWater(pond, 12))).toEqual({ target: TARGET, intent: { kind: 'refill' }, feedback: 'refill', energyCost: 0 });
     expect(planInteraction(pond)).toEqual({ target: TARGET, intent: { kind: 'blocked', reason: null }, feedback: 'none', energyCost: 0 });
-    const noCan = withSlots(withWater(pond, 0), [{ itemId: 'hoe', quantity: 1 }]);
+    const noCan = withSlots(withWater(pond, 0), [stack('hoe', 1)]);
     expect(planInteraction(noCan).intent).toEqual({ kind: 'blocked', reason: null });
   });
 
@@ -386,7 +393,9 @@ describe('harvestQuantity / describeIntent / isActionable', () => {
     expect(describeIntent({ kind: 'untill' })).toBe('Clear soil');
     expect(describeIntent({ kind: 'scatter', cropId: 'cauliflower', tiles: [{ tx: 1, tz: 1 }] })).toBe('Scatter Cauliflower');
     expect(describeIntent({ kind: 'scatter', cropId: 'wheat', tiles: [{ tx: 1, tz: 1 }, { tx: 2, tz: 1 }] })).toBe('Scatter Wheat ×2');
-    expect(describeIntent({ kind: 'harvest', quantity: 2 })).toBe('Harvest');
+    expect(describeIntent({ kind: 'harvest', quantity: 2, quality: 0 })).toBe('Harvest');
+    expect(describeIntent({ kind: 'harvest', quantity: 2, quality: 2 })).toBe('Harvest');
+    expect(describeIntent({ kind: 'openChest' })).toBe('Open chest');
     expect(describeIntent({ kind: 'clearCrop' })).toBe('Clear withered crop');
     expect(describeIntent({ kind: 'ship' })).toBe('Ship');
     expect(describeIntent({ kind: 'sleep' })).toBe('Sleep');
@@ -415,7 +424,9 @@ describe('selectors', () => {
     expect(selectSelectedItem(emptyHanded(BASE))).toBeNull();
     expect(selectIsFrozen(BASE)).toBe(false);
     expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, paused: true } })).toBe(true);
-    expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, shopOpen: true } })).toBe(true);
+    expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, panel: { kind: 'shop' } } })).toBe(true);
+    expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, panel: { kind: 'inventory' } } })).toBe(true);
+    expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, panel: { kind: 'chest', mapId: 'farm', tx: 5, tz: 10 } } })).toBe(true);
     expect(selectClockLabel(BASE)).toBe('6:00 am');
     expect(selectDateLabel(BASE)).toBe('Mon. 1 · Spring · Year 1');
     for (let day = 0; day < 50; day++) {
@@ -430,16 +441,18 @@ describe('selectors', () => {
     const state: GameState = {
       ...BASE,
       shipping: {
-        pending: [
-          { itemId: 'parsnip', quantity: 3 },
-          { itemId: 'stone', quantity: 10 },
-          { itemId: 'corn_seeds', quantity: 2 },
-        ],
+        pending: [stack('parsnip', 3), stack('stone', 10), stack('corn_seeds', 2)],
         lastPayout: 0,
       },
     };
     expect(selectPendingShipmentValue(state)).toBe(3 * 35 + 10 * 2 + 2 * 75);
     expect(selectPendingShipmentValue(BASE)).toBe(0);
+    // Silver and gold stacks count at their quality price: floor(35 × 1.25) = 43, floor(35 × 1.5) = 52.
+    const graded: GameState = {
+      ...BASE,
+      shipping: { pending: [stack('parsnip', 3), stack('parsnip', 2, 1), stack('parsnip', 4, 2)], lastPayout: 0 },
+    };
+    expect(selectPendingShipmentValue(graded)).toBe(3 * 35 + 2 * 43 + 4 * 52);
   });
 
   it('stocks the seeds of every crop in season', () => {
@@ -518,13 +531,14 @@ function randomTile(rng: () => number, day: number): Tile {
 function randomStack(rng: () => number, forceFull: boolean, itemId: ItemId = pick(rng, ALL_ITEMS)): ItemStack {
   const maxStack = getItem(itemId).maxStack;
   const quantity = forceFull ? maxStack : Math.min(maxStack, 1 + Math.floor(rng() * 25));
-  return { itemId, quantity };
+  const quality = getItem(itemId).hasQuality ? pick(rng, [0, 0, 1, 2] as const) : 0;
+  return { itemId, quantity, quality };
 }
 
 /** What the player holds: biased toward tools and seeds so every tool branch is exercised. */
 function randomSelection(rng: () => number): ItemStack | null {
   const roll = rng();
-  if (roll < 0.45) return { itemId: pick(rng, TOOL_TYPES), quantity: 1 };
+  if (roll < 0.45) return stack(pick(rng, TOOL_TYPES), 1);
   if (roll < 0.7) return randomStack(rng, false, seedItemId(pick(rng, CROP_IDS)));
   if (roll < 0.85) return randomStack(rng, false);
   return null;
@@ -546,15 +560,25 @@ function randomSituation(rng: () => number): GameState {
   const target = forwardTile(grid, { tx, tz }, facing, PLAYER.toolReachTiles);
   if (target !== null && rng() < 0.9) state = withTile(state, target, randomTile(rng, day));
 
+  // Every unlocked slot (hotbar and backpack) filled with full stacks, or a scattering of stacks.
   const full = rng() < 0.15;
-  const stacks = Array.from({ length: INVENTORY.hotbarSize }, () => (full || rng() < 0.55 ? randomStack(rng, full) : null));
+  const stacks = Array.from({ length: INVENTORY.startingUnlockedSlots }, () =>
+    full || rng() < 0.55 ? randomStack(rng, full) : null,
+  );
   const selected = Math.floor(rng() * INVENTORY.hotbarSize);
   if (rng() < 0.85) stacks[selected] = randomSelection(rng);
   state = withSlots(state, stacks, selected);
   state = withWater(state, pick(rng, [0, 1, 17, TOOLS.wateringCanCapacity - 1, TOOLS.wateringCanCapacity]));
   state = withEnergy(state, pick(rng, [0, 1, 2, 3, 40, PLAYER.maxEnergy, PLAYER.maxEnergy, PLAYER.maxEnergy]));
-  if (rng() < 0.3) state = { ...state, shipping: { pending: [{ itemId: 'parsnip', quantity: 4 }], lastPayout: 0 } };
+  if (rng() < 0.3) state = { ...state, shipping: { pending: [stack('parsnip', 4)], lastPayout: 0 } };
   return state;
+}
+
+/** Units of `itemId` held at exactly `quality`. */
+function countQuality(state: GameState, itemId: ItemId, quality: number): number {
+  let total = 0;
+  for (const held of state.inventory.slots) if (held !== null && held.itemId === itemId && held.quality === quality) total += held.quantity;
+  return total;
 }
 
 function lastMessageText(state: GameState): string | undefined {
@@ -675,7 +699,13 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
         break;
       }
       v.equal('announced quantity', intent.quantity, harvestQuantity(state, at, crop));
+      v.equal('announced quality', intent.quality, harvestQuality(state, at, crop));
       v.equal('produce added', count(next, crop.cropId), count(state, crop.cropId) + intent.quantity);
+      v.equal(
+        'produce added at its quality',
+        countQuality(next, crop.cropId, intent.quality),
+        countQuality(state, crop.cropId, intent.quality) + intent.quantity,
+      );
       const def = CROPS[crop.cropId];
       const expected =
         def.regrowDays === null
@@ -700,10 +730,16 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
       v.equal(
         'pending value',
         selectPendingShipmentValue(next) - selectPendingShipmentValue(state),
-        (getItem(stack.itemId).sellPrice ?? Number.NaN) * stack.quantity,
+        sellPriceFor(stack.itemId, stack.quality) * stack.quantity,
       );
       break;
     }
+    case 'openChest':
+      v.equal('chest opened', next.ui.panel, { kind: 'chest', mapId: active, tx: at.tx, tz: at.tz });
+      v.equal('a chest stands there', before.object?.kind, 'chest');
+      v.same('maps', next.maps, state.maps);
+      v.same('inventory', next.inventory, state.inventory);
+      break;
   }
 }
 
@@ -734,7 +770,21 @@ describe('property: the planned outcome always matches what the reducer does', (
       }
       expect(violations.head()).toEqual([]);
       // The generator really exercised every branch.
-      const all = ['till', 'water', 'refill', 'mine', 'chop', 'clearWeeds', 'untill', 'scatter', 'harvest', 'clearCrop', 'ship', 'sleep'] as const;
+      const all = [
+        'till',
+        'water',
+        'refill',
+        'mine',
+        'chop',
+        'clearWeeds',
+        'untill',
+        'scatter',
+        'harvest',
+        'clearCrop',
+        'ship',
+        'sleep',
+        'openChest',
+      ] as const;
       for (const kind of [...all, 'blocked', 'silent'] as const) {
         expect(kinds.get(kind) ?? 0, `intent ${kind}`).toBeGreaterThan(10);
       }
@@ -749,8 +799,10 @@ describe('property: the planned outcome always matches what the reducer does', (
     for (let i = 0; i < 300; i++) {
       const state = randomSituation(rng);
       const paused: GameState = { ...state, ui: { ...state.ui, paused: true } };
-      const shopping: GameState = { ...state, ui: { ...state.ui, shopOpen: true } };
-      for (const frozen of [paused, shopping]) {
+      const shopping: GameState = { ...state, ui: { ...state.ui, panel: { kind: 'shop' } } };
+      const packing: GameState = { ...state, ui: { ...state.ui, panel: { kind: 'inventory' } } };
+      const chest: GameState = { ...state, ui: { ...state.ui, panel: { kind: 'chest', mapId: 'farm', tx: 5, tz: 10 } } };
+      for (const frozen of [paused, shopping, packing, chest]) {
         if (gameReducer(frozen, actions.useTool()) !== frozen) acted++;
         if (gameReducer(frozen, actions.interact()) !== frozen) acted++;
       }

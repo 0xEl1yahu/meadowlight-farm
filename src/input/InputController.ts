@@ -12,7 +12,7 @@
  *   Hotbar        1–9, 0, -, = select slots 0–11. Tab / Shift+Tab and the mouse wheel cycle.
  *   Zoom          Z (in) / X (out), Ctrl + mouse wheel or trackpad pinch.
  *   Shop          B toggles.
- *   Pause         P toggles. Escape closes the shop if it is open, otherwise toggles pause.
+ *   Pause         P toggles. Escape closes any open panel, otherwise toggles pause.
  *   Sleep         N.
  *   Time scale    T cycles through TIME.timeScales.
  *
@@ -23,7 +23,7 @@
  *   so the cadence matches the render lerp exactly and never bunches up after a hitch.
  * - Tool sources (Space, J, each pointer) are a set; while any is held the tool repeats
  *   every TOOL_REPEAT_SECONDS.
- * - While the game is frozen (paused or shop open) held repeats are suspended: accumulators do
+ * - While the game is frozen (paused or a panel open) held repeats are suspended: accumulators do
  *   not advance, so nothing is queued for the moment the game resumes.
  * - Window blur, the page becoming hidden and releasing Cmd (macOS swallows key-ups while it
  *   is held) clear all held state so no key can get stuck.
@@ -31,11 +31,11 @@
  * Focus etiquette
  * - Events aimed at text inputs, selects and contenteditable elements are ignored.
  * - Space / Enter on a focused HUD button activate the button, not the game. Tab on a focused
- *   HUD button, or while the shop is open, moves keyboard focus normally so the HUD stays
+ *   HUD button, or while any panel is open, moves keyboard focus normally so the HUD stays
  *   keyboard-accessible.
  * - Key presses with Ctrl, Cmd or Alt are left to the browser (shortcuts keep working).
  */
-import { PLAYER, TIME } from '../config';
+import { INVENTORY, PLAYER, TIME } from '../config';
 import type { Store } from '../core/store';
 import { Direction, type GameState } from '../core/types';
 import type { CameraRig } from '../render/CameraRig';
@@ -297,16 +297,17 @@ export class InputController {
     const state = this.store.getState();
     switch (code) {
       case 'Tab':
-        // With the shop open, Tab walks keyboard focus through the shop instead.
-        if (state.ui.shopOpen) return false;
+        // With a panel open, Tab walks keyboard focus through the panel instead.
+        if (state.ui.panel.kind !== 'none') return false;
         if (!event.repeat) this.store.dispatch(actions.cycleSlot(event.shiftKey ? -1 : 1));
         return true;
       case 'KeyB':
-        if (!event.repeat) this.store.dispatch(actions.setShopOpen(!state.ui.shopOpen));
+        // The reducer ignores opening the shop while another panel is open.
+        if (!event.repeat) this.store.dispatch(actions.setShopOpen(state.ui.panel.kind !== 'shop'));
         return true;
       case 'Escape':
         if (!event.repeat) {
-          this.store.dispatch(state.ui.shopOpen ? actions.setShopOpen(false) : actions.setPaused(!state.ui.paused));
+          this.store.dispatch(state.ui.panel.kind !== 'none' ? actions.closePanel() : actions.setPaused(!state.ui.paused));
         }
         return true;
       case 'KeyP':
@@ -359,7 +360,7 @@ export class InputController {
   }
 
   private selectSlot(slot: number): void {
-    if (slot < this.store.getState().inventory.slots.length) this.store.dispatch(actions.selectSlot(slot));
+    if (slot < INVENTORY.hotbarSize) this.store.dispatch(actions.selectSlot(slot));
   }
 
   private cycleTimeScale(state: GameState): void {

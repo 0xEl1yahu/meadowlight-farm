@@ -111,25 +111,37 @@ export const TOOLS = {
 } as const;
 
 export const INVENTORY = {
+  /** Slots 0 … hotbarSize - 1 are the hotbar; the rest is the backpack. */
   hotbarSize: 12,
+  /** Every inventory holds this many slots; those at or above `unlockedSlots` stay empty. */
+  slotCount: 36,
+  /** The hotbar plus the first backpack row; the general-store upgrade (later) unlocks all 36. */
+  startingUnlockedSlots: 24,
   maxStack: 999,
   /** Slots in every placed chest. */
   chestSlots: 36,
   starting: [
-    { itemId: 'hoe', quantity: 1 },
-    { itemId: 'wateringCan', quantity: 1 },
-    { itemId: 'pickaxe', quantity: 1 },
-    { itemId: 'axe', quantity: 1 },
-    { itemId: 'scythe', quantity: 1 },
-    { itemId: 'parsnip_seeds', quantity: 15 },
+    { itemId: 'hoe', quantity: 1, quality: 0 },
+    { itemId: 'wateringCan', quantity: 1, quality: 0 },
+    { itemId: 'pickaxe', quantity: 1, quality: 0 },
+    { itemId: 'axe', quantity: 1, quality: 0 },
+    { itemId: 'scythe', quantity: 1, quality: 0 },
+    { itemId: 'parsnip_seeds', quantity: 15, quality: 0 },
   ] satisfies readonly ItemStack[],
 } as const;
+
+/** Sell-price multiplier per quality: normal, silver, gold. */
+export const QUALITY_MULTIPLIERS = [1, 1.25, 1.5] as const;
 
 export const FARMING = {
   /** Chance that an empty, un-watered plowed tile reverts to grass overnight. */
   untillChance: 0.1,
   /** Seed scattering: a handful covers the `depth` rows in front of the player, `width` wide. */
   scatter: { width: 3, depth: 3 },
+  /** Indexed by Quality (see QUALITY_MULTIPLIERS). */
+  qualityMultipliers: QUALITY_MULTIPLIERS,
+  /** Harvest quality roll r ∈ [0, 1): gold when r < gold, silver when r < silver, otherwise normal. */
+  qualityChance: { gold: 0.05, silver: 0.2 },
 } as const;
 
 /**

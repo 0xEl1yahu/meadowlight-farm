@@ -393,17 +393,35 @@ export interface PlayerState {
   readonly lastAction: ActionEvent | null;
 }
 
+/** Stacks merge only when both `itemId` and `quality` are equal. */
 export interface ItemStack {
   readonly itemId: ItemId;
   readonly quantity: number;
+  /** Nonzero only for items whose `hasQuality` is set (produce, and later forage, food, animal products). */
+  readonly quality: Quality;
 }
 
 export interface InventoryState {
+  /** Always INVENTORY.slotCount (36). 0–11 = hotbar, 12–35 = backpack. */
   readonly slots: readonly (ItemStack | null)[];
+  /** 24 at the start (12 hotbar + 12 backpack); the general-store upgrade (later) makes it 36. Slots ≥ unlockedSlots are always null. */
+  readonly unlockedSlots: 24 | 36;
+  /** Always < INVENTORY.hotbarSize. */
   readonly selected: number;
   readonly water: number;
   readonly waterCapacity: number;
 }
+
+/** One slot of the player's inventory, or of the chest open in `ui.panel`. */
+export type SlotRef =
+  | { readonly container: 'player'; readonly index: number }
+  | {
+      readonly container: 'chest';
+      readonly mapId: MapId;
+      readonly tx: number;
+      readonly tz: number;
+      readonly index: number;
+    };
 
 export interface ShippingState {
   /** Items in the shipping bin, paid out at the start of the next day. */
@@ -411,8 +429,18 @@ export interface ShippingState {
   readonly lastPayout: number;
 }
 
+/**
+ * The open menu. Any panel other than `none` freezes the clock and the player. Later
+ * workstreams add kinds; the UI is reset on load, so a new kind never needs a save migration.
+ */
+export type UiPanel =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'shop' }
+  | { readonly kind: 'inventory' }
+  | { readonly kind: 'chest'; readonly mapId: MapId; readonly tx: number; readonly tz: number };
+
 export interface UiState {
-  readonly shopOpen: boolean;
+  readonly panel: UiPanel;
   readonly paused: boolean;
   /** Real-time multiplier applied by the game loop. Presentation only; ticks carry minutes. */
   readonly timeScale: number;

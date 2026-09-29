@@ -4,7 +4,8 @@
  * HUD use the same plans to show whether an action is possible and what it will do, so the
  * preview and the outcome can never disagree.
  */
-import { Salt, hashRange } from '../core/hash';
+import { FARMING } from '../config';
+import { Salt, hashFloat, hashRange } from '../core/hash';
 import {
   Blocker,
   SEASON_NAMES,
@@ -13,6 +14,7 @@ import {
   type CropId,
   type CropInstance,
   type GameState,
+  type Quality,
   type TileCoord,
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
@@ -34,9 +36,12 @@ export type Intent =
   | { readonly kind: 'untill' }
   /** Seeds land on every listed tile (empty tilled soil in the scatter patch, nearest first). */
   | { readonly kind: 'scatter'; readonly cropId: CropId; readonly tiles: readonly TileCoord[] }
-  | { readonly kind: 'harvest'; readonly quantity: number }
+  /** Every unit of one harvest shares one quality roll. */
+  | { readonly kind: 'harvest'; readonly quantity: number; readonly quality: Quality }
   | { readonly kind: 'clearCrop' }
   | { readonly kind: 'ship' }
+  /** Opens the chest on the target tile of the active map. */
+  | { readonly kind: 'openChest' }
   | { readonly kind: 'sleep' }
   | { readonly kind: 'blocked'; readonly reason: string | null };
 
@@ -80,6 +85,24 @@ export function harvestQuantity(state: GameState, target: TileCoord, crop: CropI
   );
 }
 
+/**
+ * Deterministic quality of a harvest, rolled with the map's seed from the tile, the day and the
+ * harvest number: gold for r < FARMING.qualityChance.gold, silver for r < .silver, otherwise
+ * normal (about 5% gold, 15% silver, 80% normal).
+ */
+export function harvestQuality(state: GameState, target: TileCoord, crop: CropInstance): Quality {
+  const r = hashFloat(
+    mapSeed(state.seed, state.player.mapId),
+    target.tx,
+    target.tz,
+    state.time.absoluteDay,
+    crop.harvestCount,
+    Salt.Quality,
+  );
+  if (r < FARMING.qualityChance.gold) return 2;
+  return r < FARMING.qualityChance.silver ? 1 : 0;
+}
+
 function planHarvest(
   state: GameState,
   target: TileCoord,
@@ -88,10 +111,11 @@ function planHarvest(
   energyCost: number,
 ): ActionPlan {
   const quantity = harvestQuantity(state, target, crop);
-  if (capacityFor(state.inventory, crop.cropId) < quantity) {
+  const quality = harvestQuality(state, target, crop);
+  if (capacityFor(state.inventory, crop.cropId, quality) < quantity) {
     return blocked(target, feedback, 'Your inventory is full.');
   }
-  return plan(target, { kind: 'harvest', quantity }, feedback, energyCost);
+  return plan(target, { kind: 'harvest', quantity, quality }, feedback, energyCost);
 }
 
 /** Why a tool can't clear this blocker, naming the tool that can; null for blockers that never clear. */
@@ -223,12 +247,17 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
   return plan(target, { kind: 'scatter', cropId: item.cropId, tiles }, 'plant');
 }
 
-/** Plan for the context action (E): harvest, clear, ship, sleep, refill. */
+/** Plan for the context action (E): open a chest, harvest, clear, ship, sleep, refill. */
 export function planInteraction(state: GameState): ActionPlan {
   const target = selectTargetTile(state);
   if (target === null) return blocked(null, 'none');
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return blocked(null, 'none');
+
+  // A chest opens; the other placed objects have nothing to interact with yet.
+  if (tile.object !== null) {
+    return tile.object.kind === 'chest' ? plan(target, { kind: 'openChest' }, 'openChest') : blocked(target, 'none');
+  }
 
   if (tile.crop !== null) {
     if (tile.crop.dead) return plan(target, { kind: 'clearCrop' }, 'harvest');
@@ -307,6 +336,8 @@ export function describeIntent(intent: Intent): string | null {
       return 'Ship';
     case 'sleep':
       return 'Sleep';
+    case 'openChest':
+      return 'Open chest';
     case 'blocked':
       return null;
   }
