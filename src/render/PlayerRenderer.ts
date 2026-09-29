@@ -109,7 +109,7 @@ const BLINK_INTERVAL_RANGE = 3.4;
 const DOUBLE_BLINK_CHANCE = 0.2;
 const DOUBLE_BLINK_GAP = 0.16;
 /** Height of the contact shadow above the ground it sits on. */
-const BLOB_LIFT = 0.012;
+export const BLOB_LIFT = 0.012;
 
 const TWO_PI = Math.PI * 2;
 
@@ -723,6 +723,16 @@ export function playerGroundHeight(tile: Tile | null): number {
   return isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
 }
 
+/** World height of the model root: feet rise onto path planks but stay at grass height over sunken soil. */
+export function playerRootHeight(groundY: number): number {
+  return Math.max(HEIGHTS.grassTop, groundY);
+}
+
+/** Ground blob height local to the root, so the shadow sits BLOB_LIFT above the surface whatever the root height. */
+export function playerBlobLocalHeight(groundY: number): number {
+  return groundY - playerRootHeight(groundY) + BLOB_LIFT;
+}
+
 function clipFor(kind: ActionKind): ActionClip | null {
   return kind === 'sleep' || kind === 'none' ? null : ACTION_CLIPS[kind];
 }
@@ -1052,10 +1062,10 @@ export class PlayerRenderer implements RenderSystem {
 
   private placeRoot(): void {
     const root = this.model.root;
-    // Feet rise onto path planks; on sunken soil they stay at grass height, as before.
-    root.position.set(this.position.x, Math.max(HEIGHTS.grassTop, this.groundY), this.position.z);
+    root.position.set(this.position.x, playerRootHeight(this.groundY), this.position.z);
     root.rotation.y = this.yaw;
-    this.model.groundBlob.position.y = this.groundY - HEIGHTS.grassTop + BLOB_LIFT;
+    // The blob is a child of the root, so its height is relative to where the root actually sits.
+    this.model.groundBlob.position.y = playerBlobLocalHeight(this.groundY);
     this.focus.set(this.position.x, HEIGHTS.grassTop, this.position.z);
   }
 

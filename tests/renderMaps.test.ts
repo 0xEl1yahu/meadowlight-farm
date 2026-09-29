@@ -12,7 +12,12 @@ import { WORLD } from '../src/config';
 import { Blocker, PLACED_OBJECT_KINDS, TileState, type PlacedObject, type Tile } from '../src/core/types';
 import { HEIGHTS } from '../src/render/constants';
 import { TINT_MASK_ATTRIBUTE } from '../src/render/materials';
-import { playerGroundHeight } from '../src/render/PlayerRenderer';
+import {
+  BLOB_LIFT,
+  playerBlobLocalHeight,
+  playerGroundHeight,
+  playerRootHeight,
+} from '../src/render/PlayerRenderer';
 import { createTreeGeometry, TREE_SHAPES, type TreeSpecies } from '../src/render/structureGeometry';
 import { TREE } from '../src/render/TerrainRenderer';
 import { createWeedsGeometry } from '../src/render/terrainGeometry';
@@ -133,5 +138,26 @@ describe('player ground height', () => {
     expect(playerGroundHeight(EMPTY_TILE)).toBe(HEIGHTS.grassTop);
     expect(playerGroundHeight(null)).toBe(HEIGHTS.grassTop);
     expect(HEIGHTS.pathTop).toBeGreaterThan(HEIGHTS.grassTop);
+  });
+
+  it('lifts the root onto paths but keeps it at grass height over sunken soil', () => {
+    expect(playerRootHeight(HEIGHTS.pathTop)).toBe(HEIGHTS.pathTop);
+    expect(playerRootHeight(HEIGHTS.grassTop)).toBe(HEIGHTS.grassTop);
+    expect(playerRootHeight(HEIGHTS.soilTop)).toBe(HEIGHTS.grassTop);
+  });
+
+  it('sits the ground blob just above the surface on grass, soil and paths', () => {
+    const tiles: readonly Tile[] = [
+      EMPTY_TILE,
+      { ...EMPTY_TILE, state: TileState.Watered },
+      objectTile({ kind: 'woodPath' }),
+      objectTile({ kind: 'stonePath' }),
+    ];
+    for (const tile of tiles) {
+      const surface = playerGroundHeight(tile);
+      // The blob is a child of the root, so its world height is root height plus its local height.
+      const blobWorld = playerRootHeight(surface) + playerBlobLocalHeight(surface);
+      expect(blobWorld).toBeCloseTo(surface + BLOB_LIFT, 9);
+    }
   });
 });
