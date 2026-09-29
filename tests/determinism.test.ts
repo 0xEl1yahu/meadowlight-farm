@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { INVENTORY, TIME } from '../src/config';
 import { hash32, hashFloat, hashRange, mulberry32, Salt } from '../src/core/hash';
 import { createActionRecorder, createStore } from '../src/core/store';
-import { CROP_IDS, DIRECTIONS, TileState, type GameState, type Tile } from '../src/core/types';
+import { CROP_IDS, DIRECTIONS, MAP_IDS, TileState, type GameState, type MapId, type Tile, type WorldState } from '../src/core/types';
 import { seedItemId } from '../src/farming/crops';
 import { actions, type GameAction } from '../src/state/actions';
 import { createInitialState } from '../src/state/initialState';
@@ -52,27 +52,35 @@ function sameTileContent(a: Tile, b: Tile): boolean {
   return a.state === b.state && a.blocker === b.blocker && a.blockerHp === b.blockerHp && JSON.stringify(a.crop) === JSON.stringify(b.crop);
 }
 
-/** Violations of the structural-sharing contract between two consecutive states. */
+/** Violations of the structural-sharing contract between two consecutive states, map by map. */
 function sharingViolations(next: GameState, prev: GameState): string[] {
   const problems: string[] = [];
-  if (next.world === prev.world) return problems;
-  if (next.world.grid !== prev.world.grid) problems.push('grid replaced');
-  next.world.chunks.forEach((chunk, ci) => {
-    const before = prev.world.chunks[ci];
+  if (next.maps === prev.maps) return problems;
+  for (const id of MAP_IDS) problems.push(...worldSharingViolations(id, next.maps[id], prev.maps[id]));
+  return problems;
+}
+
+function worldSharingViolations(id: MapId, next: WorldState, prev: WorldState): string[] {
+  const problems: string[] = [];
+  if (next === prev) return problems;
+  if (next.grid !== prev.grid) problems.push(`${id}: grid replaced`);
+  if (next.chunks.every((chunk, ci) => chunk === prev.chunks[ci])) problems.push(`${id}: world replaced with no changed chunk`);
+  next.chunks.forEach((chunk, ci) => {
+    const before = prev.chunks[ci];
     if (before === undefined) {
-      problems.push(`chunk ${ci} appeared`);
+      problems.push(`${id}: chunk ${ci} appeared`);
       return;
     }
     if (chunk === before) return;
-    if (chunk.revision <= before.revision) problems.push(`chunk ${ci} replaced without a revision bump`);
+    if (chunk.revision <= before.revision) problems.push(`${id}: chunk ${ci} replaced without a revision bump`);
     let changed = 0;
     chunk.tiles.forEach((tile, i) => {
       const old = before.tiles[i];
       if (old === undefined || tile === old) return;
       changed++;
-      if (sameTileContent(tile, old)) problems.push(`chunk ${ci} tile ${i} replaced by an identical copy`);
+      if (sameTileContent(tile, old)) problems.push(`${id}: chunk ${ci} tile ${i} replaced by an identical copy`);
     });
-    if (changed === 0) problems.push(`chunk ${ci} replaced with no changed tile`);
+    if (changed === 0) problems.push(`${id}: chunk ${ci} replaced with no changed tile`);
   });
   return problems;
 }
@@ -95,8 +103,8 @@ function play(session: readonly GameAction[], freeze: boolean, worldSeed?: numbe
     notifications++;
     if (next === prev) violations.push('notified without a change');
     violations.push(...sharingViolations(next, prev));
-    if (next.world !== prev.world) {
-      maxPlowed = Math.max(maxPlowed, countTiles(next.world, (tile) => tile.state === TileState.Plowed || tile.state === TileState.Watered));
+    if (next.maps.farm !== prev.maps.farm) {
+      maxPlowed = Math.max(maxPlowed, countTiles(next.maps.farm, (tile) => tile.state === TileState.Plowed || tile.state === TileState.Watered));
     }
   });
   for (const action of session) store.dispatch(action);
@@ -165,7 +173,8 @@ describe('deterministic replay', () => {
     () => {
       const base = reference().state;
       expect(play(randomSession(0xbeef, 6000), false).state).not.toEqual(base);
-      expect(play(session, false, 12345).state.world).not.toEqual(base.world);
+      const other = play(session, false, 12345).state;
+      for (const id of ['farm', 'forest'] as const) expect(other.maps[id], id).not.toEqual(base.maps[id]);
     },
     HEAVY_TEST_TIMEOUT_MS,
   );

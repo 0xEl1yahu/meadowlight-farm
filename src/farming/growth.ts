@@ -12,13 +12,13 @@
  *   4. Rain or storm today → every plowed tile starts the day Watered.
  * Wild shade crops skip all of that: they grow every night without water while they stay in
  * shade and in season, and quietly disappear otherwise. After the per-tile pass, new wild crops
- * sprout and spread on shaded grass (farming/wild.ts).
+ * sprout and spread on shaded grass (farming/wild.ts). Every map runs this pipeline each night.
  */
 import { FARMING } from '../config';
 import { Salt, hashFloat } from '../core/hash';
 import { TileState, type CropInstance, type Season, type Tile, type Weather, type WorldState } from '../core/types';
 import { weatherWaters } from '../time/weather';
-import { isShadedTile } from '../world/shade';
+import type { MapDefinition } from '../world/maps/types';
 import { mapTiles } from '../world/tiles';
 import { CROPS, daysRequiredForStage, isInSeason, stageCount } from './crops';
 import { spreadWildCrops } from './wild';
@@ -77,9 +77,11 @@ export function advanceTileOvernight(tile: Tile, tx: number, tz: number, ctx: Da
   return { ...tile, state, crop };
 }
 
-export function advanceWorldOvernight(world: WorldState, ctx: DayContext): WorldState {
-  const grown = mapTiles(world, (tile, tx, tz) =>
-    advanceTileOvernight(tile, tx, tz, ctx, isShadedTile(world.grid, tx, tz)),
-  );
-  return spreadWildCrops(grown, ctx);
+/**
+ * One night on one map. `ctx.seed` must already be the map's seed (`mapSeed(state.seed, id)`);
+ * shade and wild tuning come from the map definition.
+ */
+export function advanceWorldOvernight(world: WorldState, ctx: DayContext, def: MapDefinition): WorldState {
+  const grown = mapTiles(world, (tile, tx, tz) => advanceTileOvernight(tile, tx, tz, ctx, def.isShaded(tx, tz)));
+  return spreadWildCrops(grown, ctx, def);
 }

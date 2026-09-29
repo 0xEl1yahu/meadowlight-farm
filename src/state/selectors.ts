@@ -2,22 +2,49 @@
  * Read-only derivations from GameState, shared by reducers, render systems and the HUD.
  */
 import { FARMING, PLAYER, TIME } from '../config';
-import type { GameState, Tile, TileCoord, Weather } from '../core/types';
+import type { GameState, MapId, Tile, TileCoord, Weather, WorldState } from '../core/types';
 import { cropsInSeason, seedItemId } from '../farming/crops';
 import { getItem, type ItemDefinition, type SeedItem } from '../items/items';
 import { formatClock, formatDate } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { DIRECTION_STEPS, forwardTile, inBounds } from '../world/grid';
+import { getMap, type MapDefinition } from '../world/maps';
 import { getTile } from '../world/tiles';
 import { selectedStack } from './inventory';
+
+/** The map the player stands on. */
+export function selectActiveMapId(state: GameState): MapId {
+  return state.player.mapId;
+}
+
+/** The world of the map the player stands on. */
+export function selectActiveWorld(state: GameState): WorldState {
+  return state.maps[state.player.mapId];
+}
+
+/** The static definition of the map the player stands on. */
+export function selectActiveMap(state: GameState): MapDefinition {
+  return getMap(state.player.mapId);
+}
+
+/** `state` with one map's world replaced; `state` itself when the world is unchanged. */
+export function withMap(state: GameState, mapId: MapId, world: WorldState): GameState {
+  if (world === state.maps[mapId]) return state;
+  return { ...state, maps: { ...state.maps, [mapId]: world } };
+}
+
+/** `state` with the active map's world replaced; `state` itself when the world is unchanged. */
+export function withActiveWorld(state: GameState, world: WorldState): GameState {
+  return withMap(state, state.player.mapId, world);
+}
 
 /**
  * The active tile: a ray cast from the centre of the player's tile along the facing vector
  * (see world/grid.ts forwardTile). Null when the player faces the edge of the world.
  */
 export function selectTargetTile(state: GameState): TileCoord | null {
-  const { player, world } = state;
-  return forwardTile(world.grid, player, player.facing, PLAYER.toolReachTiles);
+  const { player } = state;
+  return forwardTile(selectActiveWorld(state).grid, player, player.facing, PLAYER.toolReachTiles);
 }
 
 /**
@@ -27,7 +54,8 @@ export function selectTargetTile(state: GameState): TileCoord | null {
  * row, centre first, so a partial handful lands closest to the player.
  */
 export function selectScatterPatch(state: GameState): readonly TileCoord[] {
-  const { player, world } = state;
+  const { player } = state;
+  const world = selectActiveWorld(state);
   const { dx, dz } = DIRECTION_STEPS[player.facing];
   const half = Math.floor(FARMING.scatter.width / 2);
   const laterals: number[] = [0];
@@ -46,7 +74,7 @@ export function selectScatterPatch(state: GameState): readonly TileCoord[] {
 
 export function selectTargetTileData(state: GameState): Tile | null {
   const target = selectTargetTile(state);
-  return target === null ? null : getTile(state.world, target.tx, target.tz);
+  return target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
 }
 
 export function selectSelectedItem(state: GameState): ItemDefinition | null {

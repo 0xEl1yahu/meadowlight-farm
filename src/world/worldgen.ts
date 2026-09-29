@@ -1,9 +1,10 @@
 /**
- * Deterministic farm generation. The same seed always yields the same farm.
+ * Deterministic farm generation. The same seed always yields the same farm. The farm map
+ * (src/world/maps/farm.ts) wraps this generator; the farm's map seed is the save seed itself.
  */
-import { LAYOUT, PLAYER, TOOLS, type FarmLayout, type PondSpec } from '../config';
+import { LAYOUT, PLAYER, SHADE, TOOLS, type FarmLayout, type PondSpec } from '../config';
 import { Salt, hashFloat } from '../core/hash';
-import { Blocker, type GridSpec, type Tile, type TileRect, type WorldState } from '../core/types';
+import { Blocker, type GridSpec, type Tile, type TileCoord, type TileRect, type WorldState } from '../core/types';
 import { initialWildCrop } from '../farming/wild';
 import { shadeCropsInSeason } from '../farming/crops';
 import { seasonOfDay } from '../time/clock';
@@ -52,14 +53,25 @@ export function generateTile(seed: number, layout: FarmLayout, tx: number, tz: n
   return EMPTY_TILE;
 }
 
-export function generateWorld(seed: number, grid: GridSpec, layout: FarmLayout = LAYOUT): WorldState {
+/**
+ * The farm. Initial wild crops go on empty shaded tiles except the spawn and the `reserved`
+ * (warp and arrival) tiles, with `wildDensity` (the farm's `SHADE.initialDensity`).
+ */
+export function generateWorld(
+  seed: number,
+  grid: GridSpec,
+  layout: FarmLayout = LAYOUT,
+  reserved: readonly TileCoord[] = [],
+  wildDensity: number = SHADE.initialDensity,
+): WorldState {
   assertLayout(grid, layout);
   const wildCrops = shadeCropsInSeason(seasonOfDay(0)).map((def) => def.id);
   return createWorld(grid, (tx, tz) => {
     const tile = generateTile(seed, layout, tx, tz);
     const isSpawn = tx === PLAYER.spawn.tx && tz === PLAYER.spawn.tz;
     if (tile !== EMPTY_TILE || isSpawn || !isShadedTile(grid, tx, tz, layout)) return tile;
-    const crop = initialWildCrop(seed, 0, wildCrops, tx, tz);
+    if (reserved.some((r) => r.tx === tx && r.tz === tz)) return tile;
+    const crop = initialWildCrop(seed, 0, wildCrops, tx, tz, wildDensity);
     return crop === null ? tile : { ...tile, crop };
   });
 }

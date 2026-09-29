@@ -4,20 +4,36 @@
  */
 import { TIME } from '../config';
 import {
+  Blocker,
+  MAP_IDS,
   SAVE_VERSION,
+  TileState,
   Weather,
   type ActionEvent,
   type ActionKind,
   type GameState,
   type GridSpec,
+  type MapId,
   type WorldState,
 } from '../core/types';
 import { calendarTime } from '../time/clock';
 import { chunkCount, chunkRectByIndex, createGridSpec, inBounds } from '../world/grid';
+import { MAPS, isReservedTile } from '../world/maps';
 import { assertWorldObjectsConsistent, getTile, isWalkable } from '../world/tiles';
 import { createDefaultSections } from './initialState';
 import { isValidSections } from './sectionValidation';
-import { isBool, isCount, isInt, isIntIn, isObj, isOneOf, isValidStack, isValidTile, type Obj } from './validation';
+import {
+  hasExactKeys,
+  isBool,
+  isCount,
+  isInt,
+  isIntIn,
+  isObj,
+  isOneOf,
+  isValidStack,
+  isValidTile,
+  type Obj,
+} from './validation';
 
 export const SAVE_KEY = 'meadowlight-farm.save.v1';
 
@@ -74,10 +90,12 @@ function isValidTime(time: unknown): boolean {
   return calendar.dayOfSeason === time.dayOfSeason && calendar.season === time.season && calendar.year === time.year;
 }
 
-/** Grid, chunk layout, every tile, and the world-level placed-object rules (giant crops). */
-function isValidWorld(world: unknown): world is WorldState {
+/** The map's grid, chunk layout, every tile, and the world-level placed-object rules (giant crops). */
+function isValidWorld(world: unknown, id: MapId): world is WorldState {
   if (!isObj(world) || !isValidGrid(world.grid) || !Array.isArray(world.chunks)) return false;
   const grid = world.grid;
+  const expected = MAPS[id].grid;
+  if ((Object.keys(expected) as (keyof GridSpec)[]).some((key) => expected[key] !== grid[key])) return false;
   if (world.chunks.length !== chunkCount(grid)) return false;
   for (let i = 0; i < world.chunks.length; i++) {
     const chunk: unknown = world.chunks[i];
@@ -106,10 +124,16 @@ function isValidWorld(world: unknown): world is WorldState {
   return true;
 }
 
-/** Position, energy, gold and sequence counters; the player must stand on a walkable tile. */
-function isValidPlayer(player: unknown, world: WorldState): boolean {
+/** Exactly one valid world per map id. */
+function isValidMaps(maps: unknown): maps is GameState['maps'] {
+  return isObj(maps) && hasExactKeys(maps, MAP_IDS) && MAP_IDS.every((id) => isValidWorld(maps[id], id));
+}
+
+/** Map, position, energy, gold and sequence counters; the player must stand on a walkable tile of their map. */
+function isValidPlayer(player: unknown, maps: GameState['maps']): boolean {
+  if (!isObj(player) || !isOneOf(player.mapId, MAP_IDS)) return false;
+  const world = maps[player.mapId];
   if (
-    !isObj(player) ||
     !isInt(player.tx) ||
     !isInt(player.tz) ||
     !inBounds(world.grid, player.tx, player.tz) ||
@@ -186,8 +210,8 @@ export function isValidGameState(v: unknown): v is GameState {
     isValidTime(v.time) &&
     typeof v.weather === 'string' &&
     WEATHERS.includes(v.weather) &&
-    isValidWorld(v.world) &&
-    isValidPlayer(v.player, v.world) &&
+    isValidMaps(v.maps) &&
+    isValidPlayer(v.player, v.maps) &&
     isValidInventory(v.inventory) &&
     isValidShipping(v.shipping) &&
     isValidUi(v.ui) &&
@@ -200,17 +224,22 @@ export function serializeGame(state: GameState): string {
   return JSON.stringify(state);
 }
 
-/** Rebuilds every tile of a saved world with `fn`; returns null when the world is malformed. */
-function mapSavedTiles(world: unknown, fn: (tile: Obj) => Obj): Obj | null {
+/**
+ * Rebuilds every tile of a saved world with `fn(tile, tx, tz)`; returns null when the world is
+ * malformed. Tile coordinates come from each chunk's own `x0`, `z0` and `width`.
+ */
+function mapSavedTiles(world: unknown, fn: (tile: Obj, tx: number, tz: number) => Obj): Obj | null {
   if (!isObj(world) || !Array.isArray(world.chunks)) return null;
   const chunks: unknown[] = [];
   for (const chunk of world.chunks as readonly unknown[]) {
     if (!isObj(chunk) || !Array.isArray(chunk.tiles)) return null;
+    const { x0, z0, width } = chunk;
+    if (!isInt(x0) || !isInt(z0) || !isIntIn(width, 1, 4096)) return null;
     const tiles: unknown[] = [];
-    for (const tile of chunk.tiles as readonly unknown[]) {
-      if (!isObj(tile)) return null;
-      tiles.push(fn(tile));
-    }
+    (chunk.tiles as readonly unknown[]).forEach((tile, i) => {
+      if (isObj(tile)) tiles.push(fn(tile, x0 + (i % width), z0 + Math.floor(i / width)));
+    });
+    if (tiles.length !== chunk.tiles.length) return null;
     chunks.push({ ...chunk, tiles });
   }
   return { ...world, chunks };
@@ -222,15 +251,31 @@ function migrateV1toV2(save: Obj): Obj {
   return world === null ? save : { ...save, version: 2, world };
 }
 
+/** A saved v2 tile as a v3 tile: gains `object: null, fertilizer: null`; debris on a farm gate tile is carved away. */
+function migrateFarmTile(tile: Obj, tx: number, tz: number): Obj {
+  const debris = tile.blocker === Blocker.Rock || tile.blocker === Blocker.Stump;
+  if (debris && isReservedTile(MAPS.farm, tx, tz)) {
+    return { state: TileState.Unplowed, blocker: Blocker.None, blockerHp: 0, crop: null, object: null, fertilizer: null };
+  }
+  return { ...tile, object: null, fertilizer: null };
+}
+
 /**
- * Version 2 predates placed objects, fertiliser and the later-workstream sections: every tile
- * gains `object: null, fertilizer: null` (chunk revisions are kept) and every section starts
- * from `createDefaultSections()`, exactly as a new game would.
+ * Version 2 predates multiple maps, placed objects, fertiliser and the later-workstream
+ * sections. The old `world` becomes `maps.farm`: every tile gains `object: null, fertilizer:
+ * null` (chunk revisions are kept), and Rock or Stump debris on the four farm reserved (gate)
+ * tiles is cleared so the gates are passable; crops and soil there stay, being walkable. The
+ * forest and the town are generated from the save's seed, the player stands on the farm, and
+ * every section starts from `createDefaultSections()`, exactly as a new game would.
  */
 function migrateV2toV3(save: Obj): Obj {
   if (!isIntIn(save.seed, 0, 0xffffffff)) return save;
-  const world = mapSavedTiles(save.world, (tile) => ({ ...tile, object: null, fertilizer: null }));
-  return world === null ? save : { ...save, ...createDefaultSections(), version: 3, world };
+  const farm = mapSavedTiles(save.world, migrateFarmTile);
+  if (farm === null || !isObj(save.player)) return save;
+  const maps = { farm, forest: MAPS.forest.generate(save.seed), town: MAPS.town.generate(save.seed) };
+  const migrated: Obj = { ...save, ...createDefaultSections(), version: 3, maps, player: { ...save.player, mapId: 'farm' } };
+  delete migrated.world;
+  return migrated;
 }
 
 /**

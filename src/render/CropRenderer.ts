@@ -79,6 +79,7 @@ import { createFlatMaterial, createSwayMaterial, sharedUniforms } from './materi
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
+import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Parts
@@ -641,11 +642,11 @@ export class CropRenderer implements RenderSystem {
       this.rebuild(state);
       return;
     }
-    const chunks = state.world.chunks;
-    const prevChunks = prev.world.chunks;
+    const chunks = selectActiveWorld(state).chunks;
+    const prevChunks = selectActiveWorld(prev).chunks;
     if (chunks === prevChunks) return;
-    const grid = state.world.grid;
-    if (!sameGridShape(grid, prev.world.grid)) {
+    const grid = selectActiveWorld(state).grid;
+    if (!sameGridShape(grid, selectActiveWorld(prev).grid)) {
       this.rebuild(state);
       return;
     }
@@ -694,7 +695,7 @@ export class CropRenderer implements RenderSystem {
   // -------------------------------------------------------------------------
 
   private rebuild(state: GameState): void {
-    const grid = state.world.grid;
+    const grid = selectActiveWorld(state).grid;
     this.records.clear();
     this.animating.clear();
     this.leaving.clear();
@@ -703,7 +704,7 @@ export class CropRenderer implements RenderSystem {
       part.slots.clear();
       part.dirty = true;
     }
-    for (const chunk of state.world.chunks) this.applyChunk(grid, chunk, null, false, false);
+    for (const chunk of selectActiveWorld(state).chunks) this.applyChunk(grid, chunk, null, false, false);
     this.commit();
   }
 

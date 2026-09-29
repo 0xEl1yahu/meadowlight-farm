@@ -28,7 +28,7 @@ import { CROPS, growthProgress } from '../farming/crops';
 import { getItem } from '../items/items';
 import { isActionable, planInteraction, planPrimaryAction } from '../state/intents';
 import { selectedStack } from '../state/inventory';
-import { selectIsFrozen, selectScatterPatch, selectTargetTile } from '../state/selectors';
+import { selectActiveWorld, selectIsFrozen, selectScatterPatch, selectTargetTile } from '../state/selectors';
 import { tileCenterX, tileCenterZ } from '../world/grid';
 import { getTile, isSoil } from '../world/tiles';
 import { HEIGHTS } from './constants';
@@ -163,7 +163,7 @@ function affectsHighlight(state: GameState, prev: GameState): boolean {
   return (
     state.player !== prev.player ||
     state.inventory !== prev.inventory ||
-    state.world !== prev.world ||
+    selectActiveWorld(state) !== selectActiveWorld(prev) ||
     state.ui !== prev.ui ||
     state.time.season !== prev.time.season ||
     state.time.absoluteDay !== prev.time.absoluteDay
@@ -369,9 +369,9 @@ export class TileHighlighter implements RenderSystem {
   /** Targets the active tile alone. Returns false when there is none. */
   private frameTile(state: GameState): boolean {
     const target = selectTargetTile(state);
-    const tile = target === null ? null : getTile(state.world, target.tx, target.tz);
+    const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
     if (target === null || tile === null) return false;
-    const grid = state.world.grid;
+    const grid = selectActiveWorld(state).grid;
     const footprint = FOOTPRINT * grid.tileSize;
     this.targetPosition.set(tileCenterX(grid, target.tx), highlightGroundHeight(tile), tileCenterZ(grid, target.tz));
     this.targetHeight = highlightBoxHeight(tile);
@@ -385,7 +385,7 @@ export class TileHighlighter implements RenderSystem {
    * and as tall as its tallest contents. Returns false when the patch is empty (off the grid).
    */
   private framePatch(state: GameState): boolean {
-    const { world } = state;
+    const world = selectActiveWorld(state);
     const grid = world.grid;
     let minTx = Number.POSITIVE_INFINITY;
     let maxTx = Number.NEGATIVE_INFINITY;

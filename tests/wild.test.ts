@@ -13,6 +13,7 @@ import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { selectScatterPatch } from '../src/state/selectors';
 import { createGridSpec } from '../src/world/grid';
+import { MAPS } from '../src/world/maps';
 import { isShadedTile } from '../src/world/shade';
 import { EMPTY_TILE, assertTileConsistent, countTiles, createWorld, forEachTile, getTile, setTile } from '../src/world/tiles';
 import {
@@ -30,7 +31,7 @@ import {
   withTile,
 } from './testUtils';
 
-const grid = BASE.world.grid;
+const grid = BASE.maps.farm.grid;
 
 function ctx(overrides: Partial<DayContext> = {}): DayContext {
   return { seed: 7, day: 10, season: Season.Summer, seasonChanged: false, weather: Weather.Sunny, ...overrides };
@@ -93,10 +94,10 @@ describe('sprouting and spreading', () => {
 
   it('only ever sprouts on empty shaded grass, deterministically', () => {
     let world = empty();
-    for (let day = 1; day <= 30; day++) world = advanceWorldOvernight(world, ctx({ day }));
+    for (let day = 1; day <= 30; day++) world = advanceWorldOvernight(world, ctx({ day }), MAPS.farm);
     const again = (() => {
       let w = empty();
-      for (let day = 1; day <= 30; day++) w = advanceWorldOvernight(w, ctx({ day }));
+      for (let day = 1; day <= 30; day++) w = advanceWorldOvernight(w, ctx({ day }), MAPS.farm);
       return w;
     })();
     expect(again).toEqual(world);
@@ -113,7 +114,7 @@ describe('sprouting and spreading', () => {
   it('never exceeds the wild population cap', () => {
     let world = empty();
     for (let day = 1; day <= 200; day++) {
-      world = advanceWorldOvernight(world, ctx({ day }));
+      world = advanceWorldOvernight(world, ctx({ day }), MAPS.farm);
       expect(wildCount(world)).toBeLessThanOrEqual(SHADE.maxWild);
     }
     expect(wildCount(world)).toBe(SHADE.maxWild);
@@ -126,7 +127,7 @@ describe('sprouting and spreading', () => {
     let besideHits = 0;
     let openHits = 0;
     for (let day = 0; day < 200; day++) {
-      const next = spreadWildCrops(world, ctx({ day }));
+      const next = spreadWildCrops(world, ctx({ day }), MAPS.farm);
       for (let tz = 10; tz < 30; tz++) {
         if (getTile(next, 1, tz)?.crop !== null) besideHits++;
         if (getTile(next, 40, 0)?.crop !== null && tz === 10) openHits++;
@@ -141,7 +142,7 @@ describe('sprouting and spreading', () => {
     let world = empty();
     for (let tz = 10; tz < 30; tz++) world = setTile(world, 0, tz, wildTile('snozberry', stageCount(CROPS.snozberry)));
     for (let day = 0; day < 100; day++) {
-      const next = spreadWildCrops(world, ctx({ day }));
+      const next = spreadWildCrops(world, ctx({ day }), MAPS.farm);
       for (let tz = 10; tz < 30; tz++) {
         const crop = getTile(next, 1, tz)?.crop;
         // Only the wooded column tx 0-1 is shaded here; a sprout beside a lone snozberry column
@@ -155,20 +156,37 @@ describe('sprouting and spreading', () => {
 
   it('does nothing in winter, when no shade crop is in season', () => {
     const world = empty();
-    expect(spreadWildCrops(world, ctx({ season: Season.Winter }))).toBe(world);
+    expect(spreadWildCrops(world, ctx({ season: Season.Winter }), MAPS.farm)).toBe(world);
   });
 
   it('never sprouts on tilled soil, blocked tiles or occupied grass', () => {
     const soil = soilTile(TileState.Plowed);
-    expect(canSproutWild(grid, soil, 0, 10)).toBe(false);
-    expect(canSproutWild(grid, wildTile('mushroom'), 0, 10)).toBe(false);
-    expect(canSproutWild(grid, EMPTY_TILE, 20, 20)).toBe(false);
-    expect(canSproutWild(grid, EMPTY_TILE, 0, 20)).toBe(true);
+    expect(canSproutWild(MAPS.farm, soil, 0, 10)).toBe(false);
+    expect(canSproutWild(MAPS.farm, wildTile('mushroom'), 0, 10)).toBe(false);
+    expect(canSproutWild(MAPS.farm, EMPTY_TILE, 20, 20)).toBe(false);
+    expect(canSproutWild(MAPS.farm, EMPTY_TILE, 0, 20)).toBe(true);
+  });
+
+  it('never sprouts on a reserved (gate) tile, though it is shaded', () => {
+    for (const { tx, tz } of MAPS.farm.reserved) {
+      if (!MAPS.farm.isShaded(tx, tz)) continue;
+      expect(canSproutWild(MAPS.farm, EMPTY_TILE, tx, tz), `(${tx}, ${tz})`).toBe(false);
+    }
+    expect(MAPS.farm.isShaded(1, 13)).toBe(true);
+    expect(canSproutWild(MAPS.farm, EMPTY_TILE, 1, 12)).toBe(true);
+  });
+
+  it('follows the map definition: its shade, and nothing at all without wild tuning', () => {
+    const town = MAPS.town.generate(0);
+    expect(spreadWildCrops(town, ctx(), MAPS.town)).toBe(town);
+    // The forest clearing is its only unshaded ground.
+    expect(canSproutWild(MAPS.forest, EMPTY_TILE, 17, 14)).toBe(false);
+    expect(canSproutWild(MAPS.forest, EMPTY_TILE, 30, 25)).toBe(true);
   });
 
   it('never sprouts under a placed object', () => {
     for (const object of [{ kind: 'woodPath' }, { kind: 'scarecrow' }] as const) {
-      expect(canSproutWild(grid, { ...EMPTY_TILE, object }, 0, 20)).toBe(false);
+      expect(canSproutWild(MAPS.farm, { ...EMPTY_TILE, object }, 0, 20)).toBe(false);
     }
   });
 });
@@ -176,7 +194,7 @@ describe('sprouting and spreading', () => {
 describe('a new farm', () => {
   it('starts with a few wild spring crops in the shade, never on the spawn tile', () => {
     let wild = 0;
-    forEachTile(BASE.world, (tile, tx, tz) => {
+    forEachTile(BASE.maps.farm, (tile, tx, tz) => {
       if (tile.crop === null || !tile.crop.wild) return;
       wild++;
       expect(tile.crop.cropId).toBe('mushroom'); // snozberries don't grow in spring

@@ -27,6 +27,7 @@ import { CAMERA, HEIGHTS } from './constants';
 import { sampleDaylight } from './LightingManager';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
+import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -300,7 +301,7 @@ export class WeatherRenderer implements RenderSystem {
   }
 
   sync(state: GameState, prev: GameState | null): void {
-    this.world = state.world;
+    this.world = selectActiveWorld(state);
     this.targetWeather = state.weather;
     if (state.weather === Weather.Rain || state.weather === Weather.Storm) this.rainStyle = styleFor(state.weather);
     if (prev === null) {

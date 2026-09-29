@@ -4,11 +4,9 @@
  */
 import { Direction, type ItemStack, type TileCoord, type TileRect } from './core/types';
 
+/** Settings shared by every map. Each map's size lives in its definition (src/world/maps/). */
 export const WORLD = {
-  /** Tiles along +X. Any positive size works; partial edge chunks are supported. */
-  width: 48,
-  /** Tiles along +Z. 40 / 16 → the last chunk row is a partial chunk of 8 rows. */
-  depth: 40,
+  /** Partial edge chunks are supported, so map sizes need not be multiples of this. */
   chunkSize: 16,
   /** World units per tile edge. */
   tileSize: 1,
@@ -66,6 +64,10 @@ export const LAYOUT: FarmLayout = {
   clearZones: [
     { x0: 0, z0: 0, width: 14, depth: 9 },
     { x0: 1, z0: 9, width: 17, depth: 9 },
+    /** West gate to the forest. */
+    { x0: 0, z0: 13, width: 1, depth: 1 },
+    /** South-east gate to the town. */
+    { x0: 46, z0: 38, width: 2, depth: 1 },
   ],
   rockDensity: 0.055,
   stumpDensity: 0.03,
@@ -83,7 +85,7 @@ export const PLAYER = {
   moveDurationSeconds: 0.16,
   /** Forward raycast length in tiles. 1 = the tile directly in front of the player. */
   toolReachTiles: 1,
-  /** Directly in front of the house door. */
+  /** Directly in front of the house door, on the farm. */
   spawn: { tx: 2, tz: 5 } satisfies TileCoord,
   spawnFacing: Direction.South as Direction,
   startingGold: 500,
@@ -131,8 +133,9 @@ export const FARMING = {
 } as const;
 
 /**
- * Shade and the wild crops that grow in it. Shaded tiles are the strips under the woodland on
- * the far (-X / -Z) edges and a ring around the farmhouse.
+ * The farm's shade and the wild crops that grow in it (the farm map's `WildTuning` comes from
+ * here). Shaded tiles are the strips under the woodland on the far (-X / -Z) edges and a ring
+ * around the farmhouse.
  */
 export const SHADE = {
   /** Tiles with tx < edgeBand or tz < edgeBand lie under the border woodland. */

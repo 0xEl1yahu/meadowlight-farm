@@ -54,6 +54,7 @@ import {
   type TreePlacement,
 } from './structureGeometry';
 import type { FrameContext, RenderSystem } from './types';
+import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -594,7 +595,7 @@ export class StructureRenderer implements RenderSystem {
 
   /** Builds the static scenery once (or again for a different grid) and resets the animations. */
   private rebuild(state: GameState): void {
-    const grid = state.world.grid;
+    const grid = selectActiveWorld(state).grid;
     if (this.scenery !== null && !sameGrid(this.scenery.grid, grid)) this.releaseScenery();
     let scenery = this.scenery;
     if (scenery === null) {

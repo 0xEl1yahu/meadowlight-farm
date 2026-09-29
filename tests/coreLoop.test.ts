@@ -16,10 +16,10 @@ describe('core loop', () => {
     expect(t).toEqual({ tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz + 3 });
     if (t === null) return;
     s = gameReducer(s, actions.useTool());
-    expect(getTile(s.world, t.tx, t.tz)?.state).toBe(TileState.Plowed);
+    expect(getTile(s.maps.farm, t.tx, t.tz)?.state).toBe(TileState.Plowed);
     s = gameReducer(s, actions.selectSlot(5));
     s = gameReducer(s, actions.useTool());
-    expect(getTile(s.world, t.tx, t.tz)?.crop?.cropId).toBe('parsnip');
+    expect(getTile(s.maps.farm, t.tx, t.tz)?.crop?.cropId).toBe('parsnip');
     s = gameReducer(s, actions.selectSlot(1));
     s = gameReducer(s, actions.useTool());
     s = gameReducer(s, actions.sleep());

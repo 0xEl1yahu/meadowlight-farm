@@ -376,6 +376,8 @@ export interface ActionEvent {
 }
 
 export interface PlayerState {
+  /** The map the player stands on; `tx`/`tz` are tile coordinates on that map. */
+  readonly mapId: MapId;
   readonly tx: number;
   readonly tz: number;
   readonly facing: Direction;
@@ -384,7 +386,7 @@ export interface PlayerState {
   readonly gold: number;
   /** Incremented on every successful grid step (render: start a lerp). */
   readonly moveSeq: number;
-  /** Incremented when the player is placed without walking (sleep, load). Render: snap. */
+  /** Incremented when the player is placed without walking (sleep, load, warp). Render: snap. */
   readonly teleportSeq: number;
   /** Incremented on every attempted tool use / interaction that produced feedback. */
   readonly actionSeq: number;
@@ -575,7 +577,8 @@ export interface GameState extends GameSections {
   readonly seed: number;
   readonly time: TimeState;
   readonly weather: Weather;
-  readonly world: WorldState;
+  /** One world per map; the player stands on `maps[player.mapId]`. */
+  readonly maps: Readonly<Record<MapId, WorldState>>;
   readonly player: PlayerState;
   readonly inventory: InventoryState;
   readonly shipping: ShippingState;

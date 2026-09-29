@@ -489,12 +489,12 @@ function randomSituation(rng: () => number): GameState {
   let state = atDay(BASE, day, 360 + Math.floor(rng() * 1000));
   const facing = pick(rng, DIRECTIONS);
   // Bias toward edges so null targets are exercised too.
-  const tx = rng() < 0.1 ? pick(rng, [0, state.world.grid.width - 1]) : Math.floor(rng() * state.world.grid.width);
-  const tz = rng() < 0.1 ? pick(rng, [0, state.world.grid.depth - 1]) : Math.floor(rng() * state.world.grid.depth);
-  const standing = must(getTile(state.world, tx, tz));
+  const tx = rng() < 0.1 ? pick(rng, [0, state.maps.farm.grid.width - 1]) : Math.floor(rng() * state.maps.farm.grid.width);
+  const tz = rng() < 0.1 ? pick(rng, [0, state.maps.farm.grid.depth - 1]) : Math.floor(rng() * state.maps.farm.grid.depth);
+  const standing = must(getTile(state.maps.farm, tx, tz));
   if (!isWalkable(standing)) state = withTile(state, { tx, tz }, EMPTY_TILE);
   state = withPlayer(state, { tx, tz }, facing);
-  const target = forwardTile(state.world.grid, { tx, tz }, facing, PLAYER.toolReachTiles);
+  const target = forwardTile(state.maps.farm.grid, { tx, tz }, facing, PLAYER.toolReachTiles);
   if (target !== null && rng() < 0.9) state = withTile(state, target, randomTile(rng, day));
 
   const full = rng() < 0.15;
@@ -526,7 +526,7 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
       v.same('silent no-op state', next, state);
       return;
     }
-    v.same('world', next.world, state.world);
+    v.same('maps', next.maps, state.maps);
     v.same('inventory', next.inventory, state.inventory);
     v.same('shipping', next.shipping, state.shipping);
     v.same('time', next.time, state.time);
@@ -555,7 +555,9 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
   v.equal('position', [next.player.tx, next.player.tz], [state.player.tx, state.player.tz]);
   v.equal('gold', next.player.gold, state.player.gold);
   v.same('time', next.time, state.time);
-  v.equal('world changes outside the target', worldChangesOutside(state.world, next.world, at), []);
+  v.equal('world changes outside the target', worldChangesOutside(state.maps.farm, next.maps.farm, at), []);
+  v.same('forest', next.maps.forest, state.maps.forest);
+  v.same('town', next.maps.town, state.maps.town);
 
   const before = tileAt(state, at);
   const after = tileAt(next, at);
@@ -571,7 +573,7 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
       v.same('slots', next.inventory.slots, state.inventory.slots);
       break;
     case 'refill':
-      v.same('world', next.world, state.world);
+      v.same('maps', next.maps, state.maps);
       v.equal('water refilled', next.inventory.water, state.inventory.waterCapacity);
       break;
     case 'mine':
@@ -629,7 +631,7 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
         v.check(false, 'shipped an empty slot');
         break;
       }
-      v.same('world', next.world, state.world);
+      v.same('maps', next.maps, state.maps);
       v.equal('slot emptied', next.inventory.slots[state.inventory.selected], null);
       v.equal(
         'pending value',

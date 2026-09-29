@@ -20,6 +20,7 @@ import {
   type GameState,
   type ItemId,
   type ItemStack,
+  type MapId,
   type Tile,
   type TileCoord,
   type WorldState,
@@ -28,6 +29,7 @@ import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { countItem } from '../src/state/inventory';
 import { serializeGame } from '../src/state/persistence';
+import { withMap } from '../src/state/selectors';
 import { calendarTime } from '../src/time/clock';
 import { locateTile } from '../src/world/grid';
 import { isWalkable, requireTile, setTile } from '../src/world/tiles';
@@ -87,20 +89,25 @@ export class Violations {
   }
 }
 
-export function tileAt(state: GameState, coord: TileCoord): Tile {
-  return requireTile(state.world, coord.tx, coord.tz);
+/** Tile at `coord` on `mapId` (default: the map the player stands on). */
+export function tileAt(state: GameState, coord: TileCoord, mapId: MapId = state.player.mapId): Tile {
+  return requireTile(state.maps[mapId], coord.tx, coord.tz);
 }
 
-export function withTile(state: GameState, coord: TileCoord, tile: Tile): GameState {
-  return { ...state, world: setTile(state.world, coord.tx, coord.tz, tile) };
+/** Writes one tile on `mapId` (default: the map the player stands on). */
+export function withTile(state: GameState, coord: TileCoord, tile: Tile, mapId: MapId = state.player.mapId): GameState {
+  return withMap(state, mapId, setTile(state.maps[mapId], coord.tx, coord.tz, tile));
 }
 
-/** Places the player without walking. The destination must be walkable. */
-export function withPlayer(state: GameState, coord: TileCoord, facing: Direction): GameState {
-  if (!isWalkable(requireTile(state.world, coord.tx, coord.tz))) {
-    throw new Error(`withPlayer: (${coord.tx}, ${coord.tz}) is not walkable`);
+/**
+ * Places the player without walking, on `mapId` (default: the map they stand on). The
+ * destination must be walkable.
+ */
+export function withPlayer(state: GameState, coord: TileCoord, facing: Direction, mapId: MapId = state.player.mapId): GameState {
+  if (!isWalkable(requireTile(state.maps[mapId], coord.tx, coord.tz))) {
+    throw new Error(`withPlayer: (${coord.tx}, ${coord.tz}) on ${mapId} is not walkable`);
   }
-  return { ...state, player: { ...state.player, tx: coord.tx, tz: coord.tz, facing } };
+  return { ...state, player: { ...state.player, mapId, tx: coord.tx, tz: coord.tz, facing } };
 }
 
 /** Replaces the whole hotbar (padded with empty slots) and selects `selected`. */
@@ -226,14 +233,20 @@ export type SaveJson = Record<string, unknown>;
 
 /**
  * Hand-transforms a current state back into the JSON of an older save version.
- * - Version 2 has no later-workstream sections and no `object` / `fertilizer` on tiles.
+ * - Version 2 has a single `world` (the farm) instead of `maps`, no `player.mapId`, no
+ *   later-workstream sections and no `object` / `fertilizer` on tiles.
  * - Version 1 additionally predates wild crops: they are dropped, and sown crops lose `wild`.
- * The state must not hold anything an old save cannot express (placed objects, fertiliser).
+ * The state must not hold anything an old save cannot express (a player off the farm, placed
+ * objects, fertiliser).
  */
 export function legacySave(state: GameState, version: 1 | 2): SaveJson {
+  if (state.player.mapId !== 'farm') throw new Error(`legacySave: a version-${version} save has only the farm`);
   const save = JSON.parse(serializeGame(state)) as SaveJson;
   for (const key of Object.keys(createDefaultSections())) delete save[key];
   save.version = version;
+  save.world = (save.maps as SaveJson).farm;
+  delete save.maps;
+  delete (save.player as SaveJson).mapId;
   const world = save.world as { chunks: { tiles: SaveJson[] }[] };
   for (const chunk of world.chunks) {
     for (const tile of chunk.tiles) {

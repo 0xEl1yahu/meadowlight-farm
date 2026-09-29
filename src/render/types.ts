@@ -20,8 +20,8 @@ export interface FrameContext {
  * - `sync(state, prev)` runs after every state change. `prev === null` means "full rebuild":
  *   it happens once at startup and again whenever a whole new state is loaded, so it must be
  *   idempotent (clear everything you own, then rebuild from `state`).
- * - When `prev !== null`, diff by reference: `state.world.chunks[i] !== prev.world.chunks[i]`
- *   marks a dirty chunk, and within it `chunk.tiles[j] !== prevChunk.tiles[j]` marks a dirty
+ * - When `prev !== null`, diff the active map's world (`selectActiveWorld`) by reference:
+ *   `world.chunks[i] !== prevWorld.chunks[i]` marks a dirty chunk, and within it `chunk.tiles[j] !== prevChunk.tiles[j]` marks a dirty
  *   tile. Never rescan unchanged chunks.
  * - `update(frame)` runs once per animation frame for animation only; it must not dispatch.
  * - `dispose()` releases every GPU resource the system created.

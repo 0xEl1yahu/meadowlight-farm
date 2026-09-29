@@ -17,9 +17,10 @@ import {
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type SeedItem, type ToolItem } from '../items/items';
+import { mapSeed } from '../world/maps';
 import { getTile, isSoil } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
-import { selectScatterPatch, selectTargetTile } from './selectors';
+import { selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
 
 export type Intent =
   | { readonly kind: 'till' }
@@ -58,13 +59,16 @@ export function isActionable(actionPlan: ActionPlan): boolean {
   return actionPlan.intent.kind !== 'blocked';
 }
 
-/** Deterministic harvest size for a crop on a given tile, day and harvest number. */
+/**
+ * Deterministic harvest size for a crop on a given tile of the active map, day and harvest
+ * number. Rolled with the map's seed, which on the farm is the save seed itself.
+ */
 export function harvestQuantity(state: GameState, target: TileCoord, crop: CropInstance): number {
   const def = CROPS[crop.cropId];
   return hashRange(
     def.yieldMin,
     def.yieldMax,
-    state.seed,
+    mapSeed(state.seed, state.player.mapId),
     target.tx,
     target.tz,
     state.time.absoluteDay,
@@ -108,7 +112,7 @@ function withEnergy(state: GameState, actionPlan: ActionPlan): ActionPlan {
 function planTool(state: GameState, item: ToolItem, target: TileCoord | null): ActionPlan {
   const tool = item.tool;
   if (target === null) return blocked(null, tool);
-  const tile = getTile(state.world, target.tx, target.tz);
+  const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return blocked(null, tool);
   const cost = item.energyCost;
 
@@ -174,7 +178,7 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
   let untilled = false;
   for (const coord of patch) {
     if (tiles.length >= available) break;
-    const tile = getTile(state.world, coord.tx, coord.tz);
+    const tile = getTile(selectActiveWorld(state), coord.tx, coord.tz);
     if (tile === null || tile.crop !== null) continue;
     if (isSoil(tile)) tiles.push(coord);
     else if (tile.state === TileState.Unplowed) untilled = true;
@@ -187,7 +191,7 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
 export function planInteraction(state: GameState): ActionPlan {
   const target = selectTargetTile(state);
   if (target === null) return blocked(null, 'none');
-  const tile = getTile(state.world, target.tx, target.tz);
+  const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return blocked(null, 'none');
 
   if (tile.crop !== null) {

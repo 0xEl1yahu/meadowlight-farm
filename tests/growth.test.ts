@@ -29,6 +29,7 @@ import {
 } from '../src/farming/crops';
 import { advanceTileOvernight, advanceWorldOvernight, growCrop, type DayContext } from '../src/farming/growth';
 import { createGridSpec } from '../src/world/grid';
+import { MAPS } from '../src/world/maps';
 import { EMPTY_TILE, blockedTile, countTiles, createWorld, forEachTile, requireTile, setTile } from '../src/world/tiles';
 import { HEAVY_TEST_TIMEOUT_MS, Violations, cropOf, deepEqual, matureCrop, soilTile, worldChangesOutside } from './testUtils';
 
@@ -404,14 +405,14 @@ describe('advanceWorldOvernight', () => {
   it('returns the same world when there is no soil at all', () => {
     const world = createWorld(grid, (tx, tz) => ((tx + tz) % 7 === 0 ? blockedTile(Blocker.Rock, 2) : EMPTY_TILE));
     for (const weather of [Weather.Sunny, Weather.Rain]) {
-      expect(advanceWorldOvernight(world, ctx({ weather, seasonChanged: true, season: Season.Winter }))).toBe(world);
+      expect(advanceWorldOvernight(world, ctx({ weather, seasonChanged: true, season: Season.Winter }), MAPS.farm)).toBe(world);
     }
   });
 
   it('touches only chunks with soil that actually changed', () => {
     let world = createWorld(grid, () => EMPTY_TILE);
     world = setTile(world, 20, 20, soilTile(TileState.Watered, cropOf('parsnip')));
-    const next = advanceWorldOvernight(world, ctx({ season: Season.Winter }));
+    const next = advanceWorldOvernight(world, ctx({ season: Season.Winter }), MAPS.farm);
     expect(worldChangesOutside(world, next, { tx: 20, tz: 20 })).toEqual([]);
     expect(next.chunks[4]).not.toBe(world.chunks[4]);
     expect(requireTile(next, 20, 20).crop?.stage).toBe(1);
@@ -428,8 +429,8 @@ describe('advanceWorldOvernight', () => {
       const perDay: Set<string>[] = [];
       for (let day = 1; day <= 10; day++) {
         const context = ctx({ day });
-        const next = advanceWorldOvernight(world, context);
-        v.check(deepEqual(advanceWorldOvernight(world, context), next), `day ${day} is not deterministic`);
+        const next = advanceWorldOvernight(world, context, MAPS.farm);
+        v.check(deepEqual(advanceWorldOvernight(world, context, MAPS.farm), next), `day ${day} is not deterministic`);
         const set = new Set<string>();
         forEachTile(next, (tile, tx, tz) => {
           total++;
@@ -450,9 +451,9 @@ describe('advanceWorldOvernight', () => {
       const [first, second] = perDay;
       expect(first).toBeDefined();
       expect([...(first ?? [])].filter((key) => second?.has(key)).length).toBeLessThan((first?.size ?? 0) / 2);
-      const otherSeed = advanceWorldOvernight(world, ctx({ day: 1, seed: 99 }));
+      const otherSeed = advanceWorldOvernight(world, ctx({ day: 1, seed: 99 }), MAPS.farm);
       expect(countTiles(otherSeed, (tile) => tile.state === TileState.Unplowed)).toBeGreaterThan(0);
-      expect(deepEqual(otherSeed, advanceWorldOvernight(world, ctx({ day: 1 })))).toBe(false);
+      expect(deepEqual(otherSeed, advanceWorldOvernight(world, ctx({ day: 1 }), MAPS.farm))).toBe(false);
     },
     HEAVY_TEST_TIMEOUT_MS,
   );
@@ -460,7 +461,7 @@ describe('advanceWorldOvernight', () => {
   it('re-waters every plowed tile that survives a rainy night', () => {
     let world = createWorld(grid, () => EMPTY_TILE);
     for (let tx = 0; tx < 48; tx++) world = setTile(world, tx, 10, soilTile(TileState.Plowed, cropOf('parsnip')));
-    const next = advanceWorldOvernight(world, ctx({ weather: Weather.Storm }));
+    const next = advanceWorldOvernight(world, ctx({ weather: Weather.Storm }), MAPS.farm);
     for (let tx = 0; tx < 48; tx++) expect(requireTile(next, tx, 10).state).toBe(TileState.Watered);
   });
 });

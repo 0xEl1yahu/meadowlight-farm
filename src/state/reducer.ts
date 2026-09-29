@@ -11,6 +11,7 @@ import { PLAYER, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
 import {
   DIRECTIONS,
+  MAP_IDS,
   SEASON_NAMES,
   TileState,
   Weather,
@@ -28,12 +29,19 @@ import { getItem, isSeedItemId } from '../items/items';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
 import { stepTile } from '../world/grid';
-import { EMPTY_TILE, getTile, isWalkable, requireTile, setTile } from '../world/tiles';
+import { getMap, mapSeed } from '../world/maps';
+import { EMPTY_TILE, getTile, isWalkable, requireTile, setTile, setTiles } from '../world/tiles';
 import type { GameAction } from './actions';
 import { planInteraction, planPrimaryAction, type ActionPlan, type Intent } from './intents';
 import { addItem, capacityFor, mergeStacks, removeFromSlot, selectedStack } from './inventory';
 import { pushMessage } from './messages';
-import { selectIsFrozen, selectPendingShipmentValue, selectShopStock } from './selectors';
+import {
+  selectActiveWorld,
+  selectIsFrozen,
+  selectPendingShipmentValue,
+  selectShopStock,
+  withActiveWorld,
+} from './selectors';
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -85,21 +93,21 @@ function tick(state: GameState, minutes: number): GameState {
 }
 
 /**
- * Day transition: pay out the shipping bin, advance the calendar, roll weather, run the
- * overnight growth pipeline, restore energy and put the player back at the house.
+ * Day transition: pay out the shipping bin, advance the calendar, roll the (global) weather,
+ * run the overnight growth pipeline on every map with that map's seed, restore energy and put
+ * the player back at the house on the farm.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
   const time = nextDay(state.time);
   const seasonChanged = time.season !== state.time.season;
   const weather = rollWeather(state.seed, time.absoluteDay);
-  const world = advanceWorldOvernight(state.world, {
-    seed: state.seed,
-    day: time.absoluteDay,
-    season: time.season,
-    seasonChanged,
-    weather,
-  });
+  const ctx = { day: time.absoluteDay, season: time.season, seasonChanged, weather };
+  let maps = state.maps;
+  for (const id of MAP_IDS) {
+    const world = advanceWorldOvernight(state.maps[id], { ...ctx, seed: mapSeed(state.seed, id) }, getMap(id));
+    if (world !== maps[id]) maps = { ...maps, [id]: world };
+  }
   const energy = passedOut
     ? Math.max(1, Math.round(state.player.maxEnergy * PLAYER.passOutEnergyFraction))
     : state.player.maxEnergy;
@@ -108,9 +116,10 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     ...state,
     time,
     weather,
-    world,
+    maps,
     player: {
       ...state.player,
+      mapId: 'farm',
       tx: PLAYER.spawn.tx,
       tz: PLAYER.spawn.tz,
       facing: PLAYER.spawnFacing,
@@ -145,7 +154,7 @@ function movePlayer(state: GameState, direction: Direction): GameState {
   if (selectIsFrozen(state) || !isDirection(direction)) return state;
   const { player } = state;
   const destination = stepTile(player, direction);
-  const tile = getTile(state.world, destination.tx, destination.tz);
+  const tile = getTile(selectActiveWorld(state), destination.tx, destination.tz);
   if (tile !== null && isWalkable(tile)) {
     return {
       ...state,
@@ -169,9 +178,9 @@ function recordAction(state: GameState, kind: ActionKind, target: TileCoord | nu
   return { ...state, player: { ...state.player, actionSeq: seq, lastAction: { seq, kind, target, success } } };
 }
 
+/** Writes one tile of the active map. */
 function withTile(state: GameState, target: TileCoord, tile: Tile): GameState {
-  const world = setTile(state.world, target.tx, target.tz, tile);
-  return world === state.world ? state : { ...state, world };
+  return withActiveWorld(state, setTile(selectActiveWorld(state), target.tx, target.tz, tile));
 }
 
 export function executePlan(state: GameState, plan: ActionPlan): GameState {
@@ -197,7 +206,7 @@ export function executePlan(state: GameState, plan: ActionPlan): GameState {
 }
 
 function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked' | 'sleep' }>, target: TileCoord): GameState {
-  const tile = requireTile(state.world, target.tx, target.tz);
+  const tile = requireTile(selectActiveWorld(state), target.tx, target.tz);
   switch (intent.kind) {
     case 'till':
       return withTile(state, target, { ...tile, state: TileState.Plowed });
@@ -220,12 +229,17 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       return withTile(state, target, EMPTY_TILE);
 
     case 'scatter': {
-      let world = state.world;
-      for (const coord of intent.tiles) {
-        const soil = requireTile(world, coord.tx, coord.tz);
-        world = setTile(world, coord.tx, coord.tz, { ...soil, crop: createCropInstance(intent.cropId, state.time.absoluteDay) });
-      }
-      return { ...state, world, inventory: removeFromSlot(state.inventory, state.inventory.selected, intent.tiles.length) };
+      const world = selectActiveWorld(state);
+      const planted = setTiles(
+        world,
+        intent.tiles.map(({ tx, tz }) => ({
+          tx,
+          tz,
+          tile: { ...requireTile(world, tx, tz), crop: createCropInstance(intent.cropId, state.time.absoluteDay) },
+        })),
+      );
+      const next = withActiveWorld(state, planted);
+      return { ...next, inventory: removeFromSlot(state.inventory, state.inventory.selected, intent.tiles.length) };
     }
 
     case 'harvest':

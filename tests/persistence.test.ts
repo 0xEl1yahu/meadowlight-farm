@@ -90,7 +90,7 @@ describe('serializeGame / deserializeGame round trip', () => {
     const state = richState();
     expect(state.shipping.pending.length).toBeGreaterThan(0);
     expect(state.player.lastAction).not.toBeNull();
-    expect(state.world.chunks.some((chunk) => chunk.revision > 0)).toBe(true);
+    expect(state.maps.farm.chunks.some((chunk) => chunk.revision > 0)).toBe(true);
     const restored = deserializeGame(serializeGame(state));
     expect(restored).toEqual(withMenusClosed(state));
     expect(restored?.ui.timeScale).toBe(4);
@@ -136,10 +136,11 @@ describe('deserializeGame rejects corrupted saves', () => {
   });
 
   const base = BASE;
-  const houseTile = locateTile(base.world.grid, 2, 2);
-  const grassTile = locateTile(base.world.grid, 6, 12);
+  const houseTile = locateTile(base.maps.farm.grid, 2, 2);
+  const grassTile = locateTile(base.maps.farm.grid, 6, 12);
   const tilePath = (loc: { readonly chunkIndex: number; readonly localIndex: number }): JsonPath => [
-    'world',
+    'maps',
+    'farm',
     'chunks',
     loc.chunkIndex,
     'tiles',
@@ -167,25 +168,25 @@ describe('deserializeGame rejects corrupted saves', () => {
     ['unknown weather', ['weather'], 'hail'],
     ['null weather', ['weather'], null],
     // Grid
-    ['chunk size 0', ['world', 'grid', 'chunkSize'], 0],
-    ['chunk size that disagrees with the chunk layout', ['world', 'grid', 'chunkSize'], 8],
-    ['wrong chunksX', ['world', 'grid', 'chunksX'], 4],
-    ['off-centre origin', ['world', 'grid', 'originX'], 0],
-    ['zero tile size', ['world', 'grid', 'tileSize'], 0],
-    ['negative tile size', ['world', 'grid', 'tileSize'], -1],
-    ['string tile size', ['world', 'grid', 'tileSize'], '1'],
-    ['width that disagrees with the chunks', ['world', 'grid', 'width'], 49],
+    ['chunk size 0', ['maps', 'farm', 'grid', 'chunkSize'], 0],
+    ['chunk size that disagrees with the chunk layout', ['maps', 'farm', 'grid', 'chunkSize'], 8],
+    ['wrong chunksX', ['maps', 'farm', 'grid', 'chunksX'], 4],
+    ['off-centre origin', ['maps', 'farm', 'grid', 'originX'], 0],
+    ['zero tile size', ['maps', 'farm', 'grid', 'tileSize'], 0],
+    ['negative tile size', ['maps', 'farm', 'grid', 'tileSize'], -1],
+    ['string tile size', ['maps', 'farm', 'grid', 'tileSize'], '1'],
+    ['width that disagrees with the chunks', ['maps', 'farm', 'grid', 'width'], 49],
     // Chunks
-    ['a null chunk', ['world', 'chunks', 8], null],
-    ['no chunks', ['world', 'chunks'], []],
-    ['a chunk that is not an object', ['world', 'chunks', 0], 'chunk'],
-    ['wrong chunk width', ['world', 'chunks', 2, 'width'], 15],
-    ['wrong chunk depth', ['world', 'chunks', 7, 'depth'], 16],
-    ['wrong chunk origin', ['world', 'chunks', 4, 'x0'], 0],
-    ['wrong chunk coordinate', ['world', 'chunks', 1, 'cx'], 0],
-    ['negative revision', ['world', 'chunks', 0, 'revision'], -1],
-    ['tiles not an array', ['world', 'chunks', 3, 'tiles'], {}],
-    ['a chunk with too few tiles', ['world', 'chunks', 8, 'tiles'], []],
+    ['a null chunk', ['maps', 'farm', 'chunks', 8], null],
+    ['no chunks', ['maps', 'farm', 'chunks'], []],
+    ['a chunk that is not an object', ['maps', 'farm', 'chunks', 0], 'chunk'],
+    ['wrong chunk width', ['maps', 'farm', 'chunks', 2, 'width'], 15],
+    ['wrong chunk depth', ['maps', 'farm', 'chunks', 7, 'depth'], 16],
+    ['wrong chunk origin', ['maps', 'farm', 'chunks', 4, 'x0'], 0],
+    ['wrong chunk coordinate', ['maps', 'farm', 'chunks', 1, 'cx'], 0],
+    ['negative revision', ['maps', 'farm', 'chunks', 0, 'revision'], -1],
+    ['tiles not an array', ['maps', 'farm', 'chunks', 3, 'tiles'], {}],
+    ['a chunk with too few tiles', ['maps', 'farm', 'chunks', 8, 'tiles'], []],
     // Tiles
     ['unknown tile state', [...tilePath(grassTile), 'state'], 7],
     ['unknown blocker', [...tilePath(grassTile), 'blocker'], 9],
@@ -220,6 +221,19 @@ describe('deserializeGame rejects corrupted saves', () => {
     ['negative moveSeq', ['player', 'moveSeq'], -1],
     ['non-object lastAction', ['player', 'lastAction'], 5],
     ['missing lastAction', ['player', 'lastAction'], undefined],
+    ['unknown map id', ['player', 'mapId'], 'mine'],
+    ['missing map id', ['player', 'mapId'], undefined],
+    ['player on the forest outside its grid', ['player'], { ...base.player, mapId: 'forest', tx: 40, tz: 5 }],
+    ['player in the town on a shop', ['player'], { ...base.player, mapId: 'town', tx: 5, tz: 2 }],
+    // Maps
+    ['missing maps', ['maps'], undefined],
+    ['maps that is not an object', ['maps'], 'farm'],
+    ['a missing map', ['maps', 'town'], undefined],
+    ['an extra map', ['maps', 'mine'], base.maps.forest],
+    ['the farm stored as the forest', ['maps', 'forest'], base.maps.farm],
+    ['a town with another size', ['maps', 'town', 'grid', 'width'], 48],
+    ['a forest chunk with too few tiles', ['maps', 'forest', 'chunks', 1, 'tiles'], []],
+    ['an unknown blocker in the town', ['maps', 'town', 'chunks', 0, 'tiles', 0, 'blocker'], 42],
     // Inventory
     ['empty stack', ['inventory', 'slots', 5, 'quantity'], 0],
     ['stack above maxStack', ['inventory', 'slots', 5, 'quantity'], INVENTORY.maxStack + 1],
@@ -374,8 +388,8 @@ describe('placed objects and fertiliser in saves', () => {
     return state;
   }
   const tileAtPath = (tx: number, tz: number): JsonPath => {
-    const loc = locateTile(BASE.world.grid, tx, tz);
-    return ['world', 'chunks', loc.chunkIndex, 'tiles', loc.localIndex];
+    const loc = locateTile(BASE.maps.farm.grid, tx, tz);
+    return ['maps', 'farm', 'chunks', loc.chunkIndex, 'tiles', loc.localIndex];
   };
 
   it('round-trips every object kind, fertiliser and a giant crop exactly', () => {

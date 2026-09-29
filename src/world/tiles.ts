@@ -79,6 +79,39 @@ export function setTile(world: WorldState, tx: number, tz: number, tile: Tile): 
   return { ...world, chunks };
 }
 
+export interface TileEdit {
+  readonly tx: number;
+  readonly tz: number;
+  readonly tile: Tile;
+}
+
+/**
+ * Applies several tile writes, copying each touched chunk (and the chunk list) exactly once.
+ * Edits that leave a tile's reference unchanged are skipped; when none changes anything the
+ * world itself is returned. A later edit of the same tile wins.
+ */
+export function setTiles(world: WorldState, edits: readonly TileEdit[]): WorldState {
+  let chunks: Chunk[] | null = null;
+  /** Chunk index → its tile array, already copied for this call. */
+  const copied = new Map<number, Tile[]>();
+  for (const { tx, tz, tile } of edits) {
+    const loc = locateTile(world.grid, tx, tz);
+    const current = (chunks ?? world.chunks)[loc.chunkIndex];
+    invariant(current !== undefined, `chunk ${loc.chunkIndex} missing`);
+    if (current.tiles[loc.localIndex] === tile) continue;
+    assertTileConsistent(tile);
+    let tiles = copied.get(loc.chunkIndex);
+    if (tiles === undefined) {
+      tiles = current.tiles.slice();
+      copied.set(loc.chunkIndex, tiles);
+      chunks ??= world.chunks.slice();
+      chunks[loc.chunkIndex] = { ...current, tiles, revision: current.revision + 1 };
+    }
+    tiles[loc.localIndex] = tile;
+  }
+  return chunks === null ? world : { ...world, chunks };
+}
+
 export function updateTile(world: WorldState, tx: number, tz: number, update: (tile: Tile) => Tile): WorldState {
   return setTile(world, tx, tz, update(requireTile(world, tx, tz)));
 }

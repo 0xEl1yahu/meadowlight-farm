@@ -11,11 +11,12 @@ import { LAYOUT, PLAYER, TOOLS, WORLD, type FarmLayout } from '../src/config';
 import { Blocker, DIRECTIONS, TileState, type WorldState } from '../src/core/types';
 import { createInitialState } from '../src/state/initialState';
 import { createGridSpec, inBounds, rectContains, stepTile } from '../src/world/grid';
+import { MAPS } from '../src/world/maps';
 import { EMPTY_TILE, countTiles, forEachTile, isWalkable, requireTile } from '../src/world/tiles';
 import { generateTile, generateWorld, isPondTile } from '../src/world/worldgen';
 import { reachableFrom } from './testUtils';
 
-const grid = createGridSpec(WORLD.width, WORLD.depth, WORLD.chunkSize, WORLD.tileSize);
+const grid = MAPS.farm.grid;
 const SEEDS = [WORLD.seed, 0, 1, 2, 3, 12345, 0x7fffffff, 0xffffffff] as const;
 
 function inClearZone(tx: number, tz: number): boolean {
@@ -33,9 +34,20 @@ describe('generateWorld determinism', () => {
     }
   });
 
-  it('matches the world of createInitialState(seed)', () => {
-    expect(createInitialState().world).toEqual(generateWorld(WORLD.seed, grid));
-    expect(createInitialState(7).world).toEqual(generateWorld(7, grid));
+  it('matches the farm of createInitialState(seed)', () => {
+    expect(createInitialState().maps.farm).toEqual(MAPS.farm.generate(WORLD.seed));
+    expect(createInitialState(7).maps.farm).toEqual(MAPS.farm.generate(7));
+  });
+
+  it('the farm map generates this farm, minus wild crops on its reserved (gate) tiles', () => {
+    for (const seed of SEEDS) {
+      const farm = MAPS.farm.generate(seed);
+      forEachTile(generateWorld(seed, grid), (tile, tx, tz) => {
+        const reserved = MAPS.farm.reserved.some((r) => r.tx === tx && r.tz === tz);
+        const expected = reserved && tile.crop !== null && tile.crop.wild ? { ...tile, crop: null } : tile;
+        expect(requireTile(farm, tx, tz), `seed ${seed} (${tx}, ${tz})`).toEqual(expected);
+      });
+    }
   });
 
   it('produces different debris for different seeds', () => {

@@ -34,6 +34,7 @@ import { createInitialState } from './state/initialState';
 import { clearSave, loadGame, saveGame } from './state/persistence';
 import { gameReducer } from './state/reducer';
 import { Hud } from './ui/Hud';
+import { selectActiveWorld } from './state/selectors';
 
 declare global {
   interface Window {
@@ -68,7 +69,7 @@ function bootstrap(): () => void {
   const initial = loadGame() ?? createInitialState();
   const store = createStore<GameState, GameAction>(gameReducer, initial, { freeze: import.meta.env.DEV });
 
-  const ctx = new SceneContext(container, initial.world.grid);
+  const ctx = new SceneContext(container, selectActiveWorld(initial).grid);
   const player = new PlayerRenderer(ctx);
   const systems: readonly RenderSystem[] = [
     player,

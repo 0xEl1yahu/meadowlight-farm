@@ -52,6 +52,7 @@ import { createFlatMaterial } from './materials';
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
+import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -1068,11 +1069,11 @@ export class EffectsRenderer implements RenderSystem {
   private react(event: ActionEvent, state: GameState, prev: GameState): void {
     const target = event.target;
     if (target === null) return;
-    const before = getTile(prev.world, target.tx, target.tz);
-    const after = getTile(state.world, target.tx, target.tz);
+    const before = getTile(selectActiveWorld(prev), target.tx, target.tz);
+    const after = getTile(selectActiveWorld(state), target.tx, target.tz);
     if (before === null || after === null) return;
 
-    const grid = state.world.grid;
+    const grid = selectActiveWorld(state).grid;
     const facing = DIRECTION_STEPS[state.player.facing];
     const floor = surfaceHeight(after);
     const ground: EmitPoint = {
@@ -1137,7 +1138,7 @@ export class EffectsRenderer implements RenderSystem {
 
   /** A stream of droplets pours from the spout, just ahead of the player, onto the tile. */
   private water(state: GameState, ground: EmitPoint, rng: Rng): void {
-    const grid = state.world.grid;
+    const grid = selectActiveWorld(state).grid;
     const { player } = state;
     const step = DIRECTION_STEPS[player.facing];
     const spoutX = tileCenterX(grid, player.tx) + step.dx * ANCHORS.spoutReach * grid.tileSize;

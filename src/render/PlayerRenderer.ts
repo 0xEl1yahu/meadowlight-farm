@@ -55,6 +55,7 @@ import {
 } from './playerModel';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
+import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -888,11 +889,11 @@ export class PlayerRenderer implements RenderSystem {
   sync(state: GameState, prev: GameState | null): void {
     // Everything this system derives comes from the player, the inventory and the world, so
     // clock ticks and UI changes are free.
-    if (prev !== null && state.player === prev.player && state.inventory === prev.inventory && state.world === prev.world) {
+    if (prev !== null && state.player === prev.player && state.inventory === prev.inventory && selectActiveWorld(state) === selectActiveWorld(prev)) {
       return;
     }
     const { player } = state;
-    const grid = state.world.grid;
+    const grid = selectActiveWorld(state).grid;
     const centreX = tileCenterX(grid, player.tx);
     const centreZ = tileCenterZ(grid, player.tz);
     const teleported = prev === null || player.teleportSeq !== this.teleportSeq;
@@ -904,7 +905,7 @@ export class PlayerRenderer implements RenderSystem {
     }
     this.targetYaw = directionYaw(player.facing);
 
-    const tile = getTile(state.world, player.tx, player.tz);
+    const tile = getTile(selectActiveWorld(state), player.tx, player.tz);
     this.targetGroundY = tile !== null && isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
     if (teleported) this.groundY = this.targetGroundY;
 

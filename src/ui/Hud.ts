@@ -42,6 +42,7 @@ import { actions, type GameAction } from '../state/actions';
 import { describeIntent, planInteraction, planPrimaryAction } from '../state/intents';
 import { capacityFor, countItem } from '../state/inventory';
 import {
+  selectActiveWorld,
   selectForecast,
   selectIsFrozen,
   selectPendingShipmentValue,
@@ -637,7 +638,7 @@ class ContextHint {
     if (
       prev !== null &&
       state.player === prev.player &&
-      state.world === prev.world &&
+      selectActiveWorld(state) === selectActiveWorld(prev) &&
       state.inventory === prev.inventory &&
       state.ui === prev.ui &&
       state.time.season === prev.time.season

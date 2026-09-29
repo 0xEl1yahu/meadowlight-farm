@@ -2,8 +2,7 @@ import { INVENTORY, PLAYER, TOOLS, WORLD } from '../config';
 import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type NpcId, type NpcRelation } from '../core/types';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
-import { createGridSpec } from '../world/grid';
-import { generateWorld } from '../world/worldgen';
+import { generateMaps } from '../world/maps';
 import { createInventory } from './inventory';
 
 /**
@@ -45,15 +44,15 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
     throw new RangeError(`createInitialState: seed must be a 32-bit unsigned integer, got ${seed}`);
   }
-  const grid = createGridSpec(WORLD.width, WORLD.depth, WORLD.chunkSize, WORLD.tileSize);
   const time = createInitialTime();
   return {
     version: SAVE_VERSION,
     seed,
     time,
     weather: rollWeather(seed, time.absoluteDay),
-    world: generateWorld(seed, grid),
+    maps: generateMaps(seed),
     player: {
+      mapId: 'farm',
       tx: PLAYER.spawn.tx,
       tz: PLAYER.spawn.tz,
       facing: PLAYER.spawnFacing,

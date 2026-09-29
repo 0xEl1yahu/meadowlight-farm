@@ -64,6 +64,7 @@ import {
   createWaterSurfaceGeometry,
 } from './terrainGeometry';
 import type { FrameContext, RenderSystem } from './types';
+import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -745,18 +746,18 @@ export class TerrainRenderer implements RenderSystem {
 
   /** Full rebuild when `prev` is null (or the grid changed); otherwise a reference diff. */
   sync(state: GameState, prev: GameState | null): void {
-    const world = state.world;
+    const world = selectActiveWorld(state);
     if (prev === null || !sameGrid(world.grid, this.grid)) {
       this.rebuild(state);
       return;
     }
-    if (world.chunks === prev.world.chunks) return;
+    if (world.chunks === selectActiveWorld(prev).chunks) return;
 
     const facing = state.player.facing;
     const count = Math.min(world.chunks.length, this.layers.chunks.length);
     for (let ci = 0; ci < count; ci++) {
       const chunk = world.chunks[ci];
-      const prevChunk = prev.world.chunks[ci];
+      const prevChunk = selectActiveWorld(prev).chunks[ci];
       const layer = this.layers.chunks[ci];
       if (chunk === undefined || layer === undefined || chunk === prevChunk) continue;
       const width = layer.rect.width;
@@ -881,7 +882,7 @@ export class TerrainRenderer implements RenderSystem {
   // -------------------------------------------------------------------------
 
   private rebuild(state: GameState): void {
-    const world = state.world;
+    const world = selectActiveWorld(state);
     if (!sameGrid(world.grid, this.grid)) {
       this.destroyLayers();
       this.layers = this.createLayers(world.grid);

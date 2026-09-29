@@ -78,7 +78,7 @@ function fullOf(stack: ItemStack): (ItemStack | null)[] {
 
 /** Expects a failed attempt: feedback recorded, nothing else changed (apart from an optional message). */
 function expectFailedAttempt(prev: GameState, next: GameState, kind: string, target: TileCoord | null, message: string | null): void {
-  expect(next.world).toBe(prev.world);
+  expect(next.maps).toBe(prev.maps);
   expect(next.inventory).toBe(prev.inventory);
   expect(next.player.energy).toBe(prev.player.energy);
   expect(next.player.actionSeq).toBe(prev.player.actionSeq + 1);
@@ -90,11 +90,11 @@ function expectFailedAttempt(prev: GameState, next: GameState, kind: string, tar
 /** The walkable tile next to the generated pond and the direction that faces the water. */
 function pondShore(state: GameState): { readonly at: TileCoord; readonly facing: Direction } {
   const shores: { readonly at: TileCoord; readonly facing: Direction }[] = [];
-  forEachTile(state.world, (tile, tx, tz) => {
+  forEachTile(state.maps.farm, (tile, tx, tz) => {
     if (!isWalkable(tile)) return;
     for (const direction of DIRECTIONS) {
       const next = stepTile({ tx, tz }, direction);
-      if (inBounds(state.world.grid, next.tx, next.tz) && requireTile(state.world, next.tx, next.tz).blocker === Blocker.Water) {
+      if (inBounds(state.maps.farm.grid, next.tx, next.tz) && requireTile(state.maps.farm, next.tx, next.tz).blocker === Blocker.Water) {
         shores.push({ at: { tx, tz }, facing: direction });
       }
     }
@@ -113,7 +113,7 @@ describe('hoe', () => {
     expect(tileAt(next, TARGET)).toEqual(soilTile(TileState.Plowed));
     expect(next.player.energy).toBe(PLAYER.maxEnergy - TOOLS.energyCost.hoe);
     expect(next.player.lastAction).toEqual({ seq: 1, kind: 'hoe', target: TARGET, success: true });
-    expect(worldChangesOutside(state.world, next.world, TARGET)).toEqual([]);
+    expect(worldChangesOutside(state.maps.farm, next.maps.farm, TARGET)).toEqual([]);
     expect(next.inventory).toBe(state.inventory);
     expect(next.messages).toBe(state.messages);
     expect(next.time).toBe(state.time);
@@ -174,7 +174,7 @@ describe('watering can', () => {
     const next = useTool(withEnergy(withWater(pond, 3), 0));
     expect(next.inventory.water).toBe(TOOLS.wateringCanCapacity);
     expect(next.player.energy).toBe(0);
-    expect(next.world).toBe(pond.world);
+    expect(next.maps).toBe(pond.maps);
     expect(next.player.lastAction).toEqual({ seq: 1, kind: 'refill', target: TARGET, success: true });
     expectFailedAttempt(pond, useTool(pond), 'refill', TARGET, 'Your watering can is already full.');
   });
@@ -383,7 +383,7 @@ describe('interact: shipping bin', () => {
   const atBin = withPlayer(BASE, { tx: 9, tz: 6 }, Direction.North);
 
   it('faces the real shipping bin from (9, 6)', () => {
-    expect(requireTile(atBin.world, 9, 5).blocker).toBe(Blocker.ShippingBin);
+    expect(requireTile(atBin.maps.farm, 9, 5).blocker).toBe(Blocker.ShippingBin);
   });
 
   it('ships the whole selected stack, merges pending stacks and pays out the next morning', () => {
@@ -467,7 +467,7 @@ describe('time/tick', () => {
   it('advances the clock by whole minutes, capped at maxTickMinutes', () => {
     const next = gameReducer(BASE, actions.tick(10));
     expect(next.time.minuteOfDay).toBe(370);
-    expect(next.world).toBe(BASE.world);
+    expect(next.maps).toBe(BASE.maps);
     expect(next.player).toBe(BASE.player);
     expect(gameReducer(BASE, actions.tick(1.9)).time.minuteOfDay).toBe(361);
     expect(gameReducer(BASE, actions.tick(1000)).time.minuteOfDay).toBe(360 + TIME.maxTickMinutes);
@@ -574,7 +574,7 @@ describe('movement', () => {
     const { tx, tz } = PLAYER.spawn;
     const next = gameReducer(BASE, actions.move(Direction.South));
     expect(next.player).toMatchObject({ tx, tz: tz + 1, facing: Direction.South, moveSeq: 1 });
-    expect(next.world).toBe(BASE.world);
+    expect(next.maps).toBe(BASE.maps);
     const east = gameReducer(next, actions.move(Direction.East));
     expect(east.player).toMatchObject({ tx: tx + 1, tz: tz + 1, facing: Direction.East, moveSeq: 2 });
   });
@@ -779,7 +779,7 @@ describe('game/load', () => {
       ui: { shopOpen: false, paused: false, timeScale: 4 },
       player: { ...loaded.player, teleportSeq: 10 },
     });
-    expect(next.world).toBe(loaded.world);
+    expect(next.maps).toBe(loaded.maps);
     expect(gameReducer(BASE, actions.load(loaded)).player.teleportSeq).toBe(4);
   });
 });
@@ -822,7 +822,7 @@ describe('purity', () => {
 
   it('keeps the unchanged parts of the state by reference', () => {
     const next = gameReducer(BASE, actions.move(Direction.South));
-    expect(next.world).toBe(BASE.world);
+    expect(next.maps).toBe(BASE.maps);
     expect(next.inventory).toBe(BASE.inventory);
     expect(next.time).toBe(BASE.time);
     expect(next.shipping).toBe(BASE.shipping);
@@ -836,6 +836,7 @@ describe('initial state', () => {
     const state = createInitialState();
     expect(state.seed).toBe(WORLD.seed);
     expect(state.player).toEqual({
+      mapId: 'farm',
       tx: PLAYER.spawn.tx,
       tz: PLAYER.spawn.tz,
       facing: PLAYER.spawnFacing,

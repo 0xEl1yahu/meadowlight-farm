@@ -450,14 +450,14 @@ describe('migrating older saves to version 3', () => {
     expect(migrated.version).toBe(3);
     const loaded = must(deserializeGame(JSON.stringify(v2)));
     expect(loaded).toEqual(state);
-    expect(loaded.world.chunks.map((chunk) => chunk.revision)).toEqual(state.world.chunks.map((chunk) => chunk.revision));
-    expect(loaded.world.chunks.some((chunk) => chunk.revision > 0)).toBe(true);
+    expect(loaded.maps.farm.chunks.map((chunk) => chunk.revision)).toEqual(state.maps.farm.chunks.map((chunk) => chunk.revision));
+    expect(loaded.maps.farm.chunks.some((chunk) => chunk.revision > 0)).toBe(true);
   });
 
   it('gives a version-2 save the section defaults and plain tiles', () => {
     const loaded = must(deserializeGame(JSON.stringify(legacySave(played(), 2))));
     for (const [key, value] of Object.entries(createDefaultSections())) expect(loaded[key as keyof GameSections], key).toEqual(value);
-    forEachTile(loaded.world, (tile) => {
+    forEachTile(loaded.maps.farm, (tile) => {
       expect(tile.object).toBeNull();
       expect(tile.fertilizer).toBeNull();
     });
@@ -479,11 +479,11 @@ describe('migrating older saves to version 3', () => {
     expect(tileAt(loaded, { tx: 0, tz: 20 })).toEqual(EMPTY_TILE);
     expect(tileAt(loaded, TARGET)).toEqual(tileAt(state, TARGET));
     expect(tileAt(loaded, TARGET).crop?.wild).toBe(false);
-    forEachTile(state.world, (tile, tx, tz) => {
+    forEachTile(state.maps.farm, (tile, tx, tz) => {
       const expected = tile.crop?.wild === true ? { ...tile, crop: null } : tile;
       expect(tileAt(loaded, { tx, tz }), `${tx},${tz}`).toEqual(expected);
     });
-    expect({ ...loaded, world: null }).toEqual({ ...state, world: null });
+    expect({ ...loaded, maps: { ...loaded.maps, farm: null } }).toEqual({ ...state, maps: { ...state.maps, farm: null } });
     for (const [key, value] of Object.entries(createDefaultSections())) expect(loaded[key as keyof GameSections], key).toEqual(value);
   });
 
