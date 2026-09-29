@@ -9,8 +9,10 @@
  *   (shown dimmed with what would remain) until a click dispatches `inventory/move`.
  * - A cursor ghost with the held icon and count follows the pointer.
  * - Right click arrives as `contextmenu` on the screen root (default prevented); `pointerdown`
- *   for button 2 is ignored, so each right click acts exactly once. Left click uses `click`, so
- *   Enter and Space on a focused slot pick up and place too.
+ *   for button 2 is ignored, so each right click acts exactly once. A `contextmenu` acts only
+ *   when its gesture (pointerdown or keydown) began on the screen (rightClickGate.ts), so the right
+ *   click (or macOS Ctrl + click) on the canvas that opens a chest does not also act on a slot.
+ *   Left click uses `click`, so Enter and Space on a focused slot pick up and place too.
  * - Slots at or past `unlockedSlots` are locked: dimmed, hatched and `aria-disabled`.
  *
  * Update model
@@ -35,6 +37,7 @@ import {
   type SlotClickResult,
 } from './heldStack';
 import { createCloseIcon } from './icons';
+import { RightClickGate } from './rightClickGate';
 import {
   ItemIconCache,
   SLOT_KEYS,
@@ -112,6 +115,7 @@ export class InventoryScreen {
   private readonly dispatch: (action: GameAction) => void;
   private readonly playerSlots: ScreenSlot[] = [];
   private readonly chestSlots: ScreenSlot[] = [];
+  private readonly rightClicks = new RightClickGate();
   /** The state last synced: click handlers act on it, and a rejected move leaves it unchanged. */
   private state: GameState | null = null;
   private shownPanel: string | null = null;
@@ -231,10 +235,15 @@ export class InventoryScreen {
       },
       { signal },
     );
+    // These only mark where a gesture began and act on nothing: button 2 still acts once, on contextmenu.
+    const gestureBegan = (): void => this.rightClicks.gestureBegan();
+    this.element.addEventListener('pointerdown', gestureBegan, { signal });
+    this.element.addEventListener('keydown', gestureBegan, { signal });
     this.element.addEventListener(
       'contextmenu',
       (event) => {
         event.preventDefault();
+        if (!this.rightClicks.accept()) return;
         const slot = this.slotFromEvent(event);
         if (slot === null) return;
         // A mouse right click hands keys back to the game; the Menu key keeps focus on the slot.
@@ -307,12 +316,14 @@ export class InventoryScreen {
     setHidden(this.element, key === null);
     if (key === null) {
       this.shownPanel = null;
+      this.rightClicks.reset();
       this.setHeld(null);
       return;
     }
     const reopened = prev === null || key !== this.shownPanel;
     if (reopened) {
       this.shownPanel = key;
+      this.rightClicks.reset();
       this.setHeld(null);
     } else {
       this.setHeld(reconcileHeld(this.held, state, checked));
