@@ -34,6 +34,7 @@ const COLORS = {
   handle: 0xc4945f,
   metal: 0xb9c1d6,
   gold: 0xf7c948,
+  silver: 0xcfd8e6,
   sun: 0xffd35c,
   sunRay: 0xffb347,
   moon: 0xfff1b8,
@@ -510,6 +511,28 @@ export function createItemIcon(item: ItemDefinition, className: string = ICON_CL
 // ---------------------------------------------------------------------------
 // HUD glyphs
 // ---------------------------------------------------------------------------
+
+/**
+ * Quality badge for silver (1) and gold (2) items: a faceted five-point star. Each arm is split
+ * along its spine into a lit and a shaded half, so the star reads as a bevelled low-poly gem.
+ */
+export function createQualityStarIcon(quality: 1 | 2, className: string = INLINE_ICON_CLASS): SVGSVGElement {
+  const color = quality === 2 ? COLORS.gold : COLORS.silver;
+  const outer = regularPolygon(16, 16.6, 14, 5, -90);
+  const inner = regularPolygon(16, 16.6, 6.2, 5, -54);
+  const star: Point[] = [];
+  for (let i = 0; i < 5; i++) star.push(vertex(outer, i), vertex(inner, i));
+  const centre: Point = [16, 16.6];
+  const facets: SVGElement[] = [];
+  for (let i = 0; i < 5; i++) {
+    const tip = vertex(outer, i);
+    // Arms facing up-left catch the light; the rest fall into shade.
+    const lit = i === 0 || i === 4;
+    facets.push(facet(pts([centre, vertex(inner, i - 1), tip]), lit ? light(color, 0.45) : light(color, 0.15)));
+    facets.push(facet(pts([centre, tip, vertex(inner, i)]), lit ? light(color, 0.1) : dark(color, 0.22)));
+  }
+  return svgRoot([faceted(pts(star), hex(color), facets)], className);
+}
 
 export function createCoinIcon(className: string = INLINE_ICON_CLASS): SVGSVGElement {
   const gold = COLORS.gold;

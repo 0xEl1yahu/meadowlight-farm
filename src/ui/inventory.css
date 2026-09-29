@@ -1,0 +1,184 @@
+/*
+ * Backpack / chest screen (InventoryScreen.ts). Built on the shared modal skeleton and slot
+ * styles in hud.css, and on its --hud-* tokens; this file only adds the grids, the locked and
+ * held slot states, the dashed hotbar rule and the cursor ghost.
+ *
+ * Grids size their slots from the card width with container query units, like the hotbar: 12
+ * columns everywhere (the hotbar row must stay one row so its key labels line up with 1 … =).
+ */
+
+.hud-inv__card {
+  width: min(720px, 100%);
+  gap: 12px;
+}
+
+.hud-inv__section {
+  container-type: inline-size;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 2px solid var(--hud-line);
+  border-radius: var(--hud-radius-sm);
+  background: var(--hud-parchment);
+}
+
+.hud-inv__section--chest {
+  border-color: var(--hud-wood-light);
+  background: var(--hud-peach-wash);
+}
+
+.hud-inv__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hud-inv__count {
+  color: var(--hud-ink-faint);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.hud-inv__grid {
+  --cols: 12;
+  --hud-inv-gap: 5px;
+  --slot: clamp(22px, calc((100cqi - (var(--cols) - 1) * var(--hud-inv-gap)) / var(--cols)), 50px);
+  display: grid;
+  grid-template-columns: repeat(var(--cols), var(--slot));
+  gap: var(--hud-inv-gap);
+  justify-content: center;
+}
+
+.hud-inv__rule {
+  width: 100%;
+  height: 0;
+  margin: 2px 0;
+  border: 0;
+  border-top: 2px dashed var(--hud-wood-light);
+}
+
+/* The hotbar row reads as the belt: slightly warmer slots. */
+.hud-inv__grid--hotbar .hud-slot:not(.is-empty):not(.is-selected) {
+  background: var(--hud-cream);
+}
+
+/* Selected hotbar slot: a ring, without the hotbar's lift (the grid stays level). */
+.hud-inv .hud-slot.is-selected {
+  transform: none;
+  box-shadow:
+    inset 0 -3px 0 var(--hud-butter-deep),
+    0 0 0 2px var(--hud-butter-deep);
+}
+
+.hud-inv .hud-slot.is-selected .hud-slot__icon {
+  transform: none;
+}
+
+.hud-inv .hud-slot:hover:not(.is-locked) {
+  transform: translateY(-2px);
+}
+
+.hud-inv.is-holding .hud-slot:not(.is-locked) {
+  cursor: copy;
+}
+
+/* The source of a held stack: what would remain shows; the whole stack held fades out. */
+.hud-inv .hud-slot.is-held {
+  border-style: dashed;
+  border-color: var(--hud-butter-deep);
+}
+
+.hud-inv .hud-slot.is-held .hud-slot__icon {
+  opacity: 0.55;
+}
+
+.hud-inv .hud-slot.is-all-held .hud-slot__icon,
+.hud-inv .hud-slot.is-all-held .hud-slot__quality {
+  opacity: 0.2;
+}
+
+/* Locked backpack slots: dimmed and hatched until the backpack upgrade. */
+.hud-inv .hud-slot.is-locked {
+  cursor: not-allowed;
+  border-color: var(--hud-line);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--hud-cream-deep) 0 5px,
+    var(--hud-line) 5px 8px
+  );
+  box-shadow: none;
+  opacity: 0.55;
+}
+
+.hud-inv__footer {
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+.hud-inv__footer strong {
+  color: var(--hud-ink);
+}
+
+/* Cursor ghost: the held item under the pointer, centred on it and click-through. */
+.hud-inv__ghost {
+  --slot: 44px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--slot);
+  height: var(--slot);
+  translate: -50% -50%;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 6px var(--hud-shadow-soft));
+  will-change: transform;
+}
+
+.hud-inv__ghost-icon {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-8deg) scale(1.08);
+}
+
+.hud-inv__ghost-qty {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 18px;
+  padding: 1px 5px 0;
+  border: 2px solid var(--hud-cream);
+  border-radius: 999px;
+  background: var(--hud-wood-deep);
+  color: var(--hud-cream);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .hud-inv__section {
+    padding: 8px 6px;
+  }
+
+  .hud-inv__grid {
+    --hud-inv-gap: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-inv .hud-slot:hover:not(.is-locked) {
+    transform: none;
+  }
+}

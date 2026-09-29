@@ -835,6 +835,24 @@
   text-align: center;
 }
 
+/* Silver / gold star in the bottom-left corner; hidden (via [hidden]) for normal quality. */
+.hud-slot__quality {
+  position: absolute;
+  left: -2px;
+  bottom: -2px;
+  display: block;
+  width: max(12px, calc(var(--slot) * 0.36));
+  height: max(12px, calc(var(--slot) * 0.36));
+  filter: drop-shadow(0 1px 0 var(--hud-shadow-drop));
+  pointer-events: none;
+}
+
+.hud-slot__quality .hud-inline-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .hud-slot__water {
   position: absolute;
   top: 28%;

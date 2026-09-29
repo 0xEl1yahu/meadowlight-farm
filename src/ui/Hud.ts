@@ -7,7 +7,8 @@
  *   bottom-left    collapsible controls chip above a small performance readout
  *   bottom-centre  context hint ("Space: Till", "E: Harvest") above the 12-slot hotbar
  *   bottom-right   vertical energy bar
- *   overlays       seed shop modal, pause card, day-transition fade
+ *   overlays       seed shop modal, backpack / chest screen (InventoryScreen.ts), pause card,
+ *                  day-transition fade
  *
  * Update model
  * - `sync(state, prev)` runs from the store subscription. Each widget compares only the slice it
@@ -19,7 +20,8 @@
  * - The HUD dispatches only from DOM event handlers, never from sync or update. Hotbar and help
  *   buttons blur after every click so Space, Enter and Tab go straight back to the game; buttons
  *   inside the frozen modals blur after mouse clicks but keep focus on keyboard activation, so
- *   Tab navigation through the shop and pause card (which InputController allows) keeps working.
+ *   Tab navigation through the shop, the backpack / chest screen and the pause card (which
+ *   InputController allows) keeps working.
  * - Text is always written with textContent / text nodes; no dynamic HTML is ever parsed.
  */
 import './hud.css';
@@ -30,13 +32,10 @@ import {
   Season,
   type GameMessage,
   type GameState,
-  type InventoryState,
-  type ItemId,
-  type ItemStack,
   type Weather,
 } from '../core/types';
 import { CROPS, totalGrowDays } from '../farming/crops';
-import { getItem, isSeedItemId, sellPriceFor, type SeedItem } from '../items/items';
+import { isSeedItemId, sellPriceFor, type SeedItem } from '../items/items';
 import type { FrameContext } from '../render/types';
 import { actions, type GameAction } from '../state/actions';
 import { describeIntent, planInteraction, planPrimaryAction } from '../state/intents';
@@ -52,16 +51,29 @@ import {
 import { dayProgress, formatClock, formatDate } from '../time/clock';
 import { weatherLabel } from '../time/weather';
 import {
+  clamp01,
+  closestWithin,
+  h,
+  hudButton,
+  iconHost,
+  kbd,
+  releasePointerFocus,
+  setHidden,
+  setText,
+  setTitle,
+} from './dom';
+import {
   DayDial,
   createCloseIcon,
   createCoinIcon,
   createCrateIcon,
   createFastForwardIcon,
-  createItemIcon,
   createToneIcon,
   createWeatherIcon,
   createWinterIcon,
 } from './icons';
+import { InventoryScreen } from './InventoryScreen';
+import { ItemIconCache, SLOT_KEYS, createSlotView, renderSlotView, type SlotView } from './slots';
 
 // ---------------------------------------------------------------------------
 // Public contract
@@ -78,8 +90,6 @@ export interface HudOptions {
 // Tuning
 // ---------------------------------------------------------------------------
 
-/** Key labels for hotbar slots 0…11, matching the InputController bindings. */
-const SLOT_KEYS: readonly string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];
 const TOAST_LIFETIME_SECONDS = 5;
 const TOAST_EXIT_SECONDS = 0.4;
 const MAX_VISIBLE_TOASTS = 5;
@@ -116,9 +126,10 @@ const CONTROL_ROWS: readonly ControlRow[] = [
   {
     keys: ['E', 'K', 'Enter', 'Right-click'],
     action: 'Interact',
-    detail: 'Harvest, ship at the bin, sleep at the house door, refill at the pond',
+    detail: 'Harvest, open chests, ship at the bin, sleep at the house door, refill at water',
   },
   { keys: ['1–0', '-', '=', 'Tab', 'Wheel'], action: 'Select slot' },
+  { keys: ['I'], action: 'Backpack', detail: 'Click to move a stack, right-click to split it' },
   { keys: ['B'], action: 'Seed shop' },
   { keys: ['Z', 'X', 'Ctrl + wheel'], action: 'Zoom in / out' },
   { keys: ['T'], action: 'Time speed' },
@@ -131,6 +142,7 @@ const HELP_HINTS: readonly (readonly [string, string])[] = [
   ['Space', 'Use tool'],
   ['E', 'Interact'],
   ['1–0', 'Pick slot'],
+  ['I', 'Backpack'],
   ['B', 'Seed shop'],
   ['T', 'Speed up'],
   ['P', 'Pause & all controls'],
@@ -145,70 +157,12 @@ let hudInstanceCount = 0;
 // DOM helpers
 // ---------------------------------------------------------------------------
 
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className !== '') node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function hudButton(className: string, text?: string): HTMLButtonElement {
-  const button = h('button', className, text);
-  button.type = 'button';
-  return button;
-}
-
-function kbd(label: string): HTMLElement {
-  return h('kbd', 'hud-kbd', label);
-}
-
-function iconHost(className: string, icon: SVGSVGElement): HTMLElement {
-  const host = h('span', className);
-  host.setAttribute('aria-hidden', 'true');
-  host.append(icon);
-  return host;
-}
-
-function setText(node: HTMLElement, text: string): void {
-  if (node.textContent !== text) node.textContent = text;
-}
-
-function setHidden(node: HTMLElement, hidden: boolean): void {
-  if (node.hidden !== hidden) node.hidden = hidden;
-}
-
-function setTitle(node: HTMLElement, title: string): void {
-  if (node.title !== title) node.title = title;
-}
-
 /**
  * Restarts a CSS animation without forcing a reflow: the stylesheet binds two identical
  * keyframe sets to data-anim="a" / "b", and switching the animation name restarts it.
  */
 function restartAnimation(node: HTMLElement): void {
   node.dataset.anim = node.dataset.anim === 'a' ? 'b' : 'a';
-}
-
-/**
- * Focus release for buttons inside the frozen modals (shop, pause). A mouse click blurs the
- * button so Space and Enter return to the game once the modal closes; a keyboard activation
- * (click.detail === 0) keeps focus so Tab navigation through the modal is not thrown away.
- * A modal that closes hides its buttons, which drops their focus anyway.
- */
-function releasePointerFocus(button: HTMLElement, event: MouseEvent): void {
-  if (event.detail !== 0) button.blur();
-}
-
-/** The element matching `selector` that contains the event target, if it lies inside root. */
-function closestWithin(event: Event, root: HTMLElement, selector: string): HTMLElement | null {
-  const target = event.target;
-  if (!(target instanceof Element)) return null;
-  const match = target.closest(selector);
-  return match instanceof HTMLElement && root.contains(match) ? match : null;
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
 }
 
 function dayPhase(minuteOfDay: number): DayPhase {
@@ -245,20 +199,6 @@ function writeHelpCollapsed(collapsed: boolean): void {
 // ---------------------------------------------------------------------------
 // Shared context
 // ---------------------------------------------------------------------------
-
-/** Builds each item icon once and hands out clones. */
-class ItemIconCache {
-  private readonly templates = new Map<ItemId, SVGSVGElement>();
-
-  get(itemId: ItemId): SVGSVGElement {
-    let template = this.templates.get(itemId);
-    if (template === undefined) {
-      template = createItemIcon(getItem(itemId));
-      this.templates.set(itemId, template);
-    }
-    return template.cloneNode(true) as SVGSVGElement;
-  }
-}
 
 interface HudContext {
   readonly dispatch: (action: GameAction) => void;
@@ -469,35 +409,6 @@ class EnergyBar {
 // Hotbar
 // ---------------------------------------------------------------------------
 
-interface SlotView {
-  readonly button: HTMLButtonElement;
-  readonly icon: HTMLElement;
-  readonly quantity: HTMLElement;
-  readonly water: HTMLElement;
-  readonly keyLabel: string;
-  itemId: ItemId | null;
-}
-
-/** "Silver " or "Gold " before an item name; empty for normal quality. */
-function qualityPrefix(stack: ItemStack): string {
-  return stack.quality === 2 ? 'Gold ' : stack.quality === 1 ? 'Silver ' : '';
-}
-
-function slotTitle(stack: ItemStack | null, keyLabel: string, inventory: InventoryState): string {
-  if (stack === null) return `Empty slot · key ${keyLabel}`;
-  const item = getItem(stack.itemId);
-  const name = `${qualityPrefix(stack)}${item.name}`;
-  const lines = [stack.quantity > 1 ? `${name} ×${stack.quantity}` : name, item.description];
-  if (item.kind === 'tool') {
-    if (item.tool === 'wateringCan') lines.push(`Water: ${inventory.water} / ${inventory.waterCapacity}`);
-    if (item.energyCost > 0) lines.push(`Uses ${item.energyCost} energy`);
-  } else if (item.sellPrice !== null) {
-    lines.push(`Ships for ${sellPriceFor(stack.itemId, stack.quality)}g each`);
-  }
-  lines.push(`Key ${keyLabel}`);
-  return lines.join('\n');
-}
-
 class Hotbar {
   readonly element = h('div', 'hud-hotbar');
   private readonly views: SlotView[] = [];
@@ -541,7 +452,7 @@ class Hotbar {
       const stack = inventory.slots[i] ?? null;
       const stackChanged = rebuild || previous === null || stack !== (previous.slots[i] ?? null);
       const canNeedsWater = waterChanged && stack !== null && stack.itemId === 'wateringCan';
-      if (stackChanged || canNeedsWater) this.renderSlot(view, stack, inventory);
+      if (stackChanged || canNeedsWater) renderSlotView(view, stack, inventory, this.icons);
     }
     if (rebuild || previous === null || inventory.selected !== previous.selected) this.select(inventory.selected);
   }
@@ -552,54 +463,13 @@ class Hotbar {
     const buttons: HTMLButtonElement[] = [];
     for (let i = 0; i < count; i++) {
       const keyLabel = SLOT_KEYS[i] ?? '';
-      const button = hudButton('hud-slot is-empty');
-      button.dataset.slot = String(i);
-      button.setAttribute('aria-pressed', 'false');
-      const icon = h('span', 'hud-slot__icon');
-      icon.setAttribute('aria-hidden', 'true');
-      const water = h('span', 'hud-slot__water');
-      water.hidden = true;
-      water.setAttribute('aria-hidden', 'true');
-      water.append(h('span', 'hud-slot__water-fill'));
-      const quantity = h('span', 'hud-slot__qty');
-      quantity.hidden = true;
-      quantity.setAttribute('aria-hidden', 'true');
-      const key = h('span', 'hud-slot__key', keyLabel);
-      key.setAttribute('aria-hidden', 'true');
-      button.append(icon, water, quantity, key);
-      buttons.push(button);
-      this.views.push({ button, icon, quantity, water, keyLabel, itemId: null });
+      const view = createSlotView({ keyLabel, name: `Slot ${keyLabel}` });
+      view.button.dataset.slot = String(i);
+      view.button.setAttribute('aria-pressed', 'false');
+      buttons.push(view.button);
+      this.views.push(view);
     }
     this.element.replaceChildren(...buttons);
-  }
-
-  private renderSlot(view: SlotView, stack: ItemStack | null, inventory: InventoryState): void {
-    const itemId = stack === null ? null : stack.itemId;
-    if (itemId !== view.itemId) {
-      view.itemId = itemId;
-      if (itemId === null) view.icon.replaceChildren();
-      else view.icon.replaceChildren(this.icons.get(itemId));
-      view.button.classList.toggle('is-empty', itemId === null);
-    }
-
-    const quantity = stack === null ? 0 : stack.quantity;
-    setHidden(view.quantity, quantity <= 1);
-    if (quantity > 1) setText(view.quantity, String(quantity));
-
-    const isCan = itemId === 'wateringCan';
-    setHidden(view.water, !isCan);
-    if (isCan) {
-      const ratio = inventory.waterCapacity > 0 ? clamp01(inventory.water / inventory.waterCapacity) : 0;
-      view.button.style.setProperty('--hud-water-level', ratio.toFixed(3));
-      view.water.classList.toggle('is-empty', inventory.water <= 0);
-    }
-
-    setTitle(view.button, slotTitle(stack, view.keyLabel, inventory));
-    const label =
-      stack === null
-        ? `Slot ${view.keyLabel}: empty`
-        : `Slot ${view.keyLabel}: ${qualityPrefix(stack)}${getItem(stack.itemId).name}${stack.quantity > 1 ? `, ${stack.quantity}` : ''}`;
-    view.button.setAttribute('aria-label', label);
   }
 
   private select(index: number): void {
@@ -1231,6 +1101,7 @@ export class Hud {
   private readonly hint: ContextHint;
   private readonly toasts: ToastStack;
   private readonly shop: ShopModal;
+  private readonly inventory: InventoryScreen;
   private readonly pause: PauseOverlay;
   private readonly dayTransition: DayTransition;
   private readonly perf: PerfReadout;
@@ -1256,6 +1127,7 @@ export class Hud {
     this.hint = new ContextHint();
     this.toasts = new ToastStack();
     this.shop = new ShopModal(context);
+    this.inventory = new InventoryScreen(context);
     this.pause = new PauseOverlay(context, options.onNewGame);
     this.dayTransition = new DayTransition(context);
     this.perf = new PerfReadout(options.getRenderStats);
@@ -1273,7 +1145,14 @@ export class Hud {
     const bottom = h('div', 'hud-bottom');
     bottom.append(left, center, right);
 
-    this.container.append(top, bottom, this.shop.element, this.pause.element, this.dayTransition.element);
+    this.container.append(
+      top,
+      bottom,
+      this.shop.element,
+      this.inventory.element,
+      this.pause.element,
+      this.dayTransition.element,
+    );
     this.container.addEventListener('contextmenu', (event) => event.preventDefault(), { signal: this.abort.signal });
     options.root.append(this.container);
   }
@@ -1287,6 +1166,7 @@ export class Hud {
     this.hint.sync(state, prev);
     this.toasts.sync(state, prev);
     this.shop.sync(state, prev);
+    this.inventory.sync(state, prev);
     this.pause.sync(state, prev);
     this.dayTransition.sync(state, prev);
   }

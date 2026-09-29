@@ -9,12 +9,16 @@
  *                 (Isometric camera: North appears up-right on screen.)
  *   Use tool      Space, J, left mouse button on the canvas. Hold to repeat.
  *   Interact      E, K, Enter, right mouse button on the canvas (Ctrl + click on macOS).
- *   Hotbar        1–9, 0, -, = select slots 0–11. Tab / Shift+Tab and the mouse wheel cycle.
+ *                 While the backpack or a chest is open, E, K and Enter close it instead.
+ *   Hotbar        1–9, 0, -, = select slots 0–11 (INVENTORY.hotbarSize). Tab / Shift+Tab and
+ *                 the mouse wheel cycle within those 12.
+ *   Backpack      I toggles the inventory screen; with a chest open, I closes the chest.
  *   Zoom          Z (in) / X (out), Ctrl + mouse wheel or trackpad pinch.
- *   Shop          B toggles.
+ *   Shop          B toggles. It does nothing while the backpack or a chest is open.
  *   Pause         P toggles. Escape closes any open panel, otherwise toggles pause.
  *   Sleep         N.
  *   Time scale    T cycles through TIME.timeScales.
+ * The panel keys (I, E / K / Enter, B, Escape) are decided by panelKeyCommand in panelKeys.ts.
  *
  * Held keys
  * - Direction keys form a stack in press order; the most recent one steers and releasing it
@@ -41,6 +45,7 @@ import { Direction, type GameState } from '../core/types';
 import type { CameraRig } from '../render/CameraRig';
 import { actions, type GameAction } from '../state/actions';
 import { selectIsFrozen } from '../state/selectors';
+import { IGNORED, panelKeyCommand } from './panelKeys';
 
 export interface InputControllerOptions {
   readonly target: Window;
@@ -97,8 +102,6 @@ const DIRECTION_KEYS: ReadonlyMap<string, Direction> = new Map<string, Direction
 ]);
 
 const TOOL_KEYS: ReadonlySet<string> = new Set(['Space', 'KeyJ']);
-
-const INTERACT_KEYS: ReadonlySet<string> = new Set(['KeyE', 'KeyK', 'Enter', 'NumpadEnter']);
 
 const HOTBAR_KEYS: ReadonlyMap<string, number> = new Map<string, number>([
   ['Digit1', 0],
@@ -290,25 +293,18 @@ export class InputController {
       if (!event.repeat) this.selectSlot(slot);
       return true;
     }
-    if (INTERACT_KEYS.has(code)) {
-      if (!event.repeat) this.store.dispatch(actions.interact());
+    const state = this.store.getState();
+    // I, E / K / Enter, B and Escape: open, close or toggle panels, or interact.
+    const command = panelKeyCommand(code, state);
+    if (command !== null) {
+      if (!event.repeat && command !== IGNORED) this.store.dispatch(command);
       return true;
     }
-    const state = this.store.getState();
     switch (code) {
       case 'Tab':
         // With a panel open, Tab walks keyboard focus through the panel instead.
         if (state.ui.panel.kind !== 'none') return false;
         if (!event.repeat) this.store.dispatch(actions.cycleSlot(event.shiftKey ? -1 : 1));
-        return true;
-      case 'KeyB':
-        // The reducer ignores opening the shop while another panel is open.
-        if (!event.repeat) this.store.dispatch(actions.setShopOpen(state.ui.panel.kind !== 'shop'));
-        return true;
-      case 'Escape':
-        if (!event.repeat) {
-          this.store.dispatch(state.ui.panel.kind !== 'none' ? actions.closePanel() : actions.setPaused(!state.ui.paused));
-        }
         return true;
       case 'KeyP':
         if (!event.repeat) this.store.dispatch(actions.setPaused(!state.ui.paused));
