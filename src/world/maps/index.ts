@@ -4,7 +4,7 @@
  */
 import { PLAYER } from '../../config';
 import { MAP_IDS, type MapId, type TileRect, type WorldState } from '../../core/types';
-import { inBounds, rectContains, rectInBounds, stepTile } from '../grid';
+import { inBounds, rectContains, rectInBounds, stepTile, tileCount } from '../grid';
 import { isPondTile } from '../worldgen';
 import { FARM_MAP } from './farm';
 import { FOREST_MAP } from './forest';
@@ -93,6 +93,9 @@ assertMapDefinitions(MAPS);
 export function getMap(id: MapId): MapDefinition {
   return MAPS[id];
 }
+
+/** The largest tile count of any map: the capacity of per-tile render buffers that are allocated once. */
+export const MAX_MAP_TILE_COUNT: number = Math.max(...MAP_IDS.map((id) => tileCount(MAPS[id].grid)));
 
 /** A new game's worlds, one per map, each from its own map seed. */
 export function generateMaps(seed: number): Record<MapId, WorldState> {

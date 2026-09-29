@@ -21,6 +21,7 @@
 import * as THREE from 'three';
 import { Salt, hashFloat, mulberry32 } from '../core/hash';
 import { HEIGHTS } from './constants';
+import { TINT_MASK_ATTRIBUTE } from './materials';
 import { PALETTE } from './palette';
 
 /** A point or an RGB triple. */
@@ -37,9 +38,10 @@ export const TERRAIN_ATTRIBUTE = 'terrain';
 
 /**
  * Name of the flower geometry's per-vertex float: 1 where the instance colour tints the vertex
- * (petals), 0 where the baked vertex colour is kept as is (stems, leaves, blossom hearts).
+ * (petals), 0 where the baked vertex colour is kept as is (stems, leaves, blossom hearts). Defined
+ * next to createTintMaskSwayMaterial, which reads it.
  */
-export const TINT_MASK_ATTRIBUTE = 'tintMask';
+export { TINT_MASK_ATTRIBUTE };
 
 /** Number of distinct rock shapes produced by createRockGeometry. */
 export const ROCK_VARIANT_COUNT = 3;
@@ -490,6 +492,96 @@ export function createFlowerGeometry(): THREE.BufferGeometry {
   }
 
   return soup.build({ extraAttribute: TINT_MASK_ATTRIBUTE });
+}
+
+// ---------------------------------------------------------------------------
+// Weeds
+// ---------------------------------------------------------------------------
+
+/** Scruffy olive leaves, darker at the root. */
+const WEED_LEAF = 0x93b055;
+const WEED_LEAF_DARK = 0x5f7d3c;
+/** Pale seed heads on the tall stalks. */
+const WEED_SEED = 0xe8dd96;
+const WEED_LEAVES = 11;
+const WEED_STALKS = 3;
+/** Tallest point of the clump (seed heads); normalises the leaf gradient. */
+const WEED_MAX_HEIGHT = 0.46;
+
+/**
+ * A weed clump, rooted at y = 0 and spanning about 0.7 tile: a rosette of broad jagged leaves
+ * splaying outward (each a bent kite, two faces so it reads from every side), plus a few taller
+ * stalks topped with small pale seed heads that sway more than the leaves. Baked colours (olive
+ * leaves shaded from root to tip, pale seeds); the instance colour only brightens or darkens.
+ */
+export function createWeedsGeometry(seed = 0x5eed17): THREE.BufferGeometry {
+  const rand = mulberry32(seed);
+  const dark = rgb(WEED_LEAF_DARK);
+  const light = rgb(WEED_LEAF);
+  const leafColor = (p: Vec3): Vec3 => mixRgb(dark, light, clamp01(p[1] / (WEED_MAX_HEIGHT * 0.6)));
+  const soup = new TriangleSoup();
+
+  for (let i = 0; i < WEED_LEAVES; i++) {
+    const angle = (i / WEED_LEAVES) * TAU + (rand() - 0.5) * 0.5;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    const reach = 0.2 + 0.16 * rand();
+    const lift = 0.12 + 0.18 * rand();
+    const width = 0.05 + 0.035 * rand();
+    const mid = reach * 0.5;
+    const base: Vec3 = [dx * 0.015, 0, dz * 0.015];
+    const tip: Vec3 = [dx * reach, lift, dz * reach];
+    const sideA: Vec3 = [dx * mid - dz * width, lift * 0.75, dz * mid + dx * width];
+    const sideB: Vec3 = [dx * mid + dz * width, lift * 0.75, dz * mid - dx * width];
+    // A notch halfway along each side makes the leaf look ragged.
+    const notch: Vec3 = [dx * mid * 1.2, lift * 0.95, dz * mid * 1.2];
+    const under: Vec3 = [dx * mid, -1, dz * mid];
+    const over: Vec3 = [dx * mid, 2, dz * mid];
+    soup.polygon([base, sideA, notch], under, leafColor);
+    soup.polygon([notch, sideA, tip], under, leafColor);
+    soup.polygon([base, notch, sideB], under, leafColor);
+    soup.polygon([notch, tip, sideB], under, leafColor);
+    soup.polygon([base, sideA, notch], over, leafColor);
+    soup.polygon([notch, sideA, tip], over, leafColor);
+    soup.polygon([base, notch, sideB], over, leafColor);
+    soup.polygon([notch, tip, sideB], over, leafColor);
+  }
+
+  const seedColor = rgb(WEED_SEED);
+  for (let i = 0; i < WEED_STALKS; i++) {
+    const angle = (i / WEED_STALKS) * TAU + 0.4 + (rand() - 0.5) * 0.6;
+    const offset = 0.03 + 0.05 * rand();
+    const x = Math.cos(angle) * offset;
+    const z = Math.sin(angle) * offset;
+    const height = WEED_MAX_HEIGHT * (0.7 + 0.3 * rand());
+    const lean = 0.04 + 0.05 * rand();
+    const top: Vec3 = [x + Math.cos(angle) * lean, height, z + Math.sin(angle) * lean];
+    const root: Vec3[] = [];
+    for (let k = 0; k < 3; k++) {
+      const a = angle + (k * TAU) / 3;
+      root.push([x + Math.cos(a) * 0.01, 0, z + Math.sin(a) * 0.01]);
+    }
+    const stalkInside = centroid([...root, top]);
+    for (let k = 0; k < 3; k++) soup.polygon([at(root, k), at(root, (k + 1) % 3), top], stalkInside, leafColor);
+
+    // Seed head: a small octahedron centred just above the stalk tip.
+    const r = 0.028;
+    const c: Vec3 = [top[0], top[1] + r * 0.6, top[2]];
+    const up: Vec3 = [c[0], c[1] + r * 1.3, c[2]];
+    const down: Vec3 = [c[0], c[1] - r, c[2]];
+    const ring: Vec3[] = [];
+    for (let k = 0; k < 4; k++) {
+      const a = angle + (k * TAU) / 4;
+      ring.push([c[0] + Math.cos(a) * r, c[1], c[2] + Math.sin(a) * r]);
+    }
+    for (let k = 0; k < 4; k++) {
+      const a = at(ring, k);
+      const b = at(ring, (k + 1) % 4);
+      soup.polygon([a, b, up], c, seedColor);
+      soup.polygon([a, b, down], c, scaleRgb(seedColor, 0.85));
+    }
+  }
+  return soup.build();
 }
 
 // ---------------------------------------------------------------------------

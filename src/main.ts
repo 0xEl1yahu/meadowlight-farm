@@ -25,6 +25,7 @@ import { updateSharedUniforms } from './render/materials';
 import { PlayerRenderer } from './render/PlayerRenderer';
 import { SceneContext } from './render/SceneContext';
 import { StructureRenderer } from './render/StructureRenderer';
+import { classifySync } from './render/syncPolicy';
 import { TerrainRenderer } from './render/TerrainRenderer';
 import { TileHighlighter } from './render/TileHighlighter';
 import type { FrameContext, RenderSystem } from './render/types';
@@ -34,7 +35,7 @@ import { createInitialState } from './state/initialState';
 import { clearSave, loadGame, saveGame } from './state/persistence';
 import { gameReducer } from './state/reducer';
 import { Hud } from './ui/Hud';
-import { selectActiveWorld } from './state/selectors';
+import { selectActiveWorld, selectIsFrozen } from './state/selectors';
 
 declare global {
   interface Window {
@@ -99,20 +100,23 @@ function bootstrap(): () => void {
   });
   const input = new InputController({ target: window, canvas: ctx.renderer.domElement, store, rig: ctx.rig });
 
-  const syncAll = (state: GameState, prev: GameState | null): void => {
-    for (const system of systems) system.sync(state, prev);
-    hud.sync(state, prev);
-  };
-  syncAll(initial, null);
+  for (const system of systems) system.sync(initial, null);
+  hud.sync(initial, null);
   ctx.rig.snap(player.focus);
 
   const simClock = new FixedStepClock(TIME.realSecondsPerGameMinute, TIME.maxTickMinutes);
 
   const unsubscribe = store.subscribe((state, prev, action) => {
-    const fullRebuild = action.type === 'game/load';
-    syncAll(state, fullRebuild ? null : prev);
+    // A load or a map change rebuilds every render system on the new map's grid; the HUD keeps
+    // prev across a map change (toasts, day wipe, gold tween). See render/syncPolicy.ts.
+    const plan = classifySync(state, prev, action);
+    if (plan.setGrid) ctx.setActiveGrid(selectActiveWorld(state).grid);
+    const systemsPrev = plan.systemsPrev === 'null' ? null : prev;
+    for (const system of systems) system.sync(state, systemsPrev);
+    hud.sync(state, plan.hudPrev === 'null' ? null : prev);
+    if (plan.snapCamera) ctx.rig.snap(player.focus);
     const newDay = state.time.absoluteDay !== prev.time.absoluteDay;
-    if (fullRebuild || newDay) simClock.reset();
+    if (action.type === 'game/load' || newDay) simClock.reset();
     if (newDay) saveGame(state);
   });
 
@@ -139,7 +143,7 @@ function bootstrap(): () => void {
     input.update(dt);
 
     const before = store.getState();
-    const running = !before.ui.paused && !before.ui.shopOpen;
+    const running = !selectIsFrozen(before);
     const minutes = simClock.advance(running ? dt * before.ui.timeScale : 0);
     if (minutes > 0) store.dispatch(actions.tick(minutes));
 

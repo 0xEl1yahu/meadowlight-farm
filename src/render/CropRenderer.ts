@@ -3,7 +3,8 @@
  *
  * Instancing model
  * - Every crop part geometry (cropGeometry.ts) owns one InstancedMesh with capacity
- *   tileCount(grid), wrapped in an InstanceSlotMap keyed by the global tile index. A planted
+ *   MAX_MAP_TILE_COUNT (the largest map), allocated once, wrapped in an InstanceSlotMap keyed by
+ *   the active map's tile index. Only the active map is drawn. A planted
  *   tile shows one foliage part, chosen by form and growth stage, plus at most one accent part:
  *   the soil mound of a freshly sown seed, or the produce once the crop is mature. When the
  *   stage bucket changes, the tile's key moves from one foliage map to another.
@@ -27,7 +28,9 @@
  * desaturated brown-grey, and lose their produce.
  *
  * Diffing and animation
- * - sync(state, null) clears every map and rebuilds from all tiles, without animation.
+ * - sync(state, null), and any change of the active map, clears every slot map and rebuilds from
+ *   all tiles of the active map, without animation. Cosmetic hashes add the map's
+ *   cosmeticOffset to the tile coordinates (the farm's is (0, 0)).
  * - Otherwise only dirty tiles of dirty chunks are described again. Changes tween the instance
  *   scale: new parts pop in with a gentle overshoot (easeOutBack, ~0.45 s), removed parts
  *   anticipate and shrink to nothing before their key is removed, fresh produce triggers a
@@ -37,7 +40,7 @@
  */
 import * as THREE from 'three';
 import { Salt, hashFloat } from '../core/hash';
-import { TileState, type Chunk, type CropInstance, type GameState, type GridSpec, type Tile } from '../core/types';
+import { TileState, type Chunk, type CropInstance, type GameState, type GridSpec, type MapId, type Tile } from '../core/types';
 import {
   CROPS,
   daysRequiredForStage,
@@ -79,7 +82,8 @@ import { createFlatMaterial, createSwayMaterial, sharedUniforms } from './materi
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
-import { selectActiveWorld } from '../state/selectors';
+import { selectActiveMapId, selectActiveWorld } from '../state/selectors';
+import { MAX_MAP_TILE_COUNT, getMap } from '../world/maps';
 
 // ---------------------------------------------------------------------------
 // Parts
@@ -627,10 +631,15 @@ export class CropRenderer implements RenderSystem {
   /** Scratch target of describe(); copied into layers immediately. */
   private readonly look = createLook();
   private capacity: number;
+  /** Map on screen; null until the first rebuild. */
+  private mapId: MapId | null = null;
+  /** The active map's cosmeticOffset. */
+  private ox = 0;
+  private oz = 0;
 
   constructor(ctx: SceneContext) {
     this.scene = ctx.scene;
-    this.capacity = tileCount(ctx.grid);
+    this.capacity = Math.max(MAX_MAP_TILE_COUNT, tileCount(ctx.grid));
     this.group.name = 'crops';
     this.parts = createParts(this.capacity, this.group);
     this.partList = PART_IDS.map((id) => this.parts[id]);
@@ -638,7 +647,8 @@ export class CropRenderer implements RenderSystem {
   }
 
   sync(state: GameState, prev: GameState | null): void {
-    if (prev === null) {
+    const mapId = selectActiveMapId(state);
+    if (prev === null || mapId !== this.mapId || selectActiveMapId(prev) !== mapId) {
       this.rebuild(state);
       return;
     }
@@ -696,6 +706,11 @@ export class CropRenderer implements RenderSystem {
 
   private rebuild(state: GameState): void {
     const grid = selectActiveWorld(state).grid;
+    const mapId = selectActiveMapId(state);
+    const { cosmeticOffset } = getMap(mapId);
+    this.mapId = mapId;
+    this.ox = cosmeticOffset.x;
+    this.oz = cosmeticOffset.z;
     this.records.clear();
     this.animating.clear();
     this.leaving.clear();
@@ -727,7 +742,7 @@ export class CropRenderer implements RenderSystem {
     const record = this.records.get(key);
     const crop = tile.crop;
     if (crop === null && record === undefined) return;
-    const delay = animate && ripple ? rippleDelay(tx, tz) : 0;
+    const delay = animate && ripple ? rippleDelay(tx + this.ox, tz + this.oz) : 0;
 
     if (crop === null) {
       if (record !== undefined) {
@@ -756,22 +771,25 @@ export class CropRenderer implements RenderSystem {
     const def = CROPS[crop.cropId];
     const visual = def.visual;
     const day = crop.plantedDay;
+    // Cosmetic hashes use the map's cosmeticOffset, so maps don't repeat each other's jitter.
+    const hx = tx + this.ox;
+    const hz = tz + this.oz;
     const dead = crop.dead;
     const mature = isMature(crop);
     const forms = FORM_PARTS[visual.form];
     const bucket = foliageBucket(def, crop);
-    const sizeJitter = 1 + (cosmetic(tx, tz, day, Channel.Size) * 2 - 1) * LOOK.sizeJitter;
+    const sizeJitter = 1 + (cosmetic(hx, hz, day, Channel.Size) * 2 - 1) * LOOK.sizeJitter;
     // Uniform scale that makes the form's mature foliage exactly the crop's authored height.
     const cropScale = (visual.height / Math.max(0.01, this.parts[forms.mature].top)) * sizeJitter;
 
     // Placement ------------------------------------------------------------
-    const x = tileCenterX(grid, tx) + (cosmetic(tx, tz, day, Channel.OffsetX) * 2 - 1) * LOOK.placementJitter;
-    const z = tileCenterZ(grid, tz) + (cosmetic(tx, tz, day, Channel.OffsetZ) * 2 - 1) * LOOK.placementJitter;
+    const x = tileCenterX(grid, tx) + (cosmetic(hx, hz, day, Channel.OffsetX) * 2 - 1) * LOOK.placementJitter;
+    const z = tileCenterZ(grid, tz) + (cosmetic(hx, hz, day, Channel.OffsetZ) * 2 - 1) * LOOK.placementJitter;
     // Wild crops stand on untilled grass; everything else on the sunken soil.
     const untilled = tile.state === TileState.Unplowed;
     const ground = untilled ? HEIGHTS.grassTop : HEIGHTS.soilTop;
     look.position.set(x, ground, z);
-    look.quaternion.setFromAxisAngle(UP, cosmetic(tx, tz, day, Channel.Yaw) * TAU);
+    look.quaternion.setFromAxisAngle(UP, cosmetic(hx, hz, day, Channel.Yaw) * TAU);
 
     // Foliage model and scale ------------------------------------------------
     let scale: number;
@@ -798,13 +816,13 @@ export class CropRenderer implements RenderSystem {
     if (dry) look.foliageScale.y *= 1 - LOOK.wiltPerNight * dryNights;
     if (dead) {
       look.foliageScale.set(scale * LOOK.deadSpread, scale * LOOK.deadDroop, scale * LOOK.deadSpread);
-      const leanHeading = cosmetic(tx, tz, day, Channel.LeanHeading) * TAU;
+      const leanHeading = cosmetic(hx, hz, day, Channel.LeanHeading) * TAU;
       scratchAxis.set(Math.cos(leanHeading), 0, -Math.sin(leanHeading));
       look.quaternion.premultiply(scratchQuaternion.setFromAxisAngle(scratchAxis, LOOK.deadLean));
     }
 
     // Foliage colour ---------------------------------------------------------
-    const shade = cosmetic(tx, tz, day, Channel.FoliageShade);
+    const shade = cosmetic(hx, hz, day, Channel.FoliageShade);
     if (dead) {
       look.foliageColor.copy(DEAD_BROWN).lerp(DEAD_GREY, shade * 0.7);
     } else {
@@ -820,8 +838,8 @@ export class CropRenderer implements RenderSystem {
     if (crop.stage === 0 && !crop.regrowing && sown) {
       look.accent = 'soilMound';
       look.accentPosition.copy(look.position);
-      look.accentQuaternion.setFromAxisAngle(UP, cosmetic(tx, tz, day, Channel.MoundYaw) * TAU);
-      look.accentScale.setScalar(0.92 + 0.16 * cosmetic(tx, tz, day, Channel.MoundSize));
+      look.accentQuaternion.setFromAxisAngle(UP, cosmetic(hx, hz, day, Channel.MoundYaw) * TAU);
+      look.accentScale.setScalar(0.92 + 0.16 * cosmetic(hx, hz, day, Channel.MoundSize));
       look.accentColor.copy(tile.state === TileState.Watered ? SOIL_WET : SOIL_DRY);
     } else if (mature && produce !== null) {
       look.accent = produce.part;
@@ -832,11 +850,11 @@ export class CropRenderer implements RenderSystem {
       } else {
         const nudge = GROUND_NUDGE[visual.form] * cropScale;
         look.accentPosition.set(x + VIEW_X * nudge, ground, z + VIEW_Z * nudge);
-        look.accentQuaternion.setFromAxisAngle(UP, cosmetic(tx, tz, day, Channel.ProduceYaw) * TAU);
+        look.accentQuaternion.setFromAxisAngle(UP, cosmetic(hx, hz, day, Channel.ProduceYaw) * TAU);
       }
       look.accentColor
         .setHex(visual.produceColor)
-        .offsetHSL(0, 0, (cosmetic(tx, tz, day, Channel.ProduceShade) * 2 - 1) * LOOK.colorJitter);
+        .offsetHSL(0, 0, (cosmetic(hx, hz, day, Channel.ProduceShade) * 2 - 1) * LOOK.colorJitter);
     }
 
     // Thirst indicator --------------------------------------------------------
@@ -1103,7 +1121,10 @@ export class CropRenderer implements RenderSystem {
     }
   }
 
-  /** Grows every part's instance buffers when a loaded world has more tiles than the last. */
+  /**
+   * Grows every part's instance buffers if a world ever has more tiles than MAX_MAP_TILE_COUNT.
+   * Every map fits, so in practice the buffers are allocated once, in the constructor.
+   */
   private ensureCapacity(required: number): void {
     if (required <= this.capacity) return;
     for (const part of this.partList) {

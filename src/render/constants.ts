@@ -13,6 +13,8 @@ export const HEIGHTS = {
   waterSurface: -0.16,
   /** Floor of the pond basin under the water surface. */
   pondBed: -0.5,
+  /** Walking surface of a wood or stone path object: flush planks and flagstones just above the grass. */
+  pathTop: 0.02,
   /** Height of the player's eyes / tool-ray origin above the ground. */
   playerEye: 0.9,
 } as const;

@@ -7,9 +7,11 @@
  *   handful lands on every tile of it.
  * - Shape: a wireframe box slightly larger than the framed tiles, drawn as 12 thin box "beams"
  *   in ONE InstancedMesh (thicker and more legible than GL lines), plus a small diamond
- *   floating above its centre. The box stands on the tiles' ground (soil, grass or water
- *   surface; the highest one for a patch) and is taller when a tile holds something (rock,
- *   stump, crop, water, shipping bin, house).
+ *   floating above its centre. The box stands on the tiles' ground (soil, grass, path or water
+ *   surface; the highest one for a patch) and is taller when a tile holds something (a placed
+ *   object, crop, rock, stump, tree, weeds, water, shipping bin, house or building).
+ * - Map: everything reads the active map's world, and the grid is cached on every sync, so a
+ *   map change (sync with prev = null) re-frames the box on the new grid without a sweep.
  * - Colour, unlit so it reads at night: cream-white when the selected item's primary action
  *   would do something, warm gold when only the context interaction would (harvest, ship,
  *   sleep, refill), soft red and dimmer otherwise. Validity comes from state/intents.ts — the
@@ -23,14 +25,14 @@
  * height is animating.
  */
 import * as THREE from 'three';
-import { Blocker, type GameState, type Tile } from '../core/types';
+import { Blocker, type GameState, type GridSpec, type PlacedObjectKind, type Tile } from '../core/types';
 import { CROPS, growthProgress } from '../farming/crops';
 import { getItem } from '../items/items';
 import { isActionable, planInteraction, planPrimaryAction } from '../state/intents';
 import { selectedStack } from '../state/inventory';
 import { selectActiveWorld, selectIsFrozen, selectScatterPatch, selectTargetTile } from '../state/selectors';
 import { tileCenterX, tileCenterZ } from '../world/grid';
-import { getTile, isSoil } from '../world/tiles';
+import { getTile, isPathObject, isSoil } from '../world/tiles';
 import { HEIGHTS } from './constants';
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
@@ -58,6 +60,20 @@ const BOX_HEIGHT = {
   tree: 1.3,
   weeds: 0.6,
   building: 1.2,
+  /** Placed objects, checked before crops and blockers. Paths are ground. */
+  object: {
+    chest: 0.8,
+    sprinkler: 0.5,
+    qualitySprinkler: 0.55,
+    scarecrow: 1.4,
+    woodFence: 0.9,
+    woodPath: 0.35,
+    stonePath: 0.35,
+    giantCrop: 1.6,
+    forage: 0.4,
+    trophy: 0.9,
+    decoration: 1.0,
+  } satisfies Readonly<Record<PlacedObjectKind, number>>,
   cropMin: 0.9,
   cropMax: 1.3,
   /** Headroom added above a crop's current foliage height. */
@@ -120,14 +136,19 @@ function damp(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * dt);
 }
 
-/** Height of the surface the box stands on. */
+/** Height of the surface the box stands on. A path object is ground: the box stands on its planks. */
 export function highlightGroundHeight(tile: Tile): number {
   if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
+  if (tile.object !== null && isPathObject(tile.object)) return HEIGHTS.pathTop;
   return isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
 }
 
-/** Box height for the tile's contents: low for bare ground, taller when something stands on it. */
+/**
+ * Box height for the tile's contents: low for bare ground, taller when something stands on it.
+ * A placed object is checked first (paths count as ground), then a crop, then the blocker.
+ */
 export function highlightBoxHeight(tile: Tile): number {
+  if (tile.object !== null) return BOX_HEIGHT.object[tile.object.kind];
   if (tile.crop !== null) {
     const foliage = CROPS[tile.crop.cropId].visual.height * growthProgress(tile.crop);
     return clamp(foliage + BOX_HEIGHT.cropHeadroom, BOX_HEIGHT.cropMin, BOX_HEIGHT.cropMax);
@@ -198,6 +219,8 @@ export class TileHighlighter implements RenderSystem {
   private readonly material: THREE.MeshBasicMaterial;
   private readonly beams: THREE.InstancedMesh;
   private readonly marker: THREE.Mesh;
+  /** Grid of the active map, cached on every sync (a map change arrives as a full sync). */
+  private grid: GridSpec;
 
   /** Whether the latest state wants the indicator shown. */
   private active = false;
@@ -224,6 +247,7 @@ export class TileHighlighter implements RenderSystem {
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
+    this.grid = ctx.grid;
     const tileFootprint = FOOTPRINT * ctx.grid.tileSize;
     this.sizeX = tileFootprint;
     this.sizeZ = tileFootprint;
@@ -269,6 +293,7 @@ export class TileHighlighter implements RenderSystem {
 
   sync(state: GameState, prev: GameState | null): void {
     if (prev !== null && !affectsHighlight(state, prev)) return;
+    this.grid = selectActiveWorld(state).grid;
     const rebuild = prev === null;
     const { player } = state;
     const actionChanged = player.actionSeq !== this.actionSeq;
@@ -343,7 +368,7 @@ export class TileHighlighter implements RenderSystem {
     const wave = Math.sin(elapsed * PULSE_RATE);
     // Scale relative to a single tile's box so a wide patch breathes by the same distance.
     const swell = PULSE_SCALE * wave + pop;
-    const tileFootprint = FOOTPRINT * this.ctx.grid.tileSize;
+    const tileFootprint = FOOTPRINT * this.grid.tileSize;
     const lift = 1 + pop * 0.6;
     this.beams.scale.set(
       1 + (swell * tileFootprint) / this.sizeX,
@@ -371,7 +396,7 @@ export class TileHighlighter implements RenderSystem {
     const target = selectTargetTile(state);
     const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
     if (target === null || tile === null) return false;
-    const grid = selectActiveWorld(state).grid;
+    const grid = this.grid;
     const footprint = FOOTPRINT * grid.tileSize;
     this.targetPosition.set(tileCenterX(grid, target.tx), highlightGroundHeight(tile), tileCenterZ(grid, target.tz));
     this.targetHeight = highlightBoxHeight(tile);
@@ -386,7 +411,7 @@ export class TileHighlighter implements RenderSystem {
    */
   private framePatch(state: GameState): boolean {
     const world = selectActiveWorld(state);
-    const grid = world.grid;
+    const grid = this.grid;
     let minTx = Number.POSITIVE_INFINITY;
     let maxTx = Number.NEGATIVE_INFINITY;
     let minTz = Number.POSITIVE_INFINITY;

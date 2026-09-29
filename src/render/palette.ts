@@ -10,6 +10,13 @@ export const PALETTE = {
   soilFurrow: 0xb68a5f,
   soilFurrowWet: 0x74543b,
   earthSide: 0xa98460,
+  /** Packed-earth trail and path ground (forest trail, town door paths). */
+  dirt: 0xd8bd92,
+  /** Town street and square cobbles; each tile gets a subtle hash tint. */
+  cobble: 0xc6bfb9,
+  /** Warm and cool stones the cobble tint leans toward. */
+  cobbleWarm: 0xd3c3ad,
+  cobbleCool: 0xb3b6bd,
   rock: 0xb9b6c9,
   rockDark: 0x9c99b0,
   stumpBark: 0x9c6e4b,

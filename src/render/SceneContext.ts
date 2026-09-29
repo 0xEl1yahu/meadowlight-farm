@@ -85,7 +85,9 @@ export class SceneContext {
   readonly scene: THREE.Scene;
   readonly camera: THREE.OrthographicCamera;
   readonly rig: CameraRig;
-  readonly grid: GridSpec;
+
+  /** Grid of the active map; replaced by `setActiveGrid` on a load or a map change. */
+  private activeGrid: GridSpec;
 
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver | null;
@@ -98,7 +100,7 @@ export class SceneContext {
 
   constructor(container: HTMLElement, grid: GridSpec) {
     this.container = container;
-    this.grid = grid;
+    this.activeGrid = grid;
 
     this.renderer = createRenderer();
     prepareCanvas(this.renderer.domElement);
@@ -153,6 +155,20 @@ export class SceneContext {
     };
     this.watchPixelRatio();
     this.handleResize();
+  }
+
+  /** Grid of the active map. */
+  get grid(): GridSpec {
+    return this.activeGrid;
+  }
+
+  /**
+   * Switches to another map's grid (a load or a map change) and re-bounds the camera to it.
+   * main.ts calls this before the render systems sync, so they read the new grid.
+   */
+  setActiveGrid(grid: GridSpec): void {
+    this.activeGrid = grid;
+    this.rig.setBounds(worldRect(grid));
   }
 
   /** Current viewport aspect (width / height). */

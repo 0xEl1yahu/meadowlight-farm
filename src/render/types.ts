@@ -18,8 +18,11 @@ export interface FrameContext {
  * Contract for every visual subsystem.
  *
  * - `sync(state, prev)` runs after every state change. `prev === null` means "full rebuild":
- *   it happens once at startup and again whenever a whole new state is loaded, so it must be
- *   idempotent (clear everything you own, then rebuild from `state`).
+ *   it happens once at startup, whenever a whole new state is loaded and whenever the player
+ *   changes map, so it must be idempotent (clear everything you own, then rebuild the active
+ *   map from `state`). main.ts switches `SceneContext.grid` to the new map before that call.
+ * - `prev` is non-null only when the active map is the same in `state` and `prev`
+ *   (render/syncPolicy.ts decides), so a system may always compare the two active worlds.
  * - When `prev !== null`, diff the active map's world (`selectActiveWorld`) by reference:
  *   `world.chunks[i] !== prevWorld.chunks[i]` marks a dirty chunk, and within it `chunk.tiles[j] !== prevChunk.tiles[j]` marks a dirty
  *   tile. Never rescan unchanged chunks.

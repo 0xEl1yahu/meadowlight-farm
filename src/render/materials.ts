@@ -101,3 +101,37 @@ export function createSwayMaterial(
   material.customProgramCacheKey = () => 'meadowlight-sway-v1';
   return material;
 }
+
+/**
+ * Name of the per-vertex float that marks which vertices the instance colour tints: 1 where the
+ * instance colour multiplies the baked vertex colour (petals, canopies), 0 where the baked vertex
+ * colour is kept as is (stems, leaves, trunks).
+ */
+export const TINT_MASK_ATTRIBUTE = 'tintMask';
+
+/**
+ * A swaying material (see {@link createSwayMaterial}) for geometry that bakes real colours in
+ * `color` and carries TINT_MASK_ATTRIBUTE: only masked vertices take the instance colour. Used by
+ * meadow flowers (tinted petals) and forest trees (tinted canopy on a baked trunk).
+ */
+export function createTintMaskSwayMaterial(sway: SwayOptions): THREE.MeshStandardMaterial {
+  const material = createSwayMaterial(0xffffff, sway, { vertexColors: true });
+  const applySway = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    applySway.call(material, shader, renderer);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', ['#include <common>', `attribute float ${TINT_MASK_ATTRIBUTE};`].join('\n'))
+      .replace(
+        '#include <color_vertex>',
+        [
+          '#include <color_vertex>',
+          '#if defined( USE_COLOR ) && defined( USE_INSTANCING_COLOR )',
+          `  vColor.rgb = mix( color.rgb, vColor.rgb, ${TINT_MASK_ATTRIBUTE} );`,
+          '#endif',
+        ].join('\n'),
+      );
+  };
+  // Distinct from the plain sway key: the shader source differs, so the program must not be shared.
+  material.customProgramCacheKey = () => 'meadowlight-sway-tintmask-v1';
+  return material;
+}

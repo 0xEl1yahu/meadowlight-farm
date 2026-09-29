@@ -1,35 +1,47 @@
 /**
- * TerrainRenderer: the ground, soil, meadow, debris and pond of the farm.
+ * TerrainRenderer: the ground, soil, meadow, debris, trees, weeds and water of the active map.
  *
  * Draw calls do not grow with the number of tiles: one InstancedMesh per chunk for the ground,
  * plus a fixed handful of global instanced meshes (furrows, grass tufts, flowers, three rock
- * variants, stumps, pond water and pond rim stones). Empty global meshes are hidden.
+ * variants, stumps, two tree species, weeds, pond water and pond rim stones). Empty global
+ * meshes are hidden.
+ *
+ * Maps
+ * - Everything reads the active map (`selectActiveWorld` / `getMap(player.mapId)`). A change of
+ *   map is a full rebuild on the new grid. Every cosmetic hash adds the map's `cosmeticOffset`
+ *   to the tile coordinates, so the maps don't repeat each other's patterns; the farm's offset
+ *   is (0, 0), so it looks exactly as it did before maps existed.
  *
  * Layers
  * - Ground (per chunk, fixed count, slot = chunk-local tile index): one bevelled slab per tile
- *   whose top sits on HEIGHTS.grassTop (grass, and under rocks / stumps / buildings),
- *   HEIGHTS.soilTop (plowed and watered soil) or HEIGHTS.pondBed (water tiles). Deterministic
- *   colour jitter plus a soft low-frequency field make the grid read as tiles without drawn
- *   lines. The ground shader paints the slab walls earth-brown with a little fake occlusion, so
- *   height steps (soil beds, the pond bank, the edge of the farm) read as cut earth.
- * - Shade (world/shade.ts): grass on shaded tiles, and the tufts on it, blend toward a cool
- *   blue-green and darken a little, deepest where the tile's neighbours are shaded too, so the
- *   patches where wild crops grow read as soft shadow rather than a painted stripe.
- * - Furrows, tufts, flowers, rocks and stumps: global InstanceSlotMaps keyed by tileIndex.
- *   Tufts and flowers make way for a crop growing wild on their grass tile.
+ *   whose top sits on HEIGHTS.grassTop (grass, dirt, cobble, and under rocks / stumps / trees /
+ *   weeds / buildings), HEIGHTS.soilTop (plowed and watered soil) or HEIGHTS.pondBed (water
+ *   tiles). The map's `surfaceAt` picks grass, dirt or cobble colours. Deterministic colour
+ *   jitter plus a soft low-frequency field make the grid read as tiles without drawn lines. The
+ *   ground shader paints the slab walls earth-brown with a little fake occlusion, so height
+ *   steps (soil beds, the pond bank, the edge of the map) read as cut earth.
+ * - Shade (the map's `isShaded`): ground on shaded tiles, and the tufts and weeds on it, blend
+ *   toward a cool blue-green and darken a little, deepest where the tile's neighbours are shaded
+ *   too, so the patches where wild crops grow read as soft shadow rather than a painted stripe.
+ * - Furrows, tufts, flowers, rocks, stumps, trees and weeds: global InstanceSlotMaps keyed by
+ *   tileIndex. Tufts and flowers grow only on bare grass (per-map `decor` densities) and make
+ *   way for a crop growing wild there and for placed objects.
+ * - Trees: one merged trunk + canopy mesh per species at about 0.55 × tileSize, so a dense
+ *   forest never buries the floor; the canopy sways and takes the instance tint.
  * - Pond: tile-sized water quads rippled in the vertex shader (sharedUniforms.uTime), tinted
  *   deeper away from the shore, plus pebbles along the bank. Rebuilt only when a water tile
  *   changes, which in normal play happens only on a full rebuild.
  *
  * Diffing follows the RenderSystem contract: sync() visits only chunks whose reference changed
- * and, inside them, only tiles whose reference changed. When a rock's or stump's blockerHp drops,
+ * and, inside them, only tiles whose reference changed. When a rock's, stump's or tree's blockerHp drops,
  * a 0.25 s squash-and-wobble plays (tilting away from the player); update() touches exactly the
  * instances that are animating and nothing else.
  */
 import * as THREE from 'three';
 import { TOOLS } from '../config';
 import { Salt, hash32, hashFloat } from '../core/hash';
-import { Blocker, TileState, type Direction, type GameState, type GridSpec, type Tile } from '../core/types';
+import { Blocker, TileState, type Direction, type GameState, type GridSpec, type MapId, type Tile } from '../core/types';
+import { selectActiveMapId, selectActiveWorld } from '../state/selectors';
 import {
   DIRECTION_STEPS,
   chunkCount,
@@ -44,16 +56,16 @@ import {
   tileIndex,
   type ChunkRect,
 } from '../world/grid';
-import { isShadedTile } from '../world/shade';
+import { getMap, type MapDefinition } from '../world/maps';
 import { HEIGHTS } from './constants';
 import { InstanceSlotMap } from './InstanceSlotMap';
-import { createFlatMaterial, createSwayMaterial, sharedUniforms } from './materials';
+import { createFlatMaterial, createSwayMaterial, createTintMaskSwayMaterial, sharedUniforms } from './materials';
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
+import { createTreeGeometry, type TreeSpecies } from './structureGeometry';
 import {
   ROCK_VARIANT_COUNT,
   TERRAIN_ATTRIBUTE,
-  TINT_MASK_ATTRIBUTE,
   createFlowerGeometry,
   createFurrowGeometry,
   createGrassTuftGeometry,
@@ -62,9 +74,9 @@ import {
   createRockGeometry,
   createStumpGeometry,
   createWaterSurfaceGeometry,
+  createWeedsGeometry,
 } from './terrainGeometry';
 import type { FrameContext, RenderSystem } from './types';
-import { selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -72,10 +84,6 @@ import { selectActiveWorld } from '../state/selectors';
 
 const TAU = Math.PI * 2;
 
-/** Share of unplowed tiles that carry a grass tuft. */
-const TUFT_CHANCE = 0.4;
-/** Share of unplowed tiles that carry a flower cluster. */
-const FLOWER_CHANCE = 0.05;
 /** A rock shrinks toward this fraction of its full size as its hit points run out. */
 const ROCK_DEPLETED_SCALE = 0.72;
 /** Rocks and stumps sink this far into the grass so their flat bases never float. */
@@ -93,6 +101,34 @@ const HIT = {
   push: 0.035,
   rockStrength: 1,
   stumpStrength: 0.75,
+  /** Trees are tall, so the same tilt reads larger: keep the wobble gentler. */
+  treeStrength: 0.45,
+} as const;
+
+/** Standing trees on Blocker.Tree tiles (forest). */
+export const TREE = {
+  /** Uniform scale of the unscaled TREE_SHAPES tree, in tiles: total height ≤ 1.5, canopy radius ≤ 0.55 tile. */
+  scale: 0.55,
+  /** Cosmetic shrink: each tree is scaled by (1 − jitter · h), h ∈ [0, 1). */
+  jitter: 0.1,
+  /** Largest offset of the trunk from the tile centre, in tiles. */
+  offset: 0.06,
+  /** Share of trees that are pines (the rest are round). */
+  pineShare: 0.5,
+  /** Canopy sway: small, since the whole tree is short. */
+  sway: { amplitude: 0.012, frequency: 1.1 },
+} as const;
+
+const TREE_SPECIES: readonly TreeSpecies[] = ['pine', 'round'];
+
+/** Weed clumps on Blocker.Weeds tiles. */
+const WEEDS = {
+  /** Uniform scale range in tiles. */
+  minScale: 0.85,
+  maxScale: 1.1,
+  /** Largest offset from the tile centre, in tiles. */
+  offset: 0.08,
+  sway: { amplitude: 1.4, frequency: 2.4 },
 } as const;
 
 const POND = {
@@ -162,6 +198,21 @@ const Channel = {
   StoneSquash: 166,
   StoneShade: 167,
   StoneMoss: 168,
+  TreeSpecies: 170,
+  TreeOffsetX: 171,
+  TreeOffsetZ: 172,
+  TreeYaw: 173,
+  TreeScale: 174,
+  TreeTint: 175,
+  TreeShade: 176,
+  WeedOffsetX: 180,
+  WeedOffsetZ: 181,
+  WeedYaw: 182,
+  WeedScale: 183,
+  WeedShade: 184,
+  DirtShade: 190,
+  CobbleTint: 191,
+  CobbleShade: 192,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -181,6 +232,10 @@ const ROCK_LIGHT = new THREE.Color(PALETTE.rock);
 const ROCK_DARK = new THREE.Color(PALETTE.rockDark);
 const TUFT_GREEN = new THREE.Color(PALETTE.grassTuft);
 const SHADE_COLOR = new THREE.Color(SHADE_TINT.color);
+const DIRT = new THREE.Color(PALETTE.dirt);
+const COBBLE = new THREE.Color(PALETTE.cobble);
+const COBBLE_WARM = new THREE.Color(PALETTE.cobbleWarm);
+const COBBLE_COOL = new THREE.Color(PALETTE.cobbleCool);
 
 const UP = new THREE.Vector3(0, 1, 0);
 /** Collapses an instance to nothing (only used for tiles missing from a malformed chunk). */
@@ -209,6 +264,18 @@ interface Pose {
 }
 
 const scratchPose: Pose = { x: 0, y: 0, z: 0, yaw: 0, scale: 1, stretch: 0 };
+
+/**
+ * Where tiles are drawn and how their cosmetic hashes are keyed: the active map's grid, plus the
+ * map's cosmeticOffset (ox, oz) added to tile coordinates in every cosmetic hash. Colour helpers
+ * below take those offset "hash coordinates" (hx, hz) directly; pose helpers take the site and
+ * grid coordinates and offset internally.
+ */
+interface Site {
+  readonly grid: GridSpec;
+  readonly ox: number;
+  readonly oz: number;
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic cosmetic variation
@@ -261,6 +328,18 @@ function grassColor(tx: number, tz: number, target: THREE.Color): THREE.Color {
   return target.multiplyScalar(0.97 + 0.06 * cosmetic(tx, tz, Channel.GrassShade));
 }
 
+function dirtColor(tx: number, tz: number, target: THREE.Color): THREE.Color {
+  const shade = 0.95 + 0.06 * fieldNoise(tx, tz) + 0.04 * cosmetic(tx, tz, Channel.DirtShade);
+  return target.copy(DIRT).multiplyScalar(shade);
+}
+
+/** Cobbles: a subtle per-tile lean toward warmer or cooler stone plus a little brightness jitter. */
+function cobbleColor(tx: number, tz: number, target: THREE.Color): THREE.Color {
+  const lean = cosmetic(tx, tz, Channel.CobbleTint) * 2 - 1;
+  target.copy(COBBLE).lerp(lean >= 0 ? COBBLE_WARM : COBBLE_COOL, 0.35 * Math.abs(lean));
+  return target.multiplyScalar(0.95 + 0.07 * cosmetic(tx, tz, Channel.CobbleShade));
+}
+
 function soilColor(tx: number, tz: number, wet: boolean, target: THREE.Color): THREE.Color {
   const shade = 0.955 + 0.05 * fieldNoise(tx, tz) + 0.035 * cosmetic(tx, tz, Channel.SoilShade);
   return target.copy(wet ? SOIL_WET : SOIL_DRY).multiplyScalar(shade);
@@ -273,19 +352,19 @@ function pondBedColor(tx: number, tz: number, depth: number, target: THREE.Color
 }
 
 /**
- * How shaded a tile looks, in [0, 1]: 0 in the open, SHADE_TINT.edge on a lone shaded tile,
- * rising to 1 as its eight neighbours (orthogonal ones weighted double) are shaded too. Tiles
- * beyond the grid count as shaded so the farm's edge does not show a lighter rim.
+ * How shaded a tile of `def` looks, in [0, 1]: 0 in the open, SHADE_TINT.edge on a lone shaded
+ * tile, rising to 1 as its eight neighbours (orthogonal ones weighted double) are shaded too.
+ * Tiles beyond the grid count as shaded so the map's edge does not show a lighter rim.
  */
-function shadeAmount(grid: GridSpec, tx: number, tz: number): number {
-  if (!isShadedTile(grid, tx, tz)) return 0;
+function shadeAmount(def: MapDefinition, tx: number, tz: number): number {
+  if (!def.isShaded(tx, tz)) return 0;
   let weight = 0;
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       if (dx === 0 && dz === 0) continue;
       const x = tx + dx;
       const z = tz + dz;
-      if (!inBounds(grid, x, z) || isShadedTile(grid, x, z)) weight += dx === 0 || dz === 0 ? 2 : 1;
+      if (!inBounds(def.grid, x, z) || def.isShaded(x, z)) weight += dx === 0 || dz === 0 ? 2 : 1;
     }
   }
   return SHADE_TINT.edge + (1 - SHADE_TINT.edge) * (weight / 12);
@@ -319,12 +398,27 @@ function stumpColor(tx: number, tz: number, target: THREE.Color): THREE.Color {
   return target.setScalar(0.92 + 0.12 * cosmetic(tx, tz, Channel.StumpShade));
 }
 
-function hasTuft(tx: number, tz: number): boolean {
-  return cosmetic(tx, tz, Channel.Tuft) < TUFT_CHANCE;
+function hasTuft(tx: number, tz: number, chance: number): boolean {
+  return cosmetic(tx, tz, Channel.Tuft) < chance;
 }
 
-function hasFlower(tx: number, tz: number): boolean {
-  return cosmetic(tx, tz, Channel.Flower) < FLOWER_CHANCE;
+function hasFlower(tx: number, tz: number, chance: number): boolean {
+  return cosmetic(tx, tz, Channel.Flower) < chance;
+}
+
+function treeSpecies(tx: number, tz: number): TreeSpecies {
+  return cosmetic(tx, tz, Channel.TreeSpecies) < TREE.pineShare ? 'pine' : 'round';
+}
+
+/** Canopy tint (the trunk keeps its baked colour). */
+function treeColor(tx: number, tz: number, target: THREE.Color): THREE.Color {
+  target.setHex(pickHex(PALETTE.treeCanopy, hash32(tx, tz, Channel.TreeTint, Salt.Cosmetic)));
+  return target.multiplyScalar(0.9 + 0.14 * cosmetic(tx, tz, Channel.TreeShade));
+}
+
+/** Brightness only: weeds bake their own colours. */
+function weedsColor(tx: number, tz: number, target: THREE.Color): THREE.Color {
+  return target.setScalar(0.9 + 0.15 * cosmetic(tx, tz, Channel.WeedShade));
 }
 
 function rockVariant(tx: number, tz: number): number {
@@ -368,26 +462,61 @@ function composePose(
   return target.compose(scratchPosition, scratchRotation, scratchScale);
 }
 
-function rockPose(grid: GridSpec, tx: number, tz: number, hp: number, out: Pose): Pose {
+function rockPose(site: Site, tx: number, tz: number, hp: number, out: Pose): Pose {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
   const ts = grid.tileSize;
   const health = clamp01(hp / Math.max(1, TOOLS.rockHits));
-  const size = (0.9 + 0.16 * cosmetic(tx, tz, Channel.RockScale)) * (ROCK_DEPLETED_SCALE + (1 - ROCK_DEPLETED_SCALE) * health);
-  out.x = tileCenterX(grid, tx) + (cosmetic(tx, tz, Channel.RockOffsetX) - 0.5) * 0.12 * ts;
+  const size = (0.9 + 0.16 * cosmetic(hx, hz, Channel.RockScale)) * (ROCK_DEPLETED_SCALE + (1 - ROCK_DEPLETED_SCALE) * health);
+  out.x = tileCenterX(grid, tx) + (cosmetic(hx, hz, Channel.RockOffsetX) - 0.5) * 0.12 * ts;
   out.y = HEIGHTS.grassTop - DEBRIS_SINK;
-  out.z = tileCenterZ(grid, tz) + (cosmetic(tx, tz, Channel.RockOffsetZ) - 0.5) * 0.12 * ts;
-  out.yaw = cosmetic(tx, tz, Channel.RockYaw) * TAU;
+  out.z = tileCenterZ(grid, tz) + (cosmetic(hx, hz, Channel.RockOffsetZ) - 0.5) * 0.12 * ts;
+  out.yaw = cosmetic(hx, hz, Channel.RockYaw) * TAU;
   out.scale = size * ts;
-  out.stretch = (cosmetic(tx, tz, Channel.RockStretch) - 0.5) * 0.2;
+  out.stretch = (cosmetic(hx, hz, Channel.RockStretch) - 0.5) * 0.2;
   return out;
 }
 
-function stumpPose(grid: GridSpec, tx: number, tz: number, out: Pose): Pose {
+function stumpPose(site: Site, tx: number, tz: number, out: Pose): Pose {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
   const ts = grid.tileSize;
-  out.x = tileCenterX(grid, tx) + (cosmetic(tx, tz, Channel.StumpOffsetX) - 0.5) * 0.08 * ts;
+  out.x = tileCenterX(grid, tx) + (cosmetic(hx, hz, Channel.StumpOffsetX) - 0.5) * 0.08 * ts;
   out.y = HEIGHTS.grassTop - DEBRIS_SINK;
-  out.z = tileCenterZ(grid, tz) + (cosmetic(tx, tz, Channel.StumpOffsetZ) - 0.5) * 0.08 * ts;
-  out.yaw = cosmetic(tx, tz, Channel.StumpYaw) * TAU;
-  out.scale = (0.92 + 0.12 * cosmetic(tx, tz, Channel.StumpScale)) * ts;
+  out.z = tileCenterZ(grid, tz) + (cosmetic(hx, hz, Channel.StumpOffsetZ) - 0.5) * 0.08 * ts;
+  out.yaw = cosmetic(hx, hz, Channel.StumpYaw) * TAU;
+  out.scale = (0.92 + 0.12 * cosmetic(hx, hz, Channel.StumpScale)) * ts;
+  out.stretch = 0;
+  return out;
+}
+
+/** A standing tree: about TREE.scale × tileSize, never larger, with a small offset and yaw. */
+function treePose(site: Site, tx: number, tz: number, out: Pose): Pose {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
+  const ts = grid.tileSize;
+  out.x = tileCenterX(grid, tx) + (cosmetic(hx, hz, Channel.TreeOffsetX) - 0.5) * 2 * TREE.offset * ts;
+  out.y = HEIGHTS.grassTop - DEBRIS_SINK;
+  out.z = tileCenterZ(grid, tz) + (cosmetic(hx, hz, Channel.TreeOffsetZ) - 0.5) * 2 * TREE.offset * ts;
+  out.yaw = cosmetic(hx, hz, Channel.TreeYaw) * TAU;
+  out.scale = TREE.scale * (1 - TREE.jitter * cosmetic(hx, hz, Channel.TreeScale)) * ts;
+  out.stretch = 0;
+  return out;
+}
+
+function weedsPose(site: Site, tx: number, tz: number, out: Pose): Pose {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
+  const ts = grid.tileSize;
+  out.x = tileCenterX(grid, tx) + (cosmetic(hx, hz, Channel.WeedOffsetX) - 0.5) * 2 * WEEDS.offset * ts;
+  out.y = HEIGHTS.grassTop;
+  out.z = tileCenterZ(grid, tz) + (cosmetic(hx, hz, Channel.WeedOffsetZ) - 0.5) * 2 * WEEDS.offset * ts;
+  out.yaw = cosmetic(hx, hz, Channel.WeedYaw) * TAU;
+  out.scale = (WEEDS.minScale + (WEEDS.maxScale - WEEDS.minScale) * cosmetic(hx, hz, Channel.WeedScale)) * ts;
   out.stretch = 0;
   return out;
 }
@@ -399,16 +528,19 @@ function composeProp(x: number, y: number, z: number, yaw: number, sxz: number, 
   return target.compose(scratchPosition, scratchRotation, scratchScale);
 }
 
-function tuftMatrix(grid: GridSpec, tx: number, tz: number, target: THREE.Matrix4): THREE.Matrix4 {
+function tuftMatrix(site: Site, tx: number, tz: number, target: THREE.Matrix4): THREE.Matrix4 {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
   const ts = grid.tileSize;
-  const angle = cosmetic(tx, tz, Channel.TuftAngle) * TAU;
-  const radius = (0.05 + 0.13 * cosmetic(tx, tz, Channel.TuftRadius)) * ts;
-  const size = 0.8 + 0.35 * cosmetic(tx, tz, Channel.TuftScale);
+  const angle = cosmetic(hx, hz, Channel.TuftAngle) * TAU;
+  const radius = (0.05 + 0.13 * cosmetic(hx, hz, Channel.TuftRadius)) * ts;
+  const size = 0.8 + 0.35 * cosmetic(hx, hz, Channel.TuftScale);
   return composeProp(
     tileCenterX(grid, tx) + Math.cos(angle) * radius,
     HEIGHTS.grassTop,
     tileCenterZ(grid, tz) + Math.sin(angle) * radius,
-    cosmetic(tx, tz, Channel.TuftYaw) * TAU,
+    cosmetic(hx, hz, Channel.TuftYaw) * TAU,
     size * ts,
     size,
     target,
@@ -416,25 +548,29 @@ function tuftMatrix(grid: GridSpec, tx: number, tz: number, target: THREE.Matrix
 }
 
 /** Flowers sit roughly opposite the tile's tuft so the two never overlap. */
-function flowerMatrix(grid: GridSpec, tx: number, tz: number, target: THREE.Matrix4): THREE.Matrix4 {
+function flowerMatrix(site: Site, tx: number, tz: number, target: THREE.Matrix4): THREE.Matrix4 {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
   const ts = grid.tileSize;
-  const angle = cosmetic(tx, tz, Channel.TuftAngle) * TAU + Math.PI + (cosmetic(tx, tz, Channel.FlowerAngle) - 0.5) * 1.2;
-  const radius = (0.12 + 0.16 * cosmetic(tx, tz, Channel.FlowerRadius)) * ts;
-  const size = 0.85 + 0.3 * cosmetic(tx, tz, Channel.FlowerScale);
+  const angle = cosmetic(hx, hz, Channel.TuftAngle) * TAU + Math.PI + (cosmetic(hx, hz, Channel.FlowerAngle) - 0.5) * 1.2;
+  const radius = (0.12 + 0.16 * cosmetic(hx, hz, Channel.FlowerRadius)) * ts;
+  const size = 0.85 + 0.3 * cosmetic(hx, hz, Channel.FlowerScale);
   return composeProp(
     tileCenterX(grid, tx) + Math.cos(angle) * radius,
     HEIGHTS.grassTop,
     tileCenterZ(grid, tz) + Math.sin(angle) * radius,
-    cosmetic(tx, tz, Channel.FlowerYaw) * TAU,
+    cosmetic(hx, hz, Channel.FlowerYaw) * TAU,
     size * ts,
     size,
     target,
   );
 }
 
-function furrowMatrix(grid: GridSpec, tx: number, tz: number, target: THREE.Matrix4): THREE.Matrix4 {
+function furrowMatrix(site: Site, tx: number, tz: number, target: THREE.Matrix4): THREE.Matrix4 {
+  const { grid } = site;
   const ts = grid.tileSize;
-  const yaw = (cosmetic(tx, tz, Channel.FurrowYaw) - 0.5) * 0.07;
+  const yaw = (cosmetic(tx + site.ox, tz + site.oz, Channel.FurrowYaw) - 0.5) * 0.07;
   return composeProp(tileCenterX(grid, tx), HEIGHTS.soilTop, tileCenterZ(grid, tz), yaw, ts, 1, target);
 }
 
@@ -453,7 +589,7 @@ function stonesOnEdge(tx: number, tz: number, direction: number): number {
 }
 
 function pondStoneMatrix(
-  grid: GridSpec,
+  site: Site,
   tx: number,
   tz: number,
   direction: number,
@@ -463,17 +599,20 @@ function pondStoneMatrix(
   count: number,
   target: THREE.Matrix4,
 ): THREE.Matrix4 {
+  const { grid } = site;
+  const hx = tx + site.ox;
+  const hz = tz + site.oz;
   const ts = grid.tileSize;
-  const along = ((index + 0.5) / count - 0.5) * 0.78 + (stoneHash(tx, tz, direction, index, Channel.StoneAlong) - 0.5) * 0.12;
-  const inset = 0.1 + 0.08 * stoneHash(tx, tz, direction, index, Channel.StoneInset);
-  const size = (0.75 + 0.6 * stoneHash(tx, tz, direction, index, Channel.StoneScale)) * ts;
-  const squash = 0.8 + 0.4 * stoneHash(tx, tz, direction, index, Channel.StoneSquash);
+  const along = ((index + 0.5) / count - 0.5) * 0.78 + (stoneHash(hx, hz, direction, index, Channel.StoneAlong) - 0.5) * 0.12;
+  const inset = 0.1 + 0.08 * stoneHash(hx, hz, direction, index, Channel.StoneInset);
+  const size = (0.75 + 0.6 * stoneHash(hx, hz, direction, index, Channel.StoneScale)) * ts;
+  const squash = 0.8 + 0.4 * stoneHash(hx, hz, direction, index, Channel.StoneSquash);
   scratchPosition.set(
     tileCenterX(grid, tx) + (dx * (0.5 - inset) - dz * along) * ts,
-    HEIGHTS.waterSurface - 0.06 + 0.04 * stoneHash(tx, tz, direction, index, Channel.StoneLift),
+    HEIGHTS.waterSurface - 0.06 + 0.04 * stoneHash(hx, hz, direction, index, Channel.StoneLift),
     tileCenterZ(grid, tz) + (dz * (0.5 - inset) + dx * along) * ts,
   );
-  scratchRotation.setFromAxisAngle(UP, stoneHash(tx, tz, direction, index, Channel.StoneYaw) * TAU);
+  scratchRotation.setFromAxisAngle(UP, stoneHash(hx, hz, direction, index, Channel.StoneYaw) * TAU);
   scratchScale.set(size, size * squash, size);
   return target.compose(scratchPosition, scratchRotation, scratchScale);
 }
@@ -495,6 +634,9 @@ interface TerrainMaterials {
   readonly flower: THREE.MeshStandardMaterial;
   readonly rock: THREE.MeshStandardMaterial;
   readonly stump: THREE.MeshStandardMaterial;
+  /** Merged trunk + canopy: only the canopy (tint mask 1) takes the instance colour and sways visibly. */
+  readonly tree: THREE.MeshStandardMaterial;
+  readonly weeds: THREE.MeshStandardMaterial;
   readonly water: THREE.MeshStandardMaterial;
 }
 
@@ -523,32 +665,6 @@ function createGroundMaterial(): THREE.MeshStandardMaterial {
       );
   };
   material.customProgramCacheKey = () => 'meadowlight-terrain-ground-v1';
-  return material;
-}
-
-/**
- * Swaying flower material: petals (TINT_MASK_ATTRIBUTE = 1) take the instance colour, while stems,
- * leaves and hearts keep their baked vertex colour.
- */
-function createFlowerMaterial(): THREE.MeshStandardMaterial {
-  const material = createSwayMaterial(0xffffff, { amplitude: 1.2, frequency: 2.2 }, { vertexColors: true });
-  const applySway = material.onBeforeCompile;
-  material.onBeforeCompile = (shader, renderer) => {
-    applySway.call(material, shader, renderer);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', ['#include <common>', `attribute float ${TINT_MASK_ATTRIBUTE};`].join('\n'))
-      .replace(
-        '#include <color_vertex>',
-        [
-          '#include <color_vertex>',
-          '#if defined( USE_COLOR ) && defined( USE_INSTANCING_COLOR )',
-          `  vColor.rgb = mix( color.rgb, vColor.rgb, ${TINT_MASK_ATTRIBUTE} );`,
-          '#endif',
-        ].join('\n'),
-      );
-  };
-  // Distinct from the plain sway key: the shader source differs, so the program must not be shared.
-  material.customProgramCacheKey = () => 'meadowlight-sway-flower-v1';
   return material;
 }
 
@@ -596,9 +712,12 @@ function createTerrainMaterials(): TerrainMaterials {
     ground: createGroundMaterial(),
     furrow: createFlatMaterial(0xffffff, { vertexColors: true, roughness: 0.95 }),
     tuft: createSwayMaterial(0xffffff, { amplitude: 0.9, frequency: 1.8 }, { vertexColors: true }),
-    flower: createFlowerMaterial(),
+    // Petals (tint mask 1) take the instance colour; stems, leaves and hearts keep their baked colour.
+    flower: createTintMaskSwayMaterial({ amplitude: 1.2, frequency: 2.2 }),
     rock: createFlatMaterial(0xffffff, { vertexColors: true, roughness: 0.85 }),
     stump: createFlatMaterial(0xffffff, { vertexColors: true, roughness: 0.9 }),
+    tree: createTintMaskSwayMaterial(TREE.sway),
+    weeds: createSwayMaterial(0xffffff, WEEDS.sway, { vertexColors: true }),
     water: createWaterMaterial(),
   };
 }
@@ -610,6 +729,8 @@ function disposeMaterials(materials: TerrainMaterials): void {
   materials.flower.dispose();
   materials.rock.dispose();
   materials.stump.dispose();
+  materials.tree.dispose();
+  materials.weeds.dispose();
   materials.water.dispose();
 }
 
@@ -624,6 +745,9 @@ interface TerrainGeometries {
   readonly flower: THREE.BufferGeometry;
   readonly rocks: readonly THREE.BufferGeometry[];
   readonly stump: THREE.BufferGeometry;
+  /** One merged tree per species, in TREE_SPECIES order. */
+  readonly trees: readonly THREE.BufferGeometry[];
+  readonly weeds: THREE.BufferGeometry;
   readonly pondStone: THREE.BufferGeometry;
   readonly water: THREE.BufferGeometry;
 }
@@ -638,6 +762,8 @@ function createTerrainGeometries(): TerrainGeometries {
     flower: createFlowerGeometry(),
     rocks,
     stump: createStumpGeometry(),
+    trees: TREE_SPECIES.map((species) => createTreeGeometry(species)),
+    weeds: createWeedsGeometry(),
     pondStone: createPondStoneGeometry(),
     water: createWaterSurfaceGeometry(),
   };
@@ -650,6 +776,8 @@ function disposeGeometries(geometries: TerrainGeometries): void {
   geometries.flower.dispose();
   for (const rock of geometries.rocks) rock.dispose();
   geometries.stump.dispose();
+  for (const tree of geometries.trees) tree.dispose();
+  geometries.weeds.dispose();
   geometries.pondStone.dispose();
   geometries.water.dispose();
 }
@@ -687,6 +815,9 @@ interface TerrainLayers {
   /** One slot map per rock variant. */
   readonly rocks: readonly InstanceSlotMap[];
   readonly stumps: InstanceSlotMap;
+  /** One slot map per tree species, in TREE_SPECIES order. */
+  readonly trees: readonly InstanceSlotMap[];
+  readonly weeds: InstanceSlotMap;
   /** All of the slot maps above, for batch clear / commit. */
   readonly slotMaps: readonly InstanceSlotMap[];
 }
@@ -726,7 +857,12 @@ export class TerrainRenderer implements RenderSystem {
   private readonly root = new THREE.Group();
   private readonly geometries: TerrainGeometries;
   private readonly materials: TerrainMaterials;
-  private grid: GridSpec;
+  /** Active grid and cosmetic offset. */
+  private site: Site;
+  /** Definition of the map on screen: shade, surfaces and meadow density. */
+  private def: MapDefinition;
+  /** Map on screen; null until the first rebuild. A different map forces a rebuild. */
+  private mapId: MapId | null = null;
   private layers: TerrainLayers;
   private pond: PondMeshes | null = null;
   /** Global indices of every water tile; drives the pond meshes. */
@@ -736,18 +872,24 @@ export class TerrainRenderer implements RenderSystem {
 
   constructor(ctx: SceneContext) {
     this.scene = ctx.scene;
-    this.grid = ctx.grid;
+    this.def = getMap('farm');
+    this.site = { grid: ctx.grid, ox: 0, oz: 0 };
     this.geometries = createTerrainGeometries();
     this.materials = createTerrainMaterials();
     this.root.name = 'terrain';
-    this.layers = this.createLayers(this.grid);
+    this.layers = this.createLayers(ctx.grid);
     this.scene.add(this.root);
   }
 
-  /** Full rebuild when `prev` is null (or the grid changed); otherwise a reference diff. */
+  private get grid(): GridSpec {
+    return this.site.grid;
+  }
+
+  /** Full rebuild when `prev` is null or the map (or its grid) changed; otherwise a reference diff. */
   sync(state: GameState, prev: GameState | null): void {
     const world = selectActiveWorld(state);
-    if (prev === null || !sameGrid(world.grid, this.grid)) {
+    const mapId = selectActiveMapId(state);
+    if (prev === null || mapId !== this.mapId || selectActiveMapId(prev) !== mapId || !sameGrid(world.grid, this.grid)) {
       this.rebuild(state);
       return;
     }
@@ -847,7 +989,21 @@ export class TerrainRenderer implements RenderSystem {
       this.createSlotMap(`terrain-rocks-${variant}`, geometry, materials.rock, capacity, true),
     );
     const stumps = this.createSlotMap('terrain-stumps', geometries.stump, materials.stump, capacity, true);
-    return { chunks, furrows, tufts, flowers, rocks, stumps, slotMaps: [furrows, tufts, flowers, ...rocks, stumps] };
+    const trees = geometries.trees.map((geometry, index) =>
+      this.createSlotMap(`terrain-trees-${TREE_SPECIES[index] ?? index}`, geometry, materials.tree, capacity, true),
+    );
+    const weeds = this.createSlotMap('terrain-weeds', geometries.weeds, materials.weeds, capacity, false);
+    return {
+      chunks,
+      furrows,
+      tufts,
+      flowers,
+      rocks,
+      stumps,
+      trees,
+      weeds,
+      slotMaps: [furrows, tufts, flowers, ...rocks, stumps, ...trees, weeds],
+    };
   }
 
   private createSlotMap(
@@ -883,11 +1039,15 @@ export class TerrainRenderer implements RenderSystem {
 
   private rebuild(state: GameState): void {
     const world = selectActiveWorld(state);
+    const mapId = selectActiveMapId(state);
+    const def = getMap(mapId);
     if (!sameGrid(world.grid, this.grid)) {
       this.destroyLayers();
       this.layers = this.createLayers(world.grid);
     }
-    this.grid = world.grid;
+    this.mapId = mapId;
+    this.def = def;
+    this.site = { grid: world.grid, ox: def.cosmeticOffset.x, oz: def.cosmeticOffset.z };
     for (const map of this.layers.slotMaps) map.clear();
     this.hits.length = 0;
     this.waterTiles.clear();
@@ -928,21 +1088,30 @@ export class TerrainRenderer implements RenderSystem {
     this.syncMeadow(key, tx, tz, tile);
     this.syncRock(key, tx, tz, tile, prevTile, facing);
     this.syncStump(key, tx, tz, tile, prevTile, facing);
+    this.syncTree(key, tx, tz, tile, prevTile, facing);
+    this.syncWeeds(key, tx, tz, tile);
     this.syncWater(key, tile);
   }
 
   private writeGround(layer: ChunkLayer, localIndex: number, tx: number, tz: number, tile: Tile): void {
+    const hx = tx + this.site.ox;
+    const hz = tz + this.site.oz;
     let top: number;
     if (tile.state === TileState.Plowed || tile.state === TileState.Watered) {
       top = HEIGHTS.soilTop;
-      soilColor(tx, tz, tile.state === TileState.Watered, scratchColor);
+      soilColor(hx, hz, tile.state === TileState.Watered, scratchColor);
     } else if (tile.blocker === Blocker.Water) {
       // Provisional shore colour; rebuildPond() repaints the bed by depth.
       top = HEIGHTS.pondBed;
-      pondBedColor(tx, tz, 0, scratchColor);
+      pondBedColor(hx, hz, 0, scratchColor);
     } else {
+      // Grass, dirt or cobble (also under rocks, stumps, trees, weeds and buildings).
       top = HEIGHTS.grassTop;
-      applyShade(shadeAmount(this.grid, tx, tz), grassColor(tx, tz, scratchColor));
+      const surface = this.def.surfaceAt(tx, tz);
+      if (surface === 'dirt') dirtColor(hx, hz, scratchColor);
+      else if (surface === 'cobble') cobbleColor(hx, hz, scratchColor);
+      else grassColor(hx, hz, scratchColor);
+      applyShade(shadeAmount(this.def, tx, tz), scratchColor);
     }
     const ts = this.grid.tileSize;
     scratchMatrix.makeScale(ts, 1, ts).setPosition(tileCenterX(this.grid, tx), top, tileCenterZ(this.grid, tz));
@@ -960,29 +1129,33 @@ export class TerrainRenderer implements RenderSystem {
     }
     furrows.set(
       key,
-      furrowMatrix(this.grid, tx, tz, scratchMatrix),
-      furrowColor(tx, tz, tile.state === TileState.Watered, scratchColor),
+      furrowMatrix(this.site, tx, tz, scratchMatrix),
+      furrowColor(tx + this.site.ox, tz + this.site.oz, tile.state === TileState.Watered, scratchColor),
     );
   }
 
   /**
-   * Tufts and flowers live on a fixed subset of unplowed tiles and return when soil reverts. A
-   * crop growing wild on the grass takes the tile over, so they step aside until it is gone.
+   * Tufts and flowers live on a fixed subset of the map's unplowed grass tiles (its `decor`
+   * densities) and return when soil reverts. A crop growing wild on the grass or a placed object
+   * takes the tile over, so they step aside until it is gone. Dirt and cobble never carry them.
    */
   private syncMeadow(key: number, tx: number, tz: number, tile: Tile): void {
-    const meadow = tile.state === TileState.Unplowed && tile.crop === null;
+    const meadow =
+      tile.state === TileState.Unplowed && tile.crop === null && tile.object === null && this.def.surfaceAt(tx, tz) === 'grass';
+    const hx = tx + this.site.ox;
+    const hz = tz + this.site.oz;
     const { tufts, flowers } = this.layers;
-    if (meadow && hasTuft(tx, tz)) {
+    if (meadow && hasTuft(hx, hz, this.def.decor.tuftChance)) {
       if (!tufts.has(key)) {
-        const color = applyShade(shadeAmount(this.grid, tx, tz), tuftColor(tx, tz, scratchColor));
-        tufts.set(key, tuftMatrix(this.grid, tx, tz, scratchMatrix), color);
+        const color = applyShade(shadeAmount(this.def, tx, tz), tuftColor(hx, hz, scratchColor));
+        tufts.set(key, tuftMatrix(this.site, tx, tz, scratchMatrix), color);
       }
     } else {
       tufts.remove(key);
     }
-    if (meadow && hasFlower(tx, tz)) {
+    if (meadow && hasFlower(hx, hz, this.def.decor.flowerChance)) {
       if (!flowers.has(key)) {
-        flowers.set(key, flowerMatrix(this.grid, tx, tz, scratchMatrix), flowerColor(tx, tz, scratchColor));
+        flowers.set(key, flowerMatrix(this.site, tx, tz, scratchMatrix), flowerColor(hx, hz, scratchColor));
       }
     } else {
       flowers.remove(key);
@@ -995,8 +1168,8 @@ export class TerrainRenderer implements RenderSystem {
       if (map.remove(key)) this.cancelHit(key, map);
       return;
     }
-    const pose = rockPose(this.grid, tx, tz, tile.blockerHp, scratchPose);
-    map.set(key, composePose(pose, 0, 0, 0, 0, 0, scratchMatrix), rockColor(tx, tz, scratchColor));
+    const pose = rockPose(this.site, tx, tz, tile.blockerHp, scratchPose);
+    map.set(key, composePose(pose, 0, 0, 0, 0, 0, scratchMatrix), rockColor(tx + this.site.ox, tz + this.site.oz, scratchColor));
     if (facing !== null && prevTile !== null && prevTile.blocker === Blocker.Rock && tile.blockerHp < prevTile.blockerHp) {
       this.startHit(key, map, pose, facing, HIT.rockStrength);
     }
@@ -1008,11 +1181,39 @@ export class TerrainRenderer implements RenderSystem {
       if (map.remove(key)) this.cancelHit(key, map);
       return;
     }
-    const pose = stumpPose(this.grid, tx, tz, scratchPose);
-    map.set(key, composePose(pose, 0, 0, 0, 0, 0, scratchMatrix), stumpColor(tx, tz, scratchColor));
+    const pose = stumpPose(this.site, tx, tz, scratchPose);
+    map.set(key, composePose(pose, 0, 0, 0, 0, 0, scratchMatrix), stumpColor(tx + this.site.ox, tz + this.site.oz, scratchColor));
     if (facing !== null && prevTile !== null && prevTile.blocker === Blocker.Stump && tile.blockerHp < prevTile.blockerHp) {
       this.startHit(key, map, pose, facing, HIT.stumpStrength);
     }
+  }
+
+  /** A standing tree wobbles like a stump when chopped; felling it (Tree → Stump) removes it here. */
+  private syncTree(key: number, tx: number, tz: number, tile: Tile, prevTile: Tile | null, facing: Direction | null): void {
+    const hx = tx + this.site.ox;
+    const hz = tz + this.site.oz;
+    const map = this.treeMap(treeSpecies(hx, hz));
+    if (tile.blocker !== Blocker.Tree) {
+      if (map.remove(key)) this.cancelHit(key, map);
+      return;
+    }
+    const pose = treePose(this.site, tx, tz, scratchPose);
+    map.set(key, composePose(pose, 0, 0, 0, 0, 0, scratchMatrix), treeColor(hx, hz, scratchColor));
+    if (facing !== null && prevTile !== null && prevTile.blocker === Blocker.Tree && tile.blockerHp < prevTile.blockerHp) {
+      this.startHit(key, map, pose, facing, HIT.treeStrength);
+    }
+  }
+
+  private syncWeeds(key: number, tx: number, tz: number, tile: Tile): void {
+    const weeds = this.layers.weeds;
+    if (tile.blocker !== Blocker.Weeds) {
+      weeds.remove(key);
+      return;
+    }
+    if (weeds.has(key)) return;
+    const pose = weedsPose(this.site, tx, tz, scratchPose);
+    const color = applyShade(shadeAmount(this.def, tx, tz), weedsColor(tx + this.site.ox, tz + this.site.oz, scratchColor));
+    weeds.set(key, composePose(pose, 0, 0, 0, 0, 0, scratchMatrix), color);
   }
 
   private syncWater(key: number, tile: Tile): void {
@@ -1026,8 +1227,14 @@ export class TerrainRenderer implements RenderSystem {
   }
 
   private rockMap(tx: number, tz: number): InstanceSlotMap {
-    const map = this.layers.rocks[rockVariant(tx, tz)];
+    const map = this.layers.rocks[rockVariant(tx + this.site.ox, tz + this.site.oz)];
     if (map === undefined) throw new RangeError('TerrainRenderer: rock variant out of range');
+    return map;
+  }
+
+  private treeMap(species: TreeSpecies): InstanceSlotMap {
+    const map = this.layers.trees[TREE_SPECIES.indexOf(species)];
+    if (map === undefined) throw new RangeError(`TerrainRenderer: no slot map for tree species ${species}`);
     return map;
   }
 
@@ -1102,7 +1309,7 @@ export class TerrainRenderer implements RenderSystem {
     const loc = locateTile(this.grid, tx, tz);
     const layer = this.layers.chunks[loc.chunkIndex];
     if (layer === undefined) return;
-    layer.mesh.setColorAt(loc.localIndex, pondBedColor(tx, tz, depth, scratchColor));
+    layer.mesh.setColorAt(loc.localIndex, pondBedColor(tx + this.site.ox, tz + this.site.oz, depth, scratchColor));
     layer.colorDirty = true;
   }
 
@@ -1111,6 +1318,7 @@ export class TerrainRenderer implements RenderSystem {
     this.disposePond();
     if (this.waterTiles.size === 0) return;
     const grid = this.grid;
+    const { ox, oz } = this.site;
     const ts = grid.tileSize;
     const keys = Array.from(this.waterTiles).sort((a, b) => a - b);
 
@@ -1118,7 +1326,7 @@ export class TerrainRenderer implements RenderSystem {
     for (const key of keys) {
       const { tx, tz } = tileFromIndex(grid, key);
       for (const [direction, step] of DIRECTION_STEPS.entries()) {
-        if (!this.isWater(tx + step.dx, tz + step.dz)) stoneCount += stonesOnEdge(tx, tz, direction);
+        if (!this.isWater(tx + step.dx, tz + step.dz)) stoneCount += stonesOnEdge(tx + ox, tz + oz, direction);
       }
     }
 
@@ -1145,10 +1353,10 @@ export class TerrainRenderer implements RenderSystem {
       if (stones === null) return;
       for (const [direction, step] of DIRECTION_STEPS.entries()) {
         if (this.isWater(tx + step.dx, tz + step.dz)) continue;
-        const count = stonesOnEdge(tx, tz, direction);
+        const count = stonesOnEdge(tx + ox, tz + oz, direction);
         for (let index = 0; index < count; index++) {
-          stones.setMatrixAt(stoneSlot, pondStoneMatrix(grid, tx, tz, direction, step.dx, step.dz, index, count, scratchMatrix));
-          stones.setColorAt(stoneSlot, pondStoneColor(tx, tz, direction, index, scratchColor));
+          stones.setMatrixAt(stoneSlot, pondStoneMatrix(this.site, tx, tz, direction, step.dx, step.dz, index, count, scratchMatrix));
+          stones.setColorAt(stoneSlot, pondStoneColor(tx + ox, tz + oz, direction, index, scratchColor));
           stoneSlot++;
         }
       }

@@ -26,6 +26,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Salt, hashFloat } from '../core/hash';
 import type { WorldRect } from '../world/grid';
+import { TINT_MASK_ATTRIBUTE } from './materials';
 import { PALETTE } from './palette';
 
 // ---------------------------------------------------------------------------
@@ -1018,6 +1019,26 @@ export function createRoundCanopyGeometry(): THREE.BufferGeometry {
     ),
     'round canopy',
   );
+}
+
+/** Adds TINT_MASK_ATTRIBUTE with one value on every vertex. */
+function withTintMask(geometry: THREE.BufferGeometry, value: number): THREE.BufferGeometry {
+  const count = geometry.getAttribute('position').count;
+  geometry.setAttribute(TINT_MASK_ATTRIBUTE, new THREE.BufferAttribute(new Float32Array(count).fill(value), 1));
+  return geometry;
+}
+
+/**
+ * One whole tree of a species at its unscaled TREE_SHAPES proportions, base at y = 0: the tapered
+ * trunk painted PALETTE.treeTrunk (TINT_MASK_ATTRIBUTE 0, keeps its colour) merged with the
+ * species' canopy (TINT_MASK_ATTRIBUTE 1, grey shade that the instance colour tints). Render it
+ * with createTintMaskSwayMaterial, so a single instanced mesh draws trunk and canopy together.
+ */
+export function createTreeGeometry(species: TreeSpecies): THREE.BufferGeometry {
+  const shape = TREE_SHAPES[species];
+  const trunk = paint(createTreeTrunkGeometry().scale(shape.trunkRadius, shape.trunkHeight, shape.trunkRadius), PALETTE.treeTrunk);
+  const canopy = (species === 'pine' ? createPineCanopyGeometry() : createRoundCanopyGeometry()).translate(0, shape.canopyBase, 0);
+  return mergeParts([withTintMask(trunk, 0), withTintMask(canopy, 1)], `${species} tree`);
 }
 
 /** Low mound of four blobs. Base at y ≈ 0. */

@@ -11,7 +11,10 @@
  *   continues smoothly instead of snapping back or stuttering. A single step eases in and out;
  *   a step that ends mid-frame coasts on for the rest of that frame so a chained step picks up
  *   seamlessly, and otherwise settles back onto the tile centre within a few frames.
- * - A new `teleportSeq` (sleep, load) and a full rebuild snap instantly.
+ * - A new `teleportSeq` (sleep, a warp, load), a change of map and a full rebuild snap instantly.
+ *   Everything reads the active map's world.
+ * - The feet stand on grass, or on a path object's planks (HEIGHTS.pathTop, eased); the ground
+ *   blob follows the surface underneath (soil, grass or path).
  * - The yaw eases toward directionYaw(facing) along the shortest arc in ~0.1 s.
  * - `focus` always equals the visual feet position (y = HEIGHTS.grassTop); main.ts makes the
  *   camera follow it.
@@ -36,10 +39,10 @@
 import * as THREE from 'three';
 import { PLAYER } from '../config';
 import { Salt, mulberry32 } from '../core/hash';
-import type { ActionKind, GameState, ItemStack } from '../core/types';
+import type { ActionKind, GameState, ItemStack, MapId, Tile } from '../core/types';
 import { getItem } from '../items/items';
 import { directionYaw, tileCenterX, tileCenterZ } from '../world/grid';
-import { getTile, isSoil } from '../world/tiles';
+import { getTile, isPathObject, isSoil } from '../world/tiles';
 import { HEIGHTS } from './constants';
 import {
   HeldItemRack,
@@ -713,6 +716,13 @@ const ACTION_CLIPS: Readonly<Record<AnimatedAction, ActionClip>> = {
   openChest: SHIP_TOSS,
 };
 
+/** Height of the surface under the player's tile: path planks, sunken soil or grass. */
+export function playerGroundHeight(tile: Tile | null): number {
+  if (tile === null) return HEIGHTS.grassTop;
+  if (tile.object !== null && isPathObject(tile.object)) return HEIGHTS.pathTop;
+  return isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
+}
+
 function clipFor(kind: ActionKind): ActionClip | null {
   return kind === 'sleep' || kind === 'none' ? null : ACTION_CLIPS[kind];
 }
@@ -819,6 +829,8 @@ export class PlayerRenderer implements RenderSystem {
   // Sequence numbers already consumed; -1 until the first sync.
   private moveSeq = -1;
   private teleportSeq = -1;
+  /** Map the character was last placed on; null before the first sync. */
+  private mapId: MapId | null = null;
   private actionSeq = -1;
 
   // Movement (world XZ; y is unused and kept at grassTop).
@@ -896,7 +908,7 @@ export class PlayerRenderer implements RenderSystem {
     const grid = selectActiveWorld(state).grid;
     const centreX = tileCenterX(grid, player.tx);
     const centreZ = tileCenterZ(grid, player.tz);
-    const teleported = prev === null || player.teleportSeq !== this.teleportSeq;
+    const teleported = prev === null || player.teleportSeq !== this.teleportSeq || player.mapId !== this.mapId;
 
     if (teleported) {
       this.snapTo(centreX, centreZ, directionYaw(player.facing));
@@ -906,7 +918,7 @@ export class PlayerRenderer implements RenderSystem {
     this.targetYaw = directionYaw(player.facing);
 
     const tile = getTile(selectActiveWorld(state), player.tx, player.tz);
-    this.targetGroundY = tile !== null && isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
+    this.targetGroundY = playerGroundHeight(tile);
     if (teleported) this.groundY = this.targetGroundY;
 
     if (teleported) {
@@ -917,6 +929,7 @@ export class PlayerRenderer implements RenderSystem {
 
     this.moveSeq = player.moveSeq;
     this.teleportSeq = player.teleportSeq;
+    this.mapId = player.mapId;
     this.actionSeq = player.actionSeq;
 
     this.syncHeldItem(state, teleported);
@@ -1039,7 +1052,8 @@ export class PlayerRenderer implements RenderSystem {
 
   private placeRoot(): void {
     const root = this.model.root;
-    root.position.set(this.position.x, HEIGHTS.grassTop, this.position.z);
+    // Feet rise onto path planks; on sunken soil they stay at grass height, as before.
+    root.position.set(this.position.x, Math.max(HEIGHTS.grassTop, this.groundY), this.position.z);
     root.rotation.y = this.yaw;
     this.model.groundBlob.position.y = this.groundY - HEIGHTS.grassTop + BLOB_LIFT;
     this.focus.set(this.position.x, HEIGHTS.grassTop, this.position.z);

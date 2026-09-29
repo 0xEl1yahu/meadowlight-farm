@@ -28,6 +28,7 @@ import { sampleDaylight } from './LightingManager';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
 import { selectActiveWorld } from '../state/selectors';
+import { isPathObject } from '../world/tiles';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -508,7 +509,10 @@ export class WeatherRenderer implements RenderSystem {
   // Splashes
   // -------------------------------------------------------------------------
 
-  /** Surface height under a world point, or NaN where a splash should not appear. */
+  /**
+   * Surface height under a world point of the active map, or NaN where a splash should not
+   * appear (blocked tiles and tiles with a blocking placed object; paths splash on their top).
+   */
   private surfaceHeightAt(x: number, z: number): number {
     const world = this.world;
     if (world === null) return GROUND_Y;
@@ -523,6 +527,7 @@ export class WeatherRenderer implements RenderSystem {
     const tile = chunk.tiles[(tz - chunk.z0) * chunk.width + (tx - chunk.x0)];
     if (tile === undefined) return GROUND_Y;
     if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
+    if (tile.object !== null) return isPathObject(tile.object) ? HEIGHTS.pathTop : Number.NaN;
     if (tile.state === TileState.Plowed || tile.state === TileState.Watered) return HEIGHTS.soilTop;
     if (tile.state === TileState.Blocked) return Number.NaN;
     return GROUND_Y;

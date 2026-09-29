@@ -1,7 +1,9 @@
 /**
  * Feedback particles: the small bursts that make every action feel physical — clods from the
- * hoe, a stream of droplets from the watering can, chips from rocks and stumps, produce and
- * sparkles on harvest, gold glints at the shipping bin and a dust puff when a tool whiffs.
+ * hoe, a stream of droplets from the watering can, chips from rocks, stumps and trees (a felled
+ * tree scatters its canopy), green clippings from scythed weeds, produce and sparkles on
+ * harvest, gold glints at the active map's shipping bin and a dust puff when a tool whiffs.
+ * Opening a chest has no particle effect.
  *
  * Rendering
  * - One InstancedMesh of a tiny flat-shaded tetrahedron is the whole particle pool, so every
@@ -26,11 +28,12 @@
  * - sync() compares player.actionSeq with the previous state. A change means the reducer
  *   recorded a new ActionEvent in player.lastAction. The previous state's tile tells what was
  *   there before the action: the crop that was harvested, whether a rock was destroyed.
+ * - Only the active map is shown: a load or a map change clears every particle in flight.
  * - The spread of each burst is deterministic: mulberry32 seeded from the action sequence
  *   number and the target tile (Salt.Cosmetic), so replaying a session replays its sparkle.
  */
 import * as THREE from 'three';
-import { LAYOUT } from '../config';
+import type { FarmLayout } from '../config';
 import { Salt, hash32, mulberry32 } from '../core/hash';
 import {
   Blocker,
@@ -46,13 +49,13 @@ import {
 } from '../core/types';
 import { CROPS } from '../farming/crops';
 import { DIRECTION_STEPS, rectContains, tileCenterX, tileCenterZ, tileMinX, tileMinZ } from '../world/grid';
-import { getTile, isSoil } from '../world/tiles';
+import { getTile, isPathObject, isSoil } from '../world/tiles';
 import { HEIGHTS } from './constants';
 import { createFlatMaterial } from './materials';
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
-import { selectActiveWorld } from '../state/selectors';
+import { selectActiveMap, selectActiveMapId, selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -83,6 +86,10 @@ const ANCHORS = {
   rockStrike: 0.3,
   /** Height above the ground where the axe strikes a stump. */
   stumpStrike: 0.28,
+  /** Height above the ground where the axe strikes a standing tree's trunk. */
+  treeStrike: 0.22,
+  /** Centre of a standing tree's canopy (trees are drawn at about 0.55 × tileSize). */
+  treeCanopy: 0.8,
   /** Height of the shipping bin's lid. */
   binLid: 0.85,
   /** Crop bursts start at this fraction of the crop's mature height. */
@@ -178,6 +185,9 @@ const WOOD_COLORS = [PALETTE.stumpBark, PALETTE.stumpTop, PALETTE.treeTrunk] as 
 const WATER_COLORS = [PALETTE.water, PALETTE.waterDeep, 0xdff6ff] as const;
 const WITHERED_COLORS = [0xcdb67f, 0xb49a68, 0x9a8458, 0xd9c79a] as const;
 const DUST_COLORS = [0xefe9df, 0xe1dace, 0xd3cbbd] as const;
+const CANOPY_COLORS = [...PALETTE.treeCanopy] as const;
+/** Cut weed leaves and pale seed fluff (matches terrainGeometry's weed clump). */
+const CLIPPING_COLORS = [0x93b055, 0x5f7d3c, 0xa6c265, 0xe8dd96] as const;
 
 const EFFECTS = {
   /** Hoe: soil flung forward out of the new furrow. */
@@ -316,6 +326,74 @@ const EFFECTS = {
     bounce: 0.3,
     spin: 14,
     landLife: 0.5,
+  }),
+  /** A felled tree: canopy leaves scatter and flutter down. */
+  fellLeaves: burst({
+    count: 22,
+    colors: CANOPY_COLORS,
+    shade: 0.05,
+    spread: 0.35,
+    lift: 0.25,
+    speed: range(0.5, 1.4),
+    rise: range(1.2, 2.4),
+    size: range(0.07, 0.12),
+    life: range(1.1, 1.6),
+    gravity: 4,
+    drag: 2.2,
+    bounce: 0.05,
+    spin: 9,
+    landLife: 0.4,
+  }),
+  /** A chop that leaves the tree standing shakes a few leaves loose. */
+  shakenLeaves: burst({
+    count: 4,
+    colors: CANOPY_COLORS,
+    shade: 0.05,
+    spread: 0.25,
+    lift: 0.1,
+    speed: range(0.2, 0.6),
+    rise: range(0.3, 0.9),
+    size: range(0.06, 0.1),
+    life: range(0.9, 1.3),
+    gravity: 3,
+    drag: 2.4,
+    bounce: 0.05,
+    spin: 7,
+    landLife: 0.3,
+  }),
+  /** The trunk gives way: a big spray of chips. */
+  fellChips: burst({
+    count: 18,
+    colors: [...WOOD_COLORS, 0xf3dcb4],
+    spread: 0.2,
+    lift: 0.15,
+    speed: range(1, 2.2),
+    rise: range(2, 3.6),
+    size: range(0.07, 0.13),
+    life: range(0.8, 1.3),
+    gravity: 12,
+    drag: 0.8,
+    bounce: 0.3,
+    spin: 14,
+    landLife: 0.5,
+  }),
+  /** Scythe through weeds: green clippings and a little seed fluff. */
+  clippings: burst({
+    count: 12,
+    colors: CLIPPING_COLORS,
+    shade: 0.04,
+    spread: 0.25,
+    lift: 0.12,
+    speed: range(0.5, 1.3),
+    rise: range(1.4, 2.4),
+    size: range(0.05, 0.09),
+    life: range(0.7, 1.1),
+    gravity: 6,
+    drag: 2,
+    bounce: 0.08,
+    spin: 10,
+    landLife: 0.3,
+    push: 0.5,
   }),
   /** Soft cloud that accompanies a rock or stump being destroyed. */
   dust: burst({
@@ -1006,9 +1084,10 @@ function isToolKind(kind: ActionKind): kind is ToolType {
   return (TOOL_TYPES as readonly string[]).includes(kind);
 }
 
-/** Height of the visible top surface of a tile. */
+/** Height of the visible top surface of a tile (a path's planks or flagstones count). */
 function surfaceHeight(tile: Tile): number {
   if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
+  if (tile.object !== null && isPathObject(tile.object)) return HEIGHTS.pathTop;
   return isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
 }
 
@@ -1020,10 +1099,18 @@ function withPush(at: EmitPoint, pushX: number, pushZ: number): EmitPoint {
   return { ...at, pushX, pushZ };
 }
 
-/** Centre of the shipping bin footprint if the target is part of it, else the tile centre. */
-function shippingBinCentre(grid: GridSpec, target: TileCoord, fallback: EmitPoint): { x: number; z: number } {
-  const bin = LAYOUT.shippingBin;
-  if (!rectContains(bin, target.tx, target.tz)) return { x: fallback.x, z: fallback.z };
+/**
+ * Centre of the active map's shipping bin footprint if the target is part of it, else the tile
+ * centre. Maps without a farmstead have no bin.
+ */
+function shippingBinCentre(
+  farmstead: FarmLayout | null,
+  grid: GridSpec,
+  target: TileCoord,
+  fallback: EmitPoint,
+): { x: number; z: number } {
+  const bin = farmstead?.shippingBin ?? null;
+  if (bin === null || !rectContains(bin, target.tx, target.tz)) return { x: fallback.x, z: fallback.z };
   return {
     x: tileMinX(grid, bin.x0) + (bin.width * grid.tileSize) / 2,
     z: tileMinZ(grid, bin.z0) + (bin.depth * grid.tileSize) / 2,
@@ -1045,8 +1132,9 @@ export class EffectsRenderer implements RenderSystem {
   }
 
   sync(state: GameState, prev: GameState | null): void {
-    if (prev === null) {
-      // New game or load: nothing that was flying belongs to the new world.
+    if (prev === null || selectActiveMapId(prev) !== selectActiveMapId(state)) {
+      // New game, load or map change: nothing that was flying belongs to the new world, and an
+      // action recorded on the old map must not burst on this one.
       this.pool.clear();
       return;
     }
@@ -1105,9 +1193,13 @@ export class EffectsRenderer implements RenderSystem {
         this.strike(before, after, ground, rng, Blocker.Rock);
         return;
       case 'axe':
-        this.strike(before, after, ground, rng, Blocker.Stump);
+        if (before.blocker === Blocker.Tree) this.chop(after, ground, rng);
+        else this.strike(before, after, ground, rng, Blocker.Stump);
         return;
       case 'scythe':
+        if (before.blocker === Blocker.Weeds) emitBurst(this.pool, EFFECTS.clippings, rng, withHeight(ground, ground.floor + 0.15));
+        else this.harvest(before, ground, rng);
+        return;
       case 'harvest':
         this.harvest(before, ground, rng);
         return;
@@ -1115,9 +1207,10 @@ export class EffectsRenderer implements RenderSystem {
         emitBurst(this.pool, EFFECTS.plantSparkles, rng, withPush(withHeight(ground, ground.y + 0.05), 0, 0));
         return;
       case 'ship':
-        this.ship(grid, target, ground, rng);
+        this.ship(selectActiveMap(state).farmstead, grid, target, ground, rng);
         return;
       case 'sleep':
+      case 'openChest':
       case 'none':
         return;
     }
@@ -1168,6 +1261,24 @@ export class EffectsRenderer implements RenderSystem {
     emitBurst(this.pool, isRock ? EFFECTS.stoneChips : EFFECTS.woodChips, rng, withPush(impact, -ground.pushX, -ground.pushZ));
   }
 
+  /**
+   * Axe on a standing tree. A chop sends chips off the trunk toward the player and shakes a few
+   * leaves loose; the felling blow (Tree → Stump) scatters the canopy, sprays chips and raises
+   * dust. Particles only: camera shake is not part of this renderer.
+   */
+  private chop(after: Tile, ground: EmitPoint, rng: Rng): void {
+    const trunk = withHeight(ground, ground.floor + ANCHORS.treeStrike);
+    const canopy = withPush(withHeight(ground, ground.floor + ANCHORS.treeCanopy), 0, 0);
+    if (after.blocker === Blocker.Tree) {
+      emitBurst(this.pool, EFFECTS.woodChips, rng, withPush(trunk, -ground.pushX, -ground.pushZ));
+      emitBurst(this.pool, EFFECTS.shakenLeaves, rng, canopy);
+      return;
+    }
+    emitBurst(this.pool, EFFECTS.fellLeaves, rng, canopy);
+    emitBurst(this.pool, EFFECTS.fellChips, rng, withPush(trunk, 0, 0));
+    emitBurst(this.pool, EFFECTS.dust, rng, withPush(ground, 0, 0));
+  }
+
   /** Harvest (interaction or scythe): produce pops out with leaves and rising sparkles. */
   private harvest(before: Tile, ground: EmitPoint, rng: Rng): void {
     const crop = before.crop;
@@ -1186,8 +1297,8 @@ export class EffectsRenderer implements RenderSystem {
   }
 
   /** Golden sparkles rise above the whole bin while a few coins hop on its lid. */
-  private ship(grid: GridSpec, target: TileCoord, ground: EmitPoint, rng: Rng): void {
-    const centre = shippingBinCentre(grid, target, ground);
+  private ship(farmstead: FarmLayout | null, grid: GridSpec, target: TileCoord, ground: EmitPoint, rng: Rng): void {
+    const centre = shippingBinCentre(farmstead, grid, target, ground);
     const lid = HEIGHTS.grassTop + ANCHORS.binLid;
     const top: EmitPoint = { x: centre.x, y: lid + 0.05, z: centre.z, floor: lid, pushX: 0, pushZ: 0 };
     emitBurst(this.pool, EFFECTS.goldSparkles, rng, top);

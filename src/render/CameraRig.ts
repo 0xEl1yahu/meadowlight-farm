@@ -73,7 +73,7 @@ export class CameraRig {
 
   private readonly camera: THREE.OrthographicCamera;
   private readonly getAspect: () => number;
-  private readonly bounds: WorldRect | null;
+  private bounds: WorldRect | null;
   private readonly boundsMargin: number;
   /** Focus → camera vector (unit direction × CAMERA.distance). */
   private readonly offset = new THREE.Vector3();
@@ -111,6 +111,18 @@ export class CameraRig {
   /** The view height the rig is easing toward. */
   get targetHeight(): number {
     return this.targetViewHeight;
+  }
+
+  /**
+   * Replaces the world rectangle the focus is clamped to (a map change). Re-clamps both the goal
+   * and the current focus and marks the transform dirty, so the next `update` (or a `snap`) moves
+   * the camera inside the new map. Null disables clamping.
+   */
+  setBounds(bounds: WorldRect | null): void {
+    this.bounds = bounds;
+    this.clampToBounds(this.goal);
+    this.clampToBounds(this.focus);
+    this.transformDirty = true;
   }
 
   /** Sets the point the camera should ease toward. Non-finite targets are ignored. */
