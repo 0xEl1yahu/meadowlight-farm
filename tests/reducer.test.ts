@@ -349,6 +349,24 @@ describe('per-map rules', () => {
     expect(tileAt(useTool(holding(scenario(EMPTY_TILE), 'hoe')), TARGET)).toEqual(soilTile(TileState.Plowed));
   });
 
+  it('refuses the hoe on a wild crop off the farm with the farm-only reason, not a hint to forage', () => {
+    const wildTile = { ...EMPTY_TILE, crop: matureCrop('mushroom', { wild: true }) };
+    for (const { mapId, stand, target } of OFF_FARM) {
+      const there = withTile(withPlayer(BASE, stand, Direction.South, mapId), target, wildTile);
+      const hoe = holding(there, 'hoe');
+      expect(planPrimaryAction(hoe).intent).toEqual({ kind: 'blocked', reason: FARM_ONLY_REASON });
+      expectFailedAttempt(hoe, useTool(hoe), 'hoe', target, FARM_ONLY_REASON);
+      // Foraging it leaves bare ground that the hoe refuses for the same reason.
+      const foraged = interact(emptyHanded(there));
+      expect(tileAt(foraged, target)).toEqual(EMPTY_TILE);
+      const hoeAfter = holding(foraged, 'hoe');
+      expectFailedAttempt(hoeAfter, useTool(hoeAfter), 'hoe', target, FARM_ONLY_REASON);
+    }
+    // On the farm, where the ground can be tilled once it's foraged, the hoe says to forage first.
+    const farm = holding(scenario(wildTile), 'hoe');
+    expectFailedAttempt(farm, useTool(farm), 'hoe', TARGET, 'Forage the mushroom first (E).');
+  });
+
   it('refills the watering can at the forest brook and the town river', () => {
     for (const mapId of ['forest', 'town'] as const) {
       const shore = waterShore(BASE, mapId);

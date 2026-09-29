@@ -132,18 +132,24 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
   const cost = item.energyCost;
 
   switch (tool) {
-    case 'hoe':
+    case 'hoe': {
       // A placed object (a path, a chest, a sprinkler on soil) is never dug up.
       if (tile.object !== null) return blocked(target, tool);
       if (tile.crop !== null && tile.crop.dead) return plan(target, { kind: 'clearCrop' }, tool, cost);
+      const allowsTilling = selectActiveMap(state).allowsTilling;
+      // Wild crops sit on unplowed ground. Off the farm, foraging one wouldn't make the tile
+      // tillable, so the hoe gives the farm-only reason rather than a hint to forage first.
       if (tile.crop !== null && tile.crop.wild) {
-        return blocked(target, tool, `Forage the ${CROPS[tile.crop.cropId].name.toLowerCase()} first (E).`);
+        return allowsTilling
+          ? blocked(target, tool, `Forage the ${CROPS[tile.crop.cropId].name.toLowerCase()} first (E).`)
+          : blocked(target, tool, FARM_ONLY_REASON);
       }
       if (tile.state === TileState.Unplowed) {
-        return selectActiveMap(state).allowsTilling ? plan(target, { kind: 'till' }, tool, cost) : blocked(target, tool, FARM_ONLY_REASON);
+        return allowsTilling ? plan(target, { kind: 'till' }, tool, cost) : blocked(target, tool, FARM_ONLY_REASON);
       }
       if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
+    }
 
     case 'wateringCan':
       // Any water on any map refills the can: the farm pond, the forest brook, the town river.
