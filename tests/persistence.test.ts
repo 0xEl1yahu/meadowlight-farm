@@ -3,22 +3,32 @@
  *
  * A save must round-trip to an equal state (menus closed), and anything corrupted, outdated
  * or structurally impossible must be rejected as a whole (null), never half-loaded. Each
- * corruption case edits one field of a real serialised game by JSON path.
+ * corruption case edits one field of a real serialised game by JSON path, and a sweep deletes
+ * or retypes every field version 3 brought. Real version-1 and version-2 saves (fixtures)
+ * must migrate with the farm intact, the forest and the town generated and the gates carved.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INVENTORY, PLAYER, TIME } from '../src/config';
 import {
   Blocker,
   Direction,
+  FERTILIZER_KINDS,
+  MAP_IDS,
+  NPC_IDS,
+  PLACED_OBJECT_KINDS,
   SAVE_VERSION,
   TileState,
+  UPGRADABLE_TOOLS,
   type ActionKind,
   type GameState,
   type ItemStack,
+  type MapId,
+  type PlacedObject,
   type Tile,
+  type TileCoord,
 } from '../src/core/types';
 import { actions, type GameAction } from '../src/state/actions';
-import { createInitialState } from '../src/state/initialState';
+import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import {
   ACTION_KINDS,
   SAVE_KEY,
@@ -32,16 +42,22 @@ import {
 } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
-import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
+import { MAPS, isReservedTile } from '../src/world/maps';
+import { EMPTY_TILE, blockedTile, forEachTile, requireTile } from '../src/world/tiles';
+import saveV1Text from './fixtures/save-v1.json?raw';
+import saveV2Text from './fixtures/save-v2.json?raw';
 import {
   BASE,
+  Violations,
   cropOf,
   holding,
   legacySave,
+  livelySections,
   matureCrop,
   must,
   soilTile,
   stack,
+  tileAt,
   withPlayer,
   withSlots,
   withTile,
@@ -190,6 +206,8 @@ describe('deserializeGame rejects corrupted saves', () => {
     ['negative tile size', ['maps', 'farm', 'grid', 'tileSize'], -1],
     ['string tile size', ['maps', 'farm', 'grid', 'tileSize'], '1'],
     ['width that disagrees with the chunks', ['maps', 'farm', 'grid', 'width'], 49],
+    ['a grid with an extra field', ['maps', 'forest', 'grid', 'wrap'], true],
+    ['a grid missing a derived field', ['maps', 'town', 'grid', 'originZ'], undefined],
     // Chunks
     ['a null chunk', ['maps', 'farm', 'chunks', 8], null],
     ['no chunks', ['maps', 'farm', 'chunks'], []],
@@ -363,6 +381,22 @@ describe('saveGame / loadGame / clearSave', () => {
     clearSave();
     expect(storage.data.has(SAVE_KEY)).toBe(false);
     expect(loadGame()).toBeNull();
+  });
+
+  it('keeps the key the live version-1 and version-2 games saved under', () => {
+    expect(SAVE_KEY).toBe('meadowlight-farm.save.v1');
+  });
+
+  it.each(LEGACY_SAVES)('loads a stored version-%i save, and the next save writes version 3 under the same key', (_version, text) => {
+    const storage = memoryStorage();
+    storage.data.set(SAVE_KEY, text);
+    vi.stubGlobal('localStorage', storage);
+    const loaded = must(loadGame());
+    expect(loaded.version).toBe(SAVE_VERSION);
+    expect(loaded).toEqual(deserializeGame(text));
+    expect(saveGame(loaded)).toBe(true);
+    expect(storage.data.get(SAVE_KEY)).toBe(serializeGame(loaded));
+    expect(loadGame()).toEqual(loaded);
   });
 
   it('returns null for a corrupted stored save', () => {
@@ -597,5 +631,531 @@ describe('migrating inventory, shipping and UI to version 3', () => {
     expect(deserializeGame(JSON.stringify({ ...old, inventory: { ...(old.inventory as SaveJson), slots } }))).toBeNull();
     slots[2] = 'stone';
     expect(deserializeGame(JSON.stringify({ ...old, inventory: { ...(old.inventory as SaveJson), slots } }))).toBeNull();
+  });
+});
+
+/** One tile of a version-1 or version-2 save: no placed object and no fertiliser yet. */
+interface OldTile {
+  readonly state: number;
+  readonly blocker: number;
+  readonly blockerHp: number;
+  readonly crop: SaveJson | null;
+}
+
+/** The parts of a version-1 or version-2 save these tests read. */
+interface OldSave {
+  readonly version: number;
+  readonly seed: number;
+  readonly time: SaveJson;
+  readonly weather: string;
+  readonly world: { readonly grid: SaveJson; readonly chunks: readonly (SaveJson & { readonly tiles: readonly OldTile[] })[] };
+  readonly player: SaveJson;
+  readonly inventory: { readonly slots: readonly (SaveJson | null)[]; readonly selected: number; readonly water: number; readonly waterCapacity: number };
+  readonly shipping: { readonly pending: readonly SaveJson[]; readonly lastPayout: number };
+  readonly ui: SaveJson;
+  readonly messages: SaveJson;
+}
+
+/**
+ * Real legacy saves, frozen exactly as the old games wrote them (tests/fixtures/save-v1.json and
+ * save-v2.json). Each was built once by hand-transforming a played current state back to the
+ * old shape (`legacySave`) and then checked by loading it with the actual version-1 (commit
+ * d6cc5fa) and version-2 (commit ae727ab) game code. Seed 0x5eed2024, 14:05 on a stormy day 3
+ * of spring: sown, regrowing and dead crops, damaged debris, bumped chunk revisions, potatoes
+ * and parsnips in the shipping bin, and the shop open with the game paused at time scale 2.
+ * Three of the four farm gate tiles hold debris (a rock on (0, 13), stumps on (1, 13) and
+ * (47, 38)); a parsnip grows on the fourth, (46, 38). Only the version-2 save has wild crops.
+ */
+const LEGACY_SAVES = [
+  [1, saveV1Text],
+  [2, saveV2Text],
+] as const;
+
+/** The gate tiles each fixture holds debris on, and the gate tile with a crop on it. */
+const GATE_DEBRIS: readonly TileCoord[] = [
+  { tx: 0, tz: 13 },
+  { tx: 1, tz: 13 },
+  { tx: 47, tz: 38 },
+];
+const GATE_CROP: TileCoord = { tx: 46, tz: 38 };
+
+/** A tile carved clear by the migration. */
+const CARVED: Tile = { state: TileState.Unplowed, blocker: Blocker.None, blockerHp: 0, crop: null, object: null, fertilizer: null };
+
+function oldTileAt(save: OldSave, { tx, tz }: TileCoord): OldTile {
+  const loc = locateTile(MAPS.farm.grid, tx, tz);
+  return must(save.world.chunks[loc.chunkIndex]?.tiles[loc.localIndex], `old tile (${tx}, ${tz})`);
+}
+
+/** Where the tile at (tx, tz) of an old save's world sits in its JSON. */
+function oldTilePath({ tx, tz }: TileCoord): JsonPath {
+  const loc = locateTile(MAPS.farm.grid, tx, tz);
+  return ['world', 'chunks', loc.chunkIndex, 'tiles', loc.localIndex];
+}
+
+describe('real legacy saves', () => {
+  it.each(LEGACY_SAVES)('the version-%i fixture has the old shape', (version, text) => {
+    const save = JSON.parse(text) as OldSave & SaveJson;
+    expect(save.version).toBe(version);
+    expect(Object.keys(save).sort()).toEqual(['inventory', 'messages', 'player', 'seed', 'shipping', 'time', 'ui', 'version', 'weather', 'world']);
+    expect(Object.keys(save.player)).not.toContain('mapId');
+    expect(save.inventory.slots).toHaveLength(INVENTORY.hotbarSize);
+    expect(Object.keys(save.inventory).sort()).toEqual(['selected', 'slots', 'water', 'waterCapacity']);
+    for (const held of [...save.inventory.slots, ...save.shipping.pending]) if (held !== null) expect(Object.keys(held)).toEqual(['itemId', 'quantity']);
+    expect(save.ui).toEqual({ shopOpen: true, paused: true, timeScale: 2 });
+    let wild = 0;
+    for (const chunk of save.world.chunks) {
+      for (const tile of chunk.tiles) {
+        expect(Object.keys(tile)).toEqual(['state', 'blocker', 'blockerHp', 'crop']);
+        if (tile.crop === null) continue;
+        expect('wild' in tile.crop).toBe(version === 2);
+        if (tile.crop.wild === true) wild++;
+      }
+    }
+    expect(wild > 0).toBe(version === 2);
+    for (const gate of GATE_DEBRIS) expect([Blocker.Rock, Blocker.Stump]).toContain(oldTileAt(save, gate).blocker);
+    expect(oldTileAt(save, GATE_CROP).crop?.cropId).toBe('parsnip');
+    expect(save.world.chunks.some((chunk) => (chunk.revision as number) > 0)).toBe(true);
+  });
+});
+
+describe('loading the real legacy saves', () => {
+  const load = (text: string): GameState => must(deserializeGame(text), 'the legacy save did not load');
+
+  it.each(LEGACY_SAVES)('version %i: keeps every farm tile exactly, apart from the carved gate debris', (version, text) => {
+    const save = JSON.parse(text) as OldSave;
+    const farm = load(text).maps.farm;
+    expect(farm.grid).toEqual(save.world.grid);
+    const carved: string[] = [];
+    farm.chunks.forEach((chunk, ci) => {
+      const old = must(save.world.chunks[ci]);
+      const { tiles: _tiles, ...geometry } = chunk;
+      const { tiles: _oldTiles, ...oldGeometry } = old;
+      // Chunk layout and revision survive unchanged.
+      expect(geometry).toEqual(oldGeometry);
+      chunk.tiles.forEach((tile, i) => {
+        const oldTile = must(old.tiles[i]);
+        const tx = chunk.x0 + (i % chunk.width);
+        const tz = chunk.z0 + Math.floor(i / chunk.width);
+        if (isReservedTile(MAPS.farm, tx, tz) && (oldTile.blocker === Blocker.Rock || oldTile.blocker === Blocker.Stump)) {
+          carved.push(`${tx},${tz}`);
+          expect(tile).toEqual(CARVED);
+          return;
+        }
+        // Version 1 predates wild crops: each of its crops was sown, so it gains wild: false.
+        const crop = oldTile.crop === null || version === 2 ? oldTile.crop : { ...oldTile.crop, wild: false };
+        expect(tile, `${tx},${tz}`).toEqual({ ...oldTile, crop, object: null, fertilizer: null });
+      });
+    });
+    expect(carved.sort()).toEqual(GATE_DEBRIS.map(({ tx, tz }) => `${tx},${tz}`).sort());
+    // Soil and a crop on a gate tile are walkable, so they stay.
+    expect(tileAt(load(text), GATE_CROP, 'farm')).toEqual({ ...oldTileAt(save, GATE_CROP), object: null, fertilizer: null, crop: { ...must(oldTileAt(save, GATE_CROP).crop), wild: false } });
+  });
+
+  it.each(LEGACY_SAVES)('version %i: generates the forest and the town from the save seed', (_version, text) => {
+    const loaded = load(text);
+    expect(loaded.seed).toBe(0x5eed2024);
+    expect(loaded.maps.forest).toEqual(MAPS.forest.generate(loaded.seed));
+    expect(loaded.maps.town).toEqual(MAPS.town.generate(loaded.seed));
+    // The forest depends on the seed; the town is the same for every seed.
+    expect(loaded.maps.forest).not.toEqual(BASE.maps.forest);
+    expect(loaded.maps.town).toEqual(BASE.maps.town);
+  });
+
+  it.each(LEGACY_SAVES)('version %i: carries the rest of the save over and adds the new sections', (_version, text) => {
+    const save = JSON.parse(text) as OldSave;
+    const loaded = load(text);
+    expect(Object.keys(loaded).sort()).toEqual(Object.keys(BASE).sort());
+    expect(loaded.version).toBe(SAVE_VERSION);
+    expect(loaded.time).toEqual(save.time);
+    expect(loaded.weather).toBe(save.weather);
+    expect(loaded.messages).toEqual(save.messages);
+    expect(loaded.player).toEqual({ ...save.player, mapId: 'farm' });
+    expect(loaded.inventory).toEqual({
+      slots: Array.from({ length: INVENTORY.slotCount }, (_, i) => {
+        const held = save.inventory.slots[i];
+        return held === undefined || held === null ? null : { ...held, quality: 0 };
+      }),
+      unlockedSlots: INVENTORY.startingUnlockedSlots,
+      selected: save.inventory.selected,
+      water: save.inventory.water,
+      waterCapacity: save.inventory.waterCapacity,
+    });
+    expect(loaded.shipping).toEqual({ pending: save.shipping.pending.map((held) => ({ ...held, quality: 0 })), lastPayout: save.shipping.lastPayout });
+    // The open shop and the pause are dropped; the time scale is kept.
+    expect(loaded.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 2 });
+    const sections = createDefaultSections();
+    for (const key of Object.keys(sections) as (keyof typeof sections)[]) expect(loaded[key], key).toEqual(sections[key]);
+  });
+
+  it.each(LEGACY_SAVES)('version %i: the migrated state round-trips exactly and idempotently', (_version, text) => {
+    const loaded = load(text);
+    const once = serializeGame(loaded);
+    const again = load(once);
+    expect(again).toEqual(loaded);
+    expect(serializeGame(again)).toBe(once);
+    // A version-3 save is never migrated again.
+    const parsed: unknown = JSON.parse(once);
+    expect(migrateSave(parsed)).toBe(parsed);
+  });
+
+  it.each(LEGACY_SAVES)('version %i: plays on through both carved gates', (_version, text) => {
+    const loaded = load(text);
+    const walk = (state: GameState, direction: Direction): GameState =>
+      [actions.move(direction), actions.move(direction)].reduce(gameReducer, state);
+    const west = walk(withPlayer(loaded, { tx: 1, tz: 13 }, Direction.West, 'farm'), Direction.West);
+    expect(west.player.mapId).toBe('forest');
+    const east = walk(withPlayer(loaded, GATE_CROP, Direction.East, 'farm'), Direction.East);
+    expect(east.player.mapId).toBe('town');
+    expect(isValidGameState(west) && isValidGameState(east)).toBe(true);
+  });
+});
+
+describe('migrating corrupt legacy saves', () => {
+  it.each(LEGACY_SAVES)('version %i: corrupt debris on a gate tile is rejected, not carved into grass', (_version, text) => {
+    const gate = must(GATE_DEBRIS[0]);
+    const corruptGate = (tile: SaveJson): string => corruptJson(JSON.parse(text) as SaveJson, oldTilePath(gate), tile);
+    const rock = { state: TileState.Blocked, blocker: Blocker.Rock, blockerHp: 1, crop: null };
+    // The well-formed rock is carved away...
+    expect(tileAt(must(deserializeGame(corruptGate(rock))), gate, 'farm')).toEqual(CARVED);
+    // ...but a rock on open ground, absurd damage or a crop under it is a corrupt save.
+    for (const tile of [
+      { ...rock, state: TileState.Unplowed },
+      { ...rock, blockerHp: 101 },
+      { ...rock, blockerHp: -1 },
+      { ...rock, crop: matureCrop('parsnip') },
+      { ...rock, crop: 'parsnip' },
+      { state: TileState.Blocked, blocker: Blocker.Stump, blockerHp: 1.5, crop: null },
+    ]) {
+      expect(deserializeGame(corruptGate(tile)), JSON.stringify(tile)).toBeNull();
+    }
+  });
+
+  it.each(LEGACY_SAVES)('version %i: a corrupt field anywhere in the old save is still rejected after migration', (_version, text) => {
+    const save = JSON.parse(text) as SaveJson;
+    const cases: readonly (readonly [JsonPath, unknown])[] = [
+      [['seed'], 2 ** 32],
+      [['time', 'dayOfSeason'], 4],
+      [['weather'], 'hail'],
+      [['world', 'grid', 'width'], 40],
+      [['world', 'chunks', 0, 'revision'], -1],
+      [[...oldTilePath(GATE_CROP), 'crop', 'stage'], 99],
+      [['player', 'tx'], 48],
+      [['player', 'energy'], 101],
+      [['player', 'lastAction', 'kind'], 'dance'],
+      [['inventory', 'selected'], INVENTORY.hotbarSize],
+      [['inventory', 'water'], 41],
+      [['inventory', 'slots', 0, 'quantity'], 2],
+      [['inventory', 'slots', 5, 'itemId'], 'diamond'],
+      [['shipping', 'pending', 0, 'quantity'], 0],
+      [['shipping', 'lastPayout'], -1],
+      [['messages', 'entries', 0, 'tone'], 'loud'],
+    ];
+    for (const [path, value] of cases) expect(deserializeGame(corruptJson(save, path, value)), path.join('.')).toBeNull();
+  });
+});
+
+/** Stringifies a copy of `root` with the value at `path` replaced (undefined deletes it). */
+function corruptJson(root: SaveJson, path: JsonPath, value: unknown): string {
+  const copy = JSON.parse(JSON.stringify(root)) as unknown;
+  let node: unknown = copy;
+  for (const key of path.slice(0, -1)) node = (node as Record<string | number, unknown>)[key];
+  (node as Record<string | number, unknown>)[must(path[path.length - 1])] = value;
+  return JSON.stringify(copy);
+}
+
+/** The first open grass tile (no blocker, crop or object) of `mapId` at or beyond `from`, off the reserved tiles. */
+function openTile(mapId: MapId, from: TileCoord): TileCoord {
+  const world = BASE.maps[mapId];
+  for (let tz = from.tz; tz < world.grid.depth; tz++) {
+    for (let tx = from.tx; tx < world.grid.width; tx++) {
+      const tile = requireTile(world, tx, tz);
+      const open = tile.state === TileState.Unplowed && tile.blocker === Blocker.None && tile.crop === null && tile.object === null;
+      if (open && !isReservedTile(MAPS[mapId], tx, tz)) return { tx, tz };
+    }
+  }
+  throw new Error(`no open tile on ${mapId}`);
+}
+
+/** A chest holding `stacks` at the given slot indices. */
+function chestOf(stacks: readonly (readonly [number, ItemStack])[]): PlacedObject {
+  const slots: (ItemStack | null)[] = Array.from({ length: INVENTORY.chestSlots }, () => null);
+  for (const [index, held] of stacks) slots[index] = held;
+  return { kind: 'chest', slots };
+}
+
+/**
+ * A version-3 state that uses every field the version brought: every placed-object kind and
+ * fertiliser on the farm, a chest and a path in the forest (the player stands on the path), a
+ * decoration and a path in the town, silver and gold stacks in the backpack, the bin and the
+ * chests, the full 36-slot backpack unlocked, an open panel, and every later-workstream section
+ * far from its defaults with no optional field left null or empty.
+ */
+function everything(): GameState {
+  const giant: PlacedObject = { kind: 'giantCrop', cropId: 'melon', anchorTx: 3, anchorTz: 12 };
+  const farm: readonly (readonly [number, number, Tile])[] = [
+    [6, 10, { ...EMPTY_TILE, object: chestOf([[0, stack('wood', 50)], [1, stack('parsnip', 3, 1)], [35, stack('pumpkin', INVENTORY.maxStack, 2)]]) }],
+    [7, 10, { ...soilTile(TileState.Watered), object: { kind: 'sprinkler' } }],
+    [8, 10, { ...soilTile(TileState.Plowed), object: { kind: 'qualitySprinkler' } }],
+    [9, 10, { ...EMPTY_TILE, object: { kind: 'scarecrow' } }],
+    [10, 10, { ...EMPTY_TILE, object: { kind: 'woodFence' } }],
+    [11, 10, { ...EMPTY_TILE, object: { kind: 'woodPath' } }],
+    [12, 10, { ...EMPTY_TILE, object: { kind: 'stonePath' } }],
+    [6, 11, { ...EMPTY_TILE, object: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 } }],
+    [7, 11, { ...EMPTY_TILE, object: { kind: 'trophy', festival: 'lanternNight', year: 1 } }],
+    [8, 11, { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'paperLantern' } }],
+    [9, 11, { ...soilTile(TileState.Plowed, cropOf('parsnip')), fertilizer: 'speedGro' }],
+    [10, 11, { ...soilTile(TileState.Watered), fertilizer: 'quality' }],
+    [11, 11, { ...soilTile(TileState.Watered, cropOf('potato', { stage: 2 })), fertilizer: 'basic' }],
+  ];
+  let state: GameState = { ...BASE, ...livelySections() };
+  for (const [tx, tz, tile] of farm) state = withTile(state, { tx, tz }, tile, 'farm');
+  for (let dz = 0; dz < 3; dz++) {
+    for (let dx = 0; dx < 3; dx++) state = withTile(state, { tx: 3 + dx, tz: 12 + dz }, { ...EMPTY_TILE, object: giant }, 'farm');
+  }
+  const forestChest = openTile('forest', { tx: 18, tz: 8 });
+  state = withTile(state, forestChest, { ...EMPTY_TILE, object: chestOf([[12, stack('blackberry', 4, 2)]]) }, 'forest');
+  const forestPath = openTile('forest', { tx: forestChest.tx + 1, tz: forestChest.tz });
+  state = withTile(state, forestPath, { ...EMPTY_TILE, object: { kind: 'woodPath' } }, 'forest');
+  const townLantern = openTile('town', { tx: 12, tz: 10 });
+  state = withTile(state, townLantern, { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'stoneLantern' } }, 'town');
+  state = withTile(state, openTile('town', { tx: townLantern.tx + 1, tz: townLantern.tz }), { ...EMPTY_TILE, object: { kind: 'stonePath' } }, 'town');
+  state = withPlayer(state, forestPath, Direction.North, 'forest');
+  const slots: (ItemStack | null)[] = [...BASE.inventory.slots];
+  slots[12] = stack('parsnip', 10, 2);
+  slots[30] = stack('wood', 5);
+  slots[35] = stack('potato', 3, 1);
+  state = withSlots(state, slots, 3);
+  return {
+    ...state,
+    inventory: { ...state.inventory, unlockedSlots: 36 },
+    shipping: { pending: [stack('parsnip', 4), stack('parsnip', 1, 2), stack('pumpkin', 2, 1)], lastPayout: 777 },
+    ui: { panel: { kind: 'inventory' }, paused: true, timeScale: 16 },
+  };
+}
+
+describe('version-3 saves', () => {
+  it('the everything state is valid and uses every placed-object kind and fertiliser', () => {
+    const state = everything();
+    expect(isValidGameState(state)).toBe(true);
+    const kinds = new Set<string>();
+    const fertilizers = new Set<string>();
+    for (const id of MAP_IDS) {
+      forEachTile(state.maps[id], (tile) => {
+        if (tile.object !== null) kinds.add(tile.object.kind);
+        if (tile.fertilizer !== null) fertilizers.add(tile.fertilizer);
+      });
+    }
+    expect([...kinds].sort()).toEqual([...PLACED_OBJECT_KINDS].sort());
+    expect([...fertilizers].sort()).toEqual([...FERTILIZER_KINDS].sort());
+    expect(state.player.mapId).toBe('forest');
+  });
+
+  it('serialize → deserialize is idempotent', () => {
+    for (const state of [BASE, createInitialState(0xffffffff), richState(), everything()]) {
+      const text = serializeGame(state);
+      const once = must(deserializeGame(text));
+      expect(once).toEqual(withMenusClosed(state));
+      const again = serializeGame(once);
+      expect(again).toBe(serializeGame(withMenusClosed(state)));
+      expect(must(deserializeGame(again))).toEqual(once);
+      expect(serializeGame(must(deserializeGame(again)))).toBe(again);
+      const parsed: unknown = JSON.parse(text);
+      expect(migrateSave(parsed)).toBe(parsed);
+    }
+  });
+
+  it('a restored everything state plays on identically', () => {
+    const state = withMenusClosed(everything());
+    const restored = must(deserializeGame(serializeGame(state)));
+    const script: readonly GameAction[] = [actions.move(Direction.South), actions.useTool(), actions.selectSlot(1), actions.sleep(), actions.tick(300)];
+    expect(script.reduce(gameReducer, restored)).toEqual(script.reduce(gameReducer, state));
+  });
+});
+
+/** The value at `path` in parsed JSON. */
+function valueAt(root: unknown, path: JsonPath): unknown {
+  let node = root;
+  for (const key of path) node = (node as Record<string | number, unknown>)[key];
+  return node;
+}
+
+/** `path` and every path below it in parsed JSON, parents before children. */
+function pathsBelow(root: unknown, path: JsonPath): JsonPath[] {
+  const node = valueAt(root, path);
+  const paths: JsonPath[] = [path];
+  if (Array.isArray(node)) node.forEach((_, i) => paths.push(...pathsBelow(root, [...path, i])));
+  else if (typeof node === 'object' && node !== null) for (const key of Object.keys(node)) paths.push(...pathsBelow(root, [...path, key]));
+  return paths;
+}
+
+/**
+ * Every path the version-3 corruption sweep mutates: the whole of each later-workstream section,
+ * the player, inventory, shipping and UI; each map; every tile holding a placed object or
+ * fertiliser (with all of its contents); and the `object` and `fertilizer` fields of one plain
+ * tile per map.
+ */
+function sweptPaths(save: SaveJson): JsonPath[] {
+  const paths: JsonPath[] = [];
+  for (const key of [...Object.keys(createDefaultSections()), 'player', 'inventory', 'shipping', 'ui']) paths.push(...pathsBelow(save, [key]));
+  for (const id of MAP_IDS) {
+    paths.push(['maps', id]);
+    let plain = false;
+    (valueAt(save, ['maps', id, 'chunks']) as readonly { readonly tiles: readonly Tile[] }[]).forEach((chunk, ci) => {
+      chunk.tiles.forEach((tile, ti) => {
+        const tilePath: JsonPath = ['maps', id, 'chunks', ci, 'tiles', ti];
+        if (tile.object !== null || tile.fertilizer !== null) {
+          paths.push(...pathsBelow(save, tilePath));
+        } else if (!plain) {
+          plain = true;
+          paths.push([...tilePath, 'object'], [...tilePath, 'fertilizer']);
+        }
+      });
+    });
+  }
+  return paths;
+}
+
+/**
+ * Every field version 3 brought, by name. The sweep must reach each one, so a field added to
+ * the save without a corruption case (or without validation) fails here.
+ */
+const NEW_FIELDS: readonly string[] = [
+  ...MAP_IDS,
+  'mapId',
+  'unlockedSlots',
+  'quality',
+  'panel',
+  'kind',
+  'object',
+  'fertilizer',
+  'slots',
+  'cropId',
+  'anchorTx',
+  'anchorTz',
+  'itemId',
+  'spawnDay',
+  'festival',
+  'year',
+  'variant',
+  ...Object.keys(createDefaultSections()),
+  'playerName',
+  'farmName',
+  'appearance',
+  'skinTone',
+  'hairStyle',
+  'hairColor',
+  'shirtColor',
+  'overallsColor',
+  'hat',
+  'levels',
+  ...UPGRADABLE_TOOLS,
+  'upgrade',
+  'tool',
+  'level',
+  'readyDay',
+  'known',
+  'kitchenLevel',
+  'id',
+  'plot',
+  'troughWheat',
+  'animals',
+  'name',
+  'bornDay',
+  'fedToday',
+  'pettedToday',
+  'happiness',
+  'hasProduct',
+  ...NPC_IDS,
+  'points',
+  'talkedToday',
+  'giftsToday',
+  'giftsThisWeek',
+  'heartEventsSeen',
+  'talks',
+  'completed',
+  'board',
+  'week',
+  'npc',
+  'quantity',
+  'dueDay',
+  'delivered',
+  'status',
+  'parsnipsShipped',
+  'debrisCleared',
+  'forageFound',
+  'totalEarned',
+  'visitedTown',
+  'craftedChest',
+  'builtCoop',
+  'activeDay',
+  'eggsFound',
+  'lanternReleased',
+  'display',
+  'giftTarget',
+  'giftGiven',
+];
+
+/** A value of the wrong type for `value`: a string becomes a number, anything else a string no id list holds. */
+const wrongType = (value: unknown): unknown => (typeof value === 'string' ? 7 : '§');
+
+describe('every version-3 field rejects corruption', () => {
+  const save = JSON.parse(serializeGame(everything())) as SaveJson;
+  const paths = sweptPaths(save);
+
+  it('the sweep reaches every field version 3 brought', () => {
+    const reached = new Set(paths.map((path) => path[path.length - 1]));
+    expect(NEW_FIELDS.filter((field) => !reached.has(field))).toEqual([]);
+    expect(paths.length).toBeGreaterThan(500);
+  });
+
+  it('rejects each swept field deleted or given a value of the wrong type', () => {
+    expect(isValidGameState(save)).toBe(true);
+    const problems = new Violations();
+    let mutations = 0;
+    for (const path of paths) {
+      const parent = valueAt(save, path.slice(0, -1)) as Record<string | number, unknown>;
+      const key = must(path[path.length - 1]);
+      const original = parent[key];
+      // Deleting an array element would leave a hole, which JSON writes as null: wrong type covers it.
+      const edits: readonly (readonly ['deleted' | 'retyped', () => void])[] = [
+        ['retyped', () => (parent[key] = wrongType(original))],
+        ...(typeof key === 'string' ? [['deleted', () => delete parent[key]] as const] : []),
+      ];
+      for (const [label, edit] of edits) {
+        edit();
+        mutations++;
+        try {
+          problems.check(!isValidGameState(save), () => `${label} ${path.join('.')} was accepted`);
+        } catch (error) {
+          problems.check(false, `${label} ${path.join('.')} threw ${String(error)}`);
+        }
+        parent[key] = original;
+      }
+    }
+    expect(problems.head()).toEqual([]);
+    expect(mutations).toBeGreaterThan(paths.length);
+    // Every edit was undone.
+    expect(isValidGameState(save)).toBe(true);
+  });
+
+  it('rejects an unknown extra field on a placed object of every kind', () => {
+    const rejected = new Set<string>();
+    const problems = new Violations();
+    for (const id of MAP_IDS) {
+      for (const chunk of valueAt(save, ['maps', id, 'chunks']) as readonly { readonly tiles: readonly SaveJson[] }[]) {
+        for (const tile of chunk.tiles) {
+          if (tile.object === null) continue;
+          const object = tile.object as SaveJson;
+          object.extra = 1;
+          problems.check(!isValidGameState(save), () => `an extra field on a ${String(object.kind)} on the ${id} was accepted`);
+          delete object.extra;
+          rejected.add(String(object.kind));
+        }
+      }
+    }
+    expect(problems.head()).toEqual([]);
+    expect([...rejected].sort()).toEqual([...PLACED_OBJECT_KINDS].sort());
+    expect(isValidGameState(save)).toBe(true);
   });
 });

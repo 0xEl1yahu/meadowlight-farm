@@ -90,12 +90,16 @@ function isValidTime(time: unknown): boolean {
   return calendar.dayOfSeason === time.dayOfSeason && calendar.season === time.season && calendar.year === time.year;
 }
 
-/** The map's grid, chunk layout, every tile, and the world-level placed-object rules (giant crops). */
+/**
+ * The map's grid (deep-equal to the map definition's: the same fields, no others), chunk
+ * layout, every tile, and the world-level placed-object rules (giant crops).
+ */
 function isValidWorld(world: unknown, id: MapId): world is WorldState {
   if (!isObj(world) || !isValidGrid(world.grid) || !Array.isArray(world.chunks)) return false;
   const grid = world.grid;
   const expected = MAPS[id].grid;
-  if ((Object.keys(expected) as (keyof GridSpec)[]).some((key) => expected[key] !== grid[key])) return false;
+  const keys = Object.keys(expected) as (keyof GridSpec)[];
+  if (!hasExactKeys(grid as unknown as Obj, keys) || keys.some((key) => expected[key] !== grid[key])) return false;
   if (world.chunks.length !== chunkCount(grid)) return false;
   for (let i = 0; i < world.chunks.length; i++) {
     const chunk: unknown = world.chunks[i];
@@ -265,13 +269,19 @@ function migrateV1toV2(save: Obj): Obj {
   return world === null ? save : { ...save, version: 2, world };
 }
 
-/** A saved v2 tile as a v3 tile: gains `object: null, fertilizer: null`; debris on a farm gate tile is carved away. */
+/**
+ * A saved v2 tile as a v3 tile: gains `object: null, fertilizer: null`, and a Rock or Stump on
+ * a farm gate (reserved) tile is carved away. Only well-formed debris is carved: a corrupt
+ * tile keeps its fault, so the validator still rejects the save instead of the migration
+ * laundering it into grass.
+ */
 function migrateFarmTile(tile: Obj, tx: number, tz: number): Obj {
+  const migrated = { ...tile, object: null, fertilizer: null };
   const debris = tile.blocker === Blocker.Rock || tile.blocker === Blocker.Stump;
-  if (debris && isReservedTile(MAPS.farm, tx, tz)) {
+  if (debris && isReservedTile(MAPS.farm, tx, tz) && isValidTile(migrated)) {
     return { state: TileState.Unplowed, blocker: Blocker.None, blockerHp: 0, crop: null, object: null, fertilizer: null };
   }
-  return { ...tile, object: null, fertilizer: null };
+  return migrated;
 }
 
 /** A saved v2 stack as a v3 stack: normal quality. Non-objects pass through for the validator to reject. */

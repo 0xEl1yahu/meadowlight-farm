@@ -13,10 +13,14 @@ import { INVENTORY } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import {
   Blocker,
+  CRAFTING_RECIPE_IDS,
   Direction,
   TileState,
+  type Animal,
+  type AnimalKind,
   type CropId,
   type CropInstance,
+  type GameSections,
   type GameState,
   type ItemId,
   type ItemStack,
@@ -293,4 +297,78 @@ export function legacySave(state: GameState, version: 1 | 2): SaveJson {
     }
   }
   return save;
+}
+
+/** A valid animal with the given id, kind and name; the other fields are fixed mid-range values. */
+export const animal = (id: number, kind: AnimalKind, name: string): Animal => ({
+  id,
+  kind,
+  name,
+  bornDay: 6,
+  fedToday: true,
+  pettedToday: false,
+  happiness: 200,
+  hasProduct: true,
+});
+
+/**
+ * Every later-workstream section filled in far from its defaults, still valid: a steel hoe with
+ * an upgrade under way, every recipe, a full coop and a barn, friendships, a board request,
+ * lifetime stats and a festival in progress with a full display.
+ */
+export function livelySections(): GameSections {
+  const idle = BASE.npcs.bram;
+  return {
+    profile: {
+      playerName: 'Eli',
+      farmName: 'Sunny Acres',
+      appearance: { skinTone: 4, hairStyle: 2, hairColor: 5, shirtColor: 7, overallsColor: 5, hat: 3 },
+    },
+    tools: { levels: { hoe: 2, wateringCan: 1, pickaxe: 0, axe: 1 }, upgrade: { tool: 'pickaxe', level: 1, readyDay: 12 } },
+    crafting: { known: [...CRAFTING_RECIPE_IDS] },
+    cooking: { known: ['friedMushrooms', 'berryTart', 'forestSalad'], kitchenLevel: 1 },
+    buildings: [
+      {
+        id: 1,
+        kind: 'coop',
+        plot: 0,
+        readyDay: 5,
+        troughWheat: 12,
+        animals: [animal(3, 'chicken', 'Pecky'), animal(4, 'chicken', 'Nugget'), animal(5, 'chicken', 'Clucky'), animal(6, 'chicken', 'Hen')],
+      },
+      { id: 2, kind: 'barn', plot: 1, readyDay: 9, troughWheat: 0, animals: [animal(7, 'cow', 'Daisy Mae Buttercup Mooo')] },
+    ],
+    nextEntityId: 8,
+    npcs: {
+      ...BASE.npcs,
+      bram: { points: 2500, talkedToday: true, giftsToday: 1, giftsThisWeek: 2, heartEventsSeen: [2, 4, 6], talks: 40 },
+      tess: { ...idle, points: 1000, heartEventsSeen: [4] },
+    },
+    quests: {
+      completed: ['shipParsnips', 'visitTown', 'earnGold'],
+      board: { week: 3, npc: 'juniper', itemId: 'potato', quantity: 5, dueDay: 30, delivered: 5, status: 'completed' },
+    },
+    stats: {
+      parsnipsShipped: 40,
+      debrisCleared: 12,
+      forageFound: 3,
+      totalEarned: 5400,
+      visitedTown: true,
+      craftedChest: true,
+      builtCoop: true,
+    },
+    festival: {
+      activeDay: 12,
+      eggsFound: 4095,
+      lanternReleased: true,
+      // Pumpkins (produce) at every quality; wood (a material) has none.
+      display: Array.from({ length: 9 }, (_, i) =>
+        i % 2 === 0
+          ? { itemId: 'pumpkin' as const, quantity: i + 1, quality: ((i / 2) % 3) as 0 | 1 | 2 }
+          : { itemId: 'wood' as const, quantity: i + 1, quality: 0 as const },
+      ),
+      giftTarget: 'pip',
+      giftGiven: true,
+    },
+  };
 }

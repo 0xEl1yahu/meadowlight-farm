@@ -23,7 +23,6 @@ import {
   TOOL_TYPES,
   UPGRADABLE_TOOLS,
   type Animal,
-  type AnimalKind,
   type GameSections,
   type GameState,
   type ItemStack,
@@ -31,7 +30,20 @@ import {
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { EMPTY_TILE, blockedTile, forEachTile } from '../src/world/tiles';
-import { BASE, TARGET, cropOf, legacySave, must, soilTile, stack, tileAt, withTile, type SaveJson } from './testUtils';
+import {
+  BASE,
+  TARGET,
+  animal,
+  cropOf,
+  legacySave,
+  livelySections,
+  must,
+  soilTile,
+  stack,
+  tileAt,
+  withTile,
+  type SaveJson,
+} from './testUtils';
 
 describe('identifier lists', () => {
   it('holds no duplicates in any list', () => {
@@ -200,74 +212,9 @@ function corrupt(state: GameState, path: JsonPath, value: unknown): string {
   return JSON.stringify(root);
 }
 
-const animal = (id: number, kind: AnimalKind, name: string): Animal => ({
-  id,
-  kind,
-  name,
-  bornDay: 6,
-  fedToday: true,
-  pettedToday: false,
-  happiness: 200,
-  hasProduct: true,
-});
-
 /** BASE with every section filled in far from its defaults, still valid. */
 function lively(): GameState {
-  const idle = BASE.npcs.bram;
-  return {
-    ...BASE,
-    profile: {
-      playerName: 'Eli',
-      farmName: 'Sunny Acres',
-      appearance: { skinTone: 4, hairStyle: 2, hairColor: 5, shirtColor: 7, overallsColor: 5, hat: 3 },
-    },
-    tools: { levels: { hoe: 2, wateringCan: 1, pickaxe: 0, axe: 1 }, upgrade: { tool: 'pickaxe', level: 1, readyDay: 12 } },
-    crafting: { known: [...CRAFTING_RECIPE_IDS] },
-    cooking: { known: ['friedMushrooms', 'berryTart', 'forestSalad'], kitchenLevel: 1 },
-    buildings: [
-      {
-        id: 1,
-        kind: 'coop',
-        plot: 0,
-        readyDay: 5,
-        troughWheat: 12,
-        animals: [animal(3, 'chicken', 'Pecky'), animal(4, 'chicken', 'Nugget'), animal(5, 'chicken', 'Clucky'), animal(6, 'chicken', 'Hen')],
-      },
-      { id: 2, kind: 'barn', plot: 1, readyDay: 9, troughWheat: 0, animals: [animal(7, 'cow', 'Daisy Mae Buttercup Mooo')] },
-    ],
-    nextEntityId: 8,
-    npcs: {
-      ...BASE.npcs,
-      bram: { points: 2500, talkedToday: true, giftsToday: 1, giftsThisWeek: 2, heartEventsSeen: [2, 4, 6], talks: 40 },
-      tess: { ...idle, points: 1000, heartEventsSeen: [4] },
-    },
-    quests: {
-      completed: ['shipParsnips', 'visitTown', 'earnGold'],
-      board: { week: 3, npc: 'juniper', itemId: 'potato', quantity: 5, dueDay: 30, delivered: 5, status: 'completed' },
-    },
-    stats: {
-      parsnipsShipped: 40,
-      debrisCleared: 12,
-      forageFound: 3,
-      totalEarned: 5400,
-      visitedTown: true,
-      craftedChest: true,
-      builtCoop: true,
-    },
-    festival: {
-      activeDay: 12,
-      eggsFound: 4095,
-      lanternReleased: true,
-      // Pumpkins (produce) at every quality; wood (a material) has none.
-      display: Array.from({ length: 9 }, (_, i) =>
-        i % 2 === 0
-          ? { itemId: 'pumpkin' as const, quantity: i + 1, quality: ((i / 2) % 3) as 0 | 1 | 2 }
-          : { itemId: 'wood' as const, quantity: i + 1, quality: 0 as const },
-      ),
-      giftTarget: 'pip',
-      giftGiven: true,
-    },
-  };
+  return { ...BASE, ...livelySections() };
 }
 
 describe('saved sections', () => {
