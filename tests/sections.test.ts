@@ -26,11 +26,12 @@ import {
   type AnimalKind,
   type GameSections,
   type GameState,
+  type ItemStack,
 } from '../src/core/types';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { EMPTY_TILE, blockedTile, forEachTile } from '../src/world/tiles';
-import { BASE, TARGET, cropOf, legacySave, must, soilTile, tileAt, withTile, type SaveJson } from './testUtils';
+import { BASE, TARGET, cropOf, legacySave, must, soilTile, stack, tileAt, withTile, type SaveJson } from './testUtils';
 
 describe('identifier lists', () => {
   it('holds no duplicates in any list', () => {
@@ -371,8 +372,8 @@ describe('saved sections reject', () => {
 });
 
 describe('saved NPCs, quests, stats and festival reject', () => {
-  const stacks = (count: number): { itemId: string; quantity: number }[] =>
-    Array.from({ length: count }, () => ({ itemId: 'wood', quantity: 1 }));
+  // Valid stacks, so the only fault in 'ten display stacks' is the tenth stack.
+  const stacks = (count: number): ItemStack[] => Array.from({ length: count }, () => stack('wood', 1));
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     // NPCs
     ['a missing NPC', ['npcs', 'pip'], undefined],
@@ -419,6 +420,9 @@ describe('saved NPCs, quests, stats and festival reject', () => {
     ['an empty display stack', ['festival', 'display', 0, 'quantity'], 0],
     ['a display stack above maxStack', ['festival', 'display', 0, 'quantity'], INVENTORY.maxStack + 1],
     ['an unknown display item', ['festival', 'display', 1, 'itemId'], 'diamond'],
+    ['a display stack without quality', ['festival', 'display', 0, 'quality'], undefined],
+    ['a display quality of 3', ['festival', 'display', 0, 'quality'], 3],
+    ['silver wood on display', ['festival', 'display', 1, 'quality'], 1],
     ['a gift target who is not an NPC', ['festival', 'giftTarget'], 'gus'],
     ['a missing giftGiven', ['festival', 'giftGiven'], undefined],
   ];

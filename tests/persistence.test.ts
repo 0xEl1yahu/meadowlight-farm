@@ -277,7 +277,7 @@ describe('deserializeGame rejects corrupted saves', () => {
     ['overfull watering can', ['inventory', 'water'], 41],
     ['zero can capacity', ['inventory', 'waterCapacity'], 0],
     // Shipping
-    ['empty pending stack', ['shipping', 'pending'], [{ itemId: 'parsnip', quantity: 0 }]],
+    ['empty pending stack', ['shipping', 'pending'], [{ itemId: 'parsnip', quantity: 0, quality: 0 }]],
     ['unknown pending item', ['shipping', 'pending'], [{ itemId: 'diamond', quantity: 1, quality: 0 }]],
     ['pending stack without quality', ['shipping', 'pending'], [{ itemId: 'parsnip', quantity: 1 }]],
     ['silver stone pending', ['shipping', 'pending'], [{ itemId: 'stone', quantity: 1, quality: 1 }]],
