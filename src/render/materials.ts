@@ -135,3 +135,33 @@ export function createTintMaskSwayMaterial(sway: SwayOptions): THREE.MeshStandar
   material.customProgramCacheKey = () => 'meadowlight-sway-tintmask-v1';
   return material;
 }
+
+/** Colours of the shared glow glass (sRGB hex): pale sky reflection by day, warm lamplight at night. */
+export const GLOW_GLASS_COLORS = { day: 0xc4e2ec, night: 0xfff2b0, emissive: 0xffc36a } as const;
+
+let sharedGlowGlass: THREE.MeshStandardMaterial | null = null;
+
+/**
+ * The single material for every window pane and lamp glass on every map (farmhouse, town
+ * buildings, lamp posts, lantern objects). StructureRenderer drives its colour and emissive
+ * intensity once per frame from the clock and the weather, so everything lights up together.
+ * Created on first use; never disposed per map, only by {@link disposeSharedGlowGlassMaterial}.
+ */
+export function getSharedGlowGlassMaterial(): THREE.MeshStandardMaterial {
+  if (sharedGlowGlass === null) {
+    sharedGlowGlass = createFlatMaterial(GLOW_GLASS_COLORS.day, {
+      emissive: GLOW_GLASS_COLORS.emissive,
+      emissiveIntensity: 0,
+      roughness: 0.35,
+    });
+    sharedGlowGlass.name = 'glow-glass';
+  }
+  return sharedGlowGlass;
+}
+
+/** Releases the shared glow glass (StructureRenderer.dispose); the next get creates a fresh one. */
+export function disposeSharedGlowGlassMaterial(): void {
+  if (sharedGlowGlass === null) return;
+  sharedGlowGlass.dispose();
+  sharedGlowGlass = null;
+}

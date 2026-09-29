@@ -1,34 +1,49 @@
 /**
- * Farmstead & scenery renderer: the farmhouse, the shipping bin, and everything around the farm
- * plateau (meadow, border woodland, fence, bushes and flower clumps).
+ * Structures & scenery renderer: everything built from a map's static definition — the meadow
+ * ring around the grid, border woodland, bushes and flower clumps, the farm's fence, the town's
+ * stone wall, trails leading off the grid at every warp, the farmstead (farmhouse and shipping
+ * bin) and the town's structures (shops, notice board, well, lamp posts and hedges).
  *
  * Lifecycle
- * - Static content is built once, on the first full rebuild (`sync(state, null)`) on the farm,
- *   from the farm's farmstead layout and grid. Later full rebuilds keep it (they only reset the
- *   animated bits), so they are idempotent; a rebuild with a different grid replaces it.
- * - Maps: the farm scenery shows only while the player is on the farm. On any other map it is
- *   hidden (and kept for the way back), and nothing here animates. The farmstead handles (house
- *   glass, smoke, lid, coin) are null on a map without a farmstead.
- * - Incremental syncs on the farm react to exactly two things: a successful 'ship' action (the
- *   lid springs open and slams shut) and changes to the pending shipment (a bobbing gold coin
- *   above the bin). Off the farm both are ignored; the next rebuild on the farm catches up.
- * - update() animates only what moves: window glow (follows the clock and the weather), a few
- *   chimney smoke puffs, the lid while it is animating and the coin while it is shown.
+ * - One {@link StaticScenery} per map, built lazily on the first full rebuild (`sync(state, null)`)
+ *   on that map from its MapDefinition (sceneryGeometry.ts plans it) and kept in a cache. Only
+ *   the active map's scenery is visible; the others stay hidden for the way back. Later full
+ *   rebuilds only reset the animated bits, so they are idempotent.
+ * - The farmstead handles (smoke, lid, coin) exist only on a map with a farmstead (the farm).
+ *   Incremental syncs there react to exactly two things: a successful 'ship' action (the lid
+ *   springs open and slams shut) and changes to the pending shipment (a bobbing gold coin above
+ *   the bin). Off the farm both are ignored; the next rebuild on the farm catches up.
+ * - update() animates only what moves: the shared glow glass (every window pane and lamp on every
+ *   map follows the clock and the weather, once per frame), and on the farm a few chimney smoke
+ *   puffs, the lid while it is animating and the coin while it is shown.
+ * - The shared glow-glass material (materials.ts) is never disposed per map; dispose() releases
+ *   it once, with every cached map's resources.
  *
- * Draw calls: farmstead body (house + crate, merged, vertex-coloured), window glass, bin lid,
- * coin, smoke, meadow, trunks, two canopy species, fence posts, fence rails, bushes, flower
- * leaves and blossoms — fourteen in total, whatever the size of the woodland.
+ * Draw calls on the active map: painted body (farmstead or town structures and wall, merged,
+ * vertex-coloured), glow glass, meadow (with its trails), trunks, two canopy species, bushes,
+ * flower leaves and blossoms; plus fence posts and rails, bin lid, coin and smoke on the farm —
+ * at most fourteen, whatever the size of the woodland.
  */
 import * as THREE from 'three';
 import { TIME, type FarmLayout } from '../config';
-import { Weather, type GameState, type GridSpec, type TileCoord, type TileRect } from '../core/types';
-import { tileCenterX, tileMinX, tileMinZ, worldRect } from '../world/grid';
+import { Weather, type GameState, type GridSpec, type MapId, type TileCoord, type TileRect } from '../core/types';
+import { selectActiveMap } from '../state/selectors';
+import { tileCenterX, tileMinX, tileMinZ } from '../world/grid';
+import type { MapDefinition } from '../world/maps';
 import { HEIGHTS } from './constants';
-import { createFlatMaterial, createSwayMaterial, sharedUniforms } from './materials';
+import { STRUCTURE_COLORS, createPartSet, mergeParts, type PartSet } from './geometryParts';
+import {
+  GLOW_GLASS_COLORS,
+  createFlatMaterial,
+  createSwayMaterial,
+  disposeSharedGlowGlassMaterial,
+  getSharedGlowGlassMaterial,
+  sharedUniforms,
+} from './materials';
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
+import { createTrailGeometry, layoutWall, planScenery, wallParts, type SceneryPlan } from './sceneryGeometry';
 import {
-  STRUCTURE_COLORS,
   TREE_SHAPES,
   createBushGeometry,
   createCoinMarkerGeometry,
@@ -44,7 +59,6 @@ import {
   createSmokePuffGeometry,
   createTreeTrunkGeometry,
   layoutFence,
-  mergeParts,
   placeBorderTrees,
   placeBushes,
   placeFlowers,
@@ -52,13 +66,12 @@ import {
   type FarmhouseSpec,
   type FenceLayout,
   type FlowerPlacement,
-  type MeadowSpec,
   type PropPlacement,
   type ShippingBinSpec,
   type TreePlacement,
 } from './structureGeometry';
+import { mapStructureParts } from './townGeometry';
 import type { FrameContext, RenderSystem } from './types';
-import { selectActiveMap, selectActiveWorld } from '../state/selectors';
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -70,13 +83,6 @@ const HOUSE_INSET = { side: 0.3, back: 0.3, front: 0.6 } as const;
 const PORCH_STEP_DEPTH = 0.52;
 /** Crate inset inside the shipping-bin rect (the lid overhangs a little of it). */
 const BIN_INSET = { x: 0.15, z: 0.11 } as const;
-
-/**
- * Meadow ring around the plateau. At CAMERA.maxViewHeight the view spans roughly 60 × 34 world
- * units (wider on ultrawide screens), i.e. up to ~50 units from the focus to a screen corner on
- * the ground, and the focus can sit on the plateau edge — an 80-unit margin always covers it.
- */
-const MEADOW = { margin: 80, cellSize: 4, drop: 0.06, holeInset: 0.5 } as const;
 
 const WINDOW_GLOW = {
   /** Lamps left on at daybreak have faded by 07:05. */
@@ -186,8 +192,8 @@ const scratchPosition = new THREE.Vector3();
 const scratchQuaternion = new THREE.Quaternion();
 const scratchScale = new THREE.Vector3();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const GLASS_DAY = new THREE.Color(STRUCTURE_COLORS.glassDay);
-const GLASS_NIGHT = new THREE.Color(PALETTE.window);
+const GLASS_DAY = new THREE.Color(GLOW_GLASS_COLORS.day);
+const GLASS_NIGHT = new THREE.Color(GLOW_GLASS_COLORS.night);
 
 /** Translation · yaw rotation · non-uniform scale, written into `target`. */
 function composeYaw(
@@ -264,6 +270,8 @@ function createStaticInstances<T>(
     mesh.setColorAt(index, scratchColor);
   });
   mesh.count = items.length;
+  // An empty mesh (a map without flowers, say) costs no draw call.
+  mesh.visible = items.length > 0;
   mesh.instanceMatrix.needsUpdate = true;
   colors.needsUpdate = true;
   mesh.computeBoundingBox();
@@ -283,7 +291,6 @@ interface Placement<TSpec> {
 
 /** Animated handles into the farmstead. */
 interface FarmsteadHandles {
-  readonly glassMaterial: THREE.MeshStandardMaterial;
   readonly smoke: THREE.InstancedMesh;
   readonly smokeOrigin: THREE.Vector3;
   readonly lidPivot: THREE.Group;
@@ -291,22 +298,13 @@ interface FarmsteadHandles {
   readonly markerBase: THREE.Vector3;
 }
 
+/** One map's static scenery: a group toggled with `visible`, and everything it allocated. */
 interface StaticScenery {
-  readonly grid: GridSpec;
+  readonly mapId: MapId;
   readonly group: THREE.Group;
   readonly bag: ResourceBag;
-  /** House, bin, lid, coin and smoke: null on a map without a farmstead. */
+  /** Smoke, lid and coin: null on a map without a farmstead. */
   readonly farmstead: FarmsteadHandles | null;
-}
-
-function sameGrid(a: GridSpec, b: GridSpec): boolean {
-  return (
-    a.width === b.width &&
-    a.depth === b.depth &&
-    a.tileSize === b.tileSize &&
-    a.originX === b.originX &&
-    a.originZ === b.originZ
-  );
 }
 
 /** Wall footprint inside the house rect, with the door centred on the door tile's column. */
@@ -338,13 +336,18 @@ function binPlacement(grid: GridSpec, rect: TileRect): Placement<ShippingBinSpec
   };
 }
 
-/** Farmhouse, shipping bin (body, hinged lid, coin marker), window glass and chimney smoke. */
+/**
+ * Farmhouse and shipping bin. Their painted bodies and the window glass go into `parts` (merged
+ * with the map's other painted structures); the hinged lid, the coin marker and the chimney
+ * smoke get meshes of their own because they move.
+ */
 function buildFarmstead(
   grid: GridSpec,
   layout: FarmLayout,
   bag: ResourceBag,
   painted: THREE.Material,
   group: THREE.Group,
+  parts: PartSet,
 ): FarmsteadHandles {
   const house = housePlacement(grid, layout.house, layout.houseDoor);
   const houseGeometry = createFarmhouseGeometry(house.spec);
@@ -355,22 +358,8 @@ function buildFarmstead(
   const binGeometry = createShippingBinGeometry(bin.spec);
   binGeometry.body.translate(bin.origin.x, bin.origin.y, bin.origin.z);
 
-  const body = new THREE.Mesh(bag.geometry(mergeParts([houseGeometry.body, binGeometry.body], 'farmstead')), painted);
-  body.name = 'farmstead';
-  body.castShadow = true;
-  body.receiveShadow = true;
-  group.add(body);
-
-  const glassMaterial = bag.material(
-    createFlatMaterial(STRUCTURE_COLORS.glassDay, {
-      emissive: STRUCTURE_COLORS.windowGlow,
-      emissiveIntensity: 0,
-      roughness: 0.35,
-    }),
-  );
-  const glass = new THREE.Mesh(bag.geometry(houseGeometry.glass), glassMaterial);
-  glass.name = 'farmhouse-windows';
-  group.add(glass);
+  parts.body.push(houseGeometry.body, binGeometry.body);
+  parts.glass.push(houseGeometry.glass);
 
   const lidPivot = new THREE.Group();
   lidPivot.name = 'shipping-bin-lid';
@@ -413,7 +402,7 @@ function buildFarmstead(
   );
   group.add(smoke);
 
-  return { glassMaterial, smoke, smokeOrigin, lidPivot, marker, markerBase };
+  return { smoke, smokeOrigin, lidPivot, marker, markerBase };
 }
 
 function addTrees(trees: readonly TreePlacement[], bag: ResourceBag, trunkMaterial: THREE.Material, group: THREE.Group): void {
@@ -487,10 +476,11 @@ function addFlowers(flowers: readonly FlowerPlacement[], bag: ResourceBag, group
   }
 }
 
+/** Fence posts (gateposts are wider: X and Z scale by `length`) and rails. */
 function addFence(fence: FenceLayout, bag: ResourceBag, material: THREE.Material, group: THREE.Group): void {
   const fenceColor = new THREE.Color(PALETTE.fence);
   const posts = createStaticInstances(bag, 'fence-posts', bag.geometry(createFencePostGeometry()), material, fence.posts, (post, matrix, color) => {
-    composeYaw(matrix, post.x, post.y, post.z, post.yaw, 1, post.height, 1);
+    composeYaw(matrix, post.x, post.y, post.z, post.yaw, post.length, post.height, post.length);
     color.copy(fenceColor).multiplyScalar(post.shade);
   });
   const rails = createStaticInstances(bag, 'fence-rails', bag.geometry(createFenceRailGeometry()), material, fence.rails, (rail, matrix, color) => {
@@ -504,48 +494,64 @@ function addFence(fence: FenceLayout, bag: ResourceBag, material: THREE.Material
   }
 }
 
-/** Meadow ring, border woodland, bushes, flower clumps and the fence around the plateau. */
+/**
+ * Meadow ring with a trail at every warp, border woodland, bushes and flower clumps (kept out of
+ * the warp corridors), plus the farm's fence or the town's wall (painted, into `parts`), each with
+ * a gap at every warp.
+ */
 function buildSurroundings(
-  grid: GridSpec,
+  def: MapDefinition,
+  plan: SceneryPlan,
   bag: ResourceBag,
   painted: THREE.Material,
   tinted: THREE.Material,
   group: THREE.Group,
+  parts: PartSet,
 ): void {
-  const bounds = worldRect(grid);
-  const unit = grid.tileSize;
-  const meadow: MeadowSpec = {
-    bounds,
-    margin: MEADOW.margin,
-    cellSize: MEADOW.cellSize,
-    topY: HEIGHTS.grassTop - MEADOW.drop,
-    holeInset: MEADOW.holeInset,
-  };
-
-  const ground = new THREE.Mesh(bag.geometry(createMeadowGeometry(meadow)), painted);
+  const meadow = plan.meadow;
+  const groundParts = [createMeadowGeometry(meadow), ...plan.openings.map((opening) => createTrailGeometry(def, opening, meadow.topY))];
+  const ground = new THREE.Mesh(bag.geometry(mergeParts(groundParts, 'meadow')), painted);
   ground.name = 'meadow';
   ground.receiveShadow = true;
   group.add(ground);
 
-  const trees = placeBorderTrees(meadow, unit);
-  const bushes = placeBushes(meadow, unit, trees);
-  const flowers = placeFlowers(meadow, unit, trees, bushes);
+  const trees = placeBorderTrees(plan.scatter);
+  const bushes = placeBushes(plan.scatter, trees);
+  const flowers = placeFlowers(plan.scatter, trees, bushes);
   addTrees(trees, bag, tinted, group);
   addBushes(bushes, bag, group);
   addFlowers(flowers, bag, group);
-  addFence(layoutFence(bounds, meadow.topY), bag, tinted, group);
+  if (plan.fence) addFence(layoutFence(meadow.bounds, meadow.topY, plan.gaps, def.cosmeticOffset), bag, tinted, group);
+  if (plan.wall) wallParts(layoutWall(meadow.bounds, meadow.topY, plan.gaps, def.cosmeticOffset), parts.body);
 }
 
-function buildScenery(grid: GridSpec, layout: FarmLayout | null): StaticScenery {
+/** Everything static on one map, in a group of its own. */
+function buildScenery(def: MapDefinition): StaticScenery {
   const bag = new ResourceBag();
   const group = new THREE.Group();
-  group.name = 'farmstead-scenery';
+  group.name = `scenery-${def.id}`;
   // White base colours: painted geometry supplies vertex colours, instanced meshes instance colours.
   const painted = bag.material(createFlatMaterial(0xffffff, { vertexColors: true }));
   const tinted = bag.material(createFlatMaterial(0xffffff));
-  const farmstead = layout === null ? null : buildFarmstead(grid, layout, bag, painted, group);
-  buildSurroundings(grid, bag, painted, tinted, group);
-  return { grid, group, bag, farmstead };
+  const parts = createPartSet();
+  const farmstead = def.farmstead === null ? null : buildFarmstead(def.grid, def.farmstead, bag, painted, group, parts);
+  mapStructureParts(def, parts);
+  buildSurroundings(def, planScenery(def), bag, painted, tinted, group, parts);
+
+  if (parts.body.length > 0) {
+    const body = new THREE.Mesh(bag.geometry(mergeParts(parts.body, `${def.id} structures`)), painted);
+    body.name = 'structures';
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+  }
+  if (parts.glass.length > 0) {
+    // The shared glow glass is not in the bag: it outlives every map (see dispose).
+    const glass = new THREE.Mesh(bag.geometry(mergeParts(parts.glass, `${def.id} glass`)), getSharedGlowGlassMaterial());
+    glass.name = 'glow-glass';
+    group.add(glass);
+  }
+  return { mapId: def.id, group, bag, farmstead };
 }
 
 // ---------------------------------------------------------------------------
@@ -555,10 +561,10 @@ function buildScenery(grid: GridSpec, layout: FarmLayout | null): StaticScenery 
 export class StructureRenderer implements RenderSystem {
   private readonly ctx: SceneContext;
   private readonly root: THREE.Group;
-  /** The farm's scenery, built on the first visit to the farm and kept (hidden) elsewhere. */
-  private scenery: StaticScenery | null = null;
-  /** Whether the active map shows the farm scenery (only the farm, for now). */
-  private shown = false;
+  /** Every visited map's scenery, built on the first visit and kept (hidden) while elsewhere. */
+  private readonly sceneries = new Map<MapId, StaticScenery>();
+  /** The active map's scenery (null before the first rebuild). */
+  private active: StaticScenery | null = null;
   /** Seconds into the current lid animation, or −1 while the lid rests shut. */
   private lidTime = -1;
   private lidFrom = 0;
@@ -583,7 +589,7 @@ export class StructureRenderer implements RenderSystem {
       return;
     }
     // Ship and pending changes matter only where the farmstead is on screen.
-    if (!this.shown || (this.scenery?.farmstead ?? null) === null) return;
+    if ((this.active?.farmstead ?? null) === null) return;
     const action = state.player.lastAction;
     if (action !== prev.player.lastAction && action !== null && action.kind === 'ship' && action.success) {
       this.lidFrom = this.lidAmount;
@@ -597,22 +603,29 @@ export class StructureRenderer implements RenderSystem {
   }
 
   update(frame: FrameContext): void {
-    const farmstead = this.shown ? (this.scenery?.farmstead ?? null) : null;
+    // Every window and lamp on every map shares this one material.
+    this.updateWindowGlow(getSharedGlowGlassMaterial(), frame);
+    const farmstead = this.active?.farmstead ?? null;
     if (farmstead === null) return;
-    this.updateWindowGlow(farmstead.glassMaterial, frame);
     this.updateSmoke(farmstead.smoke, farmstead.smokeOrigin, frame.elapsed);
     if (this.lidTime >= 0) this.updateLid(farmstead.lidPivot, frame.dt);
     this.updateMarker(farmstead.marker, farmstead.markerBase, frame);
   }
 
   dispose(): void {
-    this.releaseScenery();
+    for (const scenery of this.sceneries.values()) {
+      this.root.remove(scenery.group);
+      scenery.bag.dispose();
+    }
+    this.sceneries.clear();
+    this.active = null;
+    disposeSharedGlowGlassMaterial();
     this.ctx.scene.remove(this.root);
   }
 
   /**
-   * On the farm: builds the farm scenery once (or again for a different grid), shows it and
-   * resets the animations. Anywhere else the farm scenery is hidden (kept for the way back).
+   * Shows the active map's scenery (building it on the first visit), hides every other map's and
+   * resets the animations.
    */
   private rebuild(state: GameState): void {
     const def = selectActiveMap(state);
@@ -625,21 +638,14 @@ export class StructureRenderer implements RenderSystem {
     this.markerPop = 0;
     this.glow = -1;
 
-    this.shown = def.scenery === 'farm';
-    if (!this.shown) {
-      if (this.scenery !== null) this.scenery.group.visible = false;
-      return;
-    }
-
-    const grid = selectActiveWorld(state).grid;
-    if (this.scenery !== null && !sameGrid(this.scenery.grid, grid)) this.releaseScenery();
-    let scenery = this.scenery;
-    if (scenery === null) {
-      scenery = buildScenery(grid, def.farmstead);
-      this.scenery = scenery;
+    let scenery = this.sceneries.get(def.id);
+    if (scenery === undefined) {
+      scenery = buildScenery(def);
+      this.sceneries.set(def.id, scenery);
       this.root.add(scenery.group);
     }
-    scenery.group.visible = true;
+    for (const other of this.sceneries.values()) other.group.visible = other === scenery;
+    this.active = scenery;
 
     const farmstead = scenery.farmstead;
     if (farmstead === null) return;
@@ -650,13 +656,6 @@ export class StructureRenderer implements RenderSystem {
     farmstead.marker.visible = hasPending;
     farmstead.marker.scale.setScalar(this.markerScale);
     farmstead.marker.position.copy(farmstead.markerBase);
-  }
-
-  private releaseScenery(): void {
-    if (this.scenery === null) return;
-    this.root.remove(this.scenery.group);
-    this.scenery.bag.dispose();
-    this.scenery = null;
   }
 
   private updateWindowGlow(material: THREE.MeshStandardMaterial, frame: FrameContext): void {

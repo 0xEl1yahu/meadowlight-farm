@@ -1,12 +1,12 @@
 /**
- * Pure geometry builders and deterministic scenery layout for the farmstead: the farmhouse, the
- * shipping bin, and the meadow, border trees, fence, bushes and flower clumps around the farm
- * plateau. Nothing here touches the scene or game state; StructureRenderer owns the results.
+ * Pure geometry builders and deterministic scenery layout: the farmhouse, the shipping bin, and
+ * the meadow, border trees, fence, bushes and flower clumps around a map's plateau. Nothing here
+ * touches the scene or game state; StructureRenderer owns the results.
  *
  * Geometry conventions
- * - Every builder returns fresh, non-indexed BufferGeometry with `position` and `normal`
- *   attributes and no UVs or groups, so parts merge cleanly with mergeGeometries and render
- *   flat-shaded. The caller owns (and must dispose) what it receives.
+ * - Parts come from geometryParts.ts: fresh, non-indexed BufferGeometry with `position` and
+ *   `normal` attributes and no UVs or groups, so they merge cleanly and render flat-shaded. The
+ *   caller owns (and must dispose) what it receives.
  * - "Painted" builders bake linear-space colours into a `color` attribute: render them with a
  *   white material and `vertexColors: true`. Instance-tinted builders (canopies, bushes) bake a
  *   grey shade instead, which multiplies the per-instance colour to give tiers some depth.
@@ -16,48 +16,48 @@
  *   centre of their footprint.
  *
  * Layout conventions
- * - Placement is a pure function of the plateau rectangle and cosmetic hashes (Salt.Cosmetic)
- *   keyed by integer cell coordinates, so the scenery is identical on every rebuild.
+ * - Placement is a pure function of the plateau rectangle, the map's scenery profile and
+ *   cosmetic hashes (Salt.Cosmetic) keyed by integer cell coordinates plus the map's
+ *   `cosmeticOffset`, so the scenery is identical on every rebuild (and the farm, with offset 0,
+ *   looks exactly as before maps existed).
  * - Occlusion: the camera looks from the (+X, +Z) diagonal at a pitch of atan(1/√2), so a point
  *   at height h covers the ground exactly h units further along both −X and −Z. Scenery that
- *   could hide farm tiles (the +X / +Z sides) is sized with {@link wouldOccludeFarm}.
+ *   could hide grid tiles (the +X / +Z sides) is sized with {@link wouldOccludeFarm}.
+ * - Warps: every warp opening gets a clear corridor (no trees, bushes or flowers) and a gap in
+ *   the fence or wall; see sceneryGeometry.ts.
  */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Salt, hashFloat } from '../core/hash';
 import type { WorldRect } from '../world/grid';
-import { TINT_MASK_ATTRIBUTE } from './materials';
+import {
+  STRUCTURE_COLORS,
+  at,
+  box,
+  createPartSet,
+  doorParts,
+  gableRoofFrame,
+  gableRoofParts,
+  gableWallPart,
+  mergeParts,
+  normalizePart,
+  paint,
+  pick,
+  pose,
+  shade,
+  wallLanternParts,
+  windowParts,
+  withTintMask,
+  type DoorColors,
+  type GableRoofSpec,
+  type PartSet,
+  type RoofColors,
+  type Vec2,
+  type WindowOptions,
+  type WindowStyle,
+} from './geometryParts';
 import { PALETTE } from './palette';
 
-// ---------------------------------------------------------------------------
-// Colours missing from the shared palette
-// ---------------------------------------------------------------------------
-
-/** Local colours (sRGB hex) for structure details the shared palette does not cover. */
-export const STRUCTURE_COLORS = {
-  stone: 0xd6cdc1,
-  brick: 0xd88c72,
-  brickDark: 0x9e6c5e,
-  roofShade: 0xd5776b,
-  roofRidge: 0xc4685d,
-  shutter: 0x9ec6d8,
-  shutterDark: 0x84adc2,
-  doorDark: 0x875c40,
-  knob: 0xf2c94c,
-  iron: 0x5b4a40,
-  doormat: 0xe59c7f,
-  leaf: 0x78c06b,
-  binPlank: 0xae784c,
-  coin: 0xffcc45,
-  coinFace: 0xffe596,
-  glassDay: 0xc4e2ec,
-  windowGlow: 0xffc36a,
-  smoke: 0xf4f0ea,
-  meadowNear: 0x93c97c,
-  meadowFar: 0xa9d1a1,
-  meadowHill: 0xbadc9d,
-  meadowSun: 0xa9d487,
-} as const;
+export { STRUCTURE_COLORS, mergeParts } from './geometryParts';
 
 /** Deeper greens for bushes, so they read against the meadow. */
 export const BUSH_TINTS = [0x74b86a, 0x6aae66, 0x82c275, 0x5fa866] as const;
@@ -96,173 +96,17 @@ export function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** Uniform [0, 1) cosmetic hash for one feature at integer coordinates (a, b), channel k. */
-function cosmetic(feature: number, a: number, b: number, k: number): number {
-  return hashFloat(Salt.Cosmetic, feature, a, b, k);
+/** Integer offset added to the cell coordinates of every scenery hash (a map's `cosmeticOffset`). */
+export interface CosmeticOffset {
+  readonly x: number;
+  readonly z: number;
 }
 
-/** Picks an entry of a non-empty list with a uniform [0, 1) value. */
-function pick<T>(list: readonly T[], unit: number): T {
-  const value = list[Math.min(list.length - 1, Math.max(0, Math.floor(unit * list.length)))];
-  if (value === undefined) throw new RangeError('pick: list is empty');
-  return value;
-}
+export const NO_OFFSET: CosmeticOffset = { x: 0, z: 0 };
 
-function at<T>(list: ArrayLike<T>, index: number): T {
-  const value = list[index];
-  if (value === undefined) throw new RangeError(`index ${index} outside [0, ${list.length})`);
-  return value;
-}
-
-// ---------------------------------------------------------------------------
-// Part helpers (build-time only)
-// ---------------------------------------------------------------------------
-
-type Vec2 = readonly [number, number];
-
-/** Rotation (applied X, then Z, then Y) followed by a translation. */
-interface Pose {
-  readonly x?: number;
-  readonly y?: number;
-  readonly z?: number;
-  readonly rx?: number;
-  readonly ry?: number;
-  readonly rz?: number;
-}
-
-/** Body parts are painted and opaque; glass parts are unpainted and use the glow material. */
-interface PartSet {
-  readonly body: THREE.BufferGeometry[];
-  readonly glass: THREE.BufferGeometry[];
-}
-
-const paintColor = new THREE.Color();
-const prismA = new THREE.Vector3();
-const prismB = new THREE.Vector3();
-const prismC = new THREE.Vector3();
-const prismNormal = new THREE.Vector3();
-const prismEdge = new THREE.Vector3();
-const prismCentroid = new THREE.Vector3();
-
-/** Non-indexed, no UVs, no groups, has normals. Disposes the source when a copy was needed. */
-function normalizePart(source: THREE.BufferGeometry): THREE.BufferGeometry {
-  const geometry = source.index === null ? source : source.toNonIndexed();
-  if (geometry !== source) source.dispose();
-  if (geometry.hasAttribute('uv')) geometry.deleteAttribute('uv');
-  geometry.clearGroups();
-  if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals();
-  return geometry;
-}
-
-function pose<T extends THREE.BufferGeometry>(geometry: T, p: Pose): T {
-  if (p.rx !== undefined && p.rx !== 0) geometry.rotateX(p.rx);
-  if (p.rz !== undefined && p.rz !== 0) geometry.rotateZ(p.rz);
-  if (p.ry !== undefined && p.ry !== 0) geometry.rotateY(p.ry);
-  geometry.translate(p.x ?? 0, p.y ?? 0, p.z ?? 0);
-  return geometry;
-}
-
-/** Fills a `color` attribute with one linear-space colour. */
-function paintRgb(source: THREE.BufferGeometry, r: number, g: number, b: number): THREE.BufferGeometry {
-  const geometry = normalizePart(source);
-  const count = geometry.getAttribute('position').count;
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    colors[i * 3] = r;
-    colors[i * 3 + 1] = g;
-    colors[i * 3 + 2] = b;
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  return geometry;
-}
-
-function paint(source: THREE.BufferGeometry, color: THREE.ColorRepresentation): THREE.BufferGeometry {
-  paintColor.set(color);
-  return paintRgb(source, paintColor.r, paintColor.g, paintColor.b);
-}
-
-/** Grey vertex colour that multiplies an instance tint. */
-function shade(source: THREE.BufferGeometry, value: number): THREE.BufferGeometry {
-  return paintRgb(source, value, value, value);
-}
-
-function box(
-  width: number,
-  height: number,
-  depth: number,
-  p: Pose,
-  color: THREE.ColorRepresentation,
-): THREE.BufferGeometry {
-  return paint(pose(new THREE.BoxGeometry(width, height, depth), p), color);
-}
-
-function glassBox(width: number, height: number, depth: number, p: Pose): THREE.BufferGeometry {
-  return normalizePart(pose(new THREE.BoxGeometry(width, height, depth), p));
-}
-
-/**
- * Merges compatible parts (same attribute set, all non-indexed) into one geometry and disposes
- * the inputs. Throws when the parts are incompatible.
- */
-export function mergeParts(parts: readonly THREE.BufferGeometry[], label: string): THREE.BufferGeometry {
-  if (parts.length === 0) throw new RangeError(`mergeParts(${label}): nothing to merge`);
-  const merged: THREE.BufferGeometry | null = mergeGeometries([...parts], false);
-  for (const part of parts) part.dispose();
-  if (merged === null) throw new Error(`mergeParts(${label}): parts have incompatible attributes`);
-  merged.computeBoundingBox();
-  merged.computeBoundingSphere();
-  return merged;
-}
-
-function transformParts(parts: readonly THREE.BufferGeometry[], matrix: THREE.Matrix4, out: THREE.BufferGeometry[]): void {
-  for (const part of parts) out.push(part.applyMatrix4(matrix));
-}
-
-/**
- * Closed prism extruded along X from a convex profile of (z, y) points. Faces are oriented
- * outward whatever the profile's winding, so the result casts and receives shadows correctly.
- */
-export function convexPrismX(profile: readonly Vec2[], x0: number, x1: number): THREE.BufferGeometry {
-  const n = profile.length;
-  if (n < 3) throw new RangeError('convexPrismX: a profile needs at least three points');
-  let sumZ = 0;
-  let sumY = 0;
-  for (const [z, y] of profile) {
-    sumZ += z;
-    sumY += y;
-  }
-  prismCentroid.set((x0 + x1) / 2, sumY / n, sumZ / n);
-
-  const positions: number[] = [];
-  const pushTriangle = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): void => {
-    prismNormal.subVectors(b, a).cross(prismEdge.subVectors(c, a));
-    const cx = (a.x + b.x + c.x) / 3 - prismCentroid.x;
-    const cy = (a.y + b.y + c.y) / 3 - prismCentroid.y;
-    const cz = (a.z + b.z + c.z) / 3 - prismCentroid.z;
-    const outward = prismNormal.x * cx + prismNormal.y * cy + prismNormal.z * cz >= 0;
-    const second = outward ? b : c;
-    const third = outward ? c : b;
-    positions.push(a.x, a.y, a.z, second.x, second.y, second.z, third.x, third.y, third.z);
-  };
-
-  for (let i = 0; i < n; i++) {
-    const [pz, py] = at(profile, i);
-    const [qz, qy] = at(profile, (i + 1) % n);
-    pushTriangle(prismA.set(x0, py, pz), prismB.set(x1, py, pz), prismC.set(x1, qy, qz));
-    pushTriangle(prismA.set(x0, py, pz), prismB.set(x1, qy, qz), prismC.set(x0, qy, qz));
-  }
-  const [fz, fy] = at(profile, 0);
-  for (let i = 1; i < n - 1; i++) {
-    const [pz, py] = at(profile, i);
-    const [qz, qy] = at(profile, i + 1);
-    pushTriangle(prismA.set(x0, fy, fz), prismB.set(x0, py, pz), prismC.set(x0, qy, qz));
-    pushTriangle(prismA.set(x1, fy, fz), prismB.set(x1, py, pz), prismC.set(x1, qy, qz));
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.computeVertexNormals();
-  return geometry;
+/** Uniform [0, 1) cosmetic hash for one feature at integer coordinates (a, b) shifted by `offset`, channel k. */
+function cosmetic(offset: CosmeticOffset, feature: number, a: number, b: number, k: number): number {
+  return hashFloat(Salt.Cosmetic, feature, a + offset.x, b + offset.z, k);
 }
 
 // ---------------------------------------------------------------------------
@@ -325,14 +169,35 @@ interface HouseFrame {
   readonly halfD: number;
   readonly foundationTop: number;
   readonly wallTop: number;
+  readonly roof: GableRoofSpec;
   readonly slope: number;
   readonly rise: number;
-  /** Vertical thickness of the roof panels. */
-  readonly roofVertical: number;
   readonly ridgeTop: number;
   readonly doorX: number;
   readonly stepDepth: number;
 }
+
+const HOUSE_ROOF_COLORS: RoofColors = {
+  roof: PALETTE.houseRoof,
+  shingle: STRUCTURE_COLORS.roofShade,
+  ridge: STRUCTURE_COLORS.roofRidge,
+  barge: PALETTE.houseTrim,
+};
+
+const HOUSE_WINDOW_STYLE: WindowStyle = {
+  frameWidth: FARMHOUSE_SHAPE.frameWidth,
+  shutterWidth: FARMHOUSE_SHAPE.shutterWidth,
+  trim: PALETTE.houseTrim,
+  shutter: STRUCTURE_COLORS.shutter,
+  shutterDark: STRUCTURE_COLORS.shutterDark,
+};
+
+const HOUSE_DOOR_COLORS: DoorColors = {
+  trim: PALETTE.houseTrim,
+  door: PALETTE.door,
+  doorDark: STRUCTURE_COLORS.doorDark,
+  awning: PALETTE.houseRoof,
+};
 
 function houseFrame(spec: FarmhouseSpec): HouseFrame {
   const S = FARMHOUSE_SHAPE;
@@ -340,19 +205,26 @@ function houseFrame(spec: FarmhouseSpec): HouseFrame {
   const halfD = spec.depth / 2;
   const foundationTop = S.foundationHeight;
   const wallTop = foundationTop + S.wallHeight;
-  const slope = Math.tan(S.roofPitch);
-  const rise = halfD * slope;
-  const roofVertical = S.roofThickness / Math.cos(S.roofPitch);
+  const roof: GableRoofSpec = {
+    halfW,
+    halfD,
+    wallTop,
+    pitch: S.roofPitch,
+    thickness: S.roofThickness,
+    eaveOverhang: S.eaveOverhang,
+    gableOverhang: S.gableOverhang,
+  };
+  const { slope, rise, ridgeTop } = gableRoofFrame(roof);
   const doorLimit = Math.max(0, halfW - S.cornerPost - S.doorWidth / 2 - 0.12);
   return {
     halfW,
     halfD,
     foundationTop,
     wallTop,
+    roof,
     slope,
     rise,
-    roofVertical,
-    ridgeTop: wallTop + rise + roofVertical,
+    ridgeTop,
     doorX: THREE.MathUtils.clamp(spec.doorOffsetX, -doorLimit, doorLimit),
     stepDepth: Math.max(0.2, spec.stepDepth),
   };
@@ -377,13 +249,7 @@ function shellParts(f: HouseFrame, out: PartSet): void {
   out.body.push(box(width, S.wallHeight, depth, { y: f.foundationTop + S.wallHeight / 2 }, PALETTE.houseWall));
   // Wooden sill band around the base of the walls.
   out.body.push(box(width + 0.02, 0.08, depth + 0.02, { y: f.foundationTop + 0.04 }, trim));
-
-  const gable: Vec2[] = [
-    [-f.halfD, f.wallTop],
-    [f.halfD, f.wallTop],
-    [0, f.wallTop + f.rise],
-  ];
-  out.body.push(paint(convexPrismX(gable, -f.halfW, f.halfW), PALETTE.houseWall));
+  out.body.push(gableWallPart(f.roof, PALETTE.houseWall));
 
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
@@ -402,74 +268,6 @@ function shellParts(f: HouseFrame, out: PartSet): void {
   }
 }
 
-/** Two sloped panels with overhang, shingle rows, barge boards and a ridge cap. */
-function roofParts(f: HouseFrame, out: PartSet): void {
-  const S = FARMHOUSE_SHAPE;
-  const halfLength = f.halfW + S.gableOverhang;
-  const eaveZ = f.halfD + S.eaveOverhang;
-  const eaveBottom = f.wallTop - S.eaveOverhang * f.slope;
-  const ridgeBottom = f.wallTop + f.rise;
-  const cos = Math.cos(S.roofPitch);
-  const sin = Math.sin(S.roofPitch);
-  const slopeLength = eaveZ / cos;
-
-  for (const side of [1, -1]) {
-    const panel: Vec2[] = [
-      [0, f.ridgeTop],
-      [side * eaveZ, eaveBottom + f.roofVertical],
-      [side * eaveZ, eaveBottom],
-      [0, ridgeBottom],
-    ];
-    out.body.push(paint(convexPrismX(panel, -halfLength, halfLength), PALETTE.houseRoof));
-
-    // Outward normal of this slope and a point on its top surface `s` units down from the ridge.
-    const normalY = cos;
-    const normalZ = side * sin;
-    const surfaceZ = (s: number): number => side * s * cos;
-    const surfaceY = (s: number): number => f.ridgeTop - s * sin;
-
-    const stripThickness = 0.035;
-    for (const fraction of [0.3, 0.55, 0.8]) {
-      const s = slopeLength * fraction;
-      out.body.push(
-        box(
-          halfLength * 2,
-          stripThickness,
-          0.09,
-          {
-            y: surfaceY(s) + (normalY * stripThickness) / 2,
-            z: surfaceZ(s) + (normalZ * stripThickness) / 2,
-            rx: side * S.roofPitch,
-          },
-          STRUCTURE_COLORS.roofShade,
-        ),
-      );
-    }
-
-    const boardHeight = S.roofThickness + 0.1;
-    const mid = slopeLength / 2;
-    const inset = S.roofThickness / 2 + 0.03;
-    for (const end of [-1, 1]) {
-      out.body.push(
-        box(
-          0.06,
-          boardHeight,
-          slopeLength,
-          {
-            x: end * (halfLength + 0.03),
-            y: surfaceY(mid) - normalY * inset,
-            z: surfaceZ(mid) - normalZ * inset,
-            rx: side * S.roofPitch,
-          },
-          PALETTE.houseTrim,
-        ),
-      );
-    }
-  }
-
-  out.body.push(box(halfLength * 2 + 0.1, 0.13, 0.13, { y: f.ridgeTop, rx: Math.PI / 4 }, STRUCTURE_COLORS.roofRidge));
-}
-
 /** Brick chimney through the back slope. Returns the house-local chimney mouth. */
 function chimneyParts(f: HouseFrame, out: PartSet): THREE.Vector3 {
   const S = FARMHOUSE_SHAPE;
@@ -484,119 +282,6 @@ function chimneyParts(f: HouseFrame, out: PartSet): THREE.Vector3 {
   return new THREE.Vector3(cx, top + 0.1, cz);
 }
 
-/** Door with frame, planks, window, knob, awning, porch step and doormat. */
-function doorParts(f: HouseFrame, out: PartSet): void {
-  const S = FARMHOUSE_SHAPE;
-  const front = f.halfD;
-  const x = f.doorX;
-  const base = f.foundationTop;
-  const frameHalf = S.doorWidth / 2 + 0.1;
-  const frameHeight = S.doorHeight + 0.12;
-
-  out.body.push(box(frameHalf * 2, frameHeight, 0.08, { x, y: base + frameHeight / 2, z: front + 0.03 }, PALETTE.houseTrim));
-  out.body.push(box(S.doorWidth, S.doorHeight, 0.06, { x, y: base + S.doorHeight / 2, z: front + 0.08 }, PALETTE.door));
-  for (const sx of [-1, 1]) {
-    out.body.push(box(0.025, 0.82, 0.012, { x: x + sx * 0.14, y: base + 0.49, z: front + 0.114 }, STRUCTURE_COLORS.doorDark));
-  }
-
-  const paneY = base + S.doorHeight - 0.3;
-  out.glass.push(glassBox(0.3, 0.2, 0.02, { x, y: paneY, z: front + 0.115 }));
-  out.body.push(box(0.022, 0.2, 0.02, { x, y: paneY, z: front + 0.128 }, STRUCTURE_COLORS.doorDark));
-  out.body.push(box(0.3, 0.022, 0.02, { x, y: paneY, z: front + 0.128 }, STRUCTURE_COLORS.doorDark));
-  out.body.push(paint(pose(new THREE.IcosahedronGeometry(0.045, 0), { x: x + 0.27, y: base + 0.68, z: front + 0.13 }), STRUCTURE_COLORS.knob));
-
-  // Little shed awning over the door, held by two diagonal brackets.
-  const awningTilt = 0.42;
-  const awningDepth = 0.5;
-  out.body.push(
-    box(
-      frameHalf * 2 + 0.24,
-      0.06,
-      awningDepth,
-      { x, y: base + frameHeight + 0.2, z: front + (awningDepth / 2) * Math.cos(awningTilt), rx: awningTilt },
-      PALETTE.houseRoof,
-    ),
-  );
-  for (const sx of [-1, 1]) {
-    out.body.push(box(0.05, 0.05, 0.3, { x: x + sx * (frameHalf + 0.02), y: base + frameHeight + 0.05, z: front + 0.1, rx: -0.8 }, PALETTE.houseTrim));
-  }
-
-  out.body.push(box(1.3, 0.12, f.stepDepth, { x, y: 0.04, z: front + f.stepDepth / 2 }, STRUCTURE_COLORS.stone));
-  const matDepth = Math.min(0.32, f.stepDepth - 0.12);
-  out.body.push(box(0.7, 0.02, matDepth, { x, y: 0.11, z: front + f.stepDepth / 2 + 0.03 }, STRUCTURE_COLORS.doormat));
-}
-
-/** Wall lantern hanging from a bracket; its glass glows with the windows. */
-function lanternParts(x: number, y: number, front: number, out: PartSet): void {
-  const z = front + 0.16;
-  out.body.push(box(0.04, 0.04, 0.17, { x, y: y + 0.19, z: front + 0.085 }, STRUCTURE_COLORS.iron));
-  out.body.push(paint(pose(new THREE.ConeGeometry(0.105, 0.09, 4), { x, y: y + 0.145, z, ry: Math.PI / 4 }), STRUCTURE_COLORS.iron));
-  out.body.push(box(0.15, 0.03, 0.15, { x, y: y - 0.075, z }, STRUCTURE_COLORS.iron));
-  out.glass.push(glassBox(0.12, 0.16, 0.12, { x, y: y + 0.02, z }));
-}
-
-interface WindowOptions {
-  readonly width: number;
-  readonly height: number;
-  readonly shutters: boolean;
-  readonly planter: boolean;
-}
-
-/**
- * A window authored on a wall at z = 0 facing +Z, centred on the origin: frame, recessed pane,
- * muntins, sill, optional shutters and an optional flower box. `placement` moves it onto a wall.
- */
-function windowParts(options: WindowOptions, placement: THREE.Matrix4, out: PartSet): void {
-  const S = FARMHOUSE_SHAPE;
-  const fw = S.frameWidth;
-  const w = options.width;
-  const h = options.height;
-  const trim = PALETTE.houseTrim;
-  const local: PartSet = { body: [], glass: [] };
-
-  local.body.push(box(w + 2 * fw, fw, 0.09, { y: h / 2 + fw / 2, z: 0.045 }, trim));
-  local.body.push(box(w + 2 * fw, fw, 0.09, { y: -h / 2 - fw / 2, z: 0.045 }, trim));
-  local.body.push(box(fw, h, 0.09, { x: -w / 2 - fw / 2, z: 0.045 }, trim));
-  local.body.push(box(fw, h, 0.09, { x: w / 2 + fw / 2, z: 0.045 }, trim));
-  local.glass.push(glassBox(w, h, 0.02, { z: 0.02 }));
-  local.body.push(box(0.035, h, 0.03, { z: 0.05 }, trim));
-  local.body.push(box(w, 0.035, 0.03, { z: 0.05 }, trim));
-  local.body.push(box(w + 2 * fw + 0.12, 0.06, 0.16, { y: -h / 2 - fw - 0.03, z: 0.08 }, trim));
-
-  if (options.shutters) {
-    for (const side of [-1, 1]) {
-      const sx = side * (w / 2 + fw + S.shutterWidth / 2 + 0.01);
-      local.body.push(box(S.shutterWidth, h + 2 * fw, 0.04, { x: sx, z: 0.02 }, STRUCTURE_COLORS.shutter));
-      for (const sy of [-0.26, 0.26]) {
-        local.body.push(box(S.shutterWidth * 0.72, 0.035, 0.016, { x: sx, y: sy * h, z: 0.047 }, STRUCTURE_COLORS.shutterDark));
-      }
-    }
-  }
-
-  if (options.planter) {
-    const top = -h / 2 - fw - 0.07;
-    const planterWidth = w + 2 * fw + 0.06;
-    local.body.push(box(planterWidth, 0.2, 0.22, { y: top - 0.1, z: 0.12 }, PALETTE.binWood));
-    local.body.push(box(planterWidth - 0.08, 0.02, 0.15, { y: top, z: 0.12 }, PALETTE.soilWatered));
-    const blooms = 5;
-    for (let i = 0; i < blooms; i++) {
-      const fx = -planterWidth / 2 + 0.1 + (i / (blooms - 1)) * (planterWidth - 0.2);
-      local.body.push(
-        paint(pose(new THREE.TetrahedronGeometry(0.08, 0), { x: fx + 0.04, y: top + 0.04, z: 0.11, ry: i * 1.3 }), STRUCTURE_COLORS.leaf),
-      );
-      local.body.push(
-        paint(
-          pose(new THREE.OctahedronGeometry(0.06, 0), { x: fx, y: top + 0.1 + (i % 2) * 0.03, z: 0.13, ry: i * 0.7 }),
-          pick(PALETTE.flower, (i % 3) / 3),
-        ),
-      );
-    }
-  }
-
-  transformParts(local.body, placement, out.body);
-  transformParts(local.glass, placement, out.glass);
-}
-
 /**
  * Cosy gabled cottage in house-local space: origin on the ground at the centre of the wall
  * footprint, front door on the +Z face. The ridge runs along X, so the camera sees the front
@@ -606,12 +291,16 @@ function windowParts(options: WindowOptions, placement: THREE.Matrix4, out: Part
 export function createFarmhouseGeometry(spec: FarmhouseSpec): FarmhouseGeometry {
   const S = FARMHOUSE_SHAPE;
   const f = houseFrame(spec);
-  const parts: PartSet = { body: [], glass: [] };
+  const parts = createPartSet();
 
   shellParts(f, parts);
-  roofParts(f, parts);
+  gableRoofParts(f.roof, HOUSE_ROOF_COLORS, parts);
   const chimneyTop = chimneyParts(f, parts);
-  doorParts(f, parts);
+  doorParts(
+    { x: f.doorX, front: f.halfD, base: f.foundationTop, width: S.doorWidth, height: S.doorHeight, stepDepth: f.stepDepth },
+    HOUSE_DOOR_COLORS,
+    parts,
+  );
 
   // Front windows either side of the door, keeping a gap for the lantern.
   const frameHalf = S.doorWidth / 2 + 0.1;
@@ -626,20 +315,20 @@ export function createFarmhouseGeometry(spec: FarmhouseSpec): FarmhouseGeometry 
   const placement = new THREE.Matrix4();
   for (const [start, end] of spans) {
     if (end - start < windowHalf * 2) continue;
-    windowParts(frontWindow, placement.makeTranslation((start + end) / 2, windowY, f.halfD), parts);
+    windowParts(frontWindow, HOUSE_WINDOW_STYLE, placement.makeTranslation((start + end) / 2, windowY, f.halfD), parts);
   }
 
   const lanternX = f.doorX + frameHalf + S.lanternGap / 2;
-  if (lanternX + 0.08 < postInner) lanternParts(lanternX, f.foundationTop + 1.34, f.halfD, parts);
+  if (lanternX + 0.08 < postInner) wallLanternParts(lanternX, f.foundationTop + 1.34, f.halfD, parts);
 
   // +X side: a shuttered window on the wall and a small attic window in the gable.
   const faceEast = new THREE.Matrix4().makeRotationY(Math.PI / 2);
   if (f.halfD * 2 >= windowHalf * 2 + S.cornerPost) {
     placement.copy(faceEast).setPosition(f.halfW, windowY, 0);
-    windowParts({ width: S.windowWidth, height: S.windowHeight, shutters: true, planter: false }, placement, parts);
+    windowParts({ width: S.windowWidth, height: S.windowHeight, shutters: true, planter: false }, HOUSE_WINDOW_STYLE, placement, parts);
   }
   placement.copy(faceEast).setPosition(f.halfW, f.wallTop + f.rise * 0.36, 0);
-  windowParts({ width: 0.4, height: 0.4, shutters: false, planter: false }, placement, parts);
+  windowParts({ width: 0.4, height: 0.4, shutters: false, planter: false }, HOUSE_WINDOW_STYLE, placement, parts);
 
   return {
     body: mergeParts(parts.body, 'farmhouse body'),
@@ -775,6 +464,23 @@ export function wouldOccludeFarm(rect: WorldRect, x: number, z: number, radius: 
   return false;
 }
 
+/**
+ * {@link wouldOccludeFarm} for an axis-aligned box: footprint centred on (x, z) with half extents
+ * (halfX, halfZ), `height` tall. The footprint is sampled at least every 0.1 units, edges
+ * included, so a long thin block (a wall course) is judged by its own outline rather than by a
+ * circle around it.
+ */
+export function wouldBoxOccludeFarm(rect: WorldRect, x: number, z: number, halfX: number, halfZ: number, height: number): boolean {
+  const nx = Math.max(1, Math.ceil((2 * halfX) / 0.1));
+  const nz = Math.max(1, Math.ceil((2 * halfZ) / 0.1));
+  for (let i = 0; i <= nx; i++) {
+    for (let j = 0; j <= nz; j++) {
+      if (occlusionClearance(rect, x - halfX + (2 * halfX * i) / nx, z - halfZ + (2 * halfZ * j) / nz) <= height) return true;
+    }
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Meadow
 // ---------------------------------------------------------------------------
@@ -790,7 +496,27 @@ export interface MeadowSpec {
   readonly topY: number;
   /** The meadow reaches this far under the plateau edge, so no seam can open at the rim. */
   readonly holeInset: number;
+  /** The map's cosmetic offset, added to every scenery hash. */
+  readonly offset: CosmeticOffset;
+  /** Ground colours of the meadow ring. */
+  readonly tones: MeadowTones;
 }
+
+/** Meadow ground colours (sRGB hex): near the plateau, far away, on hill tops and sunny patches. */
+export interface MeadowTones {
+  readonly near: number;
+  readonly far: number;
+  readonly hill: number;
+  readonly sun: number;
+}
+
+/** The farm's meadow; other maps pick their own tones (sceneryGeometry.ts). */
+export const FARM_MEADOW_TONES: MeadowTones = {
+  near: STRUCTURE_COLORS.meadowNear,
+  far: STRUCTURE_COLORS.meadowFar,
+  hill: STRUCTURE_COLORS.meadowHill,
+  sun: STRUCTURE_COLORS.meadowSun,
+};
 
 /** Rolling hills beyond the flat ring: tall behind the farm (−X / −Z), gentle in front. */
 export const MEADOW_RELIEF = {
@@ -802,17 +528,17 @@ export const MEADOW_RELIEF = {
   detailScale: 5,
 } as const;
 
-function valueNoise(x: number, z: number, feature: number): number {
+function valueNoise(offset: CosmeticOffset, x: number, z: number, feature: number): number {
   const ix = Math.floor(x);
   const iz = Math.floor(z);
   const fx = x - ix;
   const fz = z - iz;
   const sx = fx * fx * (3 - 2 * fx);
   const sz = fz * fz * (3 - 2 * fz);
-  const a = cosmetic(feature, ix, iz, 0);
-  const b = cosmetic(feature, ix + 1, iz, 0);
-  const c = cosmetic(feature, ix, iz + 1, 0);
-  const d = cosmetic(feature, ix + 1, iz + 1, 0);
+  const a = cosmetic(offset, feature, ix, iz, 0);
+  const b = cosmetic(offset, feature, ix + 1, iz, 0);
+  const c = cosmetic(offset, feature, ix, iz + 1, 0);
+  const d = cosmetic(offset, feature, ix + 1, iz + 1, 0);
   return lerp(lerp(a, b, sx), lerp(c, d, sx), sz);
 }
 
@@ -834,23 +560,35 @@ export function meadowHeight(spec: MeadowSpec, x: number, z: number): number {
   const facing = length > 0 ? -(dx + dz) / (length * Math.SQRT2) : 0;
   const amplitude = lerp(R.frontHillHeight, R.backHillHeight, smoothstep(-0.35, 0.55, facing));
   const noise =
-    0.75 * valueNoise(x / R.noiseScale, z / R.noiseScale, FEATURE.hills) +
-    0.25 * valueNoise(x / R.detailScale + 17, z / R.detailScale - 5, FEATURE.hillDetail);
+    0.75 * valueNoise(spec.offset, x / R.noiseScale, z / R.noiseScale, FEATURE.hills) +
+    0.25 * valueNoise(spec.offset, x / R.detailScale + 17, z / R.detailScale - 5, FEATURE.hillDetail);
   return spec.topY + ramp * amplitude * noise;
 }
 
-const meadowNear = new THREE.Color(STRUCTURE_COLORS.meadowNear);
-const meadowFar = new THREE.Color(STRUCTURE_COLORS.meadowFar);
-const meadowHill = new THREE.Color(STRUCTURE_COLORS.meadowHill);
-const meadowSun = new THREE.Color(STRUCTURE_COLORS.meadowSun);
+interface MeadowPalette {
+  readonly near: THREE.Color;
+  readonly far: THREE.Color;
+  readonly hill: THREE.Color;
+  readonly sun: THREE.Color;
+}
 
-/** Face colour: lush near the farm, softer and hazier far away, lighter on hill tops, patchy. */
-function meadowFaceColor(spec: MeadowSpec, x: number, y: number, z: number, a: number, c: number, tri: number, target: THREE.Color): THREE.Color {
+/** Face colour: lush near the plateau, softer and hazier far away, lighter on hill tops, patchy. */
+function meadowFaceColor(
+  spec: MeadowSpec,
+  palette: MeadowPalette,
+  x: number,
+  y: number,
+  z: number,
+  a: number,
+  c: number,
+  tri: number,
+  target: THREE.Color,
+): THREE.Color {
   const d = distanceOutside(spec.bounds, x, z);
-  target.copy(meadowNear).lerp(meadowFar, smoothstep(22, 78, d));
-  target.lerp(meadowHill, 0.55 * clamp01((y - spec.topY) / MEADOW_RELIEF.backHillHeight));
-  if (cosmetic(FEATURE.meadowTone, a * 2 + tri, c, 0) < 0.12) target.lerp(meadowSun, 0.45);
-  let brightness = 0.96 + 0.07 * cosmetic(FEATURE.meadowTone, a * 2 + tri, c, 1);
+  target.copy(palette.near).lerp(palette.far, smoothstep(22, 78, d));
+  target.lerp(palette.hill, 0.55 * clamp01((y - spec.topY) / MEADOW_RELIEF.backHillHeight));
+  if (cosmetic(spec.offset, FEATURE.meadowTone, a * 2 + tri, c, 0) < 0.12) target.lerp(palette.sun, 0.45);
+  let brightness = 0.96 + 0.07 * cosmetic(spec.offset, FEATURE.meadowTone, a * 2 + tri, c, 1);
   if (d < 1.2) brightness *= 0.94;
   return target.multiplyScalar(brightness);
 }
@@ -895,8 +633,8 @@ export function createMeadowGeometry(spec: MeadowSpec): THREE.BufferGeometry {
       let x = at(xs, a);
       let z = at(zs, c);
       if (distanceOutside(spec.bounds, x, z) > spec.cellSize * 0.6) {
-        x += (cosmetic(FEATURE.meadowJitter, a, c, 0) - 0.5) * jitter;
-        z += (cosmetic(FEATURE.meadowJitter, a, c, 1) - 0.5) * jitter;
+        x += (cosmetic(spec.offset, FEATURE.meadowJitter, a, c, 0) - 0.5) * jitter;
+        z += (cosmetic(spec.offset, FEATURE.meadowJitter, a, c, 1) - 0.5) * jitter;
       }
       const index = c * nx + a;
       vx[index] = x;
@@ -919,12 +657,18 @@ export function createMeadowGeometry(spec: MeadowSpec): THREE.BufferGeometry {
   const positions = new Float32Array(cellCount * 18);
   const colors = new Float32Array(cellCount * 18);
   const faceColor = new THREE.Color();
+  const palette: MeadowPalette = {
+    near: new THREE.Color(spec.tones.near),
+    far: new THREE.Color(spec.tones.far),
+    hill: new THREE.Color(spec.tones.hill),
+    sun: new THREE.Color(spec.tones.sun),
+  };
   let cursor = 0;
   const writeTriangle = (i0: number, i1: number, i2: number, a: number, c: number, tri: number): void => {
     const x = (at(vx, i0) + at(vx, i1) + at(vx, i2)) / 3;
     const y = (at(vy, i0) + at(vy, i1) + at(vy, i2)) / 3;
     const z = (at(vz, i0) + at(vz, i1) + at(vz, i2)) / 3;
-    meadowFaceColor(spec, x, y, z, a, c, tri, faceColor);
+    meadowFaceColor(spec, palette, x, y, z, a, c, tri, faceColor);
     for (const index of [i0, i1, i2]) {
       positions[cursor] = at(vx, index);
       positions[cursor + 1] = at(vy, index);
@@ -944,7 +688,7 @@ export function createMeadowGeometry(spec: MeadowSpec): THREE.BufferGeometry {
     const i01 = i00 + nx;
     const i11 = i01 + 1;
     // Both diagonals keep counter-clockwise winding seen from +Y (normals point up).
-    if (cosmetic(FEATURE.meadowDiagonal, a, c, 0) < 0.5) {
+    if (cosmetic(spec.offset, FEATURE.meadowDiagonal, a, c, 0) < 0.5) {
       writeTriangle(i00, i11, i10, a, c, 0);
       writeTriangle(i00, i01, i11, a, c, 1);
     } else {
@@ -1019,13 +763,6 @@ export function createRoundCanopyGeometry(): THREE.BufferGeometry {
     ),
     'round canopy',
   );
-}
-
-/** Adds TINT_MASK_ATTRIBUTE with one value on every vertex. */
-function withTintMask(geometry: THREE.BufferGeometry, value: number): THREE.BufferGeometry {
-  const count = geometry.getAttribute('position').count;
-  geometry.setAttribute(TINT_MASK_ATTRIBUTE, new THREE.BufferAttribute(new Float32Array(count).fill(value), 1));
-  return geometry;
 }
 
 /**
@@ -1137,6 +874,11 @@ function isClearOf(props: readonly PropPlacement[], x: number, z: number, radius
   return true;
 }
 
+/** True when a footprint circle at (x, z) touches any of the rectangles (warp corridors). */
+export function touchesAny(rects: readonly WorldRect[], x: number, z: number, radius: number): boolean {
+  return rects.some((rect) => distanceOutside(rect, x, z) < radius);
+}
+
 /** Jittered sample cells covering the plateau expanded by `reach` (the plateau itself is skipped by the callers' distance rules). */
 function forEachCell(bounds: WorldRect, cell: number, reach: number, visit: (i: number, j: number) => void): void {
   const i0 = Math.floor((bounds.minX - reach) / cell);
@@ -1148,130 +890,171 @@ function forEachCell(bounds: WorldRect, cell: number, reach: number, visit: (i: 
   }
 }
 
-/** Probability that a tree cell holds a tree, by distance (tiles) and side. */
-function treeDensity(distanceTiles: number, front: boolean): number {
-  if (front) {
-    if (distanceTiles < 4) return 0;
-    if (distanceTiles < 12) return 0.13;
-    return distanceTiles < 26 ? 0.06 : 0;
-  }
-  if (distanceTiles < 2) return 0;
-  if (distanceTiles <= 8) return 0.6;
-  if (distanceTiles <= 18) return 0.3;
-  return distanceTiles <= 34 ? 0.12 : 0;
+/** Probability that a sample cell holds a prop, by distance from the plateau (tiles) and side (front = +X / +Z). */
+export type DensityFn = (distanceTiles: number, front: boolean) => number;
+
+/** How thickly a map's surroundings are planted. */
+export interface SceneryDensities {
+  readonly tree: DensityFn;
+  readonly bush: DensityFn;
+  readonly flower: DensityFn;
+  /** Share of pines among the trees behind (back) and in front of the plateau. */
+  readonly pineShare: { readonly back: number; readonly front: number };
+  readonly bushTints: readonly number[];
 }
 
 /**
- * Border woodland: a dense band 2–8 tiles out on the −X / −Z sides (behind the farm as seen by
- * the camera) thinning into scattered trees on the hills, and only sparse, small trees ≥ 4 tiles
- * out on the +X / +Z sides, each shrunk until it can no longer hide a farm tile.
+ * The farm: a dense band 2–8 tiles out behind the farm thinning into scattered trees on the
+ * hills, sparse small trees ≥ 4 tiles out in front; a loose hedge row of bushes just outside the
+ * fence at the back; flowers densest just outside the fence.
  */
-export function placeBorderTrees(meadow: MeadowSpec, unit: number): TreePlacement[] {
+export const FARM_DENSITIES: SceneryDensities = {
+  tree: (d, front) => {
+    if (front) {
+      if (d < 4) return 0;
+      if (d < 12) return 0.13;
+      return d < 26 ? 0.06 : 0;
+    }
+    if (d < 2) return 0;
+    if (d <= 8) return 0.6;
+    if (d <= 18) return 0.3;
+    return d <= 34 ? 0.12 : 0;
+  },
+  bush: (d, front) => {
+    if (d > 22) return 0;
+    if (front) return d >= 1.5 ? 0.05 : 0;
+    return d >= 0.95 && d <= 2.1 ? 0.32 : d > 2.1 ? 0.06 : 0;
+  },
+  flower: (d, front) => {
+    if (d > 15) return 0;
+    if (front) return d >= 0.7 ? 0.09 : 0;
+    return d >= 0.55 && d <= 3 ? 0.18 : d > 3 ? 0.07 : 0;
+  },
+  pineShare: { back: 0.5, front: 0.3 },
+  bushTints: BUSH_TINTS,
+};
+
+/** Everything the scatter placement needs to know about one map's surroundings. */
+export interface ScatterSpec {
+  readonly meadow: MeadowSpec;
+  /** Tile size (world units). */
+  readonly unit: number;
+  readonly density: SceneryDensities;
+  /** Warp corridors: no tree, bush or flower footprint may touch them. */
+  readonly corridors: readonly WorldRect[];
+}
+
+/**
+ * Border woodland: trees by the map's density profile, each shrunk until it can no longer hide
+ * a grid tile (front trees, and back trees whose canopy rim reaches past a far corner's
+ * diagonal), and kept out of the warp corridors.
+ */
+export function placeBorderTrees(spec: ScatterSpec): TreePlacement[] {
+  const { meadow, unit, density } = spec;
   const bounds = meadow.bounds;
+  const offset = meadow.offset;
   const cell = 2.3 * unit;
   const trees: TreePlacement[] = [];
   forEachCell(bounds, cell, 36 * unit, (i, j) => {
-    const x = (i + 0.2 + 0.6 * cosmetic(FEATURE.tree, i, j, 0)) * cell;
-    const z = (j + 0.2 + 0.6 * cosmetic(FEATURE.tree, i, j, 1)) * cell;
+    const x = (i + 0.2 + 0.6 * cosmetic(offset, FEATURE.tree, i, j, 0)) * cell;
+    const z = (j + 0.2 + 0.6 * cosmetic(offset, FEATURE.tree, i, j, 1)) * cell;
     const d = distanceOutside(bounds, x, z) / unit;
     const front = Number.isFinite(occlusionClearance(bounds, x, z));
-    if (cosmetic(FEATURE.tree, i, j, 2) >= treeDensity(d, front)) return;
+    if (cosmetic(offset, FEATURE.tree, i, j, 2) >= density.tree(d, front)) return;
 
-    const species: TreeSpecies = cosmetic(FEATURE.tree, i, j, 3) < (front ? 0.3 : 0.5) ? 'pine' : 'round';
+    const pineShare = front ? density.pineShare.front : density.pineShare.back;
+    const species: TreeSpecies = cosmetic(offset, FEATURE.tree, i, j, 3) < pineShare ? 'pine' : 'round';
     const shape = TREE_SHAPES[species];
-    const size = cosmetic(FEATURE.tree, i, j, 4);
+    const size = cosmetic(offset, FEATURE.tree, i, j, 4);
     let scale = unit * (front ? 0.62 + 0.3 * size : d <= 8 ? 0.85 + 0.55 * size : 0.95 + 0.65 * size);
-    // Front trees, and back trees whose canopy rim reaches past a far corner's diagonal, shrink
-    // until they cannot hide a farm tile.
     const minScale = 0.5 * unit;
     const totalHeight = shape.canopyBase + shape.canopyHeight;
     while (scale >= minScale && wouldOccludeFarm(bounds, x, z, shape.canopyRadius * scale, totalHeight * scale + 0.35 * unit)) {
       scale -= 0.05 * unit;
     }
     if (scale < minScale) return;
+    const radius = shape.canopyRadius * scale;
+    if (touchesAny(spec.corridors, x, z, radius)) return;
     trees.push({
       species,
       x,
       y: meadowHeight(meadow, x, z) - 0.04 * unit,
       z,
-      yaw: cosmetic(FEATURE.tree, i, j, 5) * Math.PI * 2,
+      yaw: cosmetic(offset, FEATURE.tree, i, j, 5) * Math.PI * 2,
       scale,
-      radius: shape.canopyRadius * scale,
-      tint: pick(PALETTE.treeCanopy, cosmetic(FEATURE.tree, i, j, 6)),
-      shade: 0.9 + 0.16 * cosmetic(FEATURE.tree, i, j, 7),
+      radius,
+      tint: pick(PALETTE.treeCanopy, cosmetic(offset, FEATURE.tree, i, j, 6)),
+      shade: 0.9 + 0.16 * cosmetic(offset, FEATURE.tree, i, j, 7),
     });
   });
   return trees;
 }
 
 /**
- * Bushes: a loose hedge row between the fence and the woodland on the −X / −Z sides, a few
- * scattered through the meadow, and rare low ones in front that never hide the farm.
+ * Bushes by the map's density profile (on the farm: a loose hedge row between the fence and the
+ * woodland at the back, a few scattered through the meadow, rare low ones in front), never
+ * hiding a grid tile and kept out of the warp corridors.
  */
-export function placeBushes(meadow: MeadowSpec, unit: number, trees: readonly PropPlacement[]): PropPlacement[] {
+export function placeBushes(spec: ScatterSpec, trees: readonly PropPlacement[]): PropPlacement[] {
+  const { meadow, unit, density } = spec;
   const bounds = meadow.bounds;
+  const offset = meadow.offset;
   const cell = 1.7 * unit;
   const bushes: PropPlacement[] = [];
   forEachCell(bounds, cell, 22 * unit, (i, j) => {
-    const x = (i + 0.2 + 0.6 * cosmetic(FEATURE.bush, i, j, 0)) * cell;
-    const z = (j + 0.2 + 0.6 * cosmetic(FEATURE.bush, i, j, 1)) * cell;
+    const x = (i + 0.2 + 0.6 * cosmetic(offset, FEATURE.bush, i, j, 0)) * cell;
+    const z = (j + 0.2 + 0.6 * cosmetic(offset, FEATURE.bush, i, j, 1)) * cell;
     const d = distanceOutside(bounds, x, z) / unit;
-    if (d > 22) return;
     const front = Number.isFinite(occlusionClearance(bounds, x, z));
-    const density = front ? (d >= 1.5 ? 0.05 : 0) : d >= 0.95 && d <= 2.1 ? 0.32 : d > 2.1 ? 0.06 : 0;
-    if (cosmetic(FEATURE.bush, i, j, 2) >= density) return;
+    if (cosmetic(offset, FEATURE.bush, i, j, 2) >= density.bush(d, front)) return;
 
-    const scale = unit * (0.75 + 0.45 * cosmetic(FEATURE.bush, i, j, 3));
+    const scale = unit * (0.75 + 0.45 * cosmetic(offset, FEATURE.bush, i, j, 3));
     const radius = BUSH_SHAPE.radius * scale;
     if (wouldOccludeFarm(bounds, x, z, radius, BUSH_SHAPE.height * scale + 0.25 * unit)) return;
-    if (!isClearOf(trees, x, z, radius, 0.6)) return;
+    if (!isClearOf(trees, x, z, radius, 0.6) || touchesAny(spec.corridors, x, z, radius)) return;
     bushes.push({
       x,
       y: meadowHeight(meadow, x, z) - 0.02 * unit,
       z,
-      yaw: cosmetic(FEATURE.bush, i, j, 4) * Math.PI * 2,
+      yaw: cosmetic(offset, FEATURE.bush, i, j, 4) * Math.PI * 2,
       scale,
       radius,
-      tint: pick(BUSH_TINTS, cosmetic(FEATURE.bush, i, j, 5)),
-      shade: 0.9 + 0.14 * cosmetic(FEATURE.bush, i, j, 6),
+      tint: pick(density.bushTints, cosmetic(offset, FEATURE.bush, i, j, 5)),
+      shade: 0.9 + 0.14 * cosmetic(offset, FEATURE.bush, i, j, 6),
     });
   });
   return bushes;
 }
 
-/** Flower clumps sprinkled through the meadow, densest just outside the fence. */
-export function placeFlowers(
-  meadow: MeadowSpec,
-  unit: number,
-  trees: readonly PropPlacement[],
-  bushes: readonly PropPlacement[],
-): FlowerPlacement[] {
+/** Flower clumps sprinkled through the meadow by the map's density profile, clear of the warp corridors. */
+export function placeFlowers(spec: ScatterSpec, trees: readonly PropPlacement[], bushes: readonly PropPlacement[]): FlowerPlacement[] {
+  const { meadow, unit, density } = spec;
   const bounds = meadow.bounds;
+  const offset = meadow.offset;
   const cell = 1.3 * unit;
   const flowers: FlowerPlacement[] = [];
   forEachCell(bounds, cell, 15 * unit, (i, j) => {
-    const x = (i + 0.15 + 0.7 * cosmetic(FEATURE.flower, i, j, 0)) * cell;
-    const z = (j + 0.15 + 0.7 * cosmetic(FEATURE.flower, i, j, 1)) * cell;
+    const x = (i + 0.15 + 0.7 * cosmetic(offset, FEATURE.flower, i, j, 0)) * cell;
+    const z = (j + 0.15 + 0.7 * cosmetic(offset, FEATURE.flower, i, j, 1)) * cell;
     const d = distanceOutside(bounds, x, z) / unit;
-    if (d > 15) return;
     const front = Number.isFinite(occlusionClearance(bounds, x, z));
-    const density = front ? (d >= 0.7 ? 0.09 : 0) : d >= 0.55 && d <= 3 ? 0.18 : d > 3 ? 0.07 : 0;
-    if (cosmetic(FEATURE.flower, i, j, 2) >= density) return;
+    if (cosmetic(offset, FEATURE.flower, i, j, 2) >= density.flower(d, front)) return;
 
-    const scale = unit * (0.8 + 0.45 * cosmetic(FEATURE.flower, i, j, 3));
+    const scale = unit * (0.8 + 0.45 * cosmetic(offset, FEATURE.flower, i, j, 3));
     const radius = FLOWER_SHAPE.radius * scale;
     if (wouldOccludeFarm(bounds, x, z, radius, FLOWER_SHAPE.height * scale + 0.2 * unit)) return;
     if (!isClearOf(trees, x, z, radius, 0.55) || !isClearOf(bushes, x, z, radius, 0.9)) return;
+    if (touchesAny(spec.corridors, x, z, radius)) return;
     flowers.push({
       x,
       y: meadowHeight(meadow, x, z) - 0.01 * unit,
       z,
-      yaw: cosmetic(FEATURE.flower, i, j, 4) * Math.PI * 2,
+      yaw: cosmetic(offset, FEATURE.flower, i, j, 4) * Math.PI * 2,
       scale,
       radius,
-      tint: pick(PALETTE.flower, cosmetic(FEATURE.flower, i, j, 5)),
-      leafTint: pick(FLOWER_LEAF_TINTS, cosmetic(FEATURE.flower, i, j, 6)),
-      shade: 0.92 + 0.1 * cosmetic(FEATURE.flower, i, j, 7),
+      tint: pick(PALETTE.flower, cosmetic(offset, FEATURE.flower, i, j, 5)),
+      leafTint: pick(FLOWER_LEAF_TINTS, cosmetic(offset, FEATURE.flower, i, j, 6)),
+      shade: 0.92 + 0.1 * cosmetic(offset, FEATURE.flower, i, j, 7),
     });
   });
   return flowers;
@@ -1281,7 +1064,43 @@ export function placeFlowers(
 // Fence
 // ---------------------------------------------------------------------------
 
-/** Tall on the −X / −Z sides (behind the farm), low on the +X / +Z sides so no tile is hidden. */
+/** A side of the plateau: north is −Z, south +Z, west −X, east +X. North and west are the back sides. */
+export type PlateauSide = 'north' | 'south' | 'west' | 'east';
+
+/** True for the sides behind the plateau as the camera sees it (−X / −Z): nothing there can hide a tile. */
+export function isBackSide(side: PlateauSide): boolean {
+  return side === 'north' || side === 'west';
+}
+
+/**
+ * An opening in a boundary (fence or wall) on one side: world coordinates along the side's axis
+ * (X on the north and south sides, Z on the west and east sides).
+ */
+export interface BoundaryGap {
+  readonly side: PlateauSide;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** The pieces of [start, end] left between the gaps (each clipped to the range), in order. */
+export function boundaryRuns(start: number, end: number, gaps: readonly { readonly min: number; readonly max: number }[]): [number, number][] {
+  const sorted = [...gaps].sort((a, b) => a.min - b.min);
+  const runs: [number, number][] = [];
+  let cursor = start;
+  for (const gap of sorted) {
+    if (gap.max <= cursor || gap.min >= end) continue;
+    if (gap.min > cursor) runs.push([cursor, gap.min]);
+    cursor = Math.max(cursor, gap.max);
+  }
+  if (cursor < end) runs.push([cursor, end]);
+  return runs;
+}
+
+/**
+ * Tall on the −X / −Z sides (behind the plateau), low on the +X / +Z sides so no tile is hidden.
+ * Gaps at the warps get taller, thicker gateposts on the back sides only; a gap on a front side
+ * ends in ordinary low posts.
+ */
 export const FENCE_SHAPE = {
   /** Distance of the fence line outside the plateau edge. */
   offset: 0.3,
@@ -1291,9 +1110,12 @@ export const FENCE_SHAPE = {
   lowHeight: 0.3,
   tallRails: [0.3, 0.58],
   lowRails: [0.18],
+  gateHeight: 1.12,
+  /** Horizontal scale of a gatepost relative to an ordinary post. */
+  gateWidth: 1.45,
 } as const;
 
-/** One instanced fence piece: posts scale Y by `height`; rails scale X by `length`. */
+/** One instanced fence piece: posts scale Y by `height` and X / Z by `length`; rails scale X by `length`. */
 export interface FencePiece {
   readonly x: number;
   readonly y: number;
@@ -1308,6 +1130,9 @@ export interface FenceLayout {
   readonly posts: readonly FencePiece[];
   readonly rails: readonly FencePiece[];
 }
+
+/** Half the diagonal of an unscaled fence post's square footprint (0.13 wide). */
+export const FENCE_POST_RADIUS = 0.13 * Math.SQRT1_2;
 
 /** Square post with a pyramid cap: 0.13 wide, height 1, base at y = 0 (scale Y per instance). */
 export function createFencePostGeometry(): THREE.BufferGeometry {
@@ -1325,12 +1150,15 @@ export function createFenceRailGeometry(): THREE.BufferGeometry {
   return normalizePart(new THREE.BoxGeometry(1, 0.07, 0.045));
 }
 
-function fenceShade(x: number, z: number): number {
-  return 0.92 + 0.1 * cosmetic(FEATURE.fence, Math.round(x * 8), Math.round(z * 8), 0);
+function fenceShade(offset: CosmeticOffset, x: number, z: number): number {
+  return 0.92 + 0.1 * cosmetic(offset, FEATURE.fence, Math.round(x * 8), Math.round(z * 8), 0);
 }
 
-/** Posts and rails around the plateau, `FENCE_SHAPE.offset` outside its edge, standing on groundY. */
-export function layoutFence(bounds: WorldRect, groundY: number): FenceLayout {
+/**
+ * Posts and rails around the plateau, `FENCE_SHAPE.offset` outside its edge, standing on groundY,
+ * with an opening at every gap. Each side runs in increasing X or Z.
+ */
+export function layoutFence(bounds: WorldRect, groundY: number, gaps: readonly BoundaryGap[], offset: CosmeticOffset): FenceLayout {
   const F = FENCE_SHAPE;
   const x0 = bounds.minX - F.offset;
   const x1 = bounds.maxX + F.offset;
@@ -1339,36 +1167,47 @@ export function layoutFence(bounds: WorldRect, groundY: number): FenceLayout {
   const posts: FencePiece[] = [];
   const rails: FencePiece[] = [];
 
-  const addPost = (x: number, z: number, tall: boolean): void => {
-    posts.push({ x, y: groundY - 0.03, z, yaw: 0, length: 1, height: (tall ? F.tallHeight : F.lowHeight) + 0.03, shade: fenceShade(x, z) });
+  const addPost = (x: number, z: number, height: number, width: number): void => {
+    posts.push({ x, y: groundY - 0.03, z, yaw: 0, length: width, height: height + 0.03, shade: fenceShade(offset, x, z) });
   };
 
   const sides = [
-    { ax: x0, az: z0, bx: x1, bz: z0, tall: true },
-    { ax: x0, az: z0, bx: x0, bz: z1, tall: true },
-    { ax: x0, az: z1, bx: x1, bz: z1, tall: false },
-    { ax: x1, az: z0, bx: x1, bz: z1, tall: false },
+    { side: 'north', ax: x0, az: z0, bx: x1, bz: z0 },
+    { side: 'west', ax: x0, az: z0, bx: x0, bz: z1 },
+    { side: 'south', ax: x0, az: z1, bx: x1, bz: z1 },
+    { side: 'east', ax: x1, az: z0, bx: x1, bz: z1 },
   ] as const;
   for (const side of sides) {
-    const dx = side.bx - side.ax;
-    const dz = side.bz - side.az;
-    const length = Math.hypot(dx, dz);
-    const segments = Math.max(1, Math.round(length / F.spacing));
-    const step = length / segments;
-    const yaw = Math.atan2(-dz, dx);
-    const heights = side.tall ? F.tallRails : F.lowRails;
-    for (let i = 0; i < segments; i++) {
-      if (i > 0) addPost(side.ax + (dx * i) / segments, side.az + (dz * i) / segments, side.tall);
-      const mx = side.ax + (dx * (i + 0.5)) / segments;
-      const mz = side.az + (dz * (i + 0.5)) / segments;
-      for (const height of heights) {
-        rails.push({ x: mx, y: groundY + height, z: mz, yaw, length: step, height: 1, shade: fenceShade(mx, mz + height) });
+    const tall = isBackSide(side.side);
+    const alongX = side.bz === side.az;
+    const start = alongX ? side.ax : side.az;
+    const end = alongX ? side.bx : side.bz;
+    const point = (t: number): [number, number] => (alongX ? [t, side.az] : [side.ax, t]);
+    const yaw = alongX ? 0 : -Math.PI / 2;
+    const heights = tall ? F.tallRails : F.lowRails;
+    for (const [r0, r1] of boundaryRuns(start, end, gaps.filter((gap) => gap.side === side.side))) {
+      const length = r1 - r0;
+      const segments = Math.max(1, Math.round(length / F.spacing));
+      const step = length / segments;
+      for (let i = 0; i < segments; i++) {
+        if (i > 0) addPost(...point(r0 + (length * i) / segments), tall ? F.tallHeight : F.lowHeight, 1);
+        const [mx, mz] = point(r0 + (length * (i + 0.5)) / segments);
+        for (const height of heights) {
+          rails.push({ x: mx, y: groundY + height, z: mz, yaw, length: step, height: 1, shade: fenceShade(offset, mx, mz + height) });
+        }
+      }
+      for (const edge of [r0 === start ? null : r0, r1 === end ? null : r1]) {
+        if (edge === null) continue;
+        const [px, pz] = point(edge);
+        // A gatepost keeps the occlusion rule like every other scenery piece; on a back side it always passes.
+        const gate = tall && !wouldOccludeFarm(bounds, px, pz, FENCE_POST_RADIUS * F.gateWidth, F.gateHeight);
+        addPost(px, pz, gate ? F.gateHeight : tall ? F.tallHeight : F.lowHeight, gate ? F.gateWidth : 1);
       }
     }
   }
-  addPost(x0, z0, true);
-  addPost(x1, z0, true);
-  addPost(x0, z1, true);
-  addPost(x1, z1, false);
+  addPost(x0, z0, F.tallHeight, 1);
+  addPost(x1, z0, F.tallHeight, 1);
+  addPost(x0, z1, F.tallHeight, 1);
+  addPost(x1, z1, F.lowHeight, 1);
   return { posts, rails };
 }
