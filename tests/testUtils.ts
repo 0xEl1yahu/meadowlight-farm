@@ -25,8 +25,9 @@ import {
   type WorldState,
 } from '../src/core/types';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
-import { createInitialState } from '../src/state/initialState';
+import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { countItem } from '../src/state/inventory';
+import { serializeGame } from '../src/state/persistence';
 import { calendarTime } from '../src/time/clock';
 import { locateTile } from '../src/world/grid';
 import { isWalkable, requireTile, setTile } from '../src/world/tiles';
@@ -146,7 +147,7 @@ export function atDay(state: GameState, absoluteDay: number, minuteOfDay = 600):
 }
 
 export function soilTile(state: typeof TileState.Plowed | typeof TileState.Watered, crop: CropInstance | null = null): Tile {
-  return { state, blocker: Blocker.None, blockerHp: 0, crop };
+  return { state, blocker: Blocker.None, blockerHp: 0, crop, object: null, fertilizer: null };
 }
 
 export function cropOf(cropId: CropId, overrides: Partial<CropInstance> = {}): CropInstance {
@@ -218,4 +219,35 @@ export function reachableFrom(world: WorldState, start: TileCoord): Set<string> 
     }
   }
   return seen;
+}
+
+/** JSON object shape of a save, as parsed. */
+export type SaveJson = Record<string, unknown>;
+
+/**
+ * Hand-transforms a current state back into the JSON of an older save version.
+ * - Version 2 has no later-workstream sections and no `object` / `fertilizer` on tiles.
+ * - Version 1 additionally predates wild crops: they are dropped, and sown crops lose `wild`.
+ * The state must not hold anything an old save cannot express (placed objects, fertiliser).
+ */
+export function legacySave(state: GameState, version: 1 | 2): SaveJson {
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  for (const key of Object.keys(createDefaultSections())) delete save[key];
+  save.version = version;
+  const world = save.world as { chunks: { tiles: SaveJson[] }[] };
+  for (const chunk of world.chunks) {
+    for (const tile of chunk.tiles) {
+      if (tile.object !== null || tile.fertilizer !== null) {
+        throw new Error(`legacySave: a version-${version} save cannot hold placed objects or fertiliser`);
+      }
+      delete tile.object;
+      delete tile.fertilizer;
+      if (version === 1 && tile.crop !== null) {
+        const crop = tile.crop as SaveJson;
+        if (crop.wild === true) tile.crop = null;
+        else delete crop.wild;
+      }
+    }
+  }
+  return save;
 }

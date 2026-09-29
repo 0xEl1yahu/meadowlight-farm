@@ -1,10 +1,45 @@
 import { INVENTORY, PLAYER, TOOLS, WORLD } from '../config';
-import { SAVE_VERSION, type GameState } from '../core/types';
+import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type NpcId, type NpcRelation } from '../core/types';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { createGridSpec } from '../world/grid';
 import { generateWorld } from '../world/worldgen';
 import { createInventory } from './inventory';
+
+/**
+ * Defaults for every section later workstreams fill in. A new game and the save migration both
+ * start from these, so an old save gains exactly the state a fresh game would have.
+ */
+export function createDefaultSections(): GameSections {
+  const npcs = {} as Record<NpcId, NpcRelation>;
+  for (const id of NPC_IDS) {
+    npcs[id] = { points: 0, talkedToday: false, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks: 0 };
+  }
+  return {
+    profile: {
+      playerName: 'Farmer',
+      farmName: 'Meadowlight',
+      appearance: { skinTone: 0, hairStyle: 0, hairColor: 0, shirtColor: 0, overallsColor: 0, hat: 0 },
+    },
+    tools: { levels: { hoe: 0, wateringCan: 0, pickaxe: 0, axe: 0 }, upgrade: null },
+    crafting: { known: ['chest', 'woodFence', 'woodPath', 'stonePath', 'scarecrow', 'sprinkler', 'basicFertilizer'] },
+    cooking: { known: ['friedMushrooms', 'veggieStew'], kitchenLevel: 0 },
+    buildings: [],
+    nextEntityId: 1,
+    npcs,
+    quests: { completed: [], board: null },
+    stats: {
+      parsnipsShipped: 0,
+      debrisCleared: 0,
+      forageFound: 0,
+      totalEarned: 0,
+      visitedTown: false,
+      craftedChest: false,
+      builtCoop: false,
+    },
+    festival: { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false },
+  };
+}
 
 export function createInitialState(seed: number = WORLD.seed): GameState {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
@@ -52,5 +87,6 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
         },
       ],
     },
+    ...createDefaultSections(),
   };
 }

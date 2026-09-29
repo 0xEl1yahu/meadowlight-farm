@@ -74,7 +74,7 @@ describe('farm layout', () => {
     forEachTile(world, (tile, tx, tz) => {
       const inHouse = rectContains(LAYOUT.house, tx, tz);
       expect(tile.blocker === Blocker.House).toBe(inHouse);
-      if (inHouse) expect(tile).toEqual({ state: TileState.Blocked, blocker: Blocker.House, blockerHp: 0, crop: null });
+      if (inHouse) expect(tile).toEqual({ state: TileState.Blocked, blocker: Blocker.House, blockerHp: 0, crop: null, object: null, fertilizer: null });
     });
     expect(countTiles(world, (tile) => tile.blocker === Blocker.House)).toBe(LAYOUT.house.width * LAYOUT.house.depth);
   });
@@ -103,7 +103,7 @@ describe('farm layout', () => {
       const inPond = isPondTile(LAYOUT.pond, tx, tz);
       if (inPond) pond++;
       expect(tile.blocker === Blocker.Water).toBe(inPond);
-      if (inPond) expect(tile).toEqual({ state: TileState.Blocked, blocker: Blocker.Water, blockerHp: 0, crop: null });
+      if (inPond) expect(tile).toEqual({ state: TileState.Blocked, blocker: Blocker.Water, blockerHp: 0, crop: null, object: null, fertilizer: null });
     });
     expect(pond).toBeGreaterThan(20);
   });

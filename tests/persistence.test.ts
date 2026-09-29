@@ -7,10 +7,20 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INVENTORY, PLAYER, TIME } from '../src/config';
-import { Blocker, Direction, SAVE_VERSION, TileState, type GameState } from '../src/core/types';
+import {
+  Blocker,
+  Direction,
+  SAVE_VERSION,
+  TileState,
+  type ActionKind,
+  type GameState,
+  type ItemStack,
+  type Tile,
+} from '../src/core/types';
 import { actions, type GameAction } from '../src/state/actions';
 import { createInitialState } from '../src/state/initialState';
 import {
+  ACTION_KINDS,
   SAVE_KEY,
   clearSave,
   deserializeGame,
@@ -21,7 +31,8 @@ import {
 } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
-import { BASE, holding, matureCrop, soilTile, withPlayer, withTile } from './testUtils';
+import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
+import { BASE, cropOf, holding, matureCrop, soilTile, withPlayer, withTile } from './testUtils';
 
 type JsonPath = readonly (string | number)[];
 
@@ -39,7 +50,7 @@ function corrupt(state: GameState, path: JsonPath, value: unknown): string {
 /** A mid-game state touching every part of the save: crops, debris damage, shipping, messages. */
 function richState(): GameState {
   let state = withTile(BASE, { tx: 8, tz: 12 }, soilTile(TileState.Watered, matureCrop('strawberry', { harvestCount: 2, regrowing: true })));
-  state = withTile(state, { tx: 3, tz: 15 }, { state: TileState.Blocked, blocker: Blocker.Rock, blockerHp: 1, crop: null });
+  state = withTile(state, { tx: 3, tz: 15 }, { state: TileState.Blocked, blocker: Blocker.Rock, blockerHp: 1, crop: null, object: null, fertilizer: null });
   const script: readonly GameAction[] = [
     actions.move(Direction.South),
     actions.move(Direction.South),
@@ -115,7 +126,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('validates real states', () => {
     expect(isValidGameState(BASE)).toBe(true);
     expect(isValidGameState(richState())).toBe(true);
-    expect(SAVE_VERSION).toBe(2);
+    expect(SAVE_VERSION).toBe(3);
   });
 });
 
@@ -125,7 +136,7 @@ describe('deserializeGame rejects corrupted saves', () => {
   });
 
   const base = BASE;
-  const houseTile = locateTile(base.world.grid, 5, 5);
+  const houseTile = locateTile(base.world.grid, 2, 2);
   const grassTile = locateTile(base.world.grid, 6, 12);
   const tilePath = (loc: { readonly chunkIndex: number; readonly localIndex: number }): JsonPath => [
     'world',
@@ -136,7 +147,7 @@ describe('deserializeGame rejects corrupted saves', () => {
   ];
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     // Header
-    ['wrong version', ['version'], 3],
+    ['wrong version', ['version'], 4],
     ['string version', ['version'], '1'],
     ['missing version', ['version'], undefined],
     ['negative seed', ['seed'], -1],
@@ -186,6 +197,16 @@ describe('deserializeGame rejects corrupted saves', () => {
     ['crop on the house', [...tilePath(houseTile), 'crop'], { ...matureCrop('parsnip') }],
     ['null tile', [...tilePath(grassTile)], null],
     ['missing crop field', [...tilePath(grassTile), 'crop'], undefined],
+    ['blocker hp on the house', [...tilePath(houseTile), 'blockerHp'], 1],
+    ['blocker hp on open ground', [...tilePath(grassTile), 'blockerHp'], 2],
+    ['missing object field', [...tilePath(grassTile), 'object'], undefined],
+    ['missing fertilizer field', [...tilePath(grassTile), 'fertilizer'], undefined],
+    ['unknown fertilizer', [...tilePath(grassTile), 'fertilizer'], 'compost'],
+    ['fertilizer on grass', [...tilePath(grassTile), 'fertilizer'], 'basic'],
+    ['fertilizer on the house', [...tilePath(houseTile), 'fertilizer'], 'basic'],
+    ['object that is not an object', [...tilePath(grassTile), 'object'], 'chest'],
+    ['unknown object kind', [...tilePath(grassTile), 'object'], { kind: 'statue' }],
+    ['object on the house', [...tilePath(houseTile), 'object'], { kind: 'scarecrow' }],
     // Player
     ['player inside the house', ['player', 'tz'], PLAYER.spawn.tz - 1],
     ['player outside the grid', ['player', 'tx'], 48],
@@ -320,5 +341,126 @@ describe('saveGame / loadGame / clearSave', () => {
     expect(saveGame(BASE)).toBe(false);
     expect(loadGame()).toBeNull();
     expect(() => clearSave()).not.toThrow();
+  });
+});
+
+describe('placed objects and fertiliser in saves', () => {
+  const GIANT = { kind: 'giantCrop', cropId: 'pumpkin', anchorTx: 3, anchorTz: 12 } as const;
+
+  /** BASE plus one object of every kind, a fertilised planted tile and a 3×3 giant crop. */
+  function furnished(): GameState {
+    const slots: (ItemStack | null)[] = Array.from({ length: INVENTORY.chestSlots }, () => null);
+    slots[0] = { itemId: 'wood', quantity: 50 };
+    slots[INVENTORY.chestSlots - 1] = { itemId: 'parsnip', quantity: INVENTORY.maxStack };
+    const tiles: readonly (readonly [number, number, Tile])[] = [
+      [6, 10, { ...EMPTY_TILE, object: { kind: 'chest', slots } }],
+      [7, 10, { ...soilTile(TileState.Watered), object: { kind: 'sprinkler' } }],
+      [8, 10, { ...soilTile(TileState.Plowed), object: { kind: 'qualitySprinkler' } }],
+      [9, 10, { ...EMPTY_TILE, object: { kind: 'scarecrow' } }],
+      [10, 10, { ...EMPTY_TILE, object: { kind: 'woodFence' } }],
+      [11, 10, { ...EMPTY_TILE, object: { kind: 'woodPath' } }],
+      [12, 10, { ...EMPTY_TILE, object: { kind: 'stonePath' } }],
+      [6, 11, { ...EMPTY_TILE, object: { kind: 'forage', itemId: 'chanterelle', spawnDay: 0 } }],
+      [7, 11, { ...EMPTY_TILE, object: { kind: 'trophy', festival: 'harvestFair', year: 2 } }],
+      [8, 11, { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'flowerArch' } }],
+      [9, 11, { ...soilTile(TileState.Plowed, cropOf('parsnip')), fertilizer: 'speedGro' }],
+      [10, 11, { ...soilTile(TileState.Watered), fertilizer: 'quality' }],
+    ];
+    let state = BASE;
+    for (const [tx, tz, tile] of tiles) state = withTile(state, { tx, tz }, tile);
+    for (let dz = 0; dz < 3; dz++) {
+      for (let dx = 0; dx < 3; dx++) state = withTile(state, { tx: 3 + dx, tz: 12 + dz }, { ...EMPTY_TILE, object: GIANT });
+    }
+    return state;
+  }
+  const tileAtPath = (tx: number, tz: number): JsonPath => {
+    const loc = locateTile(BASE.world.grid, tx, tz);
+    return ['world', 'chunks', loc.chunkIndex, 'tiles', loc.localIndex];
+  };
+
+  it('round-trips every object kind, fertiliser and a giant crop exactly', () => {
+    const state = furnished();
+    expect(isValidGameState(state)).toBe(true);
+    expect(deserializeGame(serializeGame(state))).toEqual(state);
+  });
+
+  it('lets the player stand on a path but not on any other object', () => {
+    const state = furnished();
+    const onPath = withPlayer(state, { tx: 11, tz: 10 }, Direction.South);
+    expect(deserializeGame(serializeGame(onPath))).toEqual(onPath);
+    for (const [tx, tz] of [[6, 10], [7, 10], [9, 10], [4, 13]] as const) {
+      const onObject: GameState = { ...state, player: { ...state.player, tx, tz } };
+      expect(deserializeGame(serializeGame(onObject)), `${tx},${tz}`).toBeNull();
+    }
+  });
+
+  const cases: readonly (readonly [string, JsonPath, unknown])[] = [
+    ['a chest with 35 slots', [...tileAtPath(6, 10), 'object', 'slots'], Array.from({ length: 35 }, () => null)],
+    ['a chest with 37 slots', [...tileAtPath(6, 10), 'object', 'slots'], Array.from({ length: 37 }, () => null)],
+    ['a chest slot that is not a stack', [...tileAtPath(6, 10), 'object', 'slots', 3], 'wood'],
+    ['a chest stack above maxStack', [...tileAtPath(6, 10), 'object', 'slots', 35, 'quantity'], INVENTORY.maxStack + 1],
+    ['an empty chest stack', [...tileAtPath(6, 10), 'object', 'slots', 0, 'quantity'], 0],
+    ['an unknown item in a chest', [...tileAtPath(6, 10), 'object', 'slots', 0, 'itemId'], 'diamond'],
+    ['a chest without slots', [...tileAtPath(6, 10), 'object', 'slots'], undefined],
+    ['an extra field on a sprinkler', [...tileAtPath(7, 10), 'object', 'radius'], 2],
+    ['an extra field on a chest', [...tileAtPath(6, 10), 'object', 'owner'], 'bram'],
+    ['a forage object of a crop', [...tileAtPath(6, 11), 'object', 'itemId'], 'parsnip'],
+    ['a negative forage spawn day', [...tileAtPath(6, 11), 'object', 'spawnDay'], -1],
+    ['a fractional forage spawn day', [...tileAtPath(6, 11), 'object', 'spawnDay'], 0.5],
+    ['a trophy from year 0', [...tileAtPath(7, 11), 'object', 'year'], 0],
+    ['a trophy from an unknown festival', [...tileAtPath(7, 11), 'object', 'festival'], 'mayDay'],
+    ['an unknown decoration', [...tileAtPath(8, 11), 'object', 'variant'], 'gnome'],
+    ['a decoration without a variant', [...tileAtPath(8, 11), 'object', 'variant'], undefined],
+    ['a path on plowed soil', [...tileAtPath(11, 10), 'state'], TileState.Plowed],
+    ['fertiliser under a path', [...tileAtPath(11, 10), 'fertilizer'], 'basic'],
+    ['fertiliser under a sprinkler', [...tileAtPath(7, 10), 'fertilizer'], 'basic'],
+    ['a sprinkler next to a crop', [...tileAtPath(7, 10), 'crop'], cropOf('parsnip')],
+    ['a scarecrow on a rock', [...tileAtPath(9, 10)], { ...blockedTile(Blocker.Rock, 2), object: { kind: 'scarecrow' } }],
+    ['fertilised soil turned back to grass', [...tileAtPath(10, 11), 'state'], TileState.Unplowed],
+    ['a giant crop missing a tile', [...tileAtPath(4, 13), 'object'], null],
+    ['a giant crop with a tile of another crop', [...tileAtPath(5, 14), 'object'], { ...GIANT, cropId: 'melon' }],
+    ['a giant crop of a crop that never grows giant', [...tileAtPath(3, 12), 'object', 'cropId'], 'parsnip'],
+    ['a stray tile naming a giant crop anchor', [...tileAtPath(6, 12), 'object'], GIANT],
+    ['a giant crop with a fractional anchor', [...tileAtPath(3, 12), 'object', 'anchorTx'], 3.5],
+    ['a giant crop leaving the grid', [...tileAtPath(12, 10), 'object'], { ...GIANT, anchorTx: 46, anchorTz: 38 }],
+  ];
+
+  it.each(cases)('rejects %s', (_label, path, value) => {
+    const state = furnished();
+    const text = corrupt(state, path, value);
+    expect(text).not.toBe(serializeGame(state));
+    expect(deserializeGame(text)).toBeNull();
+    expect(isValidGameState(JSON.parse(text))).toBe(false);
+  });
+});
+
+describe('ACTION_KINDS', () => {
+  it('lists every ActionKind exactly once', () => {
+    // The Record type makes this test stop compiling when ActionKind gains or loses a kind.
+    const every: Readonly<Record<ActionKind, true>> = {
+      hoe: true,
+      wateringCan: true,
+      pickaxe: true,
+      axe: true,
+      scythe: true,
+      plant: true,
+      harvest: true,
+      ship: true,
+      refill: true,
+      sleep: true,
+      openChest: true,
+      none: true,
+    };
+    expect([...ACTION_KINDS].sort()).toEqual(Object.keys(every).sort());
+    expect(new Set(ACTION_KINDS).size).toBe(ACTION_KINDS.length);
+  });
+
+  it('accepts a saved last action of every kind and rejects unknown kinds', () => {
+    const withLastAction = (kind: string): unknown => ({
+      ...BASE,
+      player: { ...BASE.player, actionSeq: 1, lastAction: { seq: 1, kind, target: { tx: 2, tz: 6 }, success: true } },
+    });
+    for (const kind of ACTION_KINDS) expect(isValidGameState(withLastAction(kind)), kind).toBe(true);
+    for (const kind of ['dance', 'chop', '']) expect(isValidGameState(withLastAction(kind)), kind).toBe(false);
   });
 });

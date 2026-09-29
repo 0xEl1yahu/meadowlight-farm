@@ -15,6 +15,21 @@ export const Salt = {
   Cosmetic: 0x165667b1,
   Wild: 0x5bd1e995,
   WildPick: 0x3c6ef372,
+  MapForest: 0x68e31da4,
+  MapTown: 0xb5297a4d,
+  ForestGen: 0x1b56c4e9,
+  TownGen: 0x7fb5d329,
+  Quality: 0x2545f491,
+  Weeds: 0x9e3779b9,
+  Festival: 0xbf58476d,
+  Gift: 0xa0761d65,
+  Crow: 0x85ebca6b,
+  GiantCrop: 0xc2b2ae35,
+  Sap: 0x27d4eb2f,
+  CopperOre: 0xd35a2d97,
+  Forage: 0x4cf5ad43,
+  NoticeBoard: 0x94d049bb,
+  AnimalProduct: 0x632be5ab,
 } as const;
 
 /**

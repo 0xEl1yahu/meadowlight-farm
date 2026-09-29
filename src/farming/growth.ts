@@ -72,6 +72,8 @@ export function advanceTileOvernight(tile: Tile, tx: number, tz: number, ctx: Da
   if (state === TileState.Plowed && weatherWaters(ctx.weather)) state = TileState.Watered;
 
   if (state === tile.state && crop === tile.crop) return tile;
+  // Grass never holds fertiliser: soil that reverts loses whatever was mixed into it.
+  if (state === TileState.Unplowed) return { ...tile, state, crop, fertilizer: null };
   return { ...tile, state, crop };
 }
 

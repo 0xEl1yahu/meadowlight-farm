@@ -8,11 +8,23 @@
  */
 import { describe, expect, it } from 'vitest';
 import { InvariantError } from '../src/core/invariant';
-import { Blocker, TileState, type GridSpec, type Tile, type WorldState } from '../src/core/types';
+import { INVENTORY } from '../src/config';
+import {
+  Blocker,
+  PLACED_OBJECT_KINDS,
+  TileState,
+  type GiantCropId,
+  type GridSpec,
+  type PlacedObject,
+  type PlacedObjectKind,
+  type Tile,
+  type WorldState,
+} from '../src/core/types';
 import { chunkCount, chunkRectByIndex, createGridSpec, locateTile, tileCount } from '../src/world/grid';
 import {
   EMPTY_TILE,
   assertTileConsistent,
+  assertWorldObjectsConsistent,
   blockedTile,
   countTiles,
   createWorld,
@@ -231,16 +243,27 @@ describe('forEachTile / countTiles', () => {
 describe('tile predicates and invariants', () => {
   it('EMPTY_TILE is frozen grass; blockedTile builds Blocked tiles', () => {
     expect(Object.isFrozen(EMPTY_TILE)).toBe(true);
-    expect(EMPTY_TILE).toEqual({ state: TileState.Unplowed, blocker: Blocker.None, blockerHp: 0, crop: null });
-    expect(blockedTile(Blocker.Rock, 2)).toEqual({ state: TileState.Blocked, blocker: Blocker.Rock, blockerHp: 2, crop: null });
-    expect(blockedTile(Blocker.House)).toEqual({ state: TileState.Blocked, blocker: Blocker.House, blockerHp: 0, crop: null });
+    const none = { object: null, fertilizer: null };
+    expect(EMPTY_TILE).toEqual({ state: TileState.Unplowed, blocker: Blocker.None, blockerHp: 0, crop: null, ...none });
+    expect(blockedTile(Blocker.Rock, 2)).toEqual({ state: TileState.Blocked, blocker: Blocker.Rock, blockerHp: 2, crop: null, ...none });
+    expect(blockedTile(Blocker.House)).toEqual({ state: TileState.Blocked, blocker: Blocker.House, blockerHp: 0, crop: null, ...none });
+    expect(blockedTile(Blocker.Tree, 4)).toEqual({ state: TileState.Blocked, blocker: Blocker.Tree, blockerHp: 4, crop: null, ...none });
   });
 
   it('isWalkable is false exactly for Blocked tiles; isSoil exactly for Plowed / Watered', () => {
     expect(isWalkable(EMPTY_TILE)).toBe(true);
     expect(isWalkable(soilTile(TileState.Plowed))).toBe(true);
     expect(isWalkable(soilTile(TileState.Watered, cropOf('parsnip')))).toBe(true);
-    for (const blocker of [Blocker.Rock, Blocker.Stump, Blocker.Water, Blocker.House, Blocker.ShippingBin] as const) {
+    for (const blocker of [
+      Blocker.Rock,
+      Blocker.Stump,
+      Blocker.Water,
+      Blocker.House,
+      Blocker.ShippingBin,
+      Blocker.Tree,
+      Blocker.Weeds,
+      Blocker.Building,
+    ] as const) {
       expect(isWalkable(blockedTile(blocker, 1))).toBe(false);
       expect(isSoil(blockedTile(blocker, 1))).toBe(false);
     }
@@ -261,16 +284,20 @@ describe('tile predicates and invariants', () => {
       blockedTile(Blocker.Water),
       blockedTile(Blocker.House),
       blockedTile(Blocker.ShippingBin),
+      blockedTile(Blocker.Tree, 4),
+      blockedTile(Blocker.Weeds),
+      blockedTile(Blocker.Building),
     ];
     for (const tile of valid) expect(() => assertTileConsistent(tile)).not.toThrow();
   });
 
   it('rejects Blocked without a blocker, blockers on open ground, crops off soil and bad hp', () => {
     const invalid: readonly (readonly [string, Tile])[] = [
-      ['Blocked with blocker None', { state: TileState.Blocked, blocker: Blocker.None, blockerHp: 0, crop: null }],
-      ['Unplowed with a rock', { state: TileState.Unplowed, blocker: Blocker.Rock, blockerHp: 2, crop: null }],
-      ['Plowed with a stump', { state: TileState.Plowed, blocker: Blocker.Stump, blockerHp: 3, crop: null }],
-      ['Watered with water blocker', { state: TileState.Watered, blocker: Blocker.Water, blockerHp: 0, crop: null }],
+      ['Blocked with blocker None', { ...EMPTY_TILE, state: TileState.Blocked }],
+      ['Unplowed with a rock', { ...EMPTY_TILE, blocker: Blocker.Rock, blockerHp: 2 }],
+      ['Plowed with a stump', { ...EMPTY_TILE, state: TileState.Plowed, blocker: Blocker.Stump, blockerHp: 3 }],
+      ['Watered with water blocker', { ...EMPTY_TILE, state: TileState.Watered, blocker: Blocker.Water }],
+      ['Unplowed with weeds', { ...EMPTY_TILE, blocker: Blocker.Weeds }],
       ['crop on unplowed grass', { ...EMPTY_TILE, crop: cropOf('parsnip') }],
       ['crop on a blocked tile', { ...blockedTile(Blocker.Rock, 2), crop: cropOf('parsnip') }],
       ['negative blockerHp', { ...blockedTile(Blocker.Rock), blockerHp: -1 }],
@@ -280,5 +307,144 @@ describe('tile predicates and invariants', () => {
     for (const [label, tile] of invalid) {
       expect(() => assertTileConsistent(tile), label).toThrow(InvariantError);
     }
+  });
+});
+
+/** One placed object of every kind, with valid payloads. */
+const SAMPLE_OBJECTS: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
+  chest: { kind: 'chest', slots: Array.from({ length: INVENTORY.chestSlots }, () => null) },
+  sprinkler: { kind: 'sprinkler' },
+  qualitySprinkler: { kind: 'qualitySprinkler' },
+  scarecrow: { kind: 'scarecrow' },
+  woodFence: { kind: 'woodFence' },
+  woodPath: { kind: 'woodPath' },
+  stonePath: { kind: 'stonePath' },
+  giantCrop: { kind: 'giantCrop', cropId: 'melon', anchorTx: 0, anchorTz: 0 },
+  forage: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 },
+  trophy: { kind: 'trophy', festival: 'harvestFair', year: 1 },
+  decoration: { kind: 'decoration', variant: 'stoneLantern' },
+};
+const PATHS: readonly PlacedObjectKind[] = ['woodPath', 'stonePath'];
+const objectTile = (kind: PlacedObjectKind, base: Tile = EMPTY_TILE): Tile => ({ ...base, object: SAMPLE_OBJECTS[kind] });
+
+describe('blocker hit points', () => {
+  it('allows positive hp only on Rock, Stump and Tree', () => {
+    for (const blocker of [Blocker.Rock, Blocker.Stump, Blocker.Tree] as const) {
+      expect(() => assertTileConsistent(blockedTile(blocker, 1))).not.toThrow();
+    }
+    for (const blocker of [Blocker.Water, Blocker.House, Blocker.ShippingBin, Blocker.Weeds, Blocker.Building] as const) {
+      expect(() => assertTileConsistent(blockedTile(blocker, 1)), `blocker ${blocker}`).toThrow(InvariantError);
+      expect(() => assertTileConsistent(blockedTile(blocker, 0)), `blocker ${blocker}`).not.toThrow();
+    }
+  });
+});
+
+describe('placed objects and fertiliser on tiles', () => {
+  it('accepts every object kind on grass, and every non-path kind on plowed and watered soil', () => {
+    for (const kind of PLACED_OBJECT_KINDS) {
+      expect(() => assertTileConsistent(objectTile(kind)), kind).not.toThrow();
+      if (PATHS.includes(kind)) continue;
+      expect(() => assertTileConsistent(objectTile(kind, soilTile(TileState.Plowed))), kind).not.toThrow();
+      expect(() => assertTileConsistent(objectTile(kind, soilTile(TileState.Watered))), kind).not.toThrow();
+    }
+  });
+
+  it('rejects objects on blocked tiles or next to a crop', () => {
+    for (const kind of PLACED_OBJECT_KINDS) {
+      expect(() => assertTileConsistent(objectTile(kind, blockedTile(Blocker.Rock, 2))), kind).toThrow(InvariantError);
+      expect(() => assertTileConsistent(objectTile(kind, blockedTile(Blocker.Weeds))), kind).toThrow(InvariantError);
+      const planted = objectTile(kind, soilTile(TileState.Plowed, cropOf('parsnip')));
+      expect(() => assertTileConsistent(planted), kind).toThrow(InvariantError);
+      const wild: Tile = { ...EMPTY_TILE, crop: cropOf('mushroom', { wild: true }), object: SAMPLE_OBJECTS[kind] };
+      expect(() => assertTileConsistent(wild), kind).toThrow(InvariantError);
+    }
+  });
+
+  it('keeps paths on unfertilised grass', () => {
+    for (const kind of PATHS) {
+      expect(() => assertTileConsistent(objectTile(kind, soilTile(TileState.Plowed))), kind).toThrow(InvariantError);
+      expect(() => assertTileConsistent(objectTile(kind, soilTile(TileState.Watered))), kind).toThrow(InvariantError);
+      const fertilised: Tile = { ...EMPTY_TILE, object: SAMPLE_OBJECTS[kind], fertilizer: 'basic' };
+      expect(() => assertTileConsistent(fertilised), kind).toThrow(InvariantError);
+    }
+  });
+
+  it('allows fertiliser only on soil without an object', () => {
+    for (const fertilizer of ['basic', 'quality', 'speedGro'] as const) {
+      expect(() => assertTileConsistent({ ...soilTile(TileState.Plowed), fertilizer })).not.toThrow();
+      expect(() => assertTileConsistent({ ...soilTile(TileState.Watered, cropOf('corn')), fertilizer })).not.toThrow();
+      expect(() => assertTileConsistent({ ...EMPTY_TILE, fertilizer }), fertilizer).toThrow(InvariantError);
+      expect(() => assertTileConsistent({ ...blockedTile(Blocker.Rock, 2), fertilizer }), fertilizer).toThrow(InvariantError);
+      const underSprinkler: Tile = { ...objectTile('sprinkler', soilTile(TileState.Plowed)), fertilizer };
+      expect(() => assertTileConsistent(underSprinkler), fertilizer).toThrow(InvariantError);
+    }
+  });
+
+  it('lets the player walk over paths only', () => {
+    for (const kind of PLACED_OBJECT_KINDS) {
+      expect(isWalkable(objectTile(kind)), kind).toBe(PATHS.includes(kind));
+    }
+    expect(isWalkable(objectTile('sprinkler', soilTile(TileState.Watered)))).toBe(false);
+  });
+
+  it('checks placed objects whenever a tile is written', () => {
+    const world = createWorld(createGridSpec(4, 4, 2), () => EMPTY_TILE);
+    expect(() => setTile(world, 1, 1, objectTile('woodPath', soilTile(TileState.Plowed)))).toThrow(InvariantError);
+    expect(() => mapTiles(world, () => ({ ...EMPTY_TILE, fertilizer: 'basic' }))).toThrow(InvariantError);
+    expect(requireTile(setTile(world, 1, 1, objectTile('chest')), 1, 1)).toEqual(objectTile('chest'));
+  });
+});
+
+describe('assertWorldObjectsConsistent', () => {
+  const grid = createGridSpec(9, 7, 4);
+  const blank = createWorld(grid, () => EMPTY_TILE);
+  const giant = (cropId: GiantCropId, anchorTx: number, anchorTz: number): Tile => ({
+    ...EMPTY_TILE,
+    object: { kind: 'giantCrop', cropId, anchorTx, anchorTz },
+  });
+  /** Writes `tile` on the 3×3 square whose min corner is (x0, z0). */
+  const fill = (world: WorldState, x0: number, z0: number, tile: Tile): WorldState => {
+    let next = world;
+    for (let dz = 0; dz < 3; dz++) for (let dx = 0; dx < 3; dx++) next = setTile(next, x0 + dx, z0 + dz, tile);
+    return next;
+  };
+
+  it('accepts worlds without giant crops and full 3×3 giant crops, even ones sharing an edge', () => {
+    expect(() => assertWorldObjectsConsistent(blank)).not.toThrow();
+    const withOthers = setTile(setTile(blank, 0, 0, objectTile('chest')), 8, 6, objectTile('stonePath'));
+    expect(() => assertWorldObjectsConsistent(withOthers)).not.toThrow();
+    const one = fill(blank, 2, 1, giant('pumpkin', 2, 1));
+    expect(() => assertWorldObjectsConsistent(one)).not.toThrow();
+    const two = fill(fill(blank, 0, 0, giant('melon', 0, 0)), 3, 0, giant('cauliflower', 3, 0));
+    expect(() => assertWorldObjectsConsistent(two)).not.toThrow();
+    const corner = fill(blank, 6, 4, giant('melon', 6, 4));
+    expect(() => assertWorldObjectsConsistent(corner)).not.toThrow();
+  });
+
+  it('rejects a footprint that leaves the grid', () => {
+    let world = blank;
+    for (let dz = 0; dz < 2; dz++) for (let dx = 0; dx < 2; dx++) world = setTile(world, 7 + dx, 5 + dz, giant('melon', 7, 5));
+    expect(() => assertWorldObjectsConsistent(world)).toThrow(InvariantError);
+    const negative = setTile(blank, 0, 0, giant('melon', -1, 0));
+    expect(() => assertWorldObjectsConsistent(negative)).toThrow(InvariantError);
+  });
+
+  it('rejects a footprint with a missing or different tile', () => {
+    const full = fill(blank, 2, 1, giant('pumpkin', 2, 1));
+    for (const [tx, tz] of [[2, 1], [3, 2], [4, 3]] as const) {
+      expect(() => assertWorldObjectsConsistent(setTile(full, tx, tz, EMPTY_TILE)), `hole at ${tx},${tz}`).toThrow(InvariantError);
+      const otherCrop = setTile(full, tx, tz, giant('melon', 2, 1));
+      expect(() => assertWorldObjectsConsistent(otherCrop), `melon at ${tx},${tz}`).toThrow(InvariantError);
+      const chest = setTile(full, tx, tz, objectTile('chest'));
+      expect(() => assertWorldObjectsConsistent(chest), `chest at ${tx},${tz}`).toThrow(InvariantError);
+    }
+  });
+
+  it('rejects tiles outside the footprint that name its anchor, and overlapping footprints', () => {
+    const full = fill(blank, 2, 1, giant('pumpkin', 2, 1));
+    expect(() => assertWorldObjectsConsistent(setTile(full, 5, 1, giant('pumpkin', 2, 1)))).toThrow(InvariantError);
+    expect(() => assertWorldObjectsConsistent(setTile(full, 0, 0, giant('pumpkin', 2, 1)))).toThrow(InvariantError);
+    const overlapping = fill(full, 3, 2, giant('pumpkin', 3, 2));
+    expect(() => assertWorldObjectsConsistent(overlapping)).toThrow(InvariantError);
   });
 });

@@ -708,6 +708,8 @@ const ACTION_CLIPS: Readonly<Record<AnimatedAction, ActionClip>> = {
   harvest: HARVEST,
   ship: SHIP_TOSS,
   refill: REFILL_DIP,
+  /** Lifting a chest lid reads like the shipping-bin toss. */
+  openChest: SHIP_TOSS,
 };
 
 function clipFor(kind: ActionKind): ActionClip | null {

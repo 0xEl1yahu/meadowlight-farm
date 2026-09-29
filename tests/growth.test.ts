@@ -362,6 +362,23 @@ describe('advanceTileOvernight', () => {
     }
   });
 
+  it('clears fertiliser when soil reverts to grass, and keeps it on soil that stays tilled', () => {
+    const tile = { ...soilTile(TileState.Plowed), fertilizer: 'quality' as const };
+    let reverted = 0;
+    for (let tx = 0; tx < 60; tx++) {
+      const next = advanceTileOvernight(tile, tx, 5, ctx({ day: 4 }));
+      if (next.state === TileState.Unplowed) {
+        reverted++;
+        expect(next).toEqual(EMPTY_TILE);
+      } else {
+        expect(next).toBe(tile);
+      }
+    }
+    expect(reverted).toBeGreaterThan(0);
+    const watered = { ...soilTile(TileState.Watered, cropOf('parsnip')), fertilizer: 'speedGro' as const };
+    expect(advanceTileOvernight(watered, 3, 3, ctx()).fertilizer).toBe('speedGro');
+  });
+
   it('never untills soil that holds a crop', () => {
     for (let tx = 0; tx < 300; tx++) {
       const next = advanceTileOvernight(soilTile(TileState.Plowed, cropOf('parsnip')), tx, 1, ctx());

@@ -28,7 +28,7 @@ import { gameReducer } from '../src/state/reducer';
 import { formatDate } from '../src/time/clock';
 import { rollWeather } from '../src/time/weather';
 import { inBounds, stepTile } from '../src/world/grid';
-import { EMPTY_TILE, blockedTile, forEachTile, isWalkable, requireTile } from '../src/world/tiles';
+import { EMPTY_TILE, blockedTile, forEachTile, isHittableBlocker, isWalkable, requireTile } from '../src/world/tiles';
 import {
   BASE,
   STAND,
@@ -587,8 +587,20 @@ describe('movement', () => {
 
   it('is blocked by every blocker but still turns to face it', () => {
     const below = { tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz + 1 };
-    for (const blocker of [Blocker.Rock, Blocker.Stump, Blocker.Water, Blocker.House, Blocker.ShippingBin] as const) {
-      const state = withTile(withPlayer(BASE, PLAYER.spawn, Direction.North), below, blockedTile(blocker, 1));
+    const blockers = [
+      Blocker.Rock,
+      Blocker.Stump,
+      Blocker.Water,
+      Blocker.House,
+      Blocker.ShippingBin,
+      Blocker.Tree,
+      Blocker.Weeds,
+      Blocker.Building,
+    ] as const;
+    for (const blocker of blockers) {
+      // Only debris counts hits; every other blocker keeps blockerHp at 0.
+      const tile = blockedTile(blocker, isHittableBlocker(blocker) ? 1 : 0);
+      const state = withTile(withPlayer(BASE, PLAYER.spawn, Direction.North), below, tile);
       const next = gameReducer(state, actions.move(Direction.South));
       expect(next.player).toMatchObject({ ...PLAYER.spawn, facing: Direction.South, moveSeq: 0 });
       expect(gameReducer(next, actions.move(Direction.South))).toBe(next);

@@ -12,6 +12,7 @@ import {
   TileState,
   type Chunk,
   type GridSpec,
+  type PlacedObject,
   type SolidBlocker,
   type Tile,
   type WorldState,
@@ -23,10 +24,12 @@ export const EMPTY_TILE: Tile = Object.freeze({
   blocker: Blocker.None,
   blockerHp: 0,
   crop: null,
+  object: null,
+  fertilizer: null,
 });
 
 export function blockedTile(blocker: SolidBlocker, hp = 0): Tile {
-  return { state: TileState.Blocked, blocker, blockerHp: hp, crop: null };
+  return { state: TileState.Blocked, blocker, blockerHp: hp, crop: null, object: null, fertilizer: null };
 }
 
 /** Builds a world by sampling `tileAt` for every tile, chunk by chunk. */
@@ -128,15 +131,32 @@ export function countTiles(world: WorldState, predicate: (tile: Tile) => boolean
   return count;
 }
 
+/** Paths are the only placed objects the player can walk over. */
+export function isPathObject(object: PlacedObject): boolean {
+  return object.kind === 'woodPath' || object.kind === 'stonePath';
+}
+
 export function isWalkable(tile: Tile): boolean {
-  return tile.state !== TileState.Blocked;
+  return tile.state !== TileState.Blocked && (tile.object === null || isPathObject(tile.object));
 }
 
 export function isSoil(tile: Tile): boolean {
   return tile.state === TileState.Plowed || tile.state === TileState.Watered;
 }
 
-/** Enforces the Blocked ⇔ blocker ≠ None invariant and the crop placement rules. */
+/** Blockers that take several hits to clear and count them down in `blockerHp`. */
+export function isHittableBlocker(blocker: Blocker): boolean {
+  return blocker === Blocker.Rock || blocker === Blocker.Stump || blocker === Blocker.Tree;
+}
+
+/**
+ * Enforces the per-tile invariants in O(1) (chest contents are not scanned):
+ * - Blocked ⇔ blocker ≠ None;
+ * - crops only on plowed or watered soil (wild crops also on grass);
+ * - blockerHp is a non-negative integer, and positive only for Rock, Stump and Tree;
+ * - a placed object excludes blockers and crops, and a path lies on grass without fertiliser;
+ * - fertiliser only on plowed or watered soil without an object.
+ */
 export function assertTileConsistent(tile: Tile): void {
   const blocked = tile.state === TileState.Blocked;
   invariant(blocked === (tile.blocker !== Blocker.None), `tile state ${tile.state} inconsistent with blocker ${tile.blocker}`);
@@ -145,4 +165,73 @@ export function assertTileConsistent(tile: Tile): void {
     'crops may only exist on plowed or watered soil (wild crops also on grass)',
   );
   invariant(Number.isInteger(tile.blockerHp) && tile.blockerHp >= 0, `invalid blockerHp ${tile.blockerHp}`);
+  invariant(
+    tile.blockerHp === 0 || isHittableBlocker(tile.blocker),
+    `blockerHp ${tile.blockerHp} on blocker ${tile.blocker}, which takes no hits`,
+  );
+  const object = tile.object;
+  if (object !== null) {
+    invariant(tile.blocker === Blocker.None, `placed ${object.kind} on a tile with blocker ${tile.blocker}`);
+    invariant(tile.crop === null, `placed ${object.kind} on a tile with a crop`);
+    if (isPathObject(object)) {
+      invariant(tile.state === TileState.Unplowed, `${object.kind} on tile state ${tile.state}; paths lie on grass`);
+      invariant(tile.fertilizer === null, `${object.kind} on fertilised soil`);
+    }
+  }
+  if (tile.fertilizer !== null) {
+    invariant(isSoil(tile), `${tile.fertilizer} fertiliser on tile state ${tile.state}; only soil holds fertiliser`);
+    invariant(object === null, `${tile.fertilizer} fertiliser under a placed ${object?.kind ?? ''}`);
+  }
+}
+
+/** Side length of the square every giant crop covers. */
+export const GIANT_CROP_SIZE = 3;
+
+/**
+ * World-level placed-object checks (the save validator and tests use it): every giant crop
+ * covers exactly its 3×3 footprint. The footprint lies inside the grid, all nine tiles hold an
+ * equal object (same kind, crop and anchor), and no tile outside it names that anchor.
+ */
+export function assertWorldObjectsConsistent(world: WorldState): void {
+  const { grid } = world;
+  const last = GIANT_CROP_SIZE - 1;
+  /** Anchor tile index → number of tiles naming that anchor. */
+  const named = new Map<number, number>();
+  forEachTile(world, (tile, tx, tz) => {
+    const object = tile.object;
+    if (object === null || object.kind !== 'giantCrop') return;
+    const { anchorTx: ax, anchorTz: az } = object;
+    invariant(
+      Number.isInteger(ax) && Number.isInteger(az) && inBounds(grid, ax, az) && inBounds(grid, ax + last, az + last),
+      `giant crop at (${tx}, ${tz}): footprint anchored at (${ax}, ${az}) leaves the grid`,
+    );
+    invariant(
+      tx >= ax && tx <= ax + last && tz >= az && tz <= az + last,
+      `giant crop at (${tx}, ${tz}) lies outside the footprint it names at (${ax}, ${az})`,
+    );
+    const key = az * grid.width + ax;
+    named.set(key, (named.get(key) ?? 0) + 1);
+    if (tx !== ax || tz !== az) return;
+    for (let dz = 0; dz <= last; dz++) {
+      for (let dx = 0; dx <= last; dx++) {
+        const other = requireTile(world, ax + dx, az + dz).object;
+        invariant(
+          other !== null &&
+            other.kind === 'giantCrop' &&
+            other.cropId === object.cropId &&
+            other.anchorTx === ax &&
+            other.anchorTz === az,
+          `giant crop anchored at (${ax}, ${az}) does not cover (${ax + dx}, ${az + dz})`,
+        );
+      }
+    }
+  });
+  for (const [key, count] of named) {
+    const ax = key % grid.width;
+    const az = Math.floor(key / grid.width);
+    invariant(
+      count === GIANT_CROP_SIZE * GIANT_CROP_SIZE,
+      `giant crop anchored at (${ax}, ${az}) covers ${count} tiles instead of ${GIANT_CROP_SIZE * GIANT_CROP_SIZE}`,
+    );
+  }
 }

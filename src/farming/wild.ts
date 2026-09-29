@@ -12,9 +12,9 @@ import { countTiles, getTile, mapTiles } from '../world/tiles';
 import { createCropInstance, isMature, shadeCropsInSeason, stageCount, CROPS } from './crops';
 import type { DayContext } from './growth';
 
-/** A tile a wild crop could sprout on: shaded grass holding nothing. */
+/** A tile a wild crop could sprout on: shaded grass holding no crop and no placed object. */
 export function canSproutWild(grid: GridSpec, tile: Tile, tx: number, tz: number): boolean {
-  return tile.state === TileState.Unplowed && tile.crop === null && isShadedTile(grid, tx, tz);
+  return tile.state === TileState.Unplowed && tile.crop === null && tile.object === null && isShadedTile(grid, tx, tz);
 }
 
 /** Mature wild neighbours (orthogonal) whose crop can grow this season, as crop ids. */

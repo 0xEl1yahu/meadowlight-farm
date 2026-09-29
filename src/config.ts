@@ -49,6 +49,8 @@ export interface FarmLayout {
   readonly clearZones: readonly TileRect[];
   readonly rockDensity: number;
   readonly stumpDensity: number;
+  /** Building plots for the coop and the barn; FarmBuilding.plot indexes this list. */
+  readonly plots: readonly TileRect[];
 }
 
 /**
@@ -67,6 +69,10 @@ export const LAYOUT: FarmLayout = {
   ],
   rockDensity: 0.055,
   stumpDensity: 0.03,
+  plots: [
+    { x0: 20, z0: 3, width: 7, depth: 6 },
+    { x0: 30, z0: 3, width: 8, depth: 7 },
+  ],
 };
 
 export const PLAYER = {
@@ -94,13 +100,19 @@ export const TOOLS = {
   wateringCanCapacity: 40,
   rockHits: 2,
   stumpHits: 3,
+  /** Axe hits that fell a tree; the tree then becomes a stump. */
+  treeHits: 4,
   stoneFromRock: 1,
   woodFromStump: 2,
+  /** Wood dropped when a tree falls (the stump it leaves drops `woodFromStump` more). */
+  woodFromTree: 4,
 } as const;
 
 export const INVENTORY = {
   hotbarSize: 12,
   maxStack: 999,
+  /** Slots in every placed chest. */
+  chestSlots: 36,
   starting: [
     { itemId: 'hoe', quantity: 1 },
     { itemId: 'wateringCan', quantity: 1 },
@@ -135,6 +147,22 @@ export const SHADE = {
   maxWild: 40,
   /** Share of empty shaded tiles that already hold a wild crop on a brand-new farm. */
   initialDensity: 0.12,
+} as const;
+
+/** Palette sizes for the player's look. Index 0 of every palette is the original look. */
+export const APPEARANCE = {
+  skinTones: 5,
+  hairStyles: 3,
+  hairColors: 6,
+  shirtColors: 8,
+  overallsColors: 6,
+  /** Including 0 = no hat. */
+  hats: 4,
+} as const;
+
+export const PROFILE = {
+  /** Maximum length of the player and farm names. */
+  maxNameLength: 24,
 } as const;
 
 export const MESSAGES = {

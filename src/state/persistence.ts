@@ -4,63 +4,46 @@
  */
 import { TIME } from '../config';
 import {
-  Blocker,
-  CROP_IDS,
   SAVE_VERSION,
-  TOOL_TYPES,
-  TileState,
   Weather,
   type ActionEvent,
-  type CropInstance,
+  type ActionKind,
   type GameState,
   type GridSpec,
-  type ItemStack,
-  type Tile,
+  type WorldState,
 } from '../core/types';
-import { CROPS, stageCount } from '../farming/crops';
-import { getItem, isItemId } from '../items/items';
 import { calendarTime } from '../time/clock';
 import { chunkCount, chunkRectByIndex, createGridSpec, inBounds } from '../world/grid';
-import { getTile, isWalkable } from '../world/tiles';
+import { assertWorldObjectsConsistent, getTile, isWalkable } from '../world/tiles';
+import { createDefaultSections } from './initialState';
+import { isValidSections } from './sectionValidation';
+import { isBool, isCount, isInt, isIntIn, isObj, isOneOf, isValidStack, isValidTile, type Obj } from './validation';
 
 export const SAVE_KEY = 'meadowlight-farm.save.v1';
 
-type Obj = Record<string, unknown>;
-
-const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
-const isIntIn = (v: unknown, min: number, max: number): v is number => isInt(v) && v >= min && v <= max;
-const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
-const TILE_STATES: readonly number[] = Object.values(TileState);
-const BLOCKERS: readonly number[] = Object.values(Blocker);
 const WEATHERS: readonly string[] = Object.values(Weather);
 
-function isValidCrop(v: unknown): v is CropInstance {
-  if (!isObj(v) || typeof v.cropId !== 'string' || !(CROP_IDS as readonly string[]).includes(v.cropId)) return false;
-  const def = CROPS[v.cropId as CropInstance['cropId']];
-  return (
-    isIntIn(v.stage, 0, stageCount(def)) &&
-    isIntIn(v.daysInStage, 0, 1000) &&
-    isIntIn(v.dryDays, 0, 1_000_000) &&
-    isBool(v.regrowing) &&
-    isBool(v.dead) &&
-    isIntIn(v.plantedDay, 0, Number.MAX_SAFE_INTEGER) &&
-    isIntIn(v.harvestCount, 0, Number.MAX_SAFE_INTEGER) &&
-    isBool(v.wild) &&
-    (!v.wild || def.habitat === 'shade')
-  );
-}
+/**
+ * One entry per ActionKind. The `satisfies` clause makes the compiler reject a missing or an
+ * unknown kind, so the validator's list can never drift from the type again.
+ */
+const ACTION_KIND_TABLE = {
+  hoe: true,
+  wateringCan: true,
+  pickaxe: true,
+  axe: true,
+  scythe: true,
+  plant: true,
+  harvest: true,
+  ship: true,
+  refill: true,
+  sleep: true,
+  openChest: true,
+  none: true,
+} as const satisfies Readonly<Record<ActionKind, true>>;
 
-function isValidTile(v: unknown): v is Tile {
-  if (!isObj(v) || !isInt(v.state) || !TILE_STATES.includes(v.state) || !isInt(v.blocker) || !BLOCKERS.includes(v.blocker)) {
-    return false;
-  }
-  if ((v.state === TileState.Blocked) !== (v.blocker !== Blocker.None)) return false;
-  if (!isIntIn(v.blockerHp, 0, 100)) return false;
-  if (v.crop === null) return true;
-  if (!isValidCrop(v.crop)) return false;
-  return v.state === TileState.Plowed || v.state === TileState.Watered || (v.state === TileState.Unplowed && v.crop.wild);
-}
+/** Every ActionKind, each exactly once. */
+export const ACTION_KINDS = Object.keys(ACTION_KIND_TABLE) as readonly ActionKind[];
 
 function isValidGrid(v: unknown): v is GridSpec {
   if (!isObj(v) || !isIntIn(v.width, 1, 4096) || !isIntIn(v.depth, 1, 4096) || !isIntIn(v.chunkSize, 1, 4096)) return false;
@@ -69,42 +52,30 @@ function isValidGrid(v: unknown): v is GridSpec {
   return (Object.keys(expected) as (keyof GridSpec)[]).every((key) => expected[key] === v[key]);
 }
 
-const ACTION_KINDS: readonly string[] = [...TOOL_TYPES, 'plant', 'harvest', 'ship', 'refill', 'sleep', 'none'];
-
 function isValidActionEvent(v: unknown): v is ActionEvent {
-  if (!isObj(v) || !isIntIn(v.seq, 1, Number.MAX_SAFE_INTEGER) || typeof v.kind !== 'string') return false;
-  if (!ACTION_KINDS.includes(v.kind) || !isBool(v.success)) return false;
+  if (!isObj(v) || !isIntIn(v.seq, 1, Number.MAX_SAFE_INTEGER) || !isOneOf(v.kind, ACTION_KINDS)) return false;
+  if (!isBool(v.success)) return false;
   return v.target === null || (isObj(v.target) && isInt(v.target.tx) && isInt(v.target.tz));
 }
 
-function isValidStack(v: unknown, enforceMaxStack: boolean): v is ItemStack {
-  if (!isObj(v) || !isItemId(v.itemId) || !isInt(v.quantity) || v.quantity < 1) return false;
-  return !enforceMaxStack || v.quantity <= getItem(v.itemId).maxStack;
-}
-
-/** Structural validation of an untrusted value (e.g. parsed JSON). */
-export function isValidGameState(v: unknown): v is GameState {
-  if (!isObj(v) || v.version !== SAVE_VERSION || !isIntIn(v.seed, 0, 0xffffffff)) return false;
-
-  const time = v.time;
+function isValidTime(time: unknown): boolean {
   if (
     !isObj(time) ||
     !isIntIn(time.minuteOfDay, TIME.dayStartMinute, TIME.passOutMinute) ||
     !isIntIn(time.dayOfSeason, 1, TIME.daysPerSeason) ||
     !isIntIn(time.season, 0, TIME.seasonsPerYear - 1) ||
     !isIntIn(time.year, 1, Number.MAX_SAFE_INTEGER) ||
-    !isIntIn(time.absoluteDay, 0, Number.MAX_SAFE_INTEGER)
+    !isCount(time.absoluteDay)
   ) {
     return false;
   }
   // Day, season and year are derived from absoluteDay; a save where they disagree is corrupt.
   const calendar = calendarTime(time.absoluteDay, time.minuteOfDay);
-  if (calendar.dayOfSeason !== time.dayOfSeason || calendar.season !== time.season || calendar.year !== time.year) {
-    return false;
-  }
-  if (typeof v.weather !== 'string' || !WEATHERS.includes(v.weather)) return false;
+  return calendar.dayOfSeason === time.dayOfSeason && calendar.season === time.season && calendar.year === time.year;
+}
 
-  const world = v.world;
+/** Grid, chunk layout, every tile, and the world-level placed-object rules (giant crops). */
+function isValidWorld(world: unknown): world is WorldState {
   if (!isObj(world) || !isValidGrid(world.grid) || !Array.isArray(world.chunks)) return false;
   const grid = world.grid;
   if (world.chunks.length !== chunkCount(grid)) return false;
@@ -119,7 +90,7 @@ export function isValidGameState(v: unknown): v is GameState {
       chunk.z0 !== rect.z0 ||
       chunk.width !== rect.width ||
       chunk.depth !== rect.depth ||
-      !isIntIn(chunk.revision, 0, Number.MAX_SAFE_INTEGER) ||
+      !isCount(chunk.revision) ||
       !Array.isArray(chunk.tiles) ||
       chunk.tiles.length !== rect.width * rect.depth ||
       !chunk.tiles.every(isValidTile)
@@ -127,66 +98,72 @@ export function isValidGameState(v: unknown): v is GameState {
       return false;
     }
   }
+  try {
+    assertWorldObjectsConsistent(world as unknown as WorldState);
+  } catch {
+    return false;
+  }
+  return true;
+}
 
-  const player = v.player;
+/** Position, energy, gold and sequence counters; the player must stand on a walkable tile. */
+function isValidPlayer(player: unknown, world: WorldState): boolean {
   if (
     !isObj(player) ||
     !isInt(player.tx) ||
     !isInt(player.tz) ||
-    !inBounds(grid, player.tx, player.tz) ||
+    !inBounds(world.grid, player.tx, player.tz) ||
     !isIntIn(player.facing, 0, 3) ||
     !isIntIn(player.maxEnergy, 1, 100_000) ||
     !isIntIn(player.energy, 0, player.maxEnergy) ||
-    !isIntIn(player.gold, 0, Number.MAX_SAFE_INTEGER) ||
-    !isIntIn(player.moveSeq, 0, Number.MAX_SAFE_INTEGER) ||
-    !isIntIn(player.teleportSeq, 0, Number.MAX_SAFE_INTEGER) ||
-    !isIntIn(player.actionSeq, 0, Number.MAX_SAFE_INTEGER)
+    !isCount(player.gold) ||
+    !isCount(player.moveSeq) ||
+    !isCount(player.teleportSeq) ||
+    !isCount(player.actionSeq)
   ) {
     return false;
   }
-  const standingOn = getTile(world as unknown as GameState['world'], player.tx, player.tz);
+  const standingOn = getTile(world, player.tx, player.tz);
   if (standingOn === null || !isWalkable(standingOn)) return false;
-  if (player.lastAction !== null && !isValidActionEvent(player.lastAction)) return false;
-  if (player.lastAction !== null && player.lastAction.seq !== player.actionSeq) return false;
+  if (player.lastAction === null) return true;
+  return isValidActionEvent(player.lastAction) && player.lastAction.seq === player.actionSeq;
+}
 
-  const inventory = v.inventory;
-  if (
-    !isObj(inventory) ||
-    !Array.isArray(inventory.slots) ||
-    inventory.slots.length < 1 ||
-    !inventory.slots.every((slot: unknown) => slot === null || isValidStack(slot, true)) ||
-    !isIntIn(inventory.selected, 0, inventory.slots.length - 1) ||
-    !isIntIn(inventory.waterCapacity, 1, 100_000) ||
-    !isIntIn(inventory.water, 0, inventory.waterCapacity)
-  ) {
-    return false;
-  }
+function isValidInventory(inventory: unknown): boolean {
+  return (
+    isObj(inventory) &&
+    Array.isArray(inventory.slots) &&
+    inventory.slots.length >= 1 &&
+    inventory.slots.every((slot: unknown) => slot === null || isValidStack(slot, true)) &&
+    isIntIn(inventory.selected, 0, inventory.slots.length - 1) &&
+    isIntIn(inventory.waterCapacity, 1, 100_000) &&
+    isIntIn(inventory.water, 0, inventory.waterCapacity)
+  );
+}
 
-  const shipping = v.shipping;
-  if (
-    !isObj(shipping) ||
-    !Array.isArray(shipping.pending) ||
-    !shipping.pending.every((stack: unknown) => isValidStack(stack, false)) ||
-    !isIntIn(shipping.lastPayout, 0, Number.MAX_SAFE_INTEGER)
-  ) {
-    return false;
-  }
+function isValidShipping(shipping: unknown): boolean {
+  return (
+    isObj(shipping) &&
+    Array.isArray(shipping.pending) &&
+    shipping.pending.every((stack: unknown) => isValidStack(stack, false)) &&
+    isCount(shipping.lastPayout)
+  );
+}
 
-  const ui = v.ui;
-  if (
-    !isObj(ui) ||
-    !isBool(ui.shopOpen) ||
-    !isBool(ui.paused) ||
-    typeof ui.timeScale !== 'number' ||
-    !(TIME.timeScales as readonly number[]).includes(ui.timeScale)
-  ) {
-    return false;
-  }
+function isValidUi(ui: unknown): boolean {
+  return (
+    isObj(ui) &&
+    isBool(ui.shopOpen) &&
+    isBool(ui.paused) &&
+    typeof ui.timeScale === 'number' &&
+    (TIME.timeScales as readonly number[]).includes(ui.timeScale)
+  );
+}
 
-  const messages = v.messages;
+function isValidMessages(messages: unknown): boolean {
   return (
     isObj(messages) &&
-    isIntIn(messages.nextId, 0, Number.MAX_SAFE_INTEGER) &&
+    isCount(messages.nextId) &&
     Array.isArray(messages.entries) &&
     messages.entries.every(
       (entry: unknown) =>
@@ -200,27 +177,72 @@ export function isValidGameState(v: unknown): v is GameState {
   );
 }
 
+/** Structural validation of an untrusted value (e.g. parsed JSON), one section at a time. */
+export function isValidGameState(v: unknown): v is GameState {
+  return (
+    isObj(v) &&
+    v.version === SAVE_VERSION &&
+    isIntIn(v.seed, 0, 0xffffffff) &&
+    isValidTime(v.time) &&
+    typeof v.weather === 'string' &&
+    WEATHERS.includes(v.weather) &&
+    isValidWorld(v.world) &&
+    isValidPlayer(v.player, v.world) &&
+    isValidInventory(v.inventory) &&
+    isValidShipping(v.shipping) &&
+    isValidUi(v.ui) &&
+    isValidMessages(v.messages) &&
+    isValidSections(v)
+  );
+}
+
 export function serializeGame(state: GameState): string {
   return JSON.stringify(state);
 }
 
+/** Rebuilds every tile of a saved world with `fn`; returns null when the world is malformed. */
+function mapSavedTiles(world: unknown, fn: (tile: Obj) => Obj): Obj | null {
+  if (!isObj(world) || !Array.isArray(world.chunks)) return null;
+  const chunks: unknown[] = [];
+  for (const chunk of world.chunks as readonly unknown[]) {
+    if (!isObj(chunk) || !Array.isArray(chunk.tiles)) return null;
+    const tiles: unknown[] = [];
+    for (const tile of chunk.tiles as readonly unknown[]) {
+      if (!isObj(tile)) return null;
+      tiles.push(fn(tile));
+    }
+    chunks.push({ ...chunk, tiles });
+  }
+  return { ...world, chunks };
+}
+
+/** Version 1 predates wild crops: every crop it holds was sown by the player, so each gains `wild: false`. */
+function migrateV1toV2(save: Obj): Obj {
+  const world = mapSavedTiles(save.world, (tile) => (isObj(tile.crop) ? { ...tile, crop: { ...tile.crop, wild: false } } : tile));
+  return world === null ? save : { ...save, version: 2, world };
+}
+
 /**
- * Upgrades older save formats to the current one. Version 1 predates wild crops: every crop
- * it holds was sown by the player, so each gains `wild: false`. Unknown shapes pass through
- * untouched and are then rejected by the validator.
+ * Version 2 predates placed objects, fertiliser and the later-workstream sections: every tile
+ * gains `object: null, fertilizer: null` (chunk revisions are kept) and every section starts
+ * from `createDefaultSections()`, exactly as a new game would.
+ */
+function migrateV2toV3(save: Obj): Obj {
+  if (!isIntIn(save.seed, 0, 0xffffffff)) return save;
+  const world = mapSavedTiles(save.world, (tile) => ({ ...tile, object: null, fertilizer: null }));
+  return world === null ? save : { ...save, ...createDefaultSections(), version: 3, world };
+}
+
+/**
+ * Upgrades older save formats to the current one, one version at a time; each step writes its
+ * own literal version. Unexpected shapes pass through untouched and are then rejected by the
+ * validator.
  */
 export function migrateSave(value: unknown): unknown {
-  if (!isObj(value) || value.version !== 1) return value;
-  const world = value.world;
-  if (!isObj(world) || !Array.isArray(world.chunks)) return value;
-  const chunks = world.chunks.map((chunk: unknown) => {
-    if (!isObj(chunk) || !Array.isArray(chunk.tiles)) return chunk;
-    const tiles = chunk.tiles.map((tile: unknown) =>
-      isObj(tile) && isObj(tile.crop) ? { ...tile, crop: { ...tile.crop, wild: false } } : tile,
-    );
-    return { ...chunk, tiles };
-  });
-  return { ...value, version: SAVE_VERSION, world: { ...world, chunks } };
+  let v = value;
+  if (isObj(v) && v.version === 1) v = migrateV1toV2(v);
+  if (isObj(v) && v.version === 2) v = migrateV2toV3(v);
+  return v;
 }
 
 export function deserializeGame(json: string): GameState | null {

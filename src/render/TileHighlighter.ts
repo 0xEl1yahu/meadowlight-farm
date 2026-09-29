@@ -55,6 +55,9 @@ const BOX_HEIGHT = {
   water: 0.9,
   shippingBin: 1.05,
   house: 1.2,
+  tree: 1.3,
+  weeds: 0.6,
+  building: 1.2,
   cropMin: 0.9,
   cropMax: 1.3,
   /** Headroom added above a crop's current foliage height. */
@@ -142,6 +145,12 @@ export function highlightBoxHeight(tile: Tile): number {
       return BOX_HEIGHT.shippingBin;
     case Blocker.House:
       return BOX_HEIGHT.house;
+    case Blocker.Tree:
+      return BOX_HEIGHT.tree;
+    case Blocker.Weeds:
+      return BOX_HEIGHT.weeds;
+    case Blocker.Building:
+      return BOX_HEIGHT.building;
   }
 }
 

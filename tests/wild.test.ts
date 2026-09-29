@@ -22,6 +22,7 @@ import {
   atDay,
   count,
   holding,
+  legacySave,
   must,
   soilTile,
   tileAt,
@@ -164,6 +165,12 @@ describe('sprouting and spreading', () => {
     expect(canSproutWild(grid, EMPTY_TILE, 20, 20)).toBe(false);
     expect(canSproutWild(grid, EMPTY_TILE, 0, 20)).toBe(true);
   });
+
+  it('never sprouts under a placed object', () => {
+    for (const object of [{ kind: 'woodPath' }, { kind: 'scarecrow' }] as const) {
+      expect(canSproutWild(grid, { ...EMPTY_TILE, object }, 0, 20)).toBe(false);
+    }
+  });
 });
 
 describe('a new farm', () => {
@@ -254,19 +261,10 @@ describe('seed scattering', () => {
 describe('save migration', () => {
   it('loads a version-1 save, marking every existing crop as sown', () => {
     const current = withTile(BASE, TARGET, soilTile(TileState.Watered, createCropInstance('parsnip', 0)));
-    const v1 = JSON.parse(serializeGame(current)) as { version: number; world: { chunks: { tiles: { crop: Record<string, unknown> | null }[] }[] } };
-    v1.version = 1;
-    for (const chunk of v1.world.chunks) {
-      for (const tile of chunk.tiles) {
-        if (tile.crop !== null) {
-          // Version 1 had no wild crops and no `wild` field.
-          if (tile.crop.wild === true) tile.crop = null;
-          else delete tile.crop.wild;
-        }
-      }
-    }
+    // Version 1 had no wild crops and no `wild` field.
+    const v1 = legacySave(current, 1);
     const loaded = must(deserializeGame(JSON.stringify(v1)));
-    expect(loaded.version).toBe(2);
+    expect(loaded.version).toBe(3);
     expect(tileAt(loaded, TARGET).crop).toEqual(createCropInstance('parsnip', 0));
   });
 
