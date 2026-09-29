@@ -540,6 +540,8 @@ describe('ACTION_KINDS', () => {
       refill: true,
       sleep: true,
       openChest: true,
+      place: true,
+      fertilize: true,
       none: true,
     };
     expect([...ACTION_KINDS].sort()).toEqual(Object.keys(every).sort());

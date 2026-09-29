@@ -12,7 +12,7 @@
  */
 import { Weather, type MessageTone, type ToolType } from '../core/types';
 import { CROPS, type CropVisual } from '../farming/crops';
-import type { ItemDefinition, MaterialItem, SeedItem } from '../items/items';
+import type { FertilizerItem, ItemDefinition, MaterialItem, PlaceableItem, SeedItem } from '../items/items';
 import { PALETTE } from '../render/palette';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -491,7 +491,122 @@ function materialParts(item: MaterialItem): SVGElement[] {
       ];
     case 'wood':
       return [logParts(3, -4, color), logParts(0, 7, color)];
+    case 'copperOre': {
+      const rock = 0x9a8f99;
+      return [
+        faceted('4,23 7,13 14,8 23,9.5 28,18 25,26 12,27.5', hex(rock), [
+          facet('7,13 14,8 23,9.5 16,14', light(rock, 0.35)),
+          facet('23,9.5 28,18 25,26 18,20 16,14', dark(rock, 0.18)),
+        ]),
+        gem(11.5, 19, 3.6, color),
+        gem(20, 15.5, 3, color),
+        gem(18.5, 23, 2.4, color),
+      ];
+    }
+    case 'sap':
+      return [
+        faceted('16,3.5 22.5,15 23.5,21 20,27 12,27 8.5,21 9.5,15', hex(color), [
+          facet('16,3.5 9.5,15 8.5,21 12.5,18 14.5,9', light(color, 0.35)),
+          facet('22.5,15 23.5,21 20,27 16,27 19.5,20', dark(color, 0.2)),
+          svgNode('circle', { cx: 12.6, cy: 19.5, r: 1.3, fill: light(color, 0.7) }),
+        ]),
+      ];
+    case 'fiber':
+      return [
+        line(9, 28, 13, 5, INK, 3.6),
+        line(9, 28, 13, 5, hex(color), 1.8),
+        line(16, 28.5, 16, 4, INK, 3.6),
+        line(16, 28.5, 16, 4, light(color, 0.2), 1.8),
+        line(23, 28, 19, 5.5, INK, 3.6),
+        line(23, 28, 19, 5.5, dark(color, 0.12), 1.8),
+        faceted('9.5,19.5 22.5,19.5 22,23.5 10,23.5', hex(0xc9a26b), [facet('9.5,19.5 22.5,19.5 22.3,21 9.8,21', light(0xc9a26b, 0.3))]),
+      ];
   }
+}
+
+/** A sprinkler head on a short pipe: grey for the basic one, copper for the quality one. */
+function sprinklerParts(color: number, quality: boolean): SVGElement[] {
+  const drop = COLORS.rain;
+  const drops = quality
+    ? [gem(5.5, 9, 2, drop), gem(26.5, 9, 2, drop), gem(5.5, 22, 2, drop), gem(26.5, 22, 2, drop), gem(16, 4.5, 2, drop)]
+    : [gem(5.5, 12, 2.2, drop), gem(26.5, 12, 2.2, drop), gem(16, 4.5, 2.2, drop)];
+  return [
+    ...drops,
+    faceted('8,26 24,26 25,29 7,29', dark(color, 0.3), []),
+    faceted('13.5,14 18.5,14 18.5,26 13.5,26', hex(color), [facet('13.5,14 15.3,14 15.3,26 13.5,26', light(color, 0.35))]),
+    faceted('9,10 23,10 24,14.5 8,14.5', hex(color), [
+      facet('9,10 23,10 23.3,11.8 8.7,11.8', light(color, 0.4)),
+      facet('20,11.8 23.3,11.8 24,14.5 20.4,14.5', dark(color, 0.18)),
+    ]),
+  ];
+}
+
+function placeableParts(item: PlaceableItem): SVGElement[] {
+  const color = item.color;
+  switch (item.id) {
+    case 'chest':
+      return [
+        faceted('4,14 28,14 27,28 5,28', hex(color), [
+          facet('22,14 28,14 27,28 22,28', dark(color, 0.18)),
+          facet('4,19.5 28,19.5 28,21 4,21', dark(color, 0.3)),
+        ]),
+        faceted('4,14 6,6 26,6 28,14', light(color, 0.12), [facet('6,6 26,6 26.6,9 5.3,9', light(color, 0.35))]),
+        faceted('14,12 18,12 18,18 14,18', hex(COLORS.gold), [facet('14,12 16,12 16,18 14,18', light(COLORS.gold, 0.4))]),
+      ];
+    case 'woodFence':
+      return [
+        faceted('3,11 29,11 29,15 3,15', hex(color), [facet('3,11 29,11 29,12.4 3,12.4', light(color, 0.3))]),
+        faceted('3,19 29,19 29,23 3,23', hex(color), [facet('3,19 29,19 29,20.4 3,20.4', light(color, 0.3))]),
+        faceted('6,28 6,7 8.5,4.5 11,7 11,28', light(color, 0.1), [facet('8.5,4.5 11,7 11,28 8.5,28', dark(color, 0.16))]),
+        faceted('21,28 21,7 23.5,4.5 26,7 26,28', light(color, 0.1), [facet('23.5,4.5 26,7 26,28 23.5,28', dark(color, 0.16))]),
+      ];
+    case 'woodPath':
+      return [
+        faceted('4,6 28,5 28,12 4,13', hex(color), [facet('4,6 28,5 28,7 4,8', light(color, 0.3))]),
+        faceted('4,14.5 28,13.5 28,20.5 4,21.5', dark(color, 0.08), [facet('4,14.5 28,13.5 28,15.5 4,16.5', light(color, 0.25))]),
+        faceted('4,23 28,22 28,29 4,30', hex(color), [facet('4,23 28,22 28,24 4,25', light(color, 0.3))]),
+      ];
+    case 'stonePath':
+      return [
+        faceted('3,10 8,4 15,5 16,12 10,15 4,14', hex(color), [facet('8,4 15,5 16,12 10,9', light(color, 0.35))]),
+        faceted('18,6 26,4.5 29,11 25,16 18,14', dark(color, 0.06), [facet('18,6 26,4.5 24,10', light(color, 0.35))]),
+        faceted('4,19 12,17 17,21 15,28 6,28.5 3,24', hex(color), [facet('4,19 12,17 11,21 5,23', light(color, 0.35))]),
+        faceted('19,19 27,18 29,25 23,29 18,26', dark(color, 0.1), [facet('19,19 27,18 24,22', light(color, 0.3))]),
+      ];
+    case 'scarecrow': {
+      const cloth = 0x7a9ad0;
+      return [
+        stick(16, 29, 16, 12, COLORS.handle, 2.6),
+        stick(5, 16, 27, 16, COLORS.handle, 2.2),
+        faceted('10,14 22,14 21,24 11,24', hex(cloth), [facet('17,14 22,14 21,24 17,24', dark(cloth, 0.2))]),
+        faceted('11.5,9 16,5.5 20.5,9 20,13.5 12,13.5', hex(0xf0d890), [facet('16,5.5 20.5,9 20,13.5 16,13.5', dark(0xf0d890, 0.15))]),
+        faceted('8,6.5 24,6.5 20,2.5 12,2.5', hex(color), [facet('16,2.5 20,2.5 24,6.5 16,6.5', dark(color, 0.2))]),
+      ];
+    }
+    case 'sprinkler':
+      return sprinklerParts(color, false);
+    case 'qualitySprinkler':
+      return sprinklerParts(color, true);
+  }
+}
+
+/** A tied sack of fertiliser, tinted by kind, with a sprout emblem. */
+function fertilizerParts(item: FertilizerItem): SVGElement[] {
+  const color = item.color;
+  const sack = 0xe4cfa3;
+  const parts: SVGElement[] = [
+    faceted('7,12 11,8 21,8 25,12 27,26 23,29 9,29 5,26', hex(sack), [
+      facet('21,8 25,12 27,26 23,29 20,29 22,13', dark(sack, 0.18)),
+      facet('7,12 11,8 13,8 10,14 8,26 5,26', light(sack, 0.3)),
+      facet('8,16 24,16 25,24 7,24', hex(color)),
+      facet('20,16 24,16 25,24 20.5,24', dark(color, 0.2)),
+    ]),
+    faceted('11,8 13,3.5 19,3.5 21,8', dark(sack, 0.08), []),
+    gem(16, 20, 2.6, COLORS.sprout),
+  ];
+  if (item.id === 'speedGro') parts.push(line(12, 12, 20, 12, hex(color), 1.6));
+  if (item.id === 'qualityFertilizer') parts.push(gem(16, 11.5, 1.8, COLORS.gold));
+  return parts;
 }
 
 /** Icon for any registry item: tools, tinted seed packets, faceted produce and materials. */
@@ -505,6 +620,10 @@ export function createItemIcon(item: ItemDefinition, className: string = ICON_CL
       return svgRoot(produceParts(CROPS[item.cropId].visual), className);
     case 'material':
       return svgRoot(materialParts(item), className);
+    case 'placeable':
+      return svgRoot(placeableParts(item), className);
+    case 'fertilizer':
+      return svgRoot(fertilizerParts(item), className);
   }
 }
 

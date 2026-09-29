@@ -7,6 +7,7 @@
  * or paused) ignores movement, tools, interaction, sleep and ticks. All scenarios start from
  * a deep-frozen state, so any mutation inside the reducer would throw.
  */
+import { countItem } from '../src/state/inventory';
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, MESSAGES, PLAYER, TIME, TOOLS, WORLD } from '../src/config';
 import { deepFreeze } from '../src/core/store';
@@ -306,12 +307,12 @@ describe('scythe', () => {
     expect(tileAt(useTool(withered), TARGET)).toEqual(soilTile(TileState.Plowed));
   });
 
-  it('cuts weeds down to grass for no energy and no drop, counting the cleared debris', () => {
+  it('cuts weeds down to grass for no energy, dropping 1 fiber and counting the cleared debris', () => {
     const state = withEnergy(holding(scenario(blockedTile(Blocker.Weeds)), 'scythe'), 0);
     const next = useTool(state);
     expect(tileAt(next, TARGET)).toBe(EMPTY_TILE);
     expect(next.player.energy).toBe(0);
-    expect(next.inventory).toBe(state.inventory);
+    expect(countItem(next.inventory, 'fiber')).toBe(countItem(state.inventory, 'fiber') + 1);
     expect(next.stats.debrisCleared).toBe(state.stats.debrisCleared + 1);
     expect(next.player.lastAction).toEqual({ seq: 1, kind: 'scythe', target: TARGET, success: true });
     expect(next.messages).toBe(state.messages);
@@ -400,7 +401,9 @@ describe('tiles holding a placed object', () => {
     const chest = { ...EMPTY_TILE, object: { kind: 'chest', slots: Array.from({ length: INVENTORY.chestSlots }, () => null) } } as const;
     const path = { ...EMPTY_TILE, object: { kind: 'woodPath' } } as const;
     for (const tile of [sprinklerSoil, { ...soilTile(TileState.Watered), object: { kind: 'scarecrow' } } as const, chest, path]) {
-      for (const tool of ['pickaxe', 'hoe'] as const) {
+      // The pickaxe lifts stone and metal objects (see tests/crafting.test.ts); it never digs.
+      const tools = tile.object.kind === 'sprinkler' ? (['hoe'] as const) : (['pickaxe', 'hoe'] as const);
+      for (const tool of tools) {
         const state = holding(scenario(tile), tool);
         expect(planPrimaryAction(state).energyCost).toBe(0);
         expectFailedAttempt(state, useTool(state), tool, TARGET, null);

@@ -19,8 +19,10 @@ import {
   type ActionKind,
   type Direction,
   type GameState,
-  type ItemId,
+  type CraftingRecipeId,
+  type CropId,
   type ItemStack,
+  type PlacedObject,
   type Quality,
   type SeedItemId,
   type ShippingState,
@@ -29,7 +31,11 @@ import {
   type TileCoord,
 } from '../core/types';
 import { CROPS, stageCount, createCropInstance } from '../farming/crops';
+import { RECIPES, consumeIngredients, craftCheck } from '../crafting/recipes';
+import { runCrows } from '../farming/crows';
+import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
+import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
@@ -87,6 +93,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return state.ui.panel.kind === 'none' ? state : { ...state, ui: { ...state.ui, panel: { kind: 'none' } } };
     case 'shop/buy':
       return buySeeds(state, action.itemId, action.quantity);
+    case 'crafting/craft':
+      return craft(state, action.recipe);
     case 'game/setPaused':
       return state.ui.paused === action.paused ? state : { ...state, ui: { ...state.ui, paused: action.paused } };
     case 'game/setTimeScale':
@@ -139,8 +147,16 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const weather = rollWeather(state.seed, time.absoluteDay);
   const ctx = { day: time.absoluteDay, season: time.season, seasonChanged, weather };
   let maps = state.maps;
+  let eaten: readonly CropId[] = [];
   for (const id of MAP_IDS) {
-    const world = advanceWorldOvernight(state.maps[id], { ...ctx, seed: mapSeed(state.seed, id) }, getMap(id));
+    const seed = mapSeed(state.seed, id);
+    // Sprinklers water before the crops grow (the night counts) and again after (wet soil at dawn).
+    let world = runSprinklers(advanceWorldOvernight(runSprinklers(state.maps[id]), { ...ctx, seed }, getMap(id)));
+    if (id === 'farm') {
+      const raid = runCrows(world, seed, time.absoluteDay);
+      world = raid.world;
+      eaten = raid.eaten;
+    }
     if (world !== maps[id]) maps = { ...maps, [id]: world };
   }
   const energy = passedOut
@@ -169,6 +185,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
   next = pushMessage(next, `Good morning! ${formatDate(time)}.`, 'info');
   if (passedOut) next = pushMessage(next, 'You passed out from exhaustion and woke up at home with half your energy.', 'warn');
   if (payout > 0) next = pushMessage(next, `Your shipment sold for ${payout}g.`, 'success');
+  if (eaten.length > 0) next = pushMessage(next, crowReport(eaten), 'warn');
   if (seasonChanged) next = pushMessage(next, `${SEASON_NAMES[time.season]} has arrived! Out-of-season crops have withered.`, 'info');
   if (weatherWaters(weather)) {
     next = pushMessage(next, `It's ${weather === Weather.Storm ? 'storming' : 'raining'} — your crops are watered today.`, 'info');
@@ -176,6 +193,15 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     next = pushMessage(next, 'Snow blankets the farm.', 'info');
   }
   return next;
+}
+
+/** "Crows ate 2 Parsnips and 1 Potato overnight." (in the order they were eaten). */
+export function crowReport(eaten: readonly CropId[]): string {
+  const counts = new Map<CropId, number>();
+  for (const id of eaten) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const parts = [...counts].map(([id, n]) => `${n} ${CROPS[id].name}${n > 1 ? 's' : ''}`);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1] ?? ''}` : (parts[0] ?? '');
+  return `Crows ate ${list} overnight. A scarecrow keeps them away.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +310,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       return hitBlocker(state, target, tile);
 
     case 'clearWeeds':
-      return countDebrisCleared(withTile(state, target, EMPTY_TILE));
+      return giveDrops(countDebrisCleared(withTile(state, target, EMPTY_TILE)), debrisDropsAt(state, Blocker.Weeds, target));
 
     case 'untill':
       return withTile(state, target, EMPTY_TILE);
@@ -317,18 +343,51 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
         ...state,
         ui: { ...state.ui, panel: { kind: 'chest', mapId: state.player.mapId, tx: target.tx, tz: target.tz } },
       };
+
+    case 'place': {
+      const object: PlacedObject =
+        intent.itemId === 'chest' ? { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) } : { kind: intent.itemId };
+      const next = withTile(state, target, { ...tile, object });
+      return { ...next, inventory: removeFromSlot(state.inventory, state.inventory.selected, 1) };
+    }
+
+    case 'fertilize': {
+      const next = withTile(state, target, { ...tile, fertilizer: intent.fertilizer });
+      return { ...next, inventory: removeFromSlot(state.inventory, state.inventory.selected, 1) };
+    }
+
+    case 'pickUp': {
+      const { inventory, added } = addItem(state.inventory, intent.itemId, 1);
+      invariant(added === 1, 'pick-up capacity is verified while planning');
+      return { ...withTile(state, target, { ...tile, object: null }), inventory };
+    }
   }
 }
 
-/** What a hittable blocker leaves behind when its last hit lands, and what it drops. */
-function blockerRemains(blocker: Blocker): { readonly tile: Tile; readonly drop: ItemId; readonly quantity: number } {
+/** The drops for clearing `blocker` on `target` of the active map today. */
+function debrisDropsAt(state: GameState, blocker: DroppingBlocker, target: TileCoord): readonly Drop[] {
+  return debrisDrops(mapSeed(state.seed, state.player.mapId), blocker, target.tx, target.tz, state.time.absoluteDay);
+}
+
+/** Adds each drop, as many as fit, with a warning for any that didn't. */
+function giveDrops(state: GameState, drops: readonly Drop[]): GameState {
+  let next = state;
+  for (const drop of drops) {
+    const { inventory, added } = addItem(next.inventory, drop.itemId, drop.quantity);
+    next = { ...next, inventory };
+    if (added < drop.quantity) next = pushMessage(next, `No room for ${getItem(drop.itemId).name}.`, 'warn');
+  }
+  return next;
+}
+
+/** What a hittable blocker leaves behind when its last hit lands. */
+function blockerRemains(blocker: Blocker): { readonly tile: Tile; readonly blocker: DroppingBlocker } {
   switch (blocker) {
     case Blocker.Rock:
-      return { tile: EMPTY_TILE, drop: 'stone', quantity: TOOLS.stoneFromRock };
     case Blocker.Stump:
-      return { tile: EMPTY_TILE, drop: 'wood', quantity: TOOLS.woodFromStump };
+      return { tile: EMPTY_TILE, blocker };
     case Blocker.Tree:
-      return { tile: blockedTile(Blocker.Stump, TOOLS.stumpHits), drop: 'wood', quantity: TOOLS.woodFromTree };
+      return { tile: blockedTile(Blocker.Stump, TOOLS.stumpHits), blocker };
     default:
       throw new RangeError(`blocker ${blocker} takes no hits`);
   }
@@ -349,9 +408,7 @@ function hitBlocker(state: GameState, target: TileCoord, tile: Tile): GameState 
   if (hp > 0) return withTile(state, target, { ...tile, blockerHp: hp });
   const remains = blockerRemains(tile.blocker);
   const cleared = countDebrisCleared(withTile(state, target, remains.tile));
-  const { inventory, added } = addItem(cleared.inventory, remains.drop, remains.quantity);
-  const next = { ...cleared, inventory };
-  return added < remains.quantity ? pushMessage(next, `No room for ${getItem(remains.drop).name}.`, 'warn') : next;
+  return giveDrops(cleared, debrisDropsAt(state, remains.blocker, target));
 }
 
 /** Prefix naming a silver or gold quality in messages ("Gold Parsnip"); empty for normal quality. */
@@ -369,7 +426,8 @@ function harvest(state: GameState, target: TileCoord, tile: Tile, quantity: numb
     def.regrowDays === null
       ? null
       : { ...crop, stage: stageCount(def) - 1, daysInStage: 0, dryDays: 0, regrowing: true, harvestCount: crop.harvestCount + 1 };
-  const next = withTile(state, target, { ...tile, crop: regrown });
+  // Fertiliser lasts until the crop is harvested for good; a regrowing crop keeps it.
+  const next = withTile(state, target, { ...tile, crop: regrown, fertilizer: regrown === null ? null : tile.fertilizer });
   return pushMessage({ ...next, inventory }, `Harvested ${qualityPrefix(quality)}${def.name} ×${quantity}.`, 'success');
 }
 
@@ -500,6 +558,22 @@ function buySeeds(state: GameState, itemId: SeedItemId, quantity: number): GameS
   const { inventory } = addItem(state.inventory, itemId, quantity);
   const next: GameState = { ...state, inventory, player: { ...state.player, gold: state.player.gold - cost } };
   return pushMessage(next, `Bought ${item.name} ×${quantity} for ${cost}g.`, 'success');
+}
+
+/**
+ * `crafting/craft`: rejected while paused or for an unknown id; otherwise, when craftCheck
+ * allows it, uses the ingredients (lowest quality first) and adds the output, or explains why not.
+ */
+function craft(state: GameState, id: CraftingRecipeId): GameState {
+  if (state.ui.paused || !Object.hasOwn(RECIPES, id)) return state;
+  const check = craftCheck(state, id);
+  if (!check.ok) return pushMessage(state, check.reason, 'warn');
+  const recipe = RECIPES[id];
+  const { inventory, added } = addItem(consumeIngredients(state.inventory, recipe), recipe.output, recipe.quantity);
+  invariant(added === recipe.quantity, 'craft output room is verified by craftCheck');
+  const stats = id === 'chest' && !state.stats.craftedChest ? { ...state.stats, craftedChest: true } : state.stats;
+  const name = getItem(recipe.output).name;
+  return pushMessage({ ...state, inventory, stats }, `Crafted ${name}${recipe.quantity > 1 ? ` ×${recipe.quantity}` : ''}.`, 'success');
 }
 
 function setTimeScale(state: GameState, timeScale: number): GameState {

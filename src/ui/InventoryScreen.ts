@@ -36,6 +36,7 @@ import {
   type HeldStack,
   type SlotClickResult,
 } from './heldStack';
+import { CraftingPanel } from './CraftingPanel';
 import { createCloseIcon } from './icons';
 import { RightClickGate } from './rightClickGate';
 import {
@@ -111,6 +112,14 @@ export class InventoryScreen {
   private readonly ghost = h('div', 'hud-inv__ghost');
   private readonly ghostIcon = h('span', 'hud-inv__ghost-icon');
   private readonly ghostQuantity = h('span', 'hud-inv__ghost-qty');
+  /** Items / Crafting tabs, shown only on the backpack screen (a chest always shows items). */
+  private readonly tabs = h('div', 'hud-inv__tabs');
+  private readonly itemsTab = hudButton('hud-btn hud-btn--soft hud-inv__tab', 'Items');
+  private readonly craftTab = hudButton('hud-btn hud-btn--soft hud-inv__tab', 'Crafting');
+  private readonly bagSection = h('section', 'hud-inv__section');
+  private readonly footer = h('p', 'hud-inv__footer');
+  private readonly crafting: CraftingPanel;
+  private tab: 'items' | 'crafting' = 'items';
   private readonly icons: ItemIconCache;
   private readonly dispatch: (action: GameAction) => void;
   private readonly playerSlots: ScreenSlot[] = [];
@@ -165,10 +174,10 @@ export class InventoryScreen {
       const name = hotbar ? `Hotbar slot ${keyLabel}` : `Backpack slot ${i - INVENTORY.hotbarSize + 1}`;
       (hotbar ? hotbarRow : backpackGrid).append(this.addSlot(this.playerSlots, 'player', i, keyLabel, name));
     }
-    const bagSection = h('section', 'hud-inv__section');
+    const bagSection = this.bagSection;
     bagSection.append(this.sectionHeading('Backpack', this.bagCount), hotbarRow, h('hr', 'hud-inv__rule'), backpackGrid);
 
-    const footer = h('p', 'hud-inv__footer');
+    const footer = this.footer;
     footer.append(
       h('strong', '', 'Click'),
       ' picks up or places a stack · ',
@@ -177,7 +186,18 @@ export class InventoryScreen {
     );
 
     this.chestSection.hidden = true;
-    card.append(header, this.chestSection, bagSection, footer);
+    this.crafting = new CraftingPanel(this.icons, this.dispatch, context.signal);
+    this.crafting.element.hidden = true;
+    this.tabs.setAttribute('role', 'tablist');
+    for (const [tab, name] of [
+      [this.itemsTab, 'items'],
+      [this.craftTab, 'crafting'],
+    ] as const) {
+      tab.setAttribute('role', 'tab');
+      tab.addEventListener('click', () => this.showTab(name), { signal: context.signal });
+      this.tabs.append(tab);
+    }
+    card.append(header, this.tabs, this.chestSection, bagSection, this.crafting.element, footer);
 
     this.ghost.hidden = true;
     this.ghost.setAttribute('aria-hidden', 'true');
@@ -185,6 +205,27 @@ export class InventoryScreen {
     this.element.append(backdrop, card, this.ghost);
 
     this.listen(context.signal, close, backdrop);
+  }
+
+  private showTab(tab: 'items' | 'crafting'): void {
+    this.tab = tab;
+    if (this.state !== null) this.renderTab(this.state);
+  }
+
+  /** Shows the chosen tab; a chest panel always shows its items. */
+  private renderTab(state: GameState): void {
+    const onBackpack = state.ui.panel.kind === 'inventory';
+    const crafting = onBackpack && this.tab === 'crafting';
+    setHidden(this.tabs, !onBackpack);
+    setHidden(this.bagSection, crafting);
+    setHidden(this.footer, crafting);
+    setHidden(this.crafting.element, !crafting);
+    setAttr(this.itemsTab, 'aria-selected', crafting ? 'false' : 'true');
+    setAttr(this.craftTab, 'aria-selected', crafting ? 'true' : 'false');
+    if (crafting) {
+      if (this.held !== null) this.setHeld(null);
+      this.crafting.sync(state);
+    }
   }
 
   private sectionHeading(label: string, count: HTMLElement): HTMLElement {
@@ -331,6 +372,7 @@ export class InventoryScreen {
     this.renderPlayer(state.inventory, reopened);
     this.renderChest(state, reopened);
     this.renderHeader(state);
+    this.renderTab(state);
   }
 
   private renderHeader(state: GameState): void {

@@ -1204,6 +1204,7 @@ export class EffectsRenderer implements RenderSystem {
         this.harvest(before, ground, rng);
         return;
       case 'plant':
+      case 'fertilize':
         emitBurst(this.pool, EFFECTS.plantSparkles, rng, withPush(withHeight(ground, ground.y + 0.05), 0, 0));
         return;
       case 'ship':
@@ -1211,6 +1212,7 @@ export class EffectsRenderer implements RenderSystem {
         return;
       case 'sleep':
       case 'openChest':
+      case 'place':
       case 'none':
         return;
     }

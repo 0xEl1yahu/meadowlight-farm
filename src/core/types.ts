@@ -106,12 +106,27 @@ export type CropId = (typeof CROP_IDS)[number];
 export const TOOL_TYPES = ['hoe', 'wateringCan', 'pickaxe', 'axe', 'scythe'] as const;
 export type ToolType = (typeof TOOL_TYPES)[number];
 
-export const MATERIAL_IDS = ['stone', 'wood'] as const;
+export const MATERIAL_IDS = ['stone', 'wood', 'copperOre', 'sap', 'fiber'] as const;
 export type MaterialItemId = (typeof MATERIAL_IDS)[number];
+
+/** Items that become a placed object of the same kind when used on an empty tile. */
+export const PLACEABLE_ITEM_IDS = [
+  'chest',
+  'woodFence',
+  'woodPath',
+  'stonePath',
+  'scarecrow',
+  'sprinkler',
+  'qualitySprinkler',
+] as const;
+export type PlaceableItemId = (typeof PLACEABLE_ITEM_IDS)[number];
+
+export const FERTILIZER_ITEM_IDS = ['basicFertilizer', 'qualityFertilizer', 'speedGro'] as const;
+export type FertilizerItemId = (typeof FERTILIZER_ITEM_IDS)[number];
 
 export type SeedItemId = `${CropId}_seeds`;
 export type ProduceItemId = CropId;
-export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId;
+export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId | PlaceableItemId | FertilizerItemId;
 
 // Identifier lists for later workstreams. They are data keys only: their item registry
 // entries, icons and behaviour arrive with the workstream that uses them.
@@ -366,6 +381,8 @@ export type ActionKind =
   | 'refill'
   | 'sleep'
   | 'openChest'
+  | 'place'
+  | 'fertilize'
   | 'none';
 
 export interface ActionEvent {

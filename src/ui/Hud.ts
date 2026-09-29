@@ -122,14 +122,18 @@ interface ControlRow {
 
 const CONTROL_ROWS: readonly ControlRow[] = [
   { keys: ['W A S D', 'Arrows'], action: 'Move', detail: 'Hold Shift to turn without stepping' },
-  { keys: ['Space', 'J', 'Left-click'], action: 'Use tool' },
+  {
+    keys: ['Space', 'J', 'Left-click'],
+    action: 'Use tool',
+    detail: 'Also places a crafted item or spreads fertiliser; the pickaxe or axe picks placed things back up',
+  },
   {
     keys: ['E', 'K', 'Enter', 'Right-click'],
     action: 'Interact',
     detail: 'Harvest, open chests, ship at the bin, sleep at the house door, refill at water',
   },
   { keys: ['1–0', '-', '=', 'Tab', 'Wheel'], action: 'Select slot' },
-  { keys: ['I'], action: 'Backpack', detail: 'Click to move a stack, right-click to split it' },
+  { keys: ['I'], action: 'Backpack', detail: 'Click to move a stack, right-click to split it; craft on the Crafting tab' },
   { keys: ['B'], action: 'Seed shop' },
   { keys: ['Z', 'X', 'Ctrl + wheel'], action: 'Zoom in / out' },
   { keys: ['T'], action: 'Time speed' },
@@ -143,7 +147,7 @@ const HELP_HINTS: readonly (readonly [string, string])[] = [
   ['Space', 'Use tool'],
   ['E', 'Interact'],
   ['1–0', 'Pick slot'],
-  ['I', 'Backpack'],
+  ['I', 'Backpack & crafting'],
   ['B', 'Seed shop'],
   ['T', 'Speed up'],
   ['P', 'Pause & all controls'],

@@ -10,7 +10,8 @@
  * crops are never sold; they sprout on their own on shaded grass, spread to shaded neighbours
  * and grow without water (see farming/wild.ts).
  */
-import { CROP_IDS, Season, type CropId, type CropInstance, type SeedItemId } from '../core/types';
+import { FARMING } from '../config';
+import { CROP_IDS, Season, type CropId, type CropInstance, type FertilizerKind, type SeedItemId } from '../core/types';
 import { invariant } from '../core/invariant';
 
 /** Silhouette of the foliage while growing. */
@@ -269,11 +270,41 @@ export function isInSeason(def: CropDefinition, season: Season): boolean {
   return def.seasons.includes(season);
 }
 
-/** Watered nights required to leave the crop's current stage. */
-export function daysRequiredForStage(def: CropDefinition, crop: CropInstance): number {
+/** Days Speed-Gro takes off a crop's first growth: 10% of the total, rounded, at least 1. */
+export function speedGroDaysOff(def: CropDefinition): number {
+  return Math.max(1, Math.round(totalGrowDays(def) * FARMING.speedGroFraction));
+}
+
+const speedGroCache = new Map<CropId, readonly number[]>();
+
+/**
+ * Stage durations on Speed-Gro soil: `speedGroDaysOff` days come off the longest stages, one day
+ * at a time (the later stage wins a tie). A stage can drop to 0 days, which growCrop skips
+ * straight through; stage 0 always keeps at least 1 day because the cut never exceeds half
+ * the total. Deterministic and cached per crop.
+ */
+export function speedGroStageDays(def: CropDefinition): readonly number[] {
+  const cached = speedGroCache.get(def.id);
+  if (cached !== undefined) return cached;
+  const days = def.stageDays.slice();
+  for (let cut = speedGroDaysOff(def); cut > 0; cut--) {
+    let longest = days.length - 1;
+    for (let i = days.length - 1; i >= 0; i--) if ((days[i] ?? 0) > (days[longest] ?? 0)) longest = i;
+    days[longest] = (days[longest] ?? 0) - 1;
+  }
+  invariant((days[0] ?? 0) >= 1 && days.every((d) => d >= 0), `${def.id}: invalid Speed-Gro stages`);
+  speedGroCache.set(def.id, days);
+  return days;
+}
+
+/**
+ * Watered nights required to leave the crop's current stage; on Speed-Gro soil the first
+ * growth uses `speedGroStageDays` (regrowth is never sped up). Can be 0 on Speed-Gro soil.
+ */
+export function daysRequiredForStage(def: CropDefinition, crop: CropInstance, fertilizer: FertilizerKind | null = null): number {
   const last = stageCount(def) - 1;
   if (crop.regrowing && crop.stage === last && def.regrowDays !== null) return def.regrowDays;
-  const days = def.stageDays[crop.stage];
+  const days = (fertilizer === 'speedGro' ? speedGroStageDays(def) : def.stageDays)[crop.stage];
   invariant(days !== undefined, `${def.id}: no duration for stage ${crop.stage}`);
   return days;
 }
@@ -286,7 +317,7 @@ export function totalGrowDays(def: CropDefinition): number {
 export function growthProgress(crop: CropInstance): number {
   const def = CROPS[crop.cropId];
   if (crop.stage >= stageCount(def)) return 1;
-  const required = daysRequiredForStage(def, crop);
+  const required = Math.max(1, daysRequiredForStage(def, crop));
   return Math.min(1, (crop.stage + crop.daysInStage / required) / stageCount(def));
 }
 

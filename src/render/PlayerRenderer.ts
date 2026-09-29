@@ -196,8 +196,11 @@ function heldChoiceFor(stack: ItemStack | null): HeldChoice {
       return { kind: item.tool, color: item.color };
     case 'seed':
       return { kind: 'pouch', color: item.color };
+    case 'fertilizer':
+      return { kind: 'pouch', color: item.color };
     case 'produce':
     case 'material':
+    case 'placeable':
       return { kind: 'gem', color: item.color };
   }
 }
@@ -714,6 +717,9 @@ const ACTION_CLIPS: Readonly<Record<AnimatedAction, ActionClip>> = {
   refill: REFILL_DIP,
   /** Lifting a chest lid reads like the shipping-bin toss. */
   openChest: SHIP_TOSS,
+  /** Setting an object down and mixing in fertiliser both crouch like planting. */
+  place: PLANT,
+  fertilize: PLANT,
 };
 
 /** Height of the surface under the player's tile: path planks, sunken soil or grass. */

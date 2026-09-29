@@ -16,7 +16,7 @@
  */
 import { FARMING } from '../config';
 import { Salt, hashFloat } from '../core/hash';
-import { TileState, type CropInstance, type Season, type Tile, type Weather, type WorldState } from '../core/types';
+import { TileState, type CropInstance, type FertilizerKind, type Season, type Tile, type Weather, type WorldState } from '../core/types';
 import { weatherWaters } from '../time/weather';
 import type { MapDefinition } from '../world/maps/types';
 import { mapTiles } from '../world/tiles';
@@ -32,15 +32,22 @@ export interface DayContext {
   readonly weather: Weather;
 }
 
-/** One night of growth for a living crop. Returns the same object when nothing changes. */
-export function growCrop(crop: CropInstance, watered: boolean): CropInstance {
+/**
+ * One night of growth for a living crop on soil holding `fertilizer`. Returns the same object
+ * when nothing changes. Stages that Speed-Gro cut to 0 days are passed straight through.
+ */
+export function growCrop(crop: CropInstance, watered: boolean, fertilizer: FertilizerKind | null = null): CropInstance {
   if (crop.dead) return crop;
   const def = CROPS[crop.cropId];
   if (crop.stage >= stageCount(def)) return crop;
   if (!watered) return { ...crop, dryDays: crop.dryDays + 1 };
   const daysInStage = crop.daysInStage + 1;
-  if (daysInStage >= daysRequiredForStage(def, crop)) {
-    return { ...crop, stage: crop.stage + 1, daysInStage: 0, dryDays: 0 };
+  if (daysInStage >= daysRequiredForStage(def, crop, fertilizer)) {
+    let next: CropInstance = { ...crop, stage: crop.stage + 1, daysInStage: 0, dryDays: 0 };
+    while (next.stage < stageCount(def) && daysRequiredForStage(def, next, fertilizer) === 0) {
+      next = { ...next, stage: next.stage + 1 };
+    }
+    return next;
   }
   return { ...crop, daysInStage, dryDays: 0 };
 }
@@ -62,7 +69,7 @@ export function advanceTileOvernight(tile: Tile, tx: number, tz: number, ctx: Da
   let crop = tile.crop;
   if (crop !== null && !crop.dead) {
     const def = CROPS[crop.cropId];
-    crop = ctx.seasonChanged && !isInSeason(def, ctx.season) ? { ...crop, dead: true } : growCrop(crop, wasWatered);
+    crop = ctx.seasonChanged && !isInSeason(def, ctx.season) ? { ...crop, dead: true } : growCrop(crop, wasWatered, tile.fertilizer);
   }
 
   let state: TileState = TileState.Plowed;

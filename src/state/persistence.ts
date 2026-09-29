@@ -55,6 +55,8 @@ const ACTION_KIND_TABLE = {
   refill: true,
   sleep: true,
   openChest: true,
+  place: true,
+  fertilize: true,
   none: true,
 } as const satisfies Readonly<Record<ActionKind, true>>;
 

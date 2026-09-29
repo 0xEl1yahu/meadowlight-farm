@@ -2,7 +2,7 @@
  * Every way the game state can change. Actions are plain serialisable objects, so an action
  * log replayed from the same initial state reproduces the same game exactly.
  */
-import type { Direction, GameState, SeedItemId, SlotRef } from '../core/types';
+import type { CraftingRecipeId, Direction, GameState, SeedItemId, SlotRef } from '../core/types';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -22,6 +22,8 @@ export type GameAction =
   /** Closes whichever panel is open. */
   | { readonly type: 'ui/closePanel' }
   | { readonly type: 'shop/buy'; readonly itemId: SeedItemId; readonly quantity: number }
+  /** Crafts one batch of a known recipe from the player's inventory. */
+  | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
   | { readonly type: 'game/setTimeScale'; readonly timeScale: number }
   | { readonly type: 'game/load'; readonly state: GameState };
@@ -47,6 +49,7 @@ export const actions = {
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),
   buy: (itemId: SeedItemId, quantity: number): GameAction => ({ type: 'shop/buy', itemId, quantity }),
+  craft: (recipe: CraftingRecipeId): GameAction => ({ type: 'crafting/craft', recipe }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),
   load: (state: GameState): GameAction => ({ type: 'game/load', state }),

@@ -196,3 +196,24 @@ export function moveAcrossSlots(
   invariant(srcSlots !== dstSlots, 'moveAcrossSlots: use moveWithinSlots for one container');
   return moveBetweenSlots(srcSlots, srcIndex, dstSlots, dstIndex, q);
 }
+
+/**
+ * Removes `quantity` units of `itemId` across the unlocked slots, lowest quality first and in
+ * slot order within a quality. The inventory must hold at least that many (see countItem).
+ */
+export function removeItem(inventory: InventoryState, itemId: ItemId, quantity: number): InventoryState {
+  invariant(Number.isInteger(quantity) && quantity >= 1, `removeItem: invalid quantity ${quantity}`);
+  invariant(countItem(inventory, itemId) >= quantity, `removeItem: fewer than ${quantity} ${itemId}`);
+  const slots = inventory.slots.slice();
+  let remaining = quantity;
+  for (const quality of [0, 1, 2] as const) {
+    for (let i = 0; i < slots.length && remaining > 0; i++) {
+      const stack = slots[i] ?? null;
+      if (stack === null || stack.itemId !== itemId || stack.quality !== quality) continue;
+      const taken = Math.min(remaining, stack.quantity);
+      slots[i] = taken === stack.quantity ? null : { ...stack, quantity: stack.quantity - taken };
+      remaining -= taken;
+    }
+  }
+  return { ...inventory, slots };
+}

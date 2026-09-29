@@ -11,6 +11,9 @@ import { describe, expect, it } from 'vitest';
 import { INVENTORY, PLAYER, TIME, TOOLS } from '../src/config';
 import { mulberry32 } from '../src/core/hash';
 import {
+  FERTILIZER_ITEM_IDS,
+  FERTILIZER_KINDS,
+  PLACEABLE_ITEM_IDS,
   Blocker,
   CROP_IDS,
   DIRECTIONS,
@@ -525,7 +528,9 @@ function randomTile(rng: () => number, day: number): Tile {
   else if (roll < 0.93) tile = blockedTile(Blocker.Building);
   else tile = blockedTile(Blocker.House);
   const object = randomObject(rng, tile);
-  return object === null ? tile : { ...tile, object };
+  if (object !== null) return { ...tile, object };
+  const soil = tile.state === TileState.Plowed || tile.state === TileState.Watered;
+  return soil && tile.crop !== null && rng() < 0.3 ? { ...tile, fertilizer: pick(rng, FERTILIZER_KINDS) } : tile;
 }
 
 function randomStack(rng: () => number, forceFull: boolean, itemId: ItemId = pick(rng, ALL_ITEMS)): ItemStack {
@@ -538,9 +543,10 @@ function randomStack(rng: () => number, forceFull: boolean, itemId: ItemId = pic
 /** What the player holds: biased toward tools and seeds so every tool branch is exercised. */
 function randomSelection(rng: () => number): ItemStack | null {
   const roll = rng();
-  if (roll < 0.45) return stack(pick(rng, TOOL_TYPES), 1);
-  if (roll < 0.7) return randomStack(rng, false, seedItemId(pick(rng, CROP_IDS)));
-  if (roll < 0.85) return randomStack(rng, false);
+  if (roll < 0.5) return stack(pick(rng, TOOL_TYPES), 1);
+  if (roll < 0.76) return randomStack(rng, false, seedItemId(pick(rng, CROP_IDS)));
+  if (roll < 0.84) return randomStack(rng, false, pick(rng, [...PLACEABLE_ITEM_IDS, ...FERTILIZER_ITEM_IDS, ...FERTILIZER_ITEM_IDS, ...FERTILIZER_ITEM_IDS]));
+  if (roll < 0.92) return randomStack(rng, false);
   return null;
 }
 
@@ -672,9 +678,25 @@ function checkOutcomeMatchesPlan(v: Violations, state: GameState, plan: ActionPl
       }
       break;
     }
-    case 'clearWeeds':
+    case 'clearWeeds': {
       v.equal('weeds cut', [before.blocker, after], [Blocker.Weeds, EMPTY_TILE]);
-      v.same('inventory', next.inventory, state.inventory);
+      const room = Math.min(1, capacityFor(state.inventory, 'fiber'));
+      v.equal('fiber dropped (if it fits)', count(next, 'fiber'), count(state, 'fiber') + room);
+      break;
+    }
+    case 'place': {
+      v.equal('placed on a free tile', [before.object, before.crop, before.blocker], [null, null, Blocker.None]);
+      v.equal('placed object kind', after.object?.kind, intent.itemId);
+      v.equal('one item used', count(next, intent.itemId), count(state, intent.itemId) - 1);
+      break;
+    }
+    case 'fertilize':
+      v.equal('fertilised empty soil', [before.crop, before.object, before.fertilizer], [null, null, null]);
+      v.equal('fertilised tile', after, { ...before, fertilizer: intent.fertilizer });
+      break;
+    case 'pickUp':
+      v.equal('picked up', [before.object?.kind, after.object], [intent.itemId, null]);
+      v.equal('item returned', count(next, intent.itemId), count(state, intent.itemId) + 1);
       break;
     case 'untill':
       v.check(before.object === null, `untilled under a ${before.object?.kind ?? ''}`);
@@ -751,7 +773,7 @@ describe('property: the planned outcome always matches what the reducer does', (
       const kinds = new Map<IntentKind | 'silent', number>();
       const violations = new Violations();
       let nullTargets = 0;
-      for (let i = 0; i < 5000; i++) {
+      for (let i = 0; i < 8000; i++) {
         const state = randomSituation(rng);
         for (const action of [actions.useTool(), actions.interact()]) {
           const plan = action.type === 'player/useTool' ? planPrimaryAction(state) : planInteraction(state);
@@ -784,9 +806,13 @@ describe('property: the planned outcome always matches what the reducer does', (
         'ship',
         'sleep',
         'openChest',
+        'place',
+        'fertilize',
+        'pickUp',
       ] as const;
       for (const kind of [...all, 'blocked', 'silent'] as const) {
-        expect(kinds.get(kind) ?? 0, `intent ${kind}`).toBeGreaterThan(10);
+        // Fertilising needs a rarer situation (empty, unfertilised soil and a fertiliser in hand).
+        expect(kinds.get(kind) ?? 0, `intent ${kind}`).toBeGreaterThan(kind === 'fertilize' ? 3 : 10);
       }
       expect(nullTargets).toBeGreaterThan(10);
     },

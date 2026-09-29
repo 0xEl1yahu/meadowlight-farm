@@ -140,8 +140,41 @@ export const FARMING = {
   scatter: { width: 3, depth: 3 },
   /** Indexed by Quality (see QUALITY_MULTIPLIERS). */
   qualityMultipliers: QUALITY_MULTIPLIERS,
-  /** Harvest quality roll r ∈ [0, 1): gold when r < gold, silver when r < silver, otherwise normal. */
-  qualityChance: { gold: 0.05, silver: 0.2 },
+  /**
+   * Harvest quality chances per fertiliser in the soil ('none' also covers Speed-Gro). The roll
+   * r ∈ [0, 1) gives gold when r < gold, silver when r < gold + silver, otherwise normal.
+   */
+  qualityChance: {
+    none: { silver: 0.15, gold: 0.05 },
+    basic: { silver: 0.25, gold: 0.1 },
+    quality: { silver: 0.35, gold: 0.2 },
+  },
+  /** Speed-Gro removes this share of a crop's total grow days, rounded, and at least 1 day. */
+  speedGroFraction: 0.1,
+} as const;
+
+/** Materials that clearing debris drops on top of the stone and wood (see farming/drops.ts). */
+export const DROPS = {
+  /** Chance that a broken rock also drops 1 copper ore. */
+  copperOreFromRock: 0.25,
+  /** Chance that a felled tree also drops 1 sap. */
+  sapFromTree: 0.5,
+  /** Chance that a cleared stump drops 1 sap. */
+  sapFromStump: 0.15,
+  /** Fiber from cutting one patch of weeds with the scythe. */
+  fiberFromWeeds: 1,
+} as const;
+
+/** Crows raid the farm at night (see farming/crows.ts). */
+export const CROWS = {
+  /** Crows only come when more than this many field crops grow on the farm. */
+  minCrops: 15,
+  /** Nightly chance that each unprotected field crop is eaten. */
+  chance: 0.03,
+  /** Most crops eaten in one night. */
+  maxPerNight: 3,
+  /** A scarecrow protects every crop within this Euclidean distance in tiles. */
+  scarecrowRadius: 8,
 } as const;
 
 /**

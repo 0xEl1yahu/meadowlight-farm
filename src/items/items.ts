@@ -6,7 +6,12 @@ import { FARMING, INVENTORY, TOOLS } from '../config';
 import { CROPS, seedItemId } from '../farming/crops';
 import {
   CROP_IDS,
+  FERTILIZER_ITEM_IDS,
   MATERIAL_IDS,
+  PLACEABLE_ITEM_IDS,
+  type FertilizerItemId,
+  type FertilizerKind,
+  type PlaceableItemId,
   TOOL_TYPES,
   type CropId,
   type ItemId,
@@ -16,7 +21,7 @@ import {
   type ToolType,
 } from '../core/types';
 
-export type ItemKind = 'tool' | 'seed' | 'produce' | 'material';
+export type ItemKind = 'tool' | 'seed' | 'produce' | 'material' | 'placeable' | 'fertilizer';
 
 interface ItemBase {
   readonly id: ItemId;
@@ -56,7 +61,20 @@ export interface MaterialItem extends ItemBase {
   readonly id: MaterialItemId;
 }
 
-export type ItemDefinition = ToolItem | SeedItem | ProduceItem | MaterialItem;
+/** Placed on an empty tile as the PlacedObject of the same kind (see state/placement.ts). */
+export interface PlaceableItem extends ItemBase {
+  readonly kind: 'placeable';
+  readonly id: PlaceableItemId;
+}
+
+/** Mixed into empty tilled soil; lasts until the crop on it is harvested. */
+export interface FertilizerItem extends ItemBase {
+  readonly kind: 'fertilizer';
+  readonly id: FertilizerItemId;
+  readonly fertilizer: FertilizerKind;
+}
+
+export type ItemDefinition = ToolItem | SeedItem | ProduceItem | MaterialItem | PlaceableItem | FertilizerItem;
 
 const TOOL_INFO: Readonly<Record<ToolType, { name: string; description: string; color: number }>> = {
   hoe: { name: 'Hoe', description: 'Tills grass into soil. Clears withered crops.', color: 0xb98b5e },
@@ -73,6 +91,27 @@ const TOOL_INFO: Readonly<Record<ToolType, { name: string; description: string; 
 const MATERIAL_INFO: Readonly<Record<MaterialItemId, { name: string; description: string; sellPrice: number; color: number }>> = {
   stone: { name: 'Stone', description: 'A common building material.', sellPrice: 2, color: 0xb7b4c7 },
   wood: { name: 'Wood', description: 'Sturdy and useful.', sellPrice: 2, color: 0xa47552 },
+  copperOre: { name: 'Copper Ore', description: 'Sometimes found in broken rocks. Used for sprinklers.', sellPrice: 5, color: 0xd9824a },
+  sap: { name: 'Sap', description: 'Sticky resin from trees. Used for fertiliser.', sellPrice: 2, color: 0xc98f2e },
+  fiber: { name: 'Fiber', description: 'Tough strands cut from weeds.', sellPrice: 1, color: 0x8fb45a },
+};
+
+type SimpleInfo = { name: string; description: string; sellPrice: number | null; color: number };
+
+const PLACEABLE_INFO: Readonly<Record<PlaceableItemId, SimpleInfo>> = {
+  chest: { name: 'Chest', description: 'Place it to store 36 stacks. Pick it up with the axe once empty.', sellPrice: null, color: 0xb07a45 },
+  woodFence: { name: 'Wood Fence', description: 'Keeps a tile clear. Pick it up with the axe.', sellPrice: null, color: 0xa47552 },
+  woodPath: { name: 'Wood Path', description: 'Lay it on grass. Pick it up with the axe.', sellPrice: null, color: 0xc49a6c },
+  stonePath: { name: 'Stone Path', description: 'Lay it on grass. Pick it up with the pickaxe.', sellPrice: null, color: 0xa9a7b8 },
+  scarecrow: { name: 'Scarecrow', description: 'Keeps crows off crops within 8 tiles.', sellPrice: null, color: 0xd8b45a },
+  sprinkler: { name: 'Sprinkler', description: 'Waters the 4 tiles beside it every morning.', sellPrice: null, color: 0x9aa7b8 },
+  qualitySprinkler: { name: 'Quality Sprinkler', description: 'Waters the 8 tiles around it every morning.', sellPrice: null, color: 0xd9a05b },
+};
+
+const FERTILIZER_INFO: Readonly<Record<FertilizerItemId, SimpleInfo & { fertilizer: FertilizerKind }>> = {
+  basicFertilizer: { name: 'Basic Fertiliser', description: 'Mix into empty soil: better odds of silver and gold crops.', sellPrice: 2, color: 0x8a6a4a, fertilizer: 'basic' },
+  qualityFertilizer: { name: 'Quality Fertiliser', description: 'Mix into empty soil: much better odds of silver and gold crops.', sellPrice: 5, color: 0x6a8a4a, fertilizer: 'quality' },
+  speedGro: { name: 'Speed-Gro', description: 'Mix into empty soil: crops grow 10% faster.', sellPrice: 5, color: 0x4a9a8a, fertilizer: 'speedGro' },
 };
 
 function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
@@ -132,6 +171,14 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
       color: info.color,
       hasQuality: false,
     });
+  }
+  for (const id of PLACEABLE_ITEM_IDS) {
+    const info = PLACEABLE_INFO[id];
+    registry.set(id, { kind: 'placeable', id, ...info, maxStack: INVENTORY.maxStack, hasQuality: false });
+  }
+  for (const id of FERTILIZER_ITEM_IDS) {
+    const info = FERTILIZER_INFO[id];
+    registry.set(id, { kind: 'fertilizer', id, ...info, maxStack: INVENTORY.maxStack, hasQuality: false });
   }
   return registry;
 }

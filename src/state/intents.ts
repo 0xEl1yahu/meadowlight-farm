@@ -13,13 +13,17 @@ import {
   type ActionKind,
   type CropId,
   type CropInstance,
+  type FertilizerKind,
   type GameState,
+  PLACEABLE_ITEM_IDS,
+  type PlaceableItemId,
+  type PlacedObject,
   type Quality,
   type TileCoord,
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
-import { getItem, type SeedItem, type ToolItem } from '../items/items';
-import { mapSeed } from '../world/maps';
+import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
+import { isReservedTile, mapSeed } from '../world/maps';
 import { getTile, isSoil } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
 import { selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
@@ -42,6 +46,12 @@ export type Intent =
   | { readonly kind: 'ship' }
   /** Opens the chest on the target tile of the active map. */
   | { readonly kind: 'openChest' }
+  /** Sets one of the selected placeable item down as its placed object. */
+  | { readonly kind: 'place'; readonly itemId: PlaceableItemId }
+  /** Mixes one of the selected fertiliser into empty tilled soil. */
+  | { readonly kind: 'fertilize'; readonly fertilizer: FertilizerKind }
+  /** The pickaxe or axe lifts a placed object back into the inventory. */
+  | { readonly kind: 'pickUp'; readonly itemId: PlaceableItemId }
   | { readonly kind: 'sleep' }
   | { readonly kind: 'blocked'; readonly reason: string | null };
 
@@ -85,12 +95,18 @@ export function harvestQuantity(state: GameState, target: TileCoord, crop: CropI
   );
 }
 
+/** Silver and gold chances for soil holding `fertilizer` (Speed-Gro only speeds growth). */
+export function qualityChanceFor(fertilizer: FertilizerKind | null): { readonly silver: number; readonly gold: number } {
+  return fertilizer === 'basic' || fertilizer === 'quality' ? FARMING.qualityChance[fertilizer] : FARMING.qualityChance.none;
+}
+
 /**
  * Deterministic quality of a harvest, rolled with the map's seed from the tile, the day and the
- * harvest number: gold for r < FARMING.qualityChance.gold, silver for r < .silver, otherwise
- * normal (about 5% gold, 15% silver, 80% normal).
+ * harvest number. The chances come from the fertiliser in the target tile's soil (see
+ * FARMING.qualityChance): gold for r < gold, silver for r < gold + silver, otherwise normal.
  */
 export function harvestQuality(state: GameState, target: TileCoord, crop: CropInstance): Quality {
+  const chance = qualityChanceFor(getTile(selectActiveWorld(state), target.tx, target.tz)?.fertilizer ?? null);
   const r = hashFloat(
     mapSeed(state.seed, state.player.mapId),
     target.tx,
@@ -99,8 +115,8 @@ export function harvestQuality(state: GameState, target: TileCoord, crop: CropIn
     crop.harvestCount,
     Salt.Quality,
   );
-  if (r < FARMING.qualityChance.gold) return 2;
-  return r < FARMING.qualityChance.silver ? 1 : 0;
+  if (r < chance.gold) return 2;
+  return r < chance.gold + chance.silver ? 1 : 0;
 }
 
 function planHarvest(
@@ -192,13 +208,14 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
 
     case 'pickaxe':
       // Clearing soil under a placed object would delete the object (and a chest's items).
-      if (tile.object !== null) return blocked(target, tool);
+      if (tile.object !== null) return planPickUp(state, target, tile.object, tool);
       if (tile.blocker === Blocker.Rock) return plan(target, { kind: 'mine' }, tool, cost);
       if (isSoil(tile) && (tile.crop === null || tile.crop.dead)) return plan(target, { kind: 'untill' }, tool, cost);
       if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
 
     case 'axe':
+      if (tile.object !== null) return planPickUp(state, target, tile.object, tool);
       if (tile.blocker === Blocker.Tree || tile.blocker === Blocker.Stump) {
         return plan(target, { kind: 'chop', blocker: tile.blocker }, tool, cost);
       }
@@ -214,6 +231,76 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
       if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
   }
+}
+
+/** Which tool lifts each pick-up-able placed object: the axe for wooden things, else the pickaxe. */
+const PICKUP_TOOL: Readonly<Record<PlaceableItemId, 'pickaxe' | 'axe'>> = {
+  chest: 'axe',
+  woodFence: 'axe',
+  woodPath: 'axe',
+  scarecrow: 'axe',
+  stonePath: 'pickaxe',
+  sprinkler: 'pickaxe',
+  qualitySprinkler: 'pickaxe',
+};
+
+export function pickUpTool(kind: PlaceableItemId): 'pickaxe' | 'axe' {
+  return PICKUP_TOOL[kind];
+}
+
+function isPlaceableKind(kind: PlacedObject['kind']): kind is PlaceableItemId {
+  return (PLACEABLE_ITEM_IDS as readonly string[]).includes(kind);
+}
+
+/** Picking a placed object up with the pickaxe or axe; free, but it must fit and a chest must be empty. */
+function planPickUp(state: GameState, target: TileCoord, object: PlacedObject, tool: 'pickaxe' | 'axe'): ActionPlan {
+  if (!isPlaceableKind(object.kind) || PICKUP_TOOL[object.kind] !== tool) return blocked(target, tool);
+  if (object.kind === 'chest' && object.slots.some((slot) => slot !== null)) {
+    return blocked(target, tool, 'Empty the chest first.');
+  }
+  if (capacityFor(state.inventory, object.kind) < 1) return blocked(target, tool, 'Your inventory is full.');
+  return plan(target, { kind: 'pickUp', itemId: object.kind }, tool);
+}
+
+/** Sprinklers and scarecrows work the fields, so they only go on the farm. */
+export function isFarmOnlyPlaceable(itemId: PlaceableItemId): boolean {
+  return itemId === 'sprinkler' || itemId === 'qualitySprinkler' || itemId === 'scarecrow';
+}
+
+/**
+ * Why `itemId` can't be placed on `target` of the active map, or null when it can. The tile must
+ * be free walkable ground (no object, blocker or crop) and not a reserved tile; paths go on
+ * grass only, everything else on grass or unfertilised soil; sprinklers and scarecrows only on
+ * the farm. An empty string means "no, silently" (out of bounds).
+ */
+export function placementProblem(state: GameState, itemId: PlaceableItemId, target: TileCoord | null): string | null {
+  if (target === null) return '';
+  const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
+  if (tile === null) return '';
+  if (isFarmOnlyPlaceable(itemId) && state.player.mapId !== 'farm') return `The ${getItem(itemId).name.toLowerCase()} belongs on your farm.`;
+  if (isReservedTile(selectActiveMap(state), target.tx, target.tz)) return 'Keep this spot clear.';
+  if (tile.object !== null || tile.state === TileState.Blocked || tile.crop !== null) return "There's something in the way.";
+  if (itemId === 'woodPath' || itemId === 'stonePath') {
+    return tile.state === TileState.Unplowed ? null : 'Paths go on grass.';
+  }
+  if (tile.fertilizer !== null) return 'This soil is fertilised. Plant something here instead.';
+  return null;
+}
+
+function planPlace(state: GameState, item: PlaceableItem, target: TileCoord | null): ActionPlan {
+  const problem = placementProblem(state, item.id, target);
+  if (problem === null && target !== null) return plan(target, { kind: 'place', itemId: item.id }, 'place');
+  return blocked(target, 'place', problem === '' ? null : problem);
+}
+
+function planFertilize(state: GameState, item: FertilizerItem, target: TileCoord | null): ActionPlan {
+  if (target === null) return blocked(null, 'fertilize');
+  const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
+  if (tile === null) return blocked(null, 'fertilize');
+  if (!isSoil(tile) || tile.object !== null) return blocked(target, 'fertilize', 'Fertiliser goes on tilled soil.');
+  if (tile.crop !== null) return blocked(target, 'fertilize', 'Fertilise the soil before planting.');
+  if (tile.fertilizer !== null) return blocked(target, 'fertilize', 'This soil is already fertilised.');
+  return plan(target, { kind: 'fertilize', fertilizer: item.fertilizer }, 'fertilize');
 }
 
 /**
@@ -303,6 +390,10 @@ export function planPrimaryAction(state: GameState): ActionPlan {
       return withEnergy(state, planTool(state, item, target));
     case 'seed':
       return planScatter(state, item, target);
+    case 'placeable':
+      return planPlace(state, item, target);
+    case 'fertilizer':
+      return planFertilize(state, item, target);
     case 'produce':
     case 'material':
       return planInteraction(state);
@@ -338,6 +429,12 @@ export function describeIntent(intent: Intent): string | null {
       return 'Sleep';
     case 'openChest':
       return 'Open chest';
+    case 'place':
+      return `Place ${getItem(intent.itemId).name.toLowerCase()}`;
+    case 'fertilize':
+      return 'Fertilise';
+    case 'pickUp':
+      return `Pick up ${getItem(intent.itemId).name.toLowerCase()}`;
     case 'blocked':
       return null;
   }

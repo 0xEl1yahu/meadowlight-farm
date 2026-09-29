@@ -21,11 +21,16 @@
  *   move the box edges by the same distance whatever its footprint. Hidden with a short fade when there
  *   is no target or a menu freezes the game.
  *
+ * - Placing: while a placeable item is selected, a translucent ghost of the object stands in the
+ *   box (its own colours when it can go there, tinted red when it can't) and a sprinkler also
+ *   shows the tiles it would water as flat blue plates.
+ *
  * Nothing here allocates per frame; beam matrices are rewritten only while the box footprint or
  * height is animating.
  */
 import * as THREE from 'three';
-import { Blocker, type GameState, type GridSpec, type PlacedObjectKind, type Tile } from '../core/types';
+import { Blocker, type GameState, type GridSpec, type PlaceableItemId, type PlacedObjectKind, type Tile } from '../core/types';
+import { isSprinklerKind, sprinklerCoverage } from '../farming/sprinklers';
 import { CROPS, growthProgress } from '../farming/crops';
 import { getItem } from '../items/items';
 import { isActionable, planInteraction, planPrimaryAction } from '../state/intents';
@@ -34,6 +39,15 @@ import { selectActiveWorld, selectIsFrozen, selectScatterPatch, selectTargetTile
 import { tileCenterX, tileCenterZ } from '../world/grid';
 import { getTile, isPathObject, isSoil } from '../world/tiles';
 import { HEIGHTS } from './constants';
+import {
+  createChestBodyGeometry,
+  createQualitySprinklerGeometry,
+  createScarecrowFrameGeometry,
+  createSprinklerGeometry,
+  createStonePathGeometry,
+  createWoodFencePostGeometry,
+  createWoodPathGeometry,
+} from './objectGeometry';
 import { PALETTE } from './palette';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
@@ -197,6 +211,39 @@ function holdsSeeds(state: GameState): boolean {
   return stack !== null && getItem(stack.itemId).kind === 'seed';
 }
 
+/** The placeable item selected on the hotbar, or null. */
+function heldPlaceable(state: GameState): PlaceableItemId | null {
+  const stack = selectedStack(state.inventory);
+  if (stack === null) return null;
+  const item = getItem(stack.itemId);
+  return item.kind === 'placeable' ? item.id : null;
+}
+
+function createGhostGeometry(kind: PlaceableItemId): THREE.BufferGeometry {
+  switch (kind) {
+    case 'chest':
+      return createChestBodyGeometry();
+    case 'sprinkler':
+      return createSprinklerGeometry();
+    case 'qualitySprinkler':
+      return createQualitySprinklerGeometry();
+    case 'scarecrow':
+      return createScarecrowFrameGeometry();
+    case 'woodFence':
+      return createWoodFencePostGeometry();
+    case 'woodPath':
+      return createWoodPathGeometry();
+    case 'stonePath':
+      return createStonePathGeometry(0);
+  }
+}
+
+const GHOST_OPACITY = 0.55;
+const COVERAGE_OPACITY = 0.45;
+const COVERAGE_PLATES = 8;
+const COVERAGE_SIZE = 0.82;
+const COVERAGE_COLOR = 0x7fc8f0;
+
 /** Whether using the selected item, or failing that the context interaction, would do anything. */
 function validityFor(state: GameState): Validity {
   if (isActionable(planPrimaryAction(state))) return 'valid';
@@ -244,6 +291,25 @@ export class TileHighlighter implements RenderSystem {
   private popElapsed = Number.POSITIVE_INFINITY;
   private popAmplitude = 0;
   private actionSeq = -1;
+  private readonly ghostMaterial = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    fog: false,
+  });
+  private readonly ghost = new THREE.Mesh(new THREE.BufferGeometry(), this.ghostMaterial);
+  private readonly ghostGeometries = new Map<PlaceableItemId, THREE.BufferGeometry>();
+  private readonly plateGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  private readonly plateMaterial = new THREE.MeshBasicMaterial({
+    color: COVERAGE_COLOR,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+  });
+  private readonly plates = new THREE.InstancedMesh(this.plateGeometry, this.plateMaterial, COVERAGE_PLATES);
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
@@ -285,7 +351,14 @@ export class TileHighlighter implements RenderSystem {
     this.marker.renderOrder = 2;
 
     this.group.name = 'tile-highlight';
-    this.group.add(this.beams, this.marker);
+    this.ghost.name = 'tile-highlight-ghost';
+    this.ghost.visible = false;
+    this.ghost.renderOrder = 1;
+    this.plates.name = 'tile-highlight-coverage';
+    this.plates.count = 0;
+    this.plates.renderOrder = 1;
+    this.plates.frustumCulled = false;
+    this.group.add(this.beams, this.marker, this.ghost, this.plates);
     this.group.visible = false;
     this.layoutBeams();
     ctx.scene.add(this.group);
@@ -306,7 +379,9 @@ export class TileHighlighter implements RenderSystem {
       return;
     }
 
-    const style = STYLES[validityFor(state)];
+    const validity = validityFor(state);
+    this.syncGhost(state, validity === 'valid');
+    const style = STYLES[validity];
     this.targetColor.setHex(style.color);
     this.targetOpacity = style.opacity;
     this.active = true;
@@ -376,6 +451,8 @@ export class TileHighlighter implements RenderSystem {
       1 + (swell * tileFootprint) / this.sizeZ,
     );
     this.material.opacity = clamp(this.opacity * (1 + PULSE_OPACITY * wave) * this.presence, 0, 1);
+    this.ghostMaterial.opacity = GHOST_OPACITY * this.presence;
+    this.plateMaterial.opacity = COVERAGE_OPACITY * this.presence;
 
     this.marker.position.y = this.height * lift + MARKER_HOVER + MARKER_BOB * Math.sin(elapsed * MARKER_BOB_RATE);
     this.marker.rotation.y = (elapsed * MARKER_SPIN + pop * 6) % TWO_PI;
@@ -389,6 +466,40 @@ export class TileHighlighter implements RenderSystem {
     this.beamGeometry.dispose();
     this.markerGeometry.dispose();
     this.material.dispose();
+    for (const geometry of this.ghostGeometries.values()) geometry.dispose();
+    this.ghost.geometry.dispose();
+    this.ghostMaterial.dispose();
+    this.plates.dispose();
+    this.plateGeometry.dispose();
+    this.plateMaterial.dispose();
+  }
+
+  /**
+   * Shows a ghost of the selected placeable (tinted when it can't go on the target) and, for a
+   * sprinkler, a plate on every tile it would water, laid out relative to the box's origin.
+   */
+  private syncGhost(state: GameState, valid: boolean): void {
+    const kind = heldPlaceable(state);
+    this.ghost.visible = kind !== null;
+    this.plates.count = 0;
+    if (kind === null) return;
+    let geometry = this.ghostGeometries.get(kind);
+    if (geometry === undefined) {
+      geometry = createGhostGeometry(kind);
+      this.ghostGeometries.set(kind, geometry);
+    }
+    this.ghost.geometry = geometry;
+    const ts = this.grid.tileSize;
+    this.ghost.scale.setScalar(ts);
+    this.ghostMaterial.color.setHex(valid ? 0xffffff : PALETTE.highlightInvalid);
+    if (!isSprinklerKind(kind)) return;
+    const coverage = sprinklerCoverage(kind, 0, 0);
+    coverage.forEach((c, i) => {
+      scratchMatrix.makeScale(COVERAGE_SIZE * ts, 1, COVERAGE_SIZE * ts).setPosition(c.tx * ts, 0.02, c.tz * ts);
+      this.plates.setMatrixAt(i, scratchMatrix);
+    });
+    this.plates.count = coverage.length;
+    this.plates.instanceMatrix.needsUpdate = true;
   }
 
   /** Targets the active tile alone. Returns false when there is none. */

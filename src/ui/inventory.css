@@ -182,3 +182,86 @@
     transform: none;
   }
 }
+
+/* Tabs (backpack screen only) and the Crafting tab (CraftingPanel.ts). */
+.hud-inv__tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.hud-inv__tab[aria-selected='true'] {
+  background: var(--hud-wood-light);
+}
+
+.hud-craft__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+
+.hud-craft__row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 2px solid var(--hud-line);
+  border-radius: var(--hud-radius-sm);
+}
+
+.hud-craft__icon,
+.hud-craft__need-icon {
+  display: grid;
+  place-items: center;
+}
+
+.hud-craft__icon .hud-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.hud-craft__name {
+  font-weight: 700;
+}
+
+.hud-craft__needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hud-craft__need {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.hud-craft__need-icon .hud-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.hud-craft__need-count.is-short {
+  color: var(--hud-danger);
+  font-weight: 700;
+}
+
+.hud-craft__empty {
+  color: var(--hud-ink-faint);
+}
+
+@media (max-width: 520px) {
+  .hud-craft__row {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+  }
+  .hud-craft__needs {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+}
