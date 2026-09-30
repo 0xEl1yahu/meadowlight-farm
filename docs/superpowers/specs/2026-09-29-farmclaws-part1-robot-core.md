@@ -665,6 +665,7 @@ All new toasts go through `pushMessage`, with the text and tone given in section
   - teaches the wood burner recipe
   - dispatches `game/load` with the resulting state
   - returns "Added {names}." or the `addRobot` error
+- `addScriptedRobot(input)`: like `addRobot`, but builds one script robot from `{ steps, parts, name?, size?, loop?, place? }` (defaults: name "Scripty", size `mini`, loop `true`, the player's forward tile). The spec comes from the exported pure `scriptedRobotSpec`; `addRobot` does all the validation, and its error is returned as the string. Input that isn't an object with `steps` and `parts` arrays returns a usage string instead of throwing.
 - `robotLog()`: prints the farm log with `console.table` as two columns, "Robot says" (prefixed with the robot's name, day, minute and repeat count) and "What happened".
 
 **Presets:**

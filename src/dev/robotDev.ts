@@ -3,7 +3,7 @@
  * import.meta.env.DEV is true, so production builds contain none of it.
  */
 import type { Store } from '../core/store';
-import { CRAFTING_RECIPE_IDS, type GameState, type RobotAction, type RobotPlace } from '../core/types';
+import { CRAFTING_RECIPE_IDS, type GameState, type RobotAction, type RobotPartId, type RobotPlace, type RobotSize } from '../core/types';
 import { addRobot, type RobotSpec } from '../robots/create';
 import { robotSays, whatHappened } from '../robots/logText';
 import { actions, type GameAction } from '../state/actions';
@@ -37,6 +37,32 @@ function presetSpecs(id: RobotPresetId, place: RobotPlace): RobotSpec[] {
   }
 }
 
+export type ScriptedRobotInput = {
+  readonly steps: readonly RobotAction[];
+  readonly parts: readonly RobotPartId[];
+  readonly name?: string;
+  readonly size?: RobotSize;
+  readonly loop?: boolean;
+  readonly place?: RobotPlace;
+};
+
+const SCRIPTED_USAGE = "Usage: addScriptedRobot({ steps: [{ kind: 'move' }], parts: ['claw'], name?, size?, loop?, place? })";
+
+/** Turns console input into a spec, filling in the defaults (name 'Scripty', size 'mini', loop true). */
+export function scriptedRobotSpec(input: ScriptedRobotInput, at: RobotPlace): RobotSpec {
+  return {
+    name: input.name ?? 'Scripty',
+    size: input.size ?? 'mini',
+    parts: input.parts,
+    place: at,
+    program: { kind: 'script', steps: input.steps, loop: input.loop ?? true },
+  };
+}
+
+function isScriptedInput(v: unknown): v is ScriptedRobotInput {
+  return typeof v === 'object' && v !== null && Array.isArray((v as ScriptedRobotInput).steps) && Array.isArray((v as ScriptedRobotInput).parts);
+}
+
 function withBurnerKnown(state: GameState): GameState {
   if (state.crafting.known.includes('woodBurner')) return state;
   const known = CRAFTING_RECIPE_IDS.filter((id) => id === 'woodBurner' || state.crafting.known.includes(id));
@@ -46,6 +72,7 @@ function withBurnerKnown(state: GameState): GameState {
 /** The dev handle once these hooks are attached. Declared here, not in main.ts, so no hook names reach the production source maps. */
 type RobotDevHandle = {
   readonly addRobot: (preset: RobotPresetId, place?: RobotPlace) => string;
+  readonly addScriptedRobot: (input: ScriptedRobotInput) => string;
   readonly robotLog: () => void;
 };
 
@@ -53,12 +80,13 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
   const handle = window.__meadowlight;
   if (handle === undefined) return;
 
-  const add = (preset: RobotPresetId, place?: RobotPlace): string => {
+  /** Teaches the wood burner, adds each spec (built for the delivery tile) and loads the result; returns the message to print. */
+  const deliver = (specsAt: (at: RobotPlace) => RobotSpec[], place?: RobotPlace): string => {
     let state = withBurnerKnown(store.getState());
     const target = selectTargetTile(state) ?? { tx: state.player.tx, tz: state.player.tz };
     const at = place ?? { tx: target.tx, tz: target.tz, facing: state.player.facing };
     const added: string[] = [];
-    for (const spec of presetSpecs(preset, at)) {
+    for (const spec of specsAt(at)) {
       const result = addRobot(state, spec);
       if ('error' in result) return result.error;
       state = result.state;
@@ -67,6 +95,11 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
     store.dispatch(actions.load(state));
     return `Added ${added.join(' and ')}.`;
   };
+
+  const add = (preset: RobotPresetId, place?: RobotPlace): string => deliver((at) => presetSpecs(preset, at), place);
+
+  const addScripted = (input: ScriptedRobotInput): string =>
+    isScriptedInput(input) ? deliver((at) => [scriptedRobotSpec(input, at)], input.place) : SCRIPTED_USAGE;
 
   const log = (): void => {
     const state = store.getState();
@@ -78,6 +111,6 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
     console.table(rows);
   };
 
-  const hooks: RobotDevHandle = { addRobot: add, robotLog: log };
+  const hooks: RobotDevHandle = { addRobot: add, addScriptedRobot: addScripted, robotLog: log };
   Object.assign(handle, hooks);
 }
