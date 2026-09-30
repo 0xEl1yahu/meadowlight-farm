@@ -191,7 +191,8 @@ interface SprinklerSpec {
   readonly nozzles: number;
 }
 
-function cylinder(radiusTop: number, radiusBottom: number, height: number, segments: number, p: Pose, color: number): THREE.BufferGeometry {
+/** A painted, posed cylinder part. */
+export function cylinder(radiusTop: number, radiusBottom: number, height: number, segments: number, p: Pose, color: number): THREE.BufferGeometry {
   return paint(pose(new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments), p), color);
 }
 

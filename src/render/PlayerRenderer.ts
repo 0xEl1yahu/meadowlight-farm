@@ -20,7 +20,8 @@
  *   camera follow it.
  *
  * Animation, evaluated every frame into one Pose (see playerModel.ts)
- * 1. Carry stance for the held prop (eased when the prop changes).
+ * 1. Carry stance for the held prop (eased when the prop changes). While the player carries a
+ *    robot (`player.carrying !== null`) both arms rise to hold it and the held prop hides.
  * 2. Walk cycle driven by distance travelled (legs, counter-swinging arms, bob, twist).
  * 3. Idle breathing and blinking.
  * 4. Keyframed action clips triggered by `actionSeq` (state.player.lastAction): overhead chops
@@ -117,7 +118,7 @@ const TWO_PI = Math.PI * 2;
 // Carry stances
 // ---------------------------------------------------------------------------
 
-type CarryStyle = 'empty' | 'tool' | 'scythe' | 'can' | 'small';
+type CarryStyle = 'empty' | 'tool' | 'scythe' | 'can' | 'small' | 'robot';
 
 /**
  * Rest pose per held prop. Prop pitch in the world ≈ lean − armSwing + wristPitch, so
@@ -152,6 +153,8 @@ const CARRY_POSES: Readonly<Record<CarryStyle, Pose>> = {
     tilt: -0.04,
   }),
   small: createPose({ rArmSwing: 0.75, rArmSpread: 0.05, rArmYaw: 0.3, lArmSwing: 0.06, lArmSpread: 0.1, wristPitch: 0.75 }),
+  /** Both arms raised to hold a robot overhead (farmclaws part 1 §7.4). */
+  robot: createPose({ rArmSwing: 1.25, rArmSpread: 0.22, lArmSwing: 1.25, lArmSpread: 0.22, lean: -0.05 }),
 };
 
 /** How much of the walk arm swing the right arm keeps while carrying. */
@@ -161,6 +164,7 @@ const CARRY_ARM_SWING: Readonly<Record<CarryStyle, number>> = {
   scythe: 0.4,
   can: 0.35,
   small: 0.3,
+  robot: 0.1,
 };
 
 function carryStyleFor(kind: HeldModelKind | null): CarryStyle {
@@ -876,6 +880,8 @@ export class PlayerRenderer implements RenderSystem {
 
   // Carry stance (eased toward the held prop's stance).
   private carryStyle: CarryStyle = 'empty';
+  /** True while the player carries a robot: the robot stance overrides the held prop's, and the prop hides. */
+  private carryingRobot = false;
   private readonly carry = createPose();
   private carryArmSwing = 1;
 
@@ -948,6 +954,7 @@ export class PlayerRenderer implements RenderSystem {
     this.mapId = player.mapId;
     this.actionSeq = player.actionSeq;
 
+    this.carryingRobot = player.carrying !== null;
     this.syncHeldItem(state, teleported);
     if (teleported) this.placeRoot();
   }
@@ -1082,8 +1089,10 @@ export class PlayerRenderer implements RenderSystem {
   private updatePose(dt: number, elapsed: number): void {
     // 1. Carry stance, eased toward the held prop's rest pose.
     const carryFactor = damp(CARRY_RATE, dt);
-    blendPose(this.carry, this.carry, CARRY_POSES[this.carryStyle], carryFactor);
-    this.carryArmSwing += (CARRY_ARM_SWING[this.carryStyle] - this.carryArmSwing) * carryFactor;
+    const stance = this.stance();
+    blendPose(this.carry, this.carry, CARRY_POSES[stance], carryFactor);
+    this.carryArmSwing += (CARRY_ARM_SWING[stance] - this.carryArmSwing) * carryFactor;
+    this.held.socket.visible = !this.carryingRobot;
     const base = copyPose(this.basePose, this.carry);
 
     // 2. Walk cycle, phase-locked to the distance travelled.
@@ -1193,11 +1202,16 @@ export class PlayerRenderer implements RenderSystem {
     this.hasPendingHeld = false;
     this.showHeld(choice, !immediate);
     if (immediate) {
-      copyPose(this.carry, CARRY_POSES[this.carryStyle]);
-      this.carryArmSwing = CARRY_ARM_SWING[this.carryStyle];
+      copyPose(this.carry, CARRY_POSES[this.stance()]);
+      this.carryArmSwing = CARRY_ARM_SWING[this.stance()];
       this.heldPopElapsed = Number.POSITIVE_INFINITY;
       this.held.socket.scale.setScalar(1);
     }
+  }
+
+  /** The stance to ease toward: holding a robot overrides the held prop's stance. */
+  private stance(): CarryStyle {
+    return this.carryingRobot ? 'robot' : this.carryStyle;
   }
 
   private flushPendingHeld(): void {

@@ -25,6 +25,7 @@ import { LightingManager } from './render/LightingManager';
 import { updateSharedUniforms } from './render/materials';
 import { ObjectRenderer } from './render/ObjectRenderer';
 import { PlayerRenderer } from './render/PlayerRenderer';
+import { RobotRenderer } from './render/RobotRenderer';
 import { SceneContext } from './render/SceneContext';
 import { StructureRenderer } from './render/StructureRenderer';
 import { classifySync } from './render/syncPolicy';
@@ -82,6 +83,7 @@ function bootstrap(): () => void {
     new StructureRenderer(ctx),
     new CropRenderer(ctx),
     new ObjectRenderer(ctx),
+    new RobotRenderer(ctx, () => player.focus),
     new TileHighlighter(ctx),
     new WeatherRenderer(ctx),
     new EffectsRenderer(ctx),
