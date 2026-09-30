@@ -129,6 +129,7 @@ function bootstrap(): () => void {
   if (import.meta.env.DEV) {
     // Development-only debugging handle (stripped from production builds).
     window.__meadowlight = { store, ctx, systems, actions };
+    void import('./dev').then(({ installDevHooks }) => installDevHooks(store));
   }
 
   const saveOnHide = (): void => {
