@@ -42,6 +42,8 @@ import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
+import { periodFor, resumedPower } from '../robots/stats';
+import { requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
 import { inBounds, stepTile } from '../world/grid';
@@ -258,6 +260,11 @@ function movePlayer(state: GameState, direction: Direction): GameState {
     }
   } else {
     const warp = findWarp(selectActiveMap(state), player.tx, player.tz, direction);
+    if (warp !== null && player.carrying !== null) {
+      const name = requireRobot(state, player.carrying).name;
+      const faced = player.facing === direction ? state : { ...state, player: { ...player, facing: direction } };
+      return pushMessage(faced, `Put ${name} down before you leave the farm.`, 'warn');
+    }
     if (warp !== null) {
       const arrival = getTile(state.maps[warp.to.mapId], warp.to.tx, warp.to.tz);
       if (arrival !== null && isWalkable(arrival)) return takeWarp(state, warp);
@@ -384,6 +391,44 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       const { inventory, added } = addItem(state.inventory, intent.itemId, 1);
       invariant(added === 1, 'pick-up capacity is verified while planning');
       return { ...withTile(state, target, { ...tile, object: null }), inventory };
+    }
+
+    case 'pickUpRobot': {
+      const robot = requireRobot(state, intent.robotId);
+      return withRobot({ ...state, player: { ...state.player, carrying: robot.id } }, { ...robot, carried: true });
+    }
+
+    case 'putDownRobot': {
+      const robot = requireRobot(state, intent.robotId);
+      return withRobot(
+        { ...state, player: { ...state.player, carrying: null } },
+        {
+          ...robot,
+          carried: false,
+          tx: target.tx,
+          tz: target.tz,
+          facing: state.player.facing,
+          power: resumedPower(robot),
+          nextActMinute: state.time.minuteOfDay + periodFor(robot),
+          teleportSeq: robot.teleportSeq + 1,
+        },
+      );
+    }
+
+    case 'repairRobot': {
+      const robot = requireRobot(state, intent.robotId);
+      const sent = withRobot(
+        { ...state, player: { ...state.player, carrying: null, gold: state.player.gold - intent.cost } },
+        { ...robot, carried: false, power: 'repairing', repairReadyDay: state.time.absoluteDay + 1 },
+      );
+      return pushMessage(sent, `${robot.name} is off to be repaired. Back tomorrow.`, 'info');
+    }
+
+    case 'fuel': {
+      const object = tile.object;
+      invariant(object !== null && object.kind === 'woodBurner', 'fuel plan without a wood burner');
+      const next = withTile(state, target, { ...tile, object: { kind: 'woodBurner', fuel: object.fuel + intent.quantity } });
+      return { ...next, inventory: removeFromSlot(state.inventory, state.inventory.selected, intent.quantity) };
     }
   }
 }

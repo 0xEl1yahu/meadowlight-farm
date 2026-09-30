@@ -4,7 +4,7 @@
  * HUD use the same plans to show whether an action is possible and what it will do, so the
  * preview and the outcome can never disagree.
  */
-import { FARMING } from '../config';
+import { FARMING, GENERATORS } from '../config';
 import { Salt, hashFloat, hashRange } from '../core/hash';
 import {
   Blocker,
@@ -24,8 +24,10 @@ import {
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
+import { carryEnergyFor, repairCost } from '../robots/stats';
+import { requireRobot, robotsOnTile } from '../robots/world';
 import { isReservedTile, mapSeed } from '../world/maps';
-import { getTile, isSoil } from '../world/tiles';
+import { getTile, isSoil, isWalkable } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
 import { selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
 
@@ -54,6 +56,13 @@ export type Intent =
   /** The pickaxe or axe lifts a placed object back into the inventory. */
   | { readonly kind: 'pickUp'; readonly itemId: PlaceableItemId }
   | { readonly kind: 'sleep' }
+  /** Pick up (or fish out) a robot: it stops and rides in the player's arms. */
+  | { readonly kind: 'pickUpRobot'; readonly robotId: number; readonly name: string; readonly fromWater: boolean }
+  | { readonly kind: 'putDownRobot'; readonly robotId: number; readonly name: string }
+  /** Send the carried broken robot for repair from the shipping bin. */
+  | { readonly kind: 'repairRobot'; readonly robotId: number; readonly name: string; readonly cost: number }
+  /** Load wood from the selected stack into a wood burner. */
+  | { readonly kind: 'fuel'; readonly quantity: number }
   | { readonly kind: 'blocked'; readonly reason: string | null };
 
 export type IntentKind = Intent['kind'];
@@ -282,6 +291,7 @@ export function placementProblem(state: GameState, itemId: PlaceableItemId, targ
   if (tile === null) return '';
   if (isFarmOnlyPlaceable(itemId) && state.player.mapId !== 'farm') return `The ${getItem(itemId).name.toLowerCase()} belongs on your farm.`;
   if (isReservedTile(selectActiveMap(state), target.tx, target.tz)) return 'Keep this spot clear.';
+  if (state.player.mapId === 'farm' && robotsOnTile(state, target.tx, target.tz).length > 0) return "There's a robot in the way.";
   if (tile.object !== null || tile.state === TileState.Blocked || tile.crop !== null) return "There's something in the way.";
   if (itemId === 'woodPath' || itemId === 'stonePath') {
     return tile.state === TileState.Unplowed ? null : 'Paths go on grass.';
@@ -337,15 +347,59 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
   return plan(target, { kind: 'scatter', cropId: item.cropId, tiles }, 'plant');
 }
 
+/** While carrying: the shipping bin sends a broken robot for repair; open ground puts it down. */
+function planCarry(state: GameState, robotId: number): ActionPlan {
+  const robot = requireRobot(state, robotId);
+  const target = selectTargetTile(state);
+  const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
+  const openGround = `Put ${robot.name} down on open ground.`;
+  if (target === null || tile === null) return blocked(target, 'place', openGround);
+  if (tile.blocker === Blocker.ShippingBin) {
+    if (robot.power !== 'broken') return blocked(target, 'place', 'Only broken robots go for repair.');
+    const cost = repairCost(robot);
+    if (state.player.gold < cost) return blocked(target, 'place', `Repairs cost ${cost}g.`);
+    return plan(target, { kind: 'repairRobot', robotId, name: robot.name, cost }, 'place');
+  }
+  if (isWalkable(tile) && !isReservedTile(selectActiveMap(state), target.tx, target.tz)) {
+    return plan(target, { kind: 'putDownRobot', robotId, name: robot.name }, 'place');
+  }
+  return blocked(target, 'place', openGround);
+}
+
+/** A robot on the target tile (lowest id): pick it up for carry energy. Null when there's none. */
+function planPickUpRobot(state: GameState, target: TileCoord): ActionPlan | null {
+  if (state.player.mapId !== 'farm') return null;
+  const robot = robotsOnTile(state, target.tx, target.tz)[0];
+  if (robot === undefined) return null;
+  const energy = carryEnergyFor(robot);
+  if (state.player.energy < energy) return blocked(target, 'harvest', `You're too tired to carry ${robot.name}.`);
+  const fromWater = getTile(state.maps.farm, target.tx, target.tz)?.blocker === Blocker.Water;
+  return plan(target, { kind: 'pickUpRobot', robotId: robot.id, name: robot.name, fromWater }, 'harvest', energy);
+}
+
+function planFuel(state: GameState, target: TileCoord, fuel: number): ActionPlan {
+  const stack = selectedStack(state.inventory);
+  const hopper = GENERATORS.woodBurner.hopper;
+  if (stack === null || stack.itemId !== 'wood') return blocked(target, 'none', `${fuel}/${hopper} wood. Load it with wood.`);
+  const quantity = Math.min(stack.quantity, hopper - fuel);
+  if (quantity === 0) return blocked(target, 'place', 'The burner is full.');
+  return plan(target, { kind: 'fuel', quantity }, 'place');
+}
+
 /** Plan for the context action (E): open a chest, harvest, clear, ship, sleep, refill. */
 export function planInteraction(state: GameState): ActionPlan {
+  if (state.player.carrying !== null) return planCarry(state, state.player.carrying);
   const target = selectTargetTile(state);
   if (target === null) return blocked(null, 'none');
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return blocked(null, 'none');
 
-  // A chest opens; the other placed objects have nothing to interact with yet.
+  const pickUp = planPickUpRobot(state, target);
+  if (pickUp !== null) return pickUp;
+
+  // A chest opens and a wood burner takes wood; the other placed objects have nothing to interact with yet.
   if (tile.object !== null) {
+    if (tile.object.kind === 'woodBurner') return planFuel(state, target, tile.object.fuel);
     return tile.object.kind === 'chest' ? plan(target, { kind: 'openChest' }, 'openChest') : blocked(target, 'none');
   }
 
@@ -384,6 +438,7 @@ export function planInteraction(state: GameState): ActionPlan {
 
 /** Plan for using the selected hotbar item (Space). Empty hands and non-tools fall back to interaction. */
 export function planPrimaryAction(state: GameState): ActionPlan {
+  if (state.player.carrying !== null) return planCarry(state, state.player.carrying);
   const stack = selectedStack(state.inventory);
   if (stack === null) return planInteraction(state);
   const target = selectTargetTile(state);
@@ -438,6 +493,14 @@ export function describeIntent(intent: Intent): string | null {
       return 'Fertilise';
     case 'pickUp':
       return `Pick up ${getItem(intent.itemId).name.toLowerCase()}`;
+    case 'pickUpRobot':
+      return `${intent.fromWater ? 'Fish out' : 'Pick up'} ${intent.name}`;
+    case 'putDownRobot':
+      return `Put down ${intent.name}`;
+    case 'repairRobot':
+      return `Send ${intent.name} for repair · ${intent.cost}g`;
+    case 'fuel':
+      return 'Load wood';
     case 'blocked':
       return null;
   }
