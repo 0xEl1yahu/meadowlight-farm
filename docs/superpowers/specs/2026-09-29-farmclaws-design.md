@@ -17,7 +17,9 @@ Meadowlight stays a cosy farming game. On top of it, the player buys, builds and
 - A player who has never coded finishes the first three jobs without reading anything outside the game.
 - A player can explain, in their own words, why a robot that says ✓ might still have done the wrong thing.
 - Nothing in the running game uses an LLM. Robots are deterministic programs.
-- A robot never surprises a player in a way the player can't trace back to their own program.
+- A robot never surprises a player in a way the player can't trace back to their own program and .MD. The one exception is rage events, which announce themselves (section 3.8).
+- A player learns that sensible-sounding instructions, carried out faithfully, can still go wrong (section 3.9).
+- **A player who sets robots up well finds them dependable and clearly worth it** (section 2, "Do it well and it works well").
 
 ---
 
@@ -26,9 +28,18 @@ Meadowlight stays a cosy farming game. On top of it, the player buys, builds and
 The v2 ground rules (`docs/PLAN-v2.md` section 1) all carry over: pure deterministic reducer, `hash32` / `hashFloat` for randomness, instanced flat-shaded rendering, strict TypeScript, no placeholders, generated audio and art, clean typecheck and tests, old saves keep working. These are added:
 
 - **No LLM anywhere in the running game.** Robot speech comes from a pre-written line bank (section 7.4). The bank can be drafted with any tools, AI included, and is then edited by hand. The game ships only the finished text.
-- **A robot does exactly what its program says.** Personality, paint, voice and quirks never change what a robot does, how long it takes or what it costs.
-- **Every mistake is the program's mistake.** No random failures. The same farm and the same programs always produce the same result.
+- **A robot does exactly what its program and .MD say.** Personality, paint, voice and quirks never change what a robot does, how long it takes or what it costs.
+- **Every mistake is the player's instructions' mistake**, except for rage events (section 3.8). Rage events are rare, rolled from the save's seed, and loudly signposted. Nothing else is random. The same farm, programs and .MDs always produce the same result.
 - **The game never freezes.** A runaway program can drain a robot, never the frame budget (section 5.4).
+
+**Do it well and it works well.** This outranks every mistake in this design. The robots aren't comedically broken machines. They're faithful workers, and they're exactly as good as the instructions they get.
+
+- **Good instructions give reliable, productive robots.** A robot with a sound program and a short, sensible .MD does its job every day without surprises.
+- **Robots must clearly beat hand-farming at scale.** Otherwise Hollis is simply right. The balance target: a well-set-up farm of four Minis handles a field the player couldn't manage alone, earns more per day than the player working by hand, and frees the player's day for other things. Part 4's tuning pass checks this.
+- **Nothing wears out.** Robots don't degrade, break down on their own or get worse over time. Every failure comes from the player's instructions, apart from rare rage events.
+- **Mistakes are loud and fixable, never a trap with no way out.** The farm log always says what happened and which rule decided it, so a player who looks can always fix it.
+- **The failures live mostly in the jobs.** The jobs deliberately set up broken programs, conflicting rules and bad setups to teach from. On the player's own farm, good habits make robots dependable: return to the generator, fence the zone, check the crop.
+- **Good defaults help.** Ready-made programs from the workshop, and later from Sol's program library, work well out of the box. A player can succeed first and learn why afterwards.
 
 ---
 
@@ -47,11 +58,13 @@ Robot state (stored in the save):
 - `bag`: item stacks, capacity set by size and parts
 - `tokens`: current battery charge
 - `power`: `working | standby | off | flat | broken`
-- `limits`: section 3.3
+- `md`: the Managing Directive, section 3.3
 - `mailbox`: section 5.3
 - `stats`: tokens used, actions taken, crops handled, today and this week
 
-Robots work on the farm map only, and they keep working while the player is in town or the forest. They don't run while the player sleeps, because the night is skipped. The farm holds at most 12 robots.
+Robots work on the farm map only, and they keep working while the player is in town or the forest. They don't run while the player sleeps, because the night is skipped. **Robots stay where they finish.** Nothing brings a robot back unless its program does, and each morning its program starts again from wherever it stands. A program that doesn't return its robot drifts further every day. The farm holds at most 12 robots.
+
+`Water`, `Harvest`, `Till` and `Plant` work the tile the robot stands on. `Refill`, `Deposit into` and `Take from` work the tile ahead.
 
 Robots don't collide with each other or with the player. Two robots can stand on one tile, and the player walks through robots.
 
@@ -67,17 +80,56 @@ These are always true. The player can't change them:
 | Can't rewrite its own program | Only the player edits programs. No block changes a program. |
 | Never knows it made a mistake | Its speech always reports success. Only the farm log tells the truth (section 3.5). |
 
-### 3.3 Limits the player sets
+### 3.3 The Managing Directive (.MD)
 
-Each robot has a Limits tab. Limits unlock through the jobs (section 8):
+Every robot has a **Managing Directive**, its `.MD`: standing rules the player writes, kept separate from its program.
 
-| Limit | Effect | Unlocked by |
+- **The program is today's task**, like a prompt.
+- **The .MD is standing policy**, like a `CLAUDE.md` or `AGENTS.md` file.
+
+Teaching that difference is part of the point.
+
+It looks like a little markdown file named after the robot, built from rule cards with dropdowns:
+
+```
+# SPROCKET.MD
+
+## DO
+- Return to [the wood burner ▾] at [6:00 pm ▾]
+- Power down when [bag is full ▾]
+
+## DON'T
+- Leave [Zone A ▾]
+- Go into [water ▾]
+- Harvest [spectraherb ▾]
+- Spend more than [60 ▾] tokens a day
+```
+
+**DON'T cards** are checked before every action. An action a DON'T forbids doesn't happen. It costs nothing, the program moves on to its next step, and the farm log records "Skipped: my .MD says don't {rule}".
+
+| DON'T card | Forbids | Unlocked by |
 | --- | --- | --- |
-| Keep inside zone | Any move that would leave the robot's zone is blocked | Job 1 |
-| Allowed actions | Switch off actions the parts would otherwise allow | Job 6 |
-| Daily token budget | The robot powers down when it has spent this many tokens today | Job 6 |
+| Leave [zone ▾] | Any move off the zone's tiles | Job 1 |
+| Go into [water ▾] | Any move onto a water tile | Job 1 |
+| Harvest [crop ▾] | `Harvest` on that crop | Job 2 |
+| Deposit [item ▾] | Depositing that item (it stays in the bag) | Job 2 |
+| Use [action ▾] | That action entirely | Job 6 |
+| Spend more than [n] tokens a day | Any action that would pass the budget; the robot then powers down | Job 6 |
+| Work after [time ▾] | Any action after that time; the robot then powers down | Job 6 |
 
-Crop filters, stop conditions, schedules and claims aren't settings. They're written in the program (section 5), which is the point: the player builds the safety themselves.
+**DO cards** are standing orders. At their moment they take over from the program.
+
+| DO card | What happens | Unlocked by |
+| --- | --- | --- |
+| Return to [tile ▾ / the nearest generator] at [time ▾] | At that time the robot stops its program, walks the shortest allowed path there, and powers down | Job 3 |
+| Power down when [bag is full ▾ / tokens below n ▾ / it rains ▾] | The robot powers down the moment the condition holds | Job 3 |
+| Deposit into [chest ▾] when bag is full | The robot walks to the chest, deposits, and returns to where it was | Job 5 |
+
+**Precedence:** DON'T beats DO, and DO beats the program. A DO that can't be carried out without breaking a DON'T isn't carried out, and the log says why.
+
+**Size:** the .MD holds 3 cards on a Mini, 6 on a Standard and 10 on a Big.
+
+**How it's enforced:** the .MD is hard. A robot always obeys it, with one exception: rage events (section 3.8). Crop filters and stop conditions can also be written in the program. The .MD is where rules live that should hold whatever the program says.
 
 ### 3.4 Mistakes
 
@@ -85,7 +137,7 @@ Robots can make any mistake their program allows:
 
 | Mistake | How it happens | What follows |
 | --- | --- | --- |
-| Walks into water | `Move forward` onto a water tile with no zone limit and no check | The robot shorts out: `broken`, left sitting in the water |
+| Walks into water | `Move forward` onto a water tile with no .MD rule about water and no check | The robot shorts out: `broken`, left sitting in the water |
 | Bickers | Two robots act on the same tile in the same minute (section 5.4) | Both pay, neither succeeds, and both robots' speech flavours the clash |
 | Spirals | A loop with no exit | It burns tokens until it goes `flat` |
 | Harvests the wrong crop | `Harvest` takes whatever is ready unless the program checks the crop | The crop is harvested |
@@ -94,8 +146,11 @@ Robots can make any mistake their program allows:
 
 **Recovery:**
 
-- **Broken:** the player stands next to the water and interacts to fish the robot out. It goes into the backpack as a broken robot. The parts exchange repairs it for 20% of its price by the next morning; once the mechanic is hired (job 5), the same day. Robots are never lost for good.
-- **Flat:** the robot stops where it is and recharges overnight (section 4.2).
+Mistakes cost the player real work: **carrying costs energy and repairs cost gold.**
+
+- **Carrying:** the player can pick up any robot, which costs energy (more for bigger robots). Picking a robot up also stops it, and putting it down resumes it. It's the emergency stop.
+- **Broken:** the player fishes the robot out of the water, which is a pick-up and costs the same energy. They carry it to the shipping bin and send it for repair for 20% of its price. It's back, charged, in front of the bin the next morning; once the mechanic is hired (job 5), the same day. Robots are never lost for good.
+- **Flat:** the robot stops where it is. It only recharges overnight if it's near a generator (section 4.2), so a robot stranded far away has to be carried back.
 - **Blocked actions** (bag full, nothing to harvest, no water in the tank) still cost their tokens.
 
 ### 3.5 Speech and the farm log
@@ -139,7 +194,48 @@ Parts unlock actions and abilities. A robot can only use an action if one of its
 
 Every robot from the workshop comes with a Claw in its first slot. Sol's starter Mini (job 1) comes with a Watering head instead.
 
----
+### 3.8 Rage events
+
+Every so often a robot snaps. It's a funny, rare event, and it's the one time a robot doesn't obey its .MD.
+
+- **The chance:**
+  - Each working robot has a small chance each day of raging, rolled from `hash32(seed, day, robotId)`, so the same save always rages the same way.
+  - The chance starts at 2% a day for a robot with an empty .MD. Each different kind of DON'T card lowers it by half a point, down to 0.25%. It never reaches zero, but on a well-run farm it's rare: a funny event, not a burden.
+  - At most one robot rages per day on the whole farm.
+  - Rage events only start once job 6 is done. That job's finale triggers the first one.
+- **What happens:**
+  - At a seeded time between 9:00 and 16:00, the robot's eyes glow red and it bolts for the nearest farm gate, shouting **"I AM DOING AS I AM TOLD!"**
+  - It leaves the farm and turns up at a seeded random spot in the forest or the town.
+  - A toast tells the player where it went, for example "Sprocket's eyes went red and it bolted for the forest!"
+  - There it runs amok, acting every 2 minutes at double token cost. It knocks forage about in the forest and tramples flowerbeds in town, and the townsfolk react. Once part 4 puts other farmers' fields on the map, it tears up their crops too.
+- **Catching it:** the player has to rush over and pick it up, which costs the usual carry energy. The moment it's caught it says **"SORRY, THAT IS ON ME, I SHOULD HAVE LISTENED, MY FAULT."** Then it trudges back to the farm gate and carries on with its program as if nothing happened.
+- **Not catching it:** it wanders back to the farm gate overnight, flat, and a day of its work is lost.
+- **The lesson:**
+  - The apology changes nothing: the next day's chance is exactly the same. Only a better .MD lowers it.
+  - Guardrails cut the risk a lot but never to zero, so oversight still matters.
+  - A hired supervisor (job 5) stops a raging robot at the farm gate before it gets away.
+
+### 3.9 Faithful to a fault
+
+A robot does exactly what it's told, including when what it's told sounds sensible and isn't. This is the limit of robots the game most wants adults to feel. The robot never lacks obedience; the instructions lack foresight.
+
+This section is about the gap between instructions that sound good and instructions that are good. It isn't about robots being unreliable. Once the player closes that gap, the same robot works beautifully.
+
+Every one of these comes from reasonable-looking instructions carried out perfectly:
+
+| Instructions that sound fine | What the robot faithfully does |
+| --- | --- |
+| DON'T go into water. DO keep the watering head full. | It can never refill, so it waters until the tank is empty, then trundles over every dry tile doing nothing. |
+| DON'T leave Zone A. The program deposits into a chest just outside the zone. | It can't reach the chest. Its bag fills, and every harvest after that fails. |
+| DON'T spend more than 60 tokens a day, on a 12×12 field | It stops two-thirds of the way through every day, and the last third never gets watered. |
+| DO power down when the bag is full, on a Mini with one bag stack | It powers down after the first harvest of a second crop type. |
+| DO return to the wood burner at 6:00 pm | It leaves at 6:00 on the dot with a full bag and half a row unharvested. |
+| "Harvest everything that's ready" | It harvests the pumpkin you were growing for the Claw Fair. |
+| "Water every dry tile in Zone A" on a rainy morning | Nothing is dry. It finishes instantly and reports ✓. You forget to check, and the next dry day it's still switched to a rain-day program. |
+
+- **Conflicts are resolved by the fixed precedence** (DON'T beats DO beats program), never by the robot using judgement. It has none.
+- **The farm log always shows the rule** that decided each outcome. The player can always find out why, but only by looking.
+- **Where it's taught:** these situations are built into the jobs, especially job 3 (Barnaby's rules), job 6 (Wendell's audit) and job 7, where the robot's faithfulness is itself one of the demonstrations.
 
 ## 4. Tokens and generators
 
@@ -161,7 +257,7 @@ These costs are for a Mini, before the size multiplier:
 
 ### 4.2 The farm's token pool
 
-Generators fill one farm-wide token pool, shown in the HUD next to gold. Each night, after generators run, every robot that isn't `broken` recharges from the pool up to its battery size, in robot order. If the pool runs short, later robots start the day partly charged. The pool has no cap.
+Generators fill one farm-wide token pool, shown in the HUD next to gold. Each night, after generators run, every robot that isn't `broken` **and ends the day within 2 tiles of a generator** recharges from the pool up to its battery size, in robot order. Robots anywhere else don't recharge. If the pool runs short, later robots start the day partly charged. The pool has no cap.
 
 ### 4.3 Generators
 
@@ -248,7 +344,7 @@ There are five types: **Number**, **Text**, **Yes/No**, **Item** and **Tile**.
 - **Power:**
   - `working` runs the program.
   - `standby` waits for a trigger at no cost, and waking costs 1.
-  - `off` ignores triggers until the player switches the robot on.
+  - `off` ignores triggers until the player switches the robot on. This is a separate on/off switch, not a power state.
   - `flat` means 0 tokens.
   - `broken` means shorted out.
 - When a program reaches its end, the robot goes to `standby`.
@@ -263,7 +359,7 @@ The player interacts with a robot (E) to open its screen. It has five tabs:
 | Tab | Contents |
 | --- | --- |
 | Program | The block editor with the unlocked toolbox and the block counter. **Test run** (after job 5) runs the program on a copy of the farm for one in-game hour and shows the result without changing anything. |
-| Limits | Section 3.3 |
+| .MD | The Managing Directive: DO and DON'T cards (section 3.3) |
 | Looks | Paint, voice, personality and quirk (section 7) |
 | Stats | Tokens used, actions, crops handled and tokens per crop, today and this week. Unlocked by job 3. |
 | Log | Speech and farm log side by side (section 3.5) |
@@ -361,8 +457,8 @@ Jobs replace the v2 quests and notice board. The first three run in a fixed orde
 - **Setup:** its preloaded program is `When morning → Repeat forever → Turn right`. It spins on the spot and burns its whole battery.
 - **Goal:** rewrite it to water a 3×3 bed and power down, with tokens left over.
 - **Teaches:** sequence, repeat, stop conditions.
-- **Unlocks:** the job 1 blocks and the Keep-inside-zone limit.
-- **Mid-job beat:** Sol suggests `Move forward` to reach the bed. If the player hasn't limited it, the robot drives into the pond, and Sol fishes it out for free this one time.
+- **Unlocks:** the job 1 blocks, the .MD tab, and the DON'T cards "Leave [zone]" and "Go into [water]".
+- **Mid-job beat:** Sol suggests `Move forward` to reach the bed. If the player hasn't written a DON'T, the robot drives into the pond, and Sol fishes it out for free this one time. Then he shows the player how to write their first .MD line.
 
 **Job 2: Show him what it can do.** Given by Cosmo, the under-user.
 - **Setup:** his Big robot runs `Repeat forever → Say "hello chickens"`.
@@ -375,9 +471,11 @@ Jobs replace the v2 quests and notice board. The first three run in a fixed orde
 - **Setup:** his "team" is four Minis.
   - One works his whole 8×8 field on `Every 10 minutes`, runs flat by mid-morning, and takes days to finish.
   - The other three sit in standby waiting for a message nobody sends.
+  - None of them has ever been told to come back, so they're scattered around his field, far from his generator, and never fully recharge.
+  - His .MD is "DO return to the generator at 6:00 pm". That sounds sensible, but it makes them walk off mid-row every day (section 3.9).
 - **Goal:** the whole field harvested by 18:00 in one day, at no more than 5 tokens per crop. Splitting the field into four zones and swapping polling for a morning trigger passes. Swapping in a Big robot fails on cost.
 - **Teaches:** cost, measuring, splitting work, events versus polling, and that bigger isn't always better.
-- **Unlocks:** the Stats tab, the job 3 blocks and robot sizes at the robot workshop.
+- **Unlocks:** the Stats tab, the job 3 blocks, the DO cards, and robot sizes at the robot workshop.
 - **Payoff:** he learns what robots are bad at and claims he knew all along.
 
 ### Open
@@ -402,6 +500,8 @@ Once the job is done, each co-worker can be hired or used in their role:
   - bicker a third time in a row
   - drop below 10% battery
 
+  They also stop a raging robot at the farm gate before it gets away (section 3.8).
+
   The supervisor doesn't catch specification mistakes such as the wrong crop. Only the player's program can.
 - **The spec-writer** role goes to Sol himself. It unlocks the workshop's program library of clean ready-made programs.
 
@@ -409,22 +509,24 @@ Once the job is done, each co-worker can be hired or used in their role:
 **Unlocks:** the job 5 blocks and the Antenna.
 
 **Job 6: Make them safe.** Given by Wendell, the protester.
-- **Goal:** set up a robot that passes his audit:
-  - a daily token budget
-  - Keep inside zone
-  - at least one allowed action switched off
+- **Goal:** set up a robot whose .MD passes his audit:
+  - DON'T spend more than a daily budget
+  - DON'T leave its zone
+  - DON'T use at least one action
   - a stop condition in the program
+- **The catch:** his audit also asks for "DO keep the watering head full" alongside "DON'T go into water". The player has to notice that the two conflict (section 3.9) before the robot proves it.
 - **Then:** answer his question from the Log, for example "What was it doing at 14:20?"
-- **Teaches:** oversight.
-- **Unlocks:** the allowed-actions and daily-budget limits.
+- **Finale:** the first rage event (section 3.8). A robot's eyes go red in front of Wendell and it bolts off the farm. The player chases it down, it apologises, and Wendell says "SEE?!". Then he admits the audited robot, the one with a good .MD, stayed put.
+- **Teaches:** oversight, why guardrails matter, and why they're not enough on their own.
+- **Unlocks:** the job 6 DON'T cards, and rage events from then on.
 
 **Job 7: What they can't do.** Given by Wendell.
 - **Goal:** three demonstrations in front of him:
-  1. The zone dropdown can't reach town: robots stay on the farm.
+  1. No program or .MD can send a robot off the farm: every tile dropdown is the farm. Wendell points out that raging robots leave anyway, which is the difference between what a robot can be told and what can happen.
   2. No block edits a program: robots can't change themselves.
   3. A robot at 0 tokens stops: no power, no action.
-- **Fourth beat:** he watches a robot harvest the wrong crop and report ✓. It can't tell right from wrong, which is why you check.
-- **Teaches:** where capability ends.
+- **Fourth beat:** faithful to a fault (section 3.9). Wendell writes a robot's instructions himself, sensible ones, and watches it carry them out perfectly: it harvests the crop he was saving, reports ✓, and stops at his token budget with half the job undone. It did exactly what he said. It can't tell right from wrong, or what he meant from what he wrote, which is why you check.
+- **Teaches:** where capability ends, and that faithful isn't the same as right.
 
 **Job 8: Burning less.** Given by Wendell. This job runs across a season.
 - **Goal:** cut the farm's fuel burned per crop harvested by half, compared with the week the job was accepted. It's measured weekly from the farm log.
@@ -513,29 +615,21 @@ Each part gets its own spec, plan and review before it's built. The robot parts 
 | Part | Contents | Playable result |
 | --- | --- | --- |
 | 1 Robot core | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes and recovery, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm. |
-| 2 Language | Block tree format, typed values, the interpreter, step budget, resolution and bickering | Any program runs deterministically. Tested without UI. |
-| 3 Robot screen | Blockly-style editor, the five tabs, zone tool | The player writes programs. |
-| 4 Fixed-path jobs | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, Stats tab, sizes at the workshop | The first hour of the new game |
+| 2 Language | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
+| 3 Robot screen | Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs. |
+| 4 Fixed-path jobs | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, Stats tab, sizes at the workshop. **Also decides where other farmers' fields are**: this design hasn't put them on a map yet. | The first hour of the new game |
 | 5 Coordination | Messages, mailboxes, claims, triggers, schedules, power states | Multi-robot farms |
 | 6 Workshop and personality | Parts, paint, voices, personalities, line bank, fun facts, quirks, limited editions, parts exchange | Robots with character |
-| 7 Open jobs | Jobs 4 to 8, Ziggy, Wendell and Hollis, crew roles, supervisor, steam engine, rain barrel, sun panel | The full curriculum |
+| 7 Open jobs | Jobs 4 to 8, Ziggy, Wendell and Hollis, crew roles, supervisor, steam engine, rain barrel, sun panel, rage events (robots on other maps, the chase and the catch) | The full curriculum |
 | 8 v2 remainder | Animals, forest changes, Claw Fair, town cleanup and cuts, loose ends, feel, quality of life | Release candidate |
 
 **The editor library** is decided in the part 3 spec. The default is Google Blockly, loaded only when the robot screen first opens, because it already does typed sockets, dropdown fields and keyboard access. Part 3 measures its size against the build and replaces it with a small custom editor only if it misses the size budget set in that spec.
 
 ---
 
-## 12. Save version 4
+## 12. Save versions
 
-Version 4 adds:
-- `robots: []`
-- `tokenPool: 0`
-- `zones: []`
-- job progress
-- limited-edition purchase records
-- generator and rain barrel objects
-
-The migration from version 3 fills in these empty defaults. It also drops the cut v2 fields (friendship, gifts, cooking recipes) if a v3 save has them.
+Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. Part 8's migration also drops the cut v2 fields (friendship, gifts, cooking recipes).
 
 ---
 
