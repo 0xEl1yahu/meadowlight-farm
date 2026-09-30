@@ -260,6 +260,9 @@ export const ROBOTS = {
   chargeRadius: 2,
   /** Repaired robots come back to the nearest walkable tile to this one (in front of the shipping bin). */
   repairDropOff: { tx: 9, tz: 6 },
+  /** The section 2.2 limits on `say` text and `wait` minutes. */
+  sayMaxLength: 60,
+  maxWaitMinutes: 240,
 } as const;
 
 export const GENERATORS = {
@@ -290,6 +293,7 @@ This lives in `src/robots/parts.ts` and is exported as `PART_ACTIONS`:
   - `base = ROBOTS.cost[kind]`
   - if base is 0, the cost is 0
   - otherwise, `max(1, floor(base × costMultiplier × (efficientCore ? 0.75 : 1)))`
+- `resumedPower(robot)`: `'broken'` for a broken robot, otherwise `tokens > 0 ? 'working' : 'flat'`. Putting a robot down (5.8) and the morning reset (5.7) both use it.
 
 ### 3.4 Creating robots (`src/robots/create.ts`)
 
@@ -346,9 +350,11 @@ A robot added mid-day acts first at `minuteOfDay + periodFor(robot)`. A new robo
 ```ts
 export type RobotPlan =
   | { readonly ok: true; readonly action: RobotAction; readonly target: TileCoord; readonly cost: number }
-  | { readonly ok: false; readonly action: RobotAction; readonly reason: RobotBlockReason; readonly cost: number };
+  | { readonly ok: false; readonly action: RobotAction; readonly target: TileCoord; readonly reason: RobotBlockReason; readonly cost: number };
 export function planRobotAction(state: GameState, robot: Robot, action: RobotAction): RobotPlan;
 ```
+
+A blocked plan carries `target` too: the tile the action would have worked.
 
 `planRobotAction` is pure, and it reads only `state.maps.farm`, `state.time`, `state.shipping` and the robot. `cost` is `actionCost(robot, action.kind)` whether or not the action succeeds, except for `noPart`, which costs 0.
 
@@ -364,7 +370,7 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
 | `till` | own | the tile is `Unplowed`, has no object and no crop (wild crops block it too) | `notTillable` |
 | `plant` | own | a seed of `cropId` is in the bag, the tile is soil with no crop and no object, the crop is a field crop and in season | no seed: `noSeed`; wrong season: `outOfSeason`; anything else: `cannotPlant` |
 | `refill` | ahead | the tile ahead is `Blocker.Water` and `tank < tankCapacity` | not water: `noWaterAhead`; full: `tankFull` |
-| `deposit` | ahead | ahead is a chest or the shipping bin, the bag isn't empty, and at least one unit moves | nothing there: `nothingAhead`; empty bag: `bagEmpty`; nothing fits: `containerFull` |
+| `deposit` | ahead | ahead is a chest or the shipping bin, the bag isn't empty, and at least one unit moves | nothing there: `nothingAhead`; empty bag: `bagEmpty`; nothing fits the chest, or nothing in the bag is sellable at the shipping bin: `containerFull` |
 | `take` | ahead | ahead is a chest holding `itemId`, and at least one unit fits the bag | not a chest: `nothingAhead`; none held: `itemNotFound`; no room: `bagFull` |
 | `say`, `wait`, `powerDown` | own | always | — |
 
@@ -393,7 +399,7 @@ Every plan subtracts `cost` from the robot's tokens and adds it to `tokensToday`
 | `wait` | `nextActMinute = minute + minutes` instead of the period. |
 | `powerDown` | `power = 'standby'`, logged as `poweredDown`. |
 
-**`addToBag(robot, itemId, quantity, quality)`** works like `addItem` on a list of stacks that can hold at most `bagStacks(robot)` stacks: top up matching stacks, then open new ones. It returns how many units fit. `harvest` is only planned when the whole quantity fits.
+**`addToBag(bag, limit, itemId, quantity, quality = 0)`** (`src/robots/bag.ts`) works like `addItem` on a list of stacks that can hold at most `limit` stacks (callers pass `bagStacks(robot)`): top up matching stacks, then open new ones. It returns `{ bag, added }`, the new bag and how many units fit. `harvest` is only planned when the whole quantity fits.
 
 **A blocked plan** changes nothing in the world. It pays its cost, advances `pc` and logs a `blocked` event. A robot never retries a step on its own.
 
@@ -424,7 +430,7 @@ Called with `state.time.minuteOfDay` already set to the minute being processed:
 1. **Due robots:** every robot that isn't carried, with `power === 'working'` and `nextActMinute <= minute`, in id order.
 2. **Choose:** for each due robot, plan its current step against the state at the start of the minute. If `tokens < plan.cost`, the robot doesn't act. It goes `flat` and logs `flat`. `pc` doesn't advance, and the morning reset (5.7) starts the script again from step 0.
 3. **Bicker check:** among the chosen plans, successful `harvest`, `water`, `till` and `plant` plans that target the **same tile** bicker. Each of those robots pays its cost, the world doesn't change, `pc` advances, `lastAction` is a failure with `bickered: true`, and each logs `bickered` with the other robots' ids.
-4. **Apply:** the remaining plans apply in id order with `applyRobotPlan`. A plan whose target changed because of an earlier robot this minute is **re-planned** first, at the same cost. For example, two robots take from one chest and the second finds it empty. The re-planned result applies, success or blocked.
+4. **Apply:** the remaining plans apply in id order with `applyRobotPlan`. Every remaining plan is **re-planned** just before it applies, against the state as earlier robots this minute left it, at the same cost. So a plan whose target an earlier robot changed sees the change: for example, two robots take from one chest and the second finds it empty. The re-planned result applies, success or blocked.
 
 Only these tile actions bicker. Moves never do: robots can share a tile. Deposits and takes on one container happen in id order.
 
@@ -447,28 +453,30 @@ Whether minutes arrive as `tick(120)` or as 120 × `tick(1)`, the result must be
 
 When no robot is due in a minute, `runRobotsMinute` returns its input unchanged. The loop then only rewrites `time`, so an idle farm keeps every other reference.
 
+Robots run only inside `time/tick`. Sleeping (`day/sleep`, or the bed's sleep intent) goes straight to `startNextDay`, so the rest of the day's robot minutes are skipped: going to bed early ends the robots' day too.
+
 ### 5.6 The farm log
 
-`logRobotEvent(state, robot, event)` appends an entry with the current day, minute and the robot's tile.
+`logRobotEvent(state, robotId, event)` (`src/robots/log.ts`) appends an entry with the current day, minute and the robot's tile.
 - If the **most recent entry for that robot** has an equal event (deep equality), its `count` goes up by one instead. The day, minute and tile stay those of the first entry.
 - The list keeps the newest `ROBOTS.logCapacity` entries.
 - At the start of each day, entries older than yesterday are dropped.
 
 ### 5.7 Overnight (`startNextDay`)
 
-After the existing map pipeline, and before the morning messages:
+After the existing map pipeline, and before the morning messages. The toasts these steps raise are pushed in step order after the existing morning messages ("Good morning", then pass-out, shipment, crows, season and weather):
 
 1. **Generators:** every wood burner on the farm, in tile order, burns all its fuel. The pool gains `fuel × tokensPerWood` and fuel becomes 0. `lastNightFuel` records the totals, and if any wood burned, the morning brings the toast "Your wood burners turned {w} wood into {t} tokens." (info).
 2. **Set down:** a robot the player was still carrying is set down on the player's spawn tile (`PLAYER.spawn`), exactly as a put-down (5.8), and `player.carrying` becomes null.
 3. **Repairs:** every `repairing` robot whose `repairReadyDay <= absoluteDay` comes back fully charged. It stands on the nearest walkable tile to `ROBOTS.repairDropOff` (the tile in front of the shipping bin), facing South. It becomes `working`, logs `repaired`, and gets the toast "{name} is back from repairs." (success).
 4. **Recharge:** robots only recharge **near a generator**. In id order, every robot that isn't `broken` or `repairing`, and stands within `ROBOTS.chargeRadius` tiles (Chebyshev distance) of a wood burner, takes `min(battery − tokens, pool)` from the pool.
    - If any robot in range ends below full, the toast "Not enough tokens to fully charge {names}." (warn) appears.
-   - If any robot that isn't broken or repairing was out of range, the toast "{names} ended the day away from a generator and didn't recharge." (warn) appears.
+   - If any robot that isn't broken or repairing was out of range (even a fully charged one), the toast "{names} ended the day away from a generator and didn't recharge." (warn) appears. A robot that came back from repairs this night (step 3) is already charged, so it takes no part in the recharge and is never named.
    - Names are listed in id order.
-5. **Reset:** robots **stay where they are**. Nothing moves them home, because they have no home. Every robot that isn't `broken` or `repairing`:
-   - stays on its tile. If that tile isn't walkable any more (weeds or a giant crop grew there overnight), it moves to the nearest walkable farm tile by breadth-first search in `DIRECTIONS` order, with `teleportSeq + 1`.
+5. **Reset:** robots **stay where they are**. Nothing moves them home, because they have no home. Every robot that isn't `repairing`, broken ones included:
+   - stays on its tile. If that tile isn't walkable any more (weeds or a giant crop grew there overnight), it moves to the nearest walkable farm tile by breadth-first search in `DIRECTIONS` order, with `teleportSeq + 1`. A broken robot standing in water stays there. Broken robots are reset too so that a broken robot on land never ends up on an unwalkable tile, which the save validator (6.2) rejects.
    - `pc = 0`, `tokensToday = 0`, `nextActMinute` as in 5.1. Its program starts again from wherever it stands.
-   - `power = tokens > 0 ? 'working' : 'flat'`
+   - `power = resumedPower(robot)` (3.3): `tokens > 0 ? 'working' : 'flat'`
    - a broken robot stays broken where it is (in the water, or on land if it was carried out) until it's sent for repair
 
 ### 5.8 Player interactions (`src/state/intents.ts`)
@@ -504,7 +512,7 @@ Mistakes cost the player real work. **Carrying** a robot costs energy, and **rep
 
 ---
 
-## 6. Save version 4 (`src/state/persistence.ts`, `src/state/sectionValidation.ts`)
+## 6. Save version 4 (`src/state/persistence.ts`, `src/state/robotValidation.ts`)
 
 ### 6.1 Migration
 
@@ -517,7 +525,7 @@ player.carrying: null
 
 ### 6.2 Validation
 
-`isValidRobots` joins `isValidSections`. It rejects the whole save unless all of these hold:
+`isValidRobotsSection(robots, maps, player)` (`src/state/robotValidation.ts`) joins `isValidGameState` in `persistence.ts`, after `isValidSections`, because it needs the maps and the player. `isValidSections` itself doesn't check robots. It rejects the whole save unless all of these hold:
 
 - `nextId ≥ 1`. Ids are unique, ascending, and in 1 … nextId − 1. The list has at most `maxRobots` robots.
 - **Names** are valid. **Size** is known. **Parts** are a canonical subset, no longer than the size's slots.
@@ -532,21 +540,21 @@ player.carrying: null
 - **Tokens:** 0 … battery. `tokensToday` is a count.
 - **Power and carrying:** power is in `ROBOT_POWERS`, and `carried` is a boolean.
 - **Program:** a valid script (section 2.2 rules; every `plant.cropId` a crop and every `take.itemId` an item). `pc` is in range.
-- **Clock:** `nextActMinute` is in `dayStartMinute … passOutMinute + 240`.
+- **Clock:** `nextActMinute` is in `dayStartMinute … passOutMinute + ROBOTS.maxWaitMinutes` (240).
 - **Render counters:** counts. `lastAction` is null, or valid with `seq === actionSeq`.
 - **Log:** entries have ids below `log.nextId` and ascending, a valid event (reasons and kinds from their lists), tiles in farm bounds, and `count ≥ 1`. At most `logCapacity` entries.
 - **Pool** and `lastNightFuel` values are counts.
-- **Wood burners:** tile objects of kind `woodBurner` have `fuel` in 0 … hopper, on the farm only. The validator gets an `OBJECT_FIELDS` entry, and `isValidTile` adds nothing else.
+- **Wood burners:** tile objects of kind `woodBurner` have `fuel` in 0 … hopper, on the farm only. The validator gets an `OBJECT_FIELDS` entry, and `isValidTile` adds nothing else. The farm-only check is part of `isValidRobotsSection`.
 
 ---
 
-## 7. Rendering (`src/render/RobotRenderer.ts`, `src/render/robotGeometry.ts`)
+## 7. Rendering (`src/render/RobotRenderer.ts`, `src/render/robotGeometry.ts`, `src/render/robotLayout.ts`)
 
 ### 7.1 Model
 
 A low-poly, flat-shaded robot built from parts, in the game's existing style (see `objectGeometry.ts`):
 
-- **Body:** a rounded box on two treads.
+- **Body:** a plain box with a trim band, on two treads. (A rounded body is deferred to a later polish pass.)
 - **Head:** a smaller box on a short neck, with two emissive eye panels.
 - **Arm:** one small two-finger claw on the right side.
 - **Part attachments**, each a separate instanced part:
@@ -574,18 +582,18 @@ A low-poly, flat-shaded robot built from parts, in the game's existing style (se
   - duration: `min(0.45 s, 0.8 × period × TIME.realSecondsPerGameMinute / timeScale)`
   - the yaw eases toward the facing
 - **A new `teleportSeq`**, a full rebuild, or a robot appearing snaps it into place.
-- **Shared tiles:** two or more robots on one tile are offset sideways by ±0.18 tile in id order. This is visual only.
+- **Shared tiles:** two or more robots on one tile are spread in id order, centred on the tile and 0.36 tile apart (±0.18 tile for two). The offset runs along a fixed screen axis (the camera's screen-right on the ground), not the robot's own side, so robots stay apart whichever way they face. This is visual only.
 
 ### 7.4 Action clips and states
 
-A new `actionSeq` plays a short clip:
+A new `actionSeq` plays a short clip. In part 1 every clip moves the whole body; per-part motion (the claw pinch, the tines jab, the hopper drop) is deferred to a later polish pass.
 
 | Kind | Clip |
 | --- | --- |
-| `harvest` | A dip and a claw pinch |
+| `harvest` | A dip and a forward lean |
 | `water` | Tilt forward, with 6 blue droplet particles |
-| `till` | Tines jab, with a soil puff |
-| `plant` | A small drop from the hopper |
+| `till` | A dip and a forward lean, with a soil puff |
+| `plant` | A small dip and lean |
 | `deposit`, `take`, `refill` | Lean toward the target |
 | `say` | A head wobble |
 | `turn` | Yaw only |
@@ -596,10 +604,10 @@ States, shown continuously:
 
 | Power | Look |
 | --- | --- |
-| `working` | Eyes lit, gentle idle bob |
+| `working` | Eyes lit, gentle idle bob (`idleBob(time, id)` in `robotLayout.ts`: up to 0.015 tile over 1.6 s, out of step between robot ids) |
 | `standby` | Eyes dimmed to half, still |
 | `flat` | Eyes off, head slumped forward 20° |
-| `broken` | Sunk 0.25 tile into the water, tilted 15°, eyes off, a small spark every 1.2 s |
+| `broken` | Sunk 0.25 tile into the water (absolute, the same at every size), tilted 15°, eyes off, a small spark every 1.2 s |
 | `repairing` | Not drawn |
 | carried | Drawn in the player's arms, at 0.7 scale, with its power's eyes |
 
@@ -626,7 +634,7 @@ All new toasts go through `pushMessage`, with the text and tone given in section
 
 ### 8.3 Log text (`src/robots/logText.ts`, pure)
 
-- `robotSays(robot, entry): string` gives the innocent line, always ending in " ✓". For example:
+- `robotSays(entry): string` gives the innocent line, always ending in " ✓". In part 1 it takes no robot argument, because every robot has the same voice. For example:
   - "Moved forward ✓"
   - "Harvested ✓"
   - "Watered ✓"
@@ -636,26 +644,28 @@ All new toasts go through `pushMessage`, with the text and tone given in section
   - "Waiting my turn ✓" (for a bicker)
 
   Part 1 uses one neutral voice. Part 6 swaps in personalities.
-- `whatHappened(entry, robotNames): string` gives the truth. For example:
-  - "Harvested 2 Silver Parsnips."
+- `whatHappened(entry, names: ReadonlyMap<number, string>): string` gives the truth. A harvest names the crop with its quality and a count. For example:
+  - "Harvested Silver Parsnip ×2." (the same wording as the player's harvest message)
   - "Bumped into something: nothing moved."
   - "Tried to harvest, but nothing was ready."
   - "Fought {other} over the same tile. Nobody got it."
   - "Drove into the water and shorted out."
 
   Every event kind and every block reason has a line, and a test checks that.
+- The quality prefix ("Silver ", "Gold ") and the "a, b and c" name list are shared helpers in `src/core/text.ts` (`qualityPrefix`, `joinWithAnd`). The reducer's messages, the log text and the overnight toasts all use them.
 - Part 3 shows these in the Log tab. In part 1 they're used by the tests and by the development hook `__meadowlight.robotLog()`, which prints the log to the console.
 
-### 8.4 Development hooks (`src/dev/robotDev.ts`)
+### 8.4 Development hooks (`src/dev/index.ts`, `src/dev/robotDev.ts`)
 
-This file is imported only when `import.meta.env.DEV` is true, so it's tree-shaken out of production. It adds to `window.__meadowlight`:
+`src/dev/index.ts` is the development-only entry. `main.ts` imports it dynamically only when `import.meta.env.DEV` is true, so it's left out of production, and calls its `installDevHooks(store)` (`robotDev.ts`'s `installRobotDev`). The hooks' types are declared in `robotDev.ts`, which attaches them with `Object.assign`, rather than on `window.__meadowlight`'s global type, so no hook name reaches the production source maps. It adds to `window.__meadowlight`:
 
 - `addRobot(preset, place?)`:
   - builds a spec from a preset
   - delivers it to the player's forward tile unless `place` is given
   - teaches the wood burner recipe
   - dispatches `game/load` with the resulting state
-- `robotLog()`: prints the farm log as a two-column table.
+  - returns "Added {names}." or the `addRobot` error
+- `robotLog()`: prints the farm log with `console.table` as two columns, "Robot says" (prefixed with the robot's name, day, minute and repeat count) and "What happened".
 
 **Presets:**
 
@@ -682,6 +692,8 @@ This file is imported only when `import.meta.env.DEV` is true, so it's tree-shak
 | `tests/robotSave.test.ts` | v3 → v4 migration (the `save-v2.json` fixture migrates twice). Round trip with robots in every power state. The validator rejecting each rule in 6.2 with one corrupted field at a time. |
 | `tests/robotLogText.test.ts` | Every event kind and block reason has both lines. Every "Robot says" line ends in "✓". |
 
+The build also added `tests/robotStats.test.ts` (derived numbers and part gating), `tests/robotHelpers.test.ts` (`harvestedTile`, robot world helpers, bag and chest arithmetic, the farm log), `tests/woodBurner.test.ts` (the burner's recipe, placement, pick-up and save rules), and the section 9.2 files `tests/robotParity.test.ts`, `tests/robotTickBatching.test.ts` and `tests/robotDeterminism.test.ts`.
+
 ### 9.2 Property tests
 
 - **Tick batching:** for 50 seeded farms with 1 to 12 random robots and random scripts, `tick(120)` equals 120 × `tick(1)`, compared with `deepEqual`.
@@ -691,9 +703,9 @@ This file is imported only when `import.meta.env.DEV` is true, so it's tree-shak
   - robot `harvest` and the scythe's harvest of a mature, living crop
 
   They must agree on success, and on the harvest's quantity and quality.
-- **Determinism:** `tests/determinism.test.ts` gains robots.
-  - The random session adds robots through `addRobot` in its setup, and its action mix adds interactions near them.
-  - The replay, frozen-state and render-contract checks all include `state.robots`: unchanged robots keep their identity.
+- **Determinism:** a new file, `tests/robotDeterminism.test.ts`; `tests/determinism.test.ts` is unchanged.
+  - The setup adds three looping robots (watering, harvesting and tilling) through `addRobot` along one farm row, and seeded random sessions mix moves, interactions, tool use, ticks and sleeps.
+  - Each session plays twice through a freezing store with identical results, and replaying its recorded actions reproduces it. A render-contract check fails on any robot copied without changing: unchanged robots keep their identity.
 
 ### 9.3 Render
 
@@ -702,6 +714,7 @@ This file is imported only when `import.meta.env.DEV` is true, so it's tree-shak
 - shared-tile offsets
 - which parts a robot shows
 - state poses
+- action clips and the idle bob
 
 This follows `objectLayout.test.ts`.
 
@@ -717,15 +730,18 @@ Each step ends with typecheck, tests and build passing, and one commit.
 4. **Interactions.** `player.carrying`, the carry intents (pick up, put down, repair) and the burner's `fuel` intent, the warp refusal, the placement block, the burner's pick-up rule, `describeIntent`. Tests: `robotInteract`.
 5. **Log text.** `logText.ts`. Tests: `robotLogText`.
 6. **Rendering.** `robotGeometry.ts`, `robotLayout.ts`, RobotRenderer (registered in `main.ts` after ObjectRenderer), and the wood burner's geometry in `objectGeometry.ts`. Tests: `robotRender`.
-7. **HUD and development hooks.** Token pool, bolt icon, `robotDev.ts`. The determinism test extension.
+7. **HUD and development hooks.** Token pool, bolt icon, `robotDev.ts`. The robot determinism test (section 9.2).
 8. **Review fixes.** An adversarial review of steps 1 to 7 against this spec, then the fixes it finds.
 
 ---
 
 ## 11. Done means
 
-- Every rule in sections 2 to 8 is built and tested. Typecheck is clean, all tests pass, and the production build succeeds. The existing tests pass without changes, apart from the determinism test's robot extension.
-- The production bundle contains no development hook code (checked by searching `dist/` for `robotLog`).
+- Every rule in sections 2 to 8 is built and tested. Typecheck is clean, all tests pass, and the production build succeeds. The determinism check is a new file (section 9.2). Existing tests that pinned the old save version, the old player shape or the list of placed objects and recipes were updated alongside the new files, and nothing else in them changed:
+  - save version 4 and `player.carrying` (Task 2): `persistence.test.ts`, `maps.test.ts`, `reducer.test.ts`, `sections.test.ts`, `wild.test.ts`
+  - the wood burner (Task 3): `crafting.test.ts`, `tiles.test.ts`, `objectLayout.test.ts`, `placement.test.ts`, `persistence.test.ts`, `renderMaps.test.ts`
+  - the shared helpers in `tests/testUtils.ts` gained robot helpers
+- The production bundle contains no development hook code (checked by searching `dist/` for `robotLog` and `installRobotDev`).
 - **Browser check** on the v2 preview link, in development mode, at 1× and 16× time:
   - add each preset
   - watch the spinner drain and go flat
