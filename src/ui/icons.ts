@@ -683,6 +683,20 @@ export function createCoinIcon(className: string = INLINE_ICON_CLASS): SVGSVGEle
   );
 }
 
+/** A faceted blue lightning bolt: the farm's token pool. */
+export function createBoltIcon(className: string = INLINE_ICON_CLASS): SVGSVGElement {
+  const bolt = 0x7fd3ff;
+  return svgRoot(
+    [
+      faceted('18,3 7,18 15,18 13,29 25,13 17,13', hex(bolt), [
+        facet('18,3 7,18 15,18 17,13', light(bolt, 0.35)),
+        facet('13,29 25,13 17,13 15,18', dark(bolt, 0.18)),
+      ]),
+    ],
+    className,
+  );
+}
+
 function sunParts(cx: number, cy: number, radius: number): SVGElement[] {
   const parts: SVGElement[] = [];
   for (let k = 0; k < 8; k++) {

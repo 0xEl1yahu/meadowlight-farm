@@ -43,6 +43,7 @@
   --hud-lilac: #d4c6ff;
   --hud-lilac-deep: #8f7fd6;
   --hud-gold: #ffd866;
+  --hud-tokens: #7fd3ff;
   --hud-success: #5fb883;
   --hud-warn: #ee9b4a;
   --hud-info: #6fa9dc;
@@ -526,7 +527,7 @@
   gap: 5px;
 }
 
-.hud-gold {
+.hud-gold, .hud-tokens {
   position: relative;
   display: flex;
   align-items: center;
@@ -542,22 +543,22 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hud-gold__coin .hud-inline-icon {
+.hud-gold__coin .hud-inline-icon, .hud-tokens__coin .hud-inline-icon {
   width: 22px;
   height: 22px;
 }
 
-.hud-gold__value {
+.hud-gold__value, .hud-tokens__value {
   flex: 1;
   text-align: right;
 }
 
-.hud-gold__unit {
+.hud-gold__unit, .hud-tokens__unit {
   font-size: 15px;
   opacity: 0.85;
 }
 
-.hud-gold__delta {
+.hud-gold__delta, .hud-tokens__delta {
   position: absolute;
   right: 12px;
   bottom: calc(100% - 2px);
@@ -570,28 +571,32 @@
   pointer-events: none;
 }
 
-.hud-gold.is-gain .hud-gold__delta {
+.hud-gold.is-gain .hud-gold__delta, .hud-tokens.is-gain .hud-tokens__delta {
   color: var(--hud-mint-deep);
 }
 
-.hud-gold.is-loss .hud-gold__delta {
+.hud-gold.is-loss .hud-gold__delta, .hud-tokens.is-loss .hud-tokens__delta {
   color: var(--hud-rose-deep);
 }
 
-.hud-gold[data-anim='a'] .hud-gold__delta {
+.hud-gold[data-anim='a'] .hud-gold__delta, .hud-tokens[data-anim='a'] .hud-tokens__delta {
   animation: hud-float-a 1.3s ease-out both;
 }
 
-.hud-gold[data-anim='b'] .hud-gold__delta {
+.hud-gold[data-anim='b'] .hud-gold__delta, .hud-tokens[data-anim='b'] .hud-tokens__delta {
   animation: hud-float-b 1.3s ease-out both;
 }
 
-.hud-gold[data-anim='a'] .hud-gold__value {
+.hud-gold[data-anim='a'] .hud-gold__value, .hud-tokens[data-anim='a'] .hud-tokens__value {
   animation: hud-bump-a 0.45s ease-out;
 }
 
-.hud-gold[data-anim='b'] .hud-gold__value {
+.hud-gold[data-anim='b'] .hud-gold__value, .hud-tokens[data-anim='b'] .hud-tokens__value {
   animation: hud-bump-b 0.45s ease-out;
+}
+
+.hud-tokens {
+  color: var(--hud-tokens);
 }
 
 .hud-clock__pending {
@@ -1612,7 +1617,7 @@
     align-items: center;
   }
 
-  .hud-gold {
+  .hud-gold, .hud-tokens {
     font-size: 18px;
   }
 
@@ -1706,6 +1711,7 @@
   }
 
   .hud-gold .hud-gold__value,
+  .hud-tokens .hud-tokens__value,
   .hud-energy.is-low .hud-energy__track::after,
   .hud-slot__water.is-empty {
     animation: none !important;

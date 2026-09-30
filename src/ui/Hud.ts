@@ -64,6 +64,7 @@ import {
 } from './dom';
 import {
   DayDial,
+  createBoltIcon,
   createCloseIcon,
   createCoinIcon,
   createCrateIcon,
@@ -244,21 +245,35 @@ class WeatherBadge {
   }
 }
 
-/** Gold total that counts smoothly toward its target and floats a +/- delta. */
-class GoldCounter {
-  readonly element = h('div', 'hud-gold');
-  private readonly value = h('span', 'hud-gold__value');
-  private readonly delta = h('span', 'hud-gold__delta');
+interface CountUpLook {
+  readonly block: string;
+  readonly title: string;
+  readonly unit: string;
+  /** Suffix on the floating delta ("g" for gold, "" for tokens). */
+  readonly deltaUnit: string;
+  readonly icon: SVGSVGElement;
+}
+
+/** A number that counts smoothly toward its target and floats a +/- delta (gold, tokens). */
+class CountUpValue {
+  readonly element: HTMLElement;
+  private readonly value: HTMLElement;
+  private readonly delta: HTMLElement;
+  private readonly deltaUnit: string;
   private from = 0;
   private target = 0;
   private shown = 0;
   /** Tween progress; 1 = idle. */
   private t = 1;
 
-  constructor() {
-    this.element.title = 'Gold';
+  constructor(look: CountUpLook) {
+    this.element = h('div', look.block);
+    this.value = h('span', `${look.block}__value`);
+    this.delta = h('span', `${look.block}__delta`);
+    this.deltaUnit = look.deltaUnit;
+    this.element.title = look.title;
     this.delta.setAttribute('aria-hidden', 'true');
-    this.element.append(iconHost('hud-gold__coin', createCoinIcon()), this.value, h('span', 'hud-gold__unit', 'g'), this.delta);
+    this.element.append(iconHost(`${look.block}__coin`, look.icon), this.value, h('span', `${look.block}__unit`, look.unit), this.delta);
   }
 
   set(gold: number, instant: boolean): void {
@@ -275,7 +290,7 @@ class GoldCounter {
     this.from = this.shown;
     this.target = gold;
     this.t = 0;
-    this.delta.textContent = `${change > 0 ? '+' : '−'}${numberFormat.format(Math.abs(change))}g`;
+    this.delta.textContent = `${change > 0 ? '+' : '−'}${numberFormat.format(Math.abs(change))}${this.deltaUnit}`;
     this.element.classList.toggle('is-gain', change > 0);
     this.element.classList.toggle('is-loss', change < 0);
     restartAnimation(this.element);
@@ -303,7 +318,14 @@ class ClockPanel {
   private readonly dial = new DayDial();
   private readonly today = new WeatherBadge('hud-weather--today', 'Today', null);
   private readonly tomorrow = new WeatherBadge('hud-weather--tomorrow', 'Tomorrow', 'Tomorrow');
-  private readonly gold = new GoldCounter();
+  private readonly gold = new CountUpValue({ block: 'hud-gold', title: 'Gold', unit: 'g', deltaUnit: 'g', icon: createCoinIcon() });
+  private readonly tokens = new CountUpValue({
+    block: 'hud-tokens',
+    title: 'Token pool: robots recharge from it overnight',
+    unit: ' tokens',
+    deltaUnit: '',
+    icon: createBoltIcon(),
+  });
   private readonly pending = h('div', 'hud-clock__pending');
   private readonly pendingValue = h('strong', 'hud-clock__pending-value');
 
@@ -329,7 +351,8 @@ class ClockPanel {
     );
 
     const money = h('div', 'hud-clock__money');
-    money.append(this.gold.element, this.pending);
+    this.tokens.element.hidden = true;
+    money.append(this.gold.element, this.tokens.element, this.pending);
 
     this.element.append(this.date, main, weather, money);
   }
@@ -348,10 +371,15 @@ class ClockPanel {
     if (prev === null || state.ui.timeScale !== prev.ui.timeScale) this.syncSpeed(state.ui.timeScale);
     if (prev === null || state.shipping !== prev.shipping) this.syncPending(selectPendingShipmentValue(state));
     if (prev === null || state.player.gold !== prev.player.gold) this.gold.set(state.player.gold, prev === null);
+    if (prev === null || state.robots.pool !== prev.robots.pool || state.robots.list.length !== prev.robots.list.length) {
+      this.tokens.element.hidden = state.robots.pool === 0 && state.robots.list.length === 0;
+      this.tokens.set(state.robots.pool, prev === null);
+    }
   }
 
   update(dt: number): void {
     this.gold.update(dt);
+    this.tokens.update(dt);
   }
 
   private syncTime(state: GameState): void {
