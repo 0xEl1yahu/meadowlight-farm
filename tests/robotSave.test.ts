@@ -22,6 +22,16 @@ function lively(): GameState {
     robotOf({ id: 4, name: 'Dot', power: 'broken', tx: WATER.tx, tz: WATER.tz, parts: ['wateringHead'], tank: 7 }),
     robotOf({ id: 6, name: 'Echo', power: 'repairing', repairReadyDay: 1, tx: 2, tz: 10 }),
     robotOf({ id: 7, name: 'Fizz', carried: true, nextActMinute: TIME.passOutMinute + 30 }),
+    // Mid-wait past midnight: pc is past the wait step and the next act falls after passOut.
+    robotOf({
+      id: 8,
+      name: 'Gus',
+      tx: 1,
+      tz: 10,
+      program: { kind: 'script', steps: [{ kind: 'wait', minutes: 200 }, { kind: 'turn', side: 'left' }], loop: true },
+      pc: 1,
+      nextActMinute: TIME.passOutMinute + 200,
+    }),
   ];
   const state = withRobots(base, robots);
   return {
@@ -29,7 +39,7 @@ function lively(): GameState {
     player: { ...state.player, carrying: 7 },
     robots: {
       ...state.robots,
-      nextId: 9,
+      nextId: 10,
       pool: 42,
       lastNightFuel: { wood: 5, tokens: 30 },
       log: {
@@ -92,7 +102,6 @@ describe('save version 4', () => {
     ['a fractional tile', (s) => void (robotsOf(s).list[0]!.tz = 1.5)],
     ['an invalid facing', (s) => void (robotsOf(s).list[0]!.facing = 4)],
     ['a repairing robot without a repair day', (s) => void (robotsOf(s).list[4]!.repairReadyDay = null)],
-    ['a repairing robot that is carried', (s) => void Object.assign(robotsOf(s).list[4]!, { carried: true, repairReadyDay: 1 })],
     ['a broken robot with a repair day', (s) => void (robotsOf(s).list[3]!.repairReadyDay = 2)],
     ['two carried robots', (s) => void (robotsOf(s).list[0]!.carried = true)],
     ['a non-boolean carried flag', (s) => void (robotsOf(s).list[0]!.carried = 'yes')],
@@ -131,7 +140,7 @@ describe('save version 4', () => {
     ['a working robot on a water tile', (s) => void Object.assign(robotsOf(s).list[0]!, { tx: WATER.tx, tz: WATER.tz })],
     ['a repair day on a working robot', (s) => void (robotsOf(s).list[0]!.repairReadyDay = 3)],
     ['a carried robot the player is not carrying', (s) => void ((s.player as SaveJson).carrying = null)],
-    ['the player carrying a robot that is not carried', (s) => void ((s.player as SaveJson).carrying = 1)],
+    ['the player carrying a robot that is not carried', (s) => void (robotsOf(s).list[5]!.carried = false)],
     ['ids out of order', (s) => void robotsOf(s).list.reverse()],
     ['an id at or above nextId', (s) => void (robotsOf(s).nextId = 7)],
     ['a log entry with an unknown reason', (s) => void (robotsOf(s).log.entries[0]!.event = { kind: 'blocked', action: 'move', reason: 'tired' })],
@@ -143,6 +152,21 @@ describe('save version 4', () => {
 
   it.each(rejections)('rejects %s', (_label, edit) => {
     expect(corrupt(lively(), edit)).toBeNull();
+  });
+
+  it('round-trips the clock past midnight with a robot mid-wait', () => {
+    const state = lively();
+    const late = { ...state, time: { ...state.time, minuteOfDay: TIME.passOutMinute - 30 } };
+    expect(deserializeGame(serializeGame(late))).toEqual({ ...late, ui: { ...late.ui, panel: { kind: 'none' }, paused: false } });
+  });
+
+  it('rejects a repairing robot that is carried', () => {
+    const state = lively();
+    const list = state.robots.list.map((r) => (r.id === 6 ? { ...r, carried: true } : r.id === 7 ? { ...r, carried: false } : r));
+    const robots = { ...state.robots, list };
+    expect(isValidRobotsSection(robots, state.maps, { ...state.player, carrying: 6 })).toBe(false);
+    const fixed = list.map((r) => (r.id === 6 ? { ...r, power: 'working' as const, repairReadyDay: null } : r));
+    expect(isValidRobotsSection({ ...robots, list: fixed }, state.maps, { ...state.player, carrying: 6 })).toBe(true);
   });
 
   it('rejects a carried robot while the player is off the farm', () => {
