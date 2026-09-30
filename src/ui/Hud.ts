@@ -330,7 +330,7 @@ class ClockPanel {
   private readonly pendingValue = h('strong', 'hud-clock__pending-value');
 
   constructor() {
-    this.element.setAttribute('aria-label', 'Date, time and gold');
+    this.element.setAttribute('aria-label', 'Date, time, gold and tokens');
 
     const main = h('div', 'hud-clock__main');
     this.dial.element.setAttribute('aria-hidden', 'true');

@@ -2,7 +2,7 @@
  * Save version 4: the robots section, player.carrying, the v3 → v4 migration and validation.
  */
 import { describe, expect, it } from 'vitest';
-import { TIME } from '../src/config';
+import { ROBOTS, TIME } from '../src/config';
 import { Blocker, Direction, type GameState, type Robot } from '../src/core/types';
 import { isValidRobotsSection } from '../src/state/robotValidation';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
@@ -148,6 +148,11 @@ describe('save version 4', () => {
     ['nextActMinute far past midnight', (s) => void (robotsOf(s).list[0]!.nextActMinute = TIME.passOutMinute + 241)],
     ['an invalid script step', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [{ kind: 'wait', minutes: 0 }])],
     ['a negative pool', (s) => void (robotsOf(s).pool = -1)],
+    ['a say step with leading or trailing spaces', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [{ kind: 'say', text: ' hi ' }])],
+    ['a say step longer than the limit', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [{ kind: 'say', text: 'a'.repeat(ROBOTS.sayMaxLength + 1) }])],
+    ['a wait step above the upper bound', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [{ kind: 'wait', minutes: ROBOTS.maxWaitMinutes + 1 }])],
+    ['a turn step with an invalid side', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [{ kind: 'turn', side: 'up' }])],
+    ['a non-boolean loop flag', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).loop = 'yes')],
   ];
 
   it.each(rejections)('rejects %s', (_label, edit) => {

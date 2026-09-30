@@ -3,7 +3,7 @@
  * a generator, and the morning reset where robots stay where they are.
  */
 import { describe, expect, it } from 'vitest';
-import { PLAYER, ROBOTS, TIME } from '../src/config';
+import { INVENTORY, PLAYER, ROBOTS, TIME } from '../src/config';
 import { Blocker, Direction, type GameState, type PlacedObject } from '../src/core/types';
 import { resumedPower } from '../src/robots/stats';
 import { requireRobot } from '../src/robots/world';
@@ -133,6 +133,15 @@ describe('robots overnight', () => {
     expect(texts(next)).toContain('Sprocket is back from repairs.');
     // It spent the day at the repair shop, not away from a generator.
     expect(texts(next).some((t) => t.endsWith(AWAY))).toBe(false);
+    expect(isValidGameState(next)).toBe(true);
+  });
+
+  it('lands a repaired robot on the nearest walkable tile when the drop-off is blocked', () => {
+    const chest = { ...EMPTY_TILE, object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
+    const blocked = withTile(BASE, ROBOTS.repairDropOff, chest, 'farm');
+    const ready = robotOf({ id: 1, power: 'repairing', repairReadyDay: 1, tokens: 0 });
+    const next = sleep(withRobots(blocked, [ready]));
+    expect(requireRobot(next, 1)).toMatchObject({ power: 'working', tx: 10, tz: 6 });
     expect(isValidGameState(next)).toBe(true);
   });
 

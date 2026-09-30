@@ -178,7 +178,7 @@ describe('deserializeGame rejects corrupted saves', () => {
   ];
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     // Header
-    ['wrong version', ['version'], 5],
+    ['wrong version', ['version'], SAVE_VERSION + 1],
     ['string version', ['version'], '1'],
     ['missing version', ['version'], undefined],
     ['negative seed', ['seed'], -1],

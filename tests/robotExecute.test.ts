@@ -182,6 +182,7 @@ describe('addRobot', () => {
       { ...spec, parts: ['claw', 'basket'] },
       { ...spec, parts: ['basket', 'claw'], size: 'standard' },
       { ...spec, place: { tx: -1, tz: 0, facing: Direction.North } },
+      { ...spec, place: { tx: 0, tz: 13, facing: Direction.North } },
       { ...spec, program: { kind: 'script', steps: [], loop: false } },
     ];
     for (const s of bad) expect('error' in addRobot(BASE, s as typeof spec)).toBe(true);

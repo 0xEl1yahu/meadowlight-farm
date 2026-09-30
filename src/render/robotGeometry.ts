@@ -26,6 +26,8 @@ export const ROBOT_COLORS = {
 export const HEAD_MESHES: ReadonlySet<RobotMeshId> = new Set<RobotMeshId>(['head', 'eyes', 'antenna', 'lens']);
 /** Height of the neck pivot. */
 export const NECK_Y = 0.36;
+/** The green and orange core lights sit side by side, this far either side of centre, so they never overlap. */
+const CORE_LIGHT_OFFSET_X = 0.05;
 
 export function createRobotMeshGeometry(id: RobotMeshId): THREE.BufferGeometry {
   const c = ROBOT_COLORS;
@@ -59,9 +61,9 @@ export function createRobotMeshGeometry(id: RobotMeshId): THREE.BufferGeometry {
     case 'lens':
       return mergeParts([cylinder(0.025, 0.025, 0.02, 8, { y: 0.53, z: 0.12, rx: Math.PI / 2 }, c.lens)], 'robot lens');
     case 'coreGreen':
-      return mergeParts([box(0.08, 0.06, 0.02, { y: 0.22, z: 0.151 }, c.coreGreen)], 'robot core');
+      return mergeParts([box(0.08, 0.06, 0.02, { x: -CORE_LIGHT_OFFSET_X, y: 0.22, z: 0.151 }, c.coreGreen)], 'robot core');
     case 'coreOrange':
-      return mergeParts([box(0.08, 0.06, 0.02, { y: 0.22, z: 0.151 }, c.coreOrange)], 'robot core');
+      return mergeParts([box(0.08, 0.06, 0.02, { x: CORE_LIGHT_OFFSET_X, y: 0.22, z: 0.151 }, c.coreOrange)], 'robot core');
   }
 }
 

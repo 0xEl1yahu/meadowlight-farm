@@ -391,7 +391,7 @@ describe('saved NPCs, quests, stats and festival reject', () => {
   });
 });
 
-describe('migrating older saves to version 3', () => {
+describe('migrating older saves to the current version', () => {
   /** A played state an old save can express: sown and wild crops, damaged debris, bumped revisions. */
   function played(): GameState {
     let state = withTile(BASE, TARGET, soilTile(TileState.Watered, cropOf('parsnip', { stage: 2 })));
@@ -428,7 +428,7 @@ describe('migrating older saves to version 3', () => {
     expect(loaded.nextEntityId).toBe(1);
   });
 
-  it('chains a version-1 save through version 2 to version 3', () => {
+  it('chains a version-1 save through version 2 to the current version', () => {
     const state = played();
     const v1 = legacySave(state, 1);
     const loaded = must(deserializeGame(JSON.stringify(v1)));

@@ -3,6 +3,7 @@
  * at the shipping bin, loading the wood burner, and the rules around them.
  */
 import { describe, expect, it } from 'vitest';
+import { INVENTORY } from '../src/config';
 import { Blocker, Direction, type GameState } from '../src/core/types';
 import { periodFor, resumedPower } from '../src/robots/stats';
 import { requireRobot } from '../src/robots/world';
@@ -10,6 +11,7 @@ import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
 import { placementProblem } from '../src/state/intents';
 import { gameReducer } from '../src/state/reducer';
+import { MAPS, isReservedTile } from '../src/world/maps';
 import { blockedTile, EMPTY_TILE } from '../src/world/tiles';
 import { BASE, TARGET, emptyHanded, holding, robotOf, scenario, tileAt, withEnergy, withGold, withPlayer, withRobots } from './testUtils';
 
@@ -69,6 +71,15 @@ describe('putting robots down', () => {
   it('works with Space too, and refuses rocks', () => {
     expect(gameReducer(carrying(scenario(EMPTY_TILE)), actions.useTool()).player.carrying).toBeNull();
     expect(lastText(interact(carrying(scenario(blockedTile(Blocker.Rock, 2)))))).toBe('Put Sprocket down on open ground.');
+  });
+
+  it('refuses reserved tiles, water and placed objects', () => {
+    const reserved = withPlayer(carrying(BASE), { tx: 0, tz: 12 }, Direction.South);
+    expect(isReservedTile(MAPS.farm, 0, 13)).toBe(true);
+    expect(lastText(interact(reserved))).toBe('Put Sprocket down on open ground.');
+    expect(lastText(interact(carrying(scenario(blockedTile(Blocker.Water)))))).toBe('Put Sprocket down on open ground.');
+    const chest = { ...EMPTY_TILE, object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
+    expect(lastText(interact(carrying(scenario(chest))))).toBe('Put Sprocket down on open ground.');
   });
 
   it('keeps a broken robot broken on land', () => {

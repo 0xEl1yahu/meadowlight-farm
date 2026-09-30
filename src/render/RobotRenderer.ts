@@ -162,6 +162,7 @@ export class RobotRenderer implements RenderSystem {
     const offsets = sharedTileOffsets(state.robots.list);
     const grid = state.maps.farm.grid;
     const seen = new Set<number>();
+    if (prev === null) this.resetEffects();
     for (const robot of state.robots.list) {
       seen.add(robot.id);
       const toX = tileCenterX(grid, robot.tx);
@@ -227,6 +228,18 @@ export class RobotRenderer implements RenderSystem {
     this.painted.dispose();
     this.eyeMaterial.dispose();
     this.particleMaterial.dispose();
+  }
+
+  /** A full rebuild drops every robot's clip and badge timer and any particles still in flight. */
+  private resetEffects(): void {
+    for (const visual of this.visuals.values()) {
+      visual.clip = null;
+      visual.clipT = CLIP_SECONDS;
+      visual.badgeT = BADGE_SECONDS;
+    }
+    this.particles.clear();
+    this.particles.commit();
+    this.live.length = 0;
   }
 
   private clearAll(): void {
