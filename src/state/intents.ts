@@ -15,6 +15,7 @@ import {
   type CropInstance,
   type FertilizerKind,
   type GameState,
+  type MapId,
   PLACEABLE_ITEM_IDS,
   type PlaceableItemId,
   type PlacedObject,
@@ -78,15 +79,15 @@ export function isActionable(actionPlan: ActionPlan): boolean {
 }
 
 /**
- * Deterministic harvest size for a crop on a given tile of the active map, day and harvest
+ * Deterministic harvest size for a crop on a given tile of map `mapId` (default: the player's), day and harvest
  * number. Rolled with the map's seed, which on the farm is the save seed itself.
  */
-export function harvestQuantity(state: GameState, target: TileCoord, crop: CropInstance): number {
+export function harvestQuantity(state: GameState, target: TileCoord, crop: CropInstance, mapId: MapId = state.player.mapId): number {
   const def = CROPS[crop.cropId];
   return hashRange(
     def.yieldMin,
     def.yieldMax,
-    mapSeed(state.seed, state.player.mapId),
+    mapSeed(state.seed, mapId),
     target.tx,
     target.tz,
     state.time.absoluteDay,
@@ -101,14 +102,14 @@ export function qualityChanceFor(fertilizer: FertilizerKind | null): { readonly 
 }
 
 /**
- * Deterministic quality of a harvest, rolled with the map's seed from the tile, the day and the
+ * Deterministic quality of a harvest on map `mapId` (default: the player's), rolled with the map's seed from the tile, the day and the
  * harvest number. The chances come from the fertiliser in the target tile's soil (see
  * FARMING.qualityChance): gold for r < gold, silver for r < gold + silver, otherwise normal.
  */
-export function harvestQuality(state: GameState, target: TileCoord, crop: CropInstance): Quality {
-  const chance = qualityChanceFor(getTile(selectActiveWorld(state), target.tx, target.tz)?.fertilizer ?? null);
+export function harvestQuality(state: GameState, target: TileCoord, crop: CropInstance, mapId: MapId = state.player.mapId): Quality {
+  const chance = qualityChanceFor(getTile(state.maps[mapId], target.tx, target.tz)?.fertilizer ?? null);
   const r = hashFloat(
-    mapSeed(state.seed, state.player.mapId),
+    mapSeed(state.seed, mapId),
     target.tx,
     target.tz,
     state.time.absoluteDay,

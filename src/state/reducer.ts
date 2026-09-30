@@ -31,7 +31,8 @@ import {
   type Tile,
   type TileCoord,
 } from '../core/types';
-import { CROPS, stageCount, createCropInstance } from '../farming/crops';
+import { CROPS, createCropInstance } from '../farming/crops';
+import { harvestedTile } from '../farming/harvest';
 import { RECIPES, consumeIngredients, craftCheck } from '../crafting/recipes';
 import { runCrows } from '../farming/crows';
 import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
@@ -433,12 +434,7 @@ function harvest(state: GameState, target: TileCoord, tile: Tile, quantity: numb
   const def = CROPS[crop.cropId];
   const { inventory, added } = addItem(state.inventory, def.id, quantity, quality);
   invariant(added === quantity, 'harvest capacity is verified while planning');
-  const regrown =
-    def.regrowDays === null
-      ? null
-      : { ...crop, stage: stageCount(def) - 1, daysInStage: 0, dryDays: 0, regrowing: true, harvestCount: crop.harvestCount + 1 };
-  // Fertiliser lasts until the crop is harvested for good; a regrowing crop keeps it.
-  const next = withTile(state, target, { ...tile, crop: regrown, fertilizer: regrown === null ? null : tile.fertilizer });
+  const next = withTile(state, target, harvestedTile(tile));
   return pushMessage({ ...next, inventory }, `Harvested ${qualityPrefix(quality)}${def.name} ×${quantity}.`, 'success');
 }
 
