@@ -40,6 +40,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
+import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
@@ -159,7 +160,8 @@ function shippedStats(state: GameState, payout: number): GameState['stats'] {
  * Day transition: pay out the shipping bin (each stack at its quality's price, counted into the
  * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
  * pipeline on every map with that map's seed, restore energy and put the player back at the
- * house on the farm.
+ * house on the farm. Then the robots' night runs (farmclaws part 1 §5.7); its toasts follow the
+ * morning's own messages.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -202,6 +204,8 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     shipping: { pending: [], lastPayout: payout },
     stats: shippedStats(state, payout),
   };
+  const night = runRobotsOvernight(next);
+  next = night.state;
 
   next = pushMessage(next, `Good morning! ${formatDate(time)}.`, 'info');
   if (passedOut) next = pushMessage(next, 'You passed out from exhaustion and woke up at home with half your energy.', 'warn');
@@ -213,6 +217,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
   } else if (weather === Weather.Snow) {
     next = pushMessage(next, 'Snow blankets the farm.', 'info');
   }
+  for (const note of night.notes) next = pushMessage(next, note.text, note.tone);
   return next;
 }
 

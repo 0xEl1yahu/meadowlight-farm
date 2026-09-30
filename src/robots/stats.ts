@@ -2,7 +2,7 @@
  * Numbers derived from a robot's size and parts (farmclaws part 1 spec §3.3). Pure.
  */
 import { ROBOTS } from '../config';
-import type { Robot, RobotActionKind, RobotPartId, RobotSize } from '../core/types';
+import type { Robot, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
 
 export type RobotBody = Pick<Robot, 'size' | 'parts'>;
 
@@ -25,6 +25,15 @@ export function periodFor(robot: Pick<Robot, 'parts'>): number {
 
 export function repairCost(robot: Pick<Robot, 'size'>): number {
   return Math.round(ROBOTS.sizes[robot.size].price * ROBOTS.repairShare);
+}
+
+/**
+ * Power of a robot going back to work, after being put down or each morning (spec §5.7, §5.8):
+ * a broken robot stays broken; any other robot works if it has tokens, else it's flat.
+ */
+export function resumedPower(robot: Pick<Robot, 'power' | 'tokens'>): RobotPower {
+  if (robot.power === 'broken') return 'broken';
+  return robot.tokens > 0 ? 'working' : 'flat';
 }
 
 export function carryEnergyFor(robot: Pick<Robot, 'size'>): number {
