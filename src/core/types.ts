@@ -479,6 +479,181 @@ export interface MessageLog {
 }
 
 // ---------------------------------------------------------------------------
+// Farmclaws: robots (docs/superpowers/specs/2026-09-29-farmclaws-part1-robot-core.md)
+// ---------------------------------------------------------------------------
+
+export const ROBOT_SIZES = ['mini', 'standard', 'big'] as const;
+export type RobotSize = (typeof ROBOT_SIZES)[number];
+
+export const ROBOT_PART_IDS = [
+  'claw',
+  'wateringHead',
+  'tiller',
+  'seeder',
+  'basket',
+  'antenna',
+  'sensorEye',
+  'efficientCore',
+  'quickCore',
+] as const;
+export type RobotPartId = (typeof ROBOT_PART_IDS)[number];
+
+/** What a robot's power is doing. Being carried is separate (`Robot.carried`). */
+export const ROBOT_POWERS = ['working', 'standby', 'flat', 'broken', 'repairing'] as const;
+export type RobotPower = (typeof ROBOT_POWERS)[number];
+
+/**
+ * One robot action. `water`, `harvest`, `till` and `plant` work the robot's own tile;
+ * `move`, `refill`, `deposit` and `take` work the tile ahead.
+ */
+export type RobotAction =
+  | { readonly kind: 'move' }
+  | { readonly kind: 'turn'; readonly side: 'left' | 'right' }
+  | { readonly kind: 'water' }
+  | { readonly kind: 'harvest' }
+  | { readonly kind: 'till' }
+  | { readonly kind: 'plant'; readonly cropId: CropId }
+  | { readonly kind: 'refill' }
+  | { readonly kind: 'deposit' }
+  | { readonly kind: 'take'; readonly itemId: ItemId }
+  | { readonly kind: 'say'; readonly text: string }
+  | { readonly kind: 'wait'; readonly minutes: number }
+  | { readonly kind: 'powerDown' };
+export type RobotActionKind = RobotAction['kind'];
+
+export interface RobotScript {
+  readonly kind: 'script';
+  /** 1 … ROBOTS.maxScriptSteps actions. */
+  readonly steps: readonly RobotAction[];
+  /** After the last step: true starts again at step 0, false goes to standby. */
+  readonly loop: boolean;
+}
+/** Part 2 widens this union with block programs. */
+export type RobotProgram = RobotScript;
+
+export interface RobotPlace {
+  readonly tx: number;
+  readonly tz: number;
+  readonly facing: Direction;
+}
+
+export interface RobotActionEvent {
+  readonly seq: number;
+  readonly kind: RobotActionKind;
+  readonly success: boolean;
+  /** True when the action was a bicker (success is then false). */
+  readonly bickered: boolean;
+}
+
+export interface Robot {
+  readonly id: number;
+  readonly name: string;
+  readonly size: RobotSize;
+  /** Canonical ROBOT_PART_IDS order, no repeats, at most the size's part slots. */
+  readonly parts: readonly RobotPartId[];
+  /** Farm tile it stands on. While carried or repairing, the tile it left from. */
+  readonly tx: number;
+  readonly tz: number;
+  readonly facing: Direction;
+  /** At most bagStacks(robot) stacks. */
+  readonly bag: readonly ItemStack[];
+  /** 0 … ROBOTS.tankCapacity; always 0 without a watering head. */
+  readonly tank: number;
+  /** 0 … batteryFor(size). */
+  readonly tokens: number;
+  readonly power: RobotPower;
+  /** True while the player holds it (player.carrying === id). A carried robot never acts. */
+  readonly carried: boolean;
+  readonly program: RobotProgram;
+  /** Index of the next script step. */
+  readonly pc: number;
+  /** The next minute of the day it acts in. */
+  readonly nextActMinute: number;
+  /** Absolute day it comes back from repair; null unless power is 'repairing'. */
+  readonly repairReadyDay: number | null;
+  /** Tokens spent today; reset each morning. */
+  readonly tokensToday: number;
+  /** Render counters, like PlayerState's. */
+  readonly moveSeq: number;
+  readonly teleportSeq: number;
+  readonly actionSeq: number;
+  readonly lastAction: RobotActionEvent | null;
+}
+
+export const ROBOT_BLOCK_REASONS = [
+  'noPart',
+  'bumped',
+  'farmEdge',
+  'nothingToHarvest',
+  'bagFull',
+  'tankEmpty',
+  'tankFull',
+  'notTillable',
+  'notWaterable',
+  'noSeed',
+  'cannotPlant',
+  'outOfSeason',
+  'noWaterAhead',
+  'nothingAhead',
+  'bagEmpty',
+  'containerFull',
+  'itemNotFound',
+] as const;
+export type RobotBlockReason = (typeof ROBOT_BLOCK_REASONS)[number];
+
+export type RobotDidDetail =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'tile' }
+  | { readonly kind: 'crop'; readonly cropId: CropId; readonly quantity: number; readonly quality: Quality }
+  | { readonly kind: 'planted'; readonly cropId: CropId }
+  | { readonly kind: 'items'; readonly into: 'chest' | 'bin' | 'bag'; readonly stacks: number; readonly quantity: number };
+
+export const ROBOT_LOG_EVENT_KINDS = [
+  'did',
+  'blocked',
+  'bickered',
+  'shortedOut',
+  'flat',
+  'finished',
+  'poweredDown',
+  'repaired',
+] as const;
+
+export type RobotLogEvent =
+  | { readonly kind: 'did'; readonly action: RobotActionKind; readonly detail: RobotDidDetail }
+  | { readonly kind: 'blocked'; readonly action: RobotActionKind; readonly reason: RobotBlockReason }
+  | { readonly kind: 'bickered'; readonly action: RobotActionKind; readonly withIds: readonly number[] }
+  | { readonly kind: 'shortedOut' }
+  | { readonly kind: 'flat' }
+  | { readonly kind: 'finished' }
+  | { readonly kind: 'poweredDown' }
+  | { readonly kind: 'repaired' };
+
+export interface RobotLogEntry {
+  readonly id: number;
+  readonly day: number;
+  readonly minute: number;
+  readonly robotId: number;
+  readonly tx: number;
+  readonly tz: number;
+  readonly event: RobotLogEvent;
+  /** Identical consecutive events of one robot collapse into one entry with a count. */
+  readonly count: number;
+}
+
+export interface RobotsState {
+  /** Next robot id, from 1. Ids are never reused. */
+  readonly nextId: number;
+  /** At most ROBOTS.maxRobots, ascending by id. */
+  readonly list: readonly Robot[];
+  /** The farm's token pool (no cap). */
+  readonly pool: number;
+  readonly log: { readonly nextId: number; readonly entries: readonly RobotLogEntry[] };
+  /** What generators burned last night. */
+  readonly lastNightFuel: { readonly wood: number; readonly tokens: number };
+}
+
+// ---------------------------------------------------------------------------
 // Sections for later workstreams (data only in Phase 0)
 // ---------------------------------------------------------------------------
 

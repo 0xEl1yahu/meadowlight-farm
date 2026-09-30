@@ -2,7 +2,7 @@
  * Global tuning constants. Everything that shapes the simulation lives here so gameplay
  * can be rebalanced without touching system code.
  */
-import { Direction, type ItemStack, type TileCoord, type TileRect } from './core/types';
+import { Direction, type ItemStack, type RobotActionKind, type RobotSize, type TileCoord, type TileRect } from './core/types';
 
 /** Settings shared by every map. Each map's size lives in its definition (src/world/maps/). */
 export const WORLD = {
@@ -216,4 +216,66 @@ export const PROFILE = {
 export const MESSAGES = {
   /** Number of log entries retained in state. */
   capacity: 6,
+} as const;
+
+/** One robot size (farmclaws design §3.6). */
+export interface RobotSizeSpec {
+  readonly price: number;
+  readonly battery: number;
+  readonly bagStacks: number;
+  readonly partSlots: number;
+  readonly costMultiplier: number;
+}
+
+const ROBOT_SIZE_SPECS = {
+  mini: { price: 1500, battery: 80, bagStacks: 1, partSlots: 1, costMultiplier: 1 },
+  standard: { price: 4000, battery: 200, bagStacks: 3, partSlots: 2, costMultiplier: 2 },
+  big: { price: 10000, battery: 500, bagStacks: 9, partSlots: 3, costMultiplier: 4 },
+} as const satisfies Readonly<Record<RobotSize, RobotSizeSpec>>;
+
+/** Base token cost of each action, for a Mini before the multiplier and the efficient core. */
+const ROBOT_ACTION_COSTS = {
+  move: 1,
+  turn: 1,
+  water: 2,
+  harvest: 3,
+  till: 5,
+  plant: 3,
+  refill: 1,
+  deposit: 1,
+  take: 1,
+  say: 1,
+  wait: 0,
+  powerDown: 0,
+} as const satisfies Readonly<Record<RobotActionKind, number>>;
+
+const ROBOT_CARRY_ENERGY = { mini: 4, standard: 8, big: 16 } as const satisfies Readonly<Record<RobotSize, number>>;
+
+/** Farmclaws (src/robots/). */
+export const ROBOTS = {
+  maxRobots: 12,
+  maxScriptSteps: 80,
+  tankCapacity: 20,
+  /** A robot acts every this many in-game minutes; the quick core makes it quickCorePeriod. */
+  period: 4,
+  quickCorePeriod: 3,
+  sizes: ROBOT_SIZE_SPECS,
+  basketExtraStacks: 2,
+  efficientCoreFactor: 0.75,
+  /** Repairs cost this share of the size's price. */
+  repairShare: 0.2,
+  cost: ROBOT_ACTION_COSTS,
+  logCapacity: 400,
+  /** Player energy to pick up (or fish out) a robot. */
+  carryEnergy: ROBOT_CARRY_ENERGY,
+  /** Robots recharge overnight only within this Chebyshev distance of a generator. */
+  chargeRadius: 2,
+  /** Repaired robots come back to the nearest walkable tile to this one (in front of the shipping bin). */
+  repairDropOff: { tx: 9, tz: 6 } satisfies TileCoord,
+  sayMaxLength: 60,
+  maxWaitMinutes: 240,
+} as const;
+
+export const GENERATORS = {
+  woodBurner: { hopper: 10, tokensPerWood: 6 },
 } as const;
