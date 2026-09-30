@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { Blocker, Direction, type GameState } from '../src/core/types';
+import { periodFor, resumedPower } from '../src/robots/stats';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
@@ -41,10 +42,28 @@ describe('picking robots up', () => {
 
 describe('putting robots down', () => {
   it('resumes the program on open ground, facing the way the player faces', () => {
-    const state = carrying(scenario(EMPTY_TILE));
+    const base = scenario(EMPTY_TILE);
+    const robot = robotOf({ carried: true, tx: 2, tz: 2, facing: Direction.North, nextActMinute: 0, pc: 3 });
+    const state = withRobots({ ...base, time: { ...base.time, minuteOfDay: 500 }, player: { ...base.player, carrying: 1 } }, [robot]);
     const next = interact(state);
     expect(next.player.carrying).toBeNull();
-    expect(requireRobot(next, 1)).toMatchObject({ carried: false, tx: TARGET.tx, tz: TARGET.tz, facing: Direction.South, power: 'working', nextActMinute: state.time.minuteOfDay + 4 });
+    expect(requireRobot(next, 1)).toMatchObject({
+      carried: false,
+      tx: TARGET.tx,
+      tz: TARGET.tz,
+      facing: state.player.facing,
+      power: 'working',
+      pc: 3,
+      nextActMinute: 500 + periodFor(robot),
+      teleportSeq: 1,
+    });
+  });
+
+  it('puts down a robot with no tokens left as flat', () => {
+    const state = withRobots(scenario(EMPTY_TILE), [robotOf({ carried: true, tokens: 0 })]);
+    const next = interact({ ...state, player: { ...state.player, carrying: 1 } });
+    expect(requireRobot(next, 1).power).toBe(resumedPower({ power: 'working', tokens: 0 }));
+    expect(requireRobot(next, 1).power).toBe('flat');
   });
 
   it('works with Space too, and refuses rocks', () => {
