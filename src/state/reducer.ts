@@ -9,6 +9,7 @@
  */
 import { INVENTORY, PLAYER, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
+import { joinWithAnd, qualityPrefix } from '../core/text';
 import {
   Blocker,
   DIRECTIONS,
@@ -214,7 +215,7 @@ export function crowReport(eaten: readonly CropId[]): string {
   const counts = new Map<CropId, number>();
   for (const id of eaten) counts.set(id, (counts.get(id) ?? 0) + 1);
   const parts = [...counts].map(([id, n]) => `${n} ${CROPS[id].name}${n > 1 ? 's' : ''}`);
-  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1] ?? ''}` : (parts[0] ?? '');
+  const list = joinWithAnd(parts, '');
   return `Crows ate ${list} overnight. A scarecrow keeps them away.`;
 }
 
@@ -421,11 +422,6 @@ function hitBlocker(state: GameState, target: TileCoord, tile: Tile): GameState 
   const remains = blockerRemains(tile.blocker);
   const cleared = countDebrisCleared(withTile(state, target, remains.tile));
   return giveDrops(cleared, debrisDropsAt(state, remains.blocker, target));
-}
-
-/** Prefix naming a silver or gold quality in messages ("Gold Parsnip"); empty for normal quality. */
-function qualityPrefix(quality: Quality): string {
-  return quality === 2 ? 'Gold ' : quality === 1 ? 'Silver ' : '';
 }
 
 function harvest(state: GameState, target: TileCoord, tile: Tile, quantity: number, quality: Quality): GameState {
