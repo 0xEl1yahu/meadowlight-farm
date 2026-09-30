@@ -39,6 +39,7 @@ import {
   moveSeconds,
   robotMeshes,
   robotPose,
+  sharedOffsetXZ,
   sharedTileOffsets,
   type RobotClip,
   type RobotMeshId,
@@ -219,9 +220,10 @@ export class RobotRenderer implements RenderSystem {
 
   dispose(): void {
     this.group.removeFromParent();
-    for (const mesh of Object.values(this.meshes)) mesh.mesh.geometry.dispose();
-    this.badges.mesh.geometry.dispose();
-    this.particles.mesh.geometry.dispose();
+    for (const map of [...Object.values(this.meshes), this.badges, this.particles]) {
+      map.mesh.dispose();
+      map.mesh.geometry.dispose();
+    }
     this.painted.dispose();
     this.eyeMaterial.dispose();
     this.particleMaterial.dispose();
@@ -284,11 +286,14 @@ export class RobotRenderer implements RenderSystem {
       z = anchor.z;
       s = CARRY_SCALE;
     } else {
+      // The shared-tile offset runs along a fixed screen axis; the bicker shake along the robot's own side.
+      const shared = sharedOffsetXZ(v.offset);
       const side = v.yaw + Math.PI / 2;
-      x = v.x + Math.sin(side) * (v.offset + clip.shake);
-      z = v.z + Math.cos(side) * (v.offset + clip.shake);
+      x = v.x + shared.x + Math.sin(side) * clip.shake;
+      z = v.z + shared.z + Math.cos(side) * clip.shake;
       const bob = robot.power === 'working' ? idleBob(elapsed, robot.id) : 0;
-      y = v.groundY - pose.sink * size.height + clip.dip + bob;
+      // pose.sink is absolute (the broken sink is 0.25 tile at every size).
+      y = v.groundY - pose.sink + clip.dip + bob;
     }
     euler.set(clip.pitch, v.yaw, pose.tilt);
     quat.setFromEuler(euler);

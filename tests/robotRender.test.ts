@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROBOTS, TIME } from '../src/config';
+import { CAMERA } from '../src/render/constants';
 import {
   IDLE_BOB_HEIGHT,
   IDLE_BOB_SECONDS,
@@ -14,6 +15,7 @@ import {
   clipOffsets,
   idleBob,
   moveSeconds,
+  sharedOffsetXZ,
   robotMeshes,
   robotPose,
   sharedTileOffsets,
@@ -38,6 +40,18 @@ describe('robot render rules', () => {
     expect(offsets.get(2)).toBeCloseTo(SHARED_OFFSET);
     expect(offsets.get(3)).toBe(0);
     expect(offsets.has(4)).toBe(false);
+  });
+
+  it('keeps robots on one tile apart whichever way they face', () => {
+    // Regression: offsets once ran along each robot's own side, so two robots facing opposite
+    // ways with opposite offsets landed on the same point. The offset axis ignores facing.
+    const offsets = sharedTileOffsets([robotOf({ id: 1 }), robotOf({ id: 2 })]);
+    const a = sharedOffsetXZ(offsets.get(1) ?? 0);
+    const b = sharedOffsetXZ(offsets.get(2) ?? 0);
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeCloseTo(SHARED_OFFSET * 2);
+    // Along screen-right: perpendicular to the camera's ground-plane view direction.
+    const yaw = (CAMERA.yawDeg * Math.PI) / 180;
+    expect(a.x * Math.sin(yaw) + a.z * Math.cos(yaw)).toBeCloseTo(0);
   });
 
   it('poses each power', () => {

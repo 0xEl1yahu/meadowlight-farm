@@ -167,6 +167,16 @@ const CARRY_ARM_SWING: Readonly<Record<CarryStyle, number>> = {
   robot: 0.1,
 };
 
+/** How much of the walk arm swing the left arm keeps: only a robot, held in both hands, stills it. */
+const CARRY_LEFT_ARM_SWING: Readonly<Record<CarryStyle, number>> = {
+  empty: 1,
+  tool: 1,
+  scythe: 1,
+  can: 1,
+  small: 1,
+  robot: 0.1,
+};
+
 function carryStyleFor(kind: HeldModelKind | null): CarryStyle {
   switch (kind) {
     case null:
@@ -884,6 +894,7 @@ export class PlayerRenderer implements RenderSystem {
   private carryingRobot = false;
   private readonly carry = createPose();
   private carryArmSwing = 1;
+  private carryLeftArmSwing = 1;
 
   // Active action clip.
   private clip: ActionClip | null = null;
@@ -1092,6 +1103,7 @@ export class PlayerRenderer implements RenderSystem {
     const stance = this.stance();
     blendPose(this.carry, this.carry, CARRY_POSES[stance], carryFactor);
     this.carryArmSwing += (CARRY_ARM_SWING[stance] - this.carryArmSwing) * carryFactor;
+    this.carryLeftArmSwing += (CARRY_LEFT_ARM_SWING[stance] - this.carryLeftArmSwing) * carryFactor;
     this.held.socket.visible = !this.carryingRobot;
     const base = copyPose(this.basePose, this.carry);
 
@@ -1114,7 +1126,7 @@ export class PlayerRenderer implements RenderSystem {
       base.crouch += PLAYER_RIG.legLength * (1 - Math.cos(legAngle));
       base.hop += WALK_BOUNCE * weight * Math.max(0, Math.cos(2 * this.walkPhase));
       base.rArmSwing += WALK_ARM_SWING * stride * weight * this.carryArmSwing;
-      base.lArmSwing -= WALK_ARM_SWING * stride * weight;
+      base.lArmSwing -= WALK_ARM_SWING * stride * weight * this.carryLeftArmSwing;
       base.lean += WALK_LEAN * weight;
       base.headPitch -= WALK_LEAN * 0.5 * weight;
       base.twist += WALK_TWIST * stride * weight;
@@ -1204,6 +1216,7 @@ export class PlayerRenderer implements RenderSystem {
     if (immediate) {
       copyPose(this.carry, CARRY_POSES[this.stance()]);
       this.carryArmSwing = CARRY_ARM_SWING[this.stance()];
+      this.carryLeftArmSwing = CARRY_LEFT_ARM_SWING[this.stance()];
       this.heldPopElapsed = Number.POSITIVE_INFINITY;
       this.held.socket.scale.setScalar(1);
     }

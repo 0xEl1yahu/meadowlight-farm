@@ -5,6 +5,7 @@
 import { TIME } from '../config';
 import type { Robot, RobotActionEvent, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
 import { periodFor } from '../robots/stats';
+import { CAMERA } from './constants';
 
 export const ROBOT_MESH_IDS = [
   'treads', 'body', 'head', 'eyes', 'arm', 'claw', 'spout', 'tines', 'hopper', 'basket', 'antenna', 'lens', 'coreGreen', 'coreOrange',
@@ -68,6 +69,19 @@ export function sharedTileOffsets(robots: readonly Robot[]): ReadonlyMap<number,
   return offsets;
 }
 
+const CAMERA_YAW = (CAMERA.yawDeg * Math.PI) / 180;
+/** The camera's screen-right axis on the ground plane (the camera sits along (sin yaw, cos yaw) and looks back). */
+const SCREEN_RIGHT_X = Math.cos(CAMERA_YAW);
+const SCREEN_RIGHT_Z = -Math.sin(CAMERA_YAW);
+
+/**
+ * World (x, z) displacement for a shared-tile offset. It runs along the camera's screen-right
+ * axis, not the robot's own side, so robots on one tile stay apart whichever way they face.
+ */
+export function sharedOffsetXZ(offset: number): { readonly x: number; readonly z: number } {
+  return { x: SCREEN_RIGHT_X * offset, z: SCREEN_RIGHT_Z * offset };
+}
+
 /** Peak height of a working robot's idle bob, in tiles. */
 export const IDLE_BOB_HEIGHT = 0.015;
 /** One full bob, in real seconds. */
@@ -108,13 +122,13 @@ export const EYE_COLORS: Readonly<Record<EyeState, number>> = { lit: 0xfff3b8, d
 const DEG = Math.PI / 180;
 /** A flat robot's head slumps forward 20°. */
 const FLAT_HEAD_PITCH = 20 * DEG;
-/** A broken robot sinks 0.25 tile into the pond, tilted 15°, head slightly down. */
+/** A broken robot sinks 0.25 tile into the pond at every size (not scaled), tilted 15°, head slightly down. */
 const BROKEN_SINK = 0.25;
 const BROKEN_TILT = 15 * DEG;
 const BROKEN_HEAD_PITCH = 0.15;
 
 export interface RobotPose {
-  /** How far the robot sinks below its ground, in tiles. */
+  /** How far the robot sinks below its ground, in absolute tiles (never scaled by size). */
   readonly sink: number;
   /** Roll, radians. */
   readonly tilt: number;
