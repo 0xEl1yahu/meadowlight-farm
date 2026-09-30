@@ -10,7 +10,7 @@
  *   code erasable (no TypeScript runtime enums) and JSON-serialisable.
  */
 
-export const SAVE_VERSION = 3 as const;
+export const SAVE_VERSION = 4 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -408,6 +408,8 @@ export interface PlayerState {
   /** Incremented on every attempted tool use / interaction that produced feedback. */
   readonly actionSeq: number;
   readonly lastAction: ActionEvent | null;
+  /** Id of the robot the player is carrying, or null (farmclaws part 1 §5.8). */
+  readonly carrying: number | null;
 }
 
 /** Stacks merge only when both `itemId` and `quality` are equal. */
@@ -790,6 +792,7 @@ export interface GameSections {
   readonly quests: QuestState;
   readonly stats: LifetimeStats;
   readonly festival: FestivalState;
+  readonly robots: RobotsState;
 }
 
 export interface GameState extends GameSections {

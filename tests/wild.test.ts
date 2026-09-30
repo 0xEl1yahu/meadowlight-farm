@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { LAYOUT, PLAYER, SHADE } from '../src/config';
-import { Direction, Season, TileState, Weather, type Tile, type TileCoord, type WorldState } from '../src/core/types';
+import { Direction, SAVE_VERSION, Season, TileState, Weather, type Tile, type TileCoord, type WorldState } from '../src/core/types';
 import { CROPS, createCropInstance, isMature, stageCount } from '../src/farming/crops';
 import { advanceTileOvernight, advanceWorldOvernight, type DayContext } from '../src/farming/growth';
 import { canSproutWild, spreadWildCrops } from '../src/farming/wild';
@@ -282,7 +282,7 @@ describe('save migration', () => {
     // Version 1 had no wild crops and no `wild` field.
     const v1 = legacySave(current, 1);
     const loaded = must(deserializeGame(JSON.stringify(v1)));
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(SAVE_VERSION);
     expect(tileAt(loaded, TARGET).crop).toEqual(createCropInstance('parsnip', 0));
   });
 

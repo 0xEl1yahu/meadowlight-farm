@@ -156,7 +156,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('validates real states', () => {
     expect(isValidGameState(BASE)).toBe(true);
     expect(isValidGameState(richState())).toBe(true);
-    expect(SAVE_VERSION).toBe(3);
+    expect(SAVE_VERSION).toBe(4);
   });
 });
 
@@ -178,7 +178,7 @@ describe('deserializeGame rejects corrupted saves', () => {
   ];
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     // Header
-    ['wrong version', ['version'], 4],
+    ['wrong version', ['version'], 5],
     ['string version', ['version'], '1'],
     ['missing version', ['version'], undefined],
     ['negative seed', ['seed'], -1],
@@ -772,7 +772,7 @@ describe('loading the real legacy saves', () => {
     expect(loaded.time).toEqual(save.time);
     expect(loaded.weather).toBe(save.weather);
     expect(loaded.messages).toEqual(save.messages);
-    expect(loaded.player).toEqual({ ...save.player, mapId: 'farm' });
+    expect(loaded.player).toEqual({ ...save.player, mapId: 'farm', carrying: null });
     expect(loaded.inventory).toEqual({
       slots: Array.from({ length: INVENTORY.slotCount }, (_, i) => {
         const held = save.inventory.slots[i];

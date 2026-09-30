@@ -1020,6 +1020,7 @@ describe('initial state', () => {
       teleportSeq: 0,
       actionSeq: 0,
       lastAction: null,
+      carrying: null,
     });
     expect(state.inventory.slots.filter((slot) => slot !== null)).toEqual(INVENTORY.starting);
     expect(state.weather).toBe(rollWeather(WORLD.seed, 0));

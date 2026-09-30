@@ -818,7 +818,7 @@ describe('migrating the single farm world of an older save into maps', () => {
     const state = gatesInTheWay();
     const v2 = legacySave(state, 2);
     const migrated = migrateSave(v2) as SaveJson;
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(4);
     expect('world' in migrated).toBe(false);
     expect(Object.keys(migrated.maps as SaveJson)).toEqual([...MAP_IDS]);
     expect((migrated.player as SaveJson).mapId).toBe('farm');

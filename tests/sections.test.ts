@@ -7,6 +7,7 @@ import { APPEARANCE, INVENTORY, LAYOUT, PROFILE, TOOLS } from '../src/config';
 import { Salt, hash32 } from '../src/core/hash';
 import {
   Blocker,
+  SAVE_VERSION,
   TileState,
   CROP_IDS,
   CRAFTING_RECIPE_IDS,
@@ -162,6 +163,7 @@ describe('createDefaultSections', () => {
       builtCoop: false,
     },
     festival: { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false },
+    robots: { nextId: 1, list: [], pool: 0, log: { nextId: 0, entries: [] }, lastNightFuel: { wood: 0, tokens: 0 } },
   };
 
   it('matches the spec exactly', () => {
@@ -403,7 +405,7 @@ describe('migrating older saves to version 3', () => {
     const v2 = legacySave(state, 2);
     expect(v2.profile).toBeUndefined();
     const migrated = migrateSave(v2) as SaveJson;
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(SAVE_VERSION);
     const loaded = must(deserializeGame(JSON.stringify(v2)));
     expect(loaded).toEqual(state);
     expect(loaded.maps.farm.chunks.map((chunk) => chunk.revision)).toEqual(state.maps.farm.chunks.map((chunk) => chunk.revision));
@@ -430,7 +432,7 @@ describe('migrating older saves to version 3', () => {
     const state = played();
     const v1 = legacySave(state, 1);
     const loaded = must(deserializeGame(JSON.stringify(v1)));
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(SAVE_VERSION);
     // Version 1 had no wild crops, so the mushrooms are gone; every other tile survives as it was.
     expect(tileAt(loaded, { tx: 0, tz: 20 })).toEqual(EMPTY_TILE);
     expect(tileAt(loaded, TARGET)).toEqual(tileAt(state, TARGET));

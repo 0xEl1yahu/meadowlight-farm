@@ -9,7 +9,7 @@
  * BASE is deep-frozen: any reducer that mutates state instead of copying it throws a
  * TypeError the moment a test touches it.
  */
-import { INVENTORY } from '../src/config';
+import { INVENTORY, TIME } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import {
   Blocker,
@@ -17,6 +17,7 @@ import {
   Direction,
   TileState,
   type Animal,
+  type Robot,
   type AnimalKind,
   type CropId,
   type CropInstance,
@@ -281,6 +282,7 @@ export function legacySave(state: GameState, version: 1 | 2): SaveJson {
   save.world = (save.maps as SaveJson).farm;
   delete save.maps;
   delete (save.player as SaveJson).mapId;
+  delete (save.player as SaveJson).carrying;
   const world = save.world as { chunks: { tiles: SaveJson[] }[] };
   for (const chunk of world.chunks) {
     for (const tile of chunk.tiles) {
@@ -370,5 +372,40 @@ export function livelySections(): GameSections {
       giftTarget: 'pip',
       giftGiven: true,
     },
+    robots: createDefaultSections().robots,
   };
+}
+
+/** A working Mini with a claw on TARGET facing South, fully charged, spinning right forever. */
+export function robotOf(overrides: Partial<Robot> = {}): Robot {
+  return {
+    id: 1,
+    name: 'Sprocket',
+    size: 'mini',
+    parts: ['claw'],
+    tx: TARGET.tx,
+    tz: TARGET.tz,
+    facing: Direction.South,
+    bag: [],
+    tank: 0,
+    tokens: 80,
+    power: 'working',
+    carried: false,
+    program: { kind: 'script', steps: [{ kind: 'turn', side: 'right' }], loop: true },
+    pc: 0,
+    nextActMinute: TIME.dayStartMinute + 4,
+    repairReadyDay: null,
+    tokensToday: 0,
+    moveSeq: 0,
+    teleportSeq: 0,
+    actionSeq: 0,
+    lastAction: null,
+    ...overrides,
+  };
+}
+
+/** Replaces the robot list (ascending ids) and sets nextId past the highest id. */
+export function withRobots(state: GameState, robots: readonly Robot[]): GameState {
+  const nextId = robots.reduce((max, robot) => Math.max(max, robot.id), 0) + 1;
+  return { ...state, robots: { ...state.robots, list: robots, nextId } };
 }

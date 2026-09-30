@@ -21,6 +21,7 @@ import { chunkCount, chunkRectByIndex, createGridSpec, inBounds } from '../world
 import { MAPS, isReservedTile } from '../world/maps';
 import { assertWorldObjectsConsistent, getTile, isWalkable } from '../world/tiles';
 import { createDefaultSections } from './initialState';
+import { isValidRobotsSection } from './robotValidation';
 import { isValidSections } from './sectionValidation';
 import {
   hasExactKeys,
@@ -149,7 +150,8 @@ function isValidPlayer(player: unknown, maps: GameState['maps']): boolean {
     !isCount(player.gold) ||
     !isCount(player.moveSeq) ||
     !isCount(player.teleportSeq) ||
-    !isCount(player.actionSeq)
+    !isCount(player.actionSeq) ||
+    !(player.carrying === null || isIntIn(player.carrying, 1, Number.MAX_SAFE_INTEGER))
   ) {
     return false;
   }
@@ -236,7 +238,8 @@ export function isValidGameState(v: unknown): v is GameState {
     isValidShipping(v.shipping) &&
     isValidUi(v.ui) &&
     isValidMessages(v.messages) &&
-    isValidSections(v)
+    isValidSections(v) &&
+    isValidRobotsSection(v.robots, v.maps, v.player)
   );
 }
 
@@ -343,6 +346,12 @@ function migrateV2toV3(save: Obj): Obj {
   return migrated;
 }
 
+/** Version 3 predates robots: the robots section starts empty and the player carries nothing. */
+function migrateV3toV4(save: Obj): Obj {
+  if (!isObj(save.player)) return save;
+  return { ...save, version: 4, robots: createDefaultSections().robots, player: { ...save.player, carrying: null } };
+}
+
 /**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
@@ -352,6 +361,7 @@ export function migrateSave(value: unknown): unknown {
   let v = value;
   if (isObj(v) && v.version === 1) v = migrateV1toV2(v);
   if (isObj(v) && v.version === 2) v = migrateV2toV3(v);
+  if (isObj(v) && v.version === 3) v = migrateV3toV4(v);
   return v;
 }
 

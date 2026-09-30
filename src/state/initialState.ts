@@ -37,6 +37,7 @@ export function createDefaultSections(): GameSections {
       builtCoop: false,
     },
     festival: { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false },
+    robots: { nextId: 1, list: [], pool: 0, log: { nextId: 0, entries: [] }, lastNightFuel: { wood: 0, tokens: 0 } },
   };
 }
 
@@ -63,6 +64,7 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
       teleportSeq: 0,
       actionSeq: 0,
       lastAction: null,
+      carrying: null,
     },
     inventory: createInventory(INVENTORY.starting, TOOLS.wateringCanCapacity),
     shipping: { pending: [], lastPayout: 0 },
