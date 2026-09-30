@@ -40,6 +40,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
+import { runRobotsThrough } from '../robots/run';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
 import { inBounds, stepTile } from '../world/grid';
@@ -116,13 +117,18 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 // Time & day cycle
 // ---------------------------------------------------------------------------
 
+/**
+ * Advances the clock. With robots on the farm it goes one minute at a time so every robot acts
+ * on its minute (farmclaws part 1 §5.5); however the minutes arrive, the result is the same.
+ */
 function tick(state: GameState, minutes: number): GameState {
   if (selectIsFrozen(state) || !Number.isFinite(minutes)) return state;
   const whole = Math.min(TIME.maxTickMinutes, Math.floor(minutes));
   if (whole <= 0) return state;
-  const minuteOfDay = state.time.minuteOfDay + whole;
-  if (minuteOfDay >= TIME.passOutMinute) return startNextDay(state, true);
-  return { ...state, time: { ...state.time, minuteOfDay } };
+  const target = state.time.minuteOfDay + whole;
+  if (target >= TIME.passOutMinute) return startNextDay(runRobotsThrough(state, TIME.passOutMinute - 1), true);
+  if (state.robots.list.length === 0) return { ...state, time: { ...state.time, minuteOfDay: target } };
+  return runRobotsThrough(state, target);
 }
 
 /** The placed object a placeable item becomes: an empty chest, a cold wood burner, or the plain kind. */
