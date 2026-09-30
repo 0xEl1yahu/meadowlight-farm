@@ -32,14 +32,14 @@ Global rules (from `docs/PLAN-v2.md` section 1 and the farmclaws design section 
 
 **Part 1 does not build** (later parts own these):
 
-| Thing | Part |
+| Thing | Part (release) |
 | --- | --- |
-| Block programs, the interpreter, the step budget, dizzy robots | 2 |
-| The robot screen, the block editor, zones, limits, the Log tab | 3 |
-| Getting a robot in normal play (Sol's starter robot), jobs, NPCs | 4 |
-| Messages, mailboxes, triggers, schedules, claims | 5 |
-| The workshop, parts shop, paint, voices, personalities, speech bubbles, quirks | 6 |
-| Steam engine, rain barrel, sun panel, the supervisor and mechanic | 7 |
+| Block programs, the interpreter, the step budget, dizzy robots, .MD enforcement | 2 (release 1) |
+| The robot screen, the block editor, zones, the .MD editor, the Log tab, the on/off switch | 3 (release 1) |
+| Getting a robot in normal play (Sol's starter robot), jobs 1 to 3, NPCs, basic parts and ready-made robots in the shops | 4 (release 1) |
+| Messages, mailboxes, triggers, schedules, claims, the supervisor, mechanic and tester | 5 (release 2) |
+| Paint, voices, personalities, speech bubbles, quirks, custom and limited-edition robots | 6 (release 3) |
+| Rage events, the full .MD card set, steam engine, rain barrel, sun panel | 7 (release 4) |
 
 In part 1, robots enter a game only through `addRobot` (section 3.4). Tests call it, and in development builds `window.__meadowlight.addRobot` calls it (section 8.4). No production code path adds a robot until part 4.
 

@@ -2,7 +2,7 @@
 
 This is the design for farmclaws: small farm robots the player programs with snap-together blocks. It reshapes the v2 plan (`docs/PLAN-v2.md`) around them. Section 10 lists what v2 keeps, changes and cuts.
 
-This document is the umbrella design. Each build part in section 11 gets its own spec and plan before anything is built. Where this document and a part spec disagree, the part spec wins for that part and this document is updated to match.
+This document is the umbrella design. Each build part in section 11 gets its own spec and plan before anything is built, and the parts ship to players in five releases (section 11.1). Where this document and a part spec disagree, the part spec wins for that part and this document is updated to match.
 
 ---
 
@@ -566,8 +566,8 @@ They only chat. Their lines react to what's on the player's farm; for example, W
 | General store | Marigold | Seeds, fertiliser, backpack upgrade (unchanged from v2) |
 | Blacksmith | Bram | Tool upgrades, copper ore, steam engine, sun panel |
 | Ranch | Tess | Chickens, cows, wheat (unchanged from v2) |
-| Parts exchange | Sol | Parts, paint, voices, common personality cores, repairs |
-| Robot workshop | Juniper (also still the carpenter) | Ready-made robots, custom robots and limited editions. Plus coop, barn, wood and stone from v2. |
+| Parts exchange | Sol | Parts, paint, voices, common personality cores, repairs. Release 1 opens it with basic parts and repairs; the Antenna comes in release 2, and cores, paint, voices and personality cores in release 3. |
+| Robot workshop | Juniper (also still the carpenter) | Ready-made robots, custom robots and limited editions. Plus coop, barn, wood and stone from v2. Release 1 opens it with ready-made robots; custom robots and limited editions come in release 3. |
 
 **At the parts exchange:**
 - Parts sell back for 50%.
@@ -608,20 +608,48 @@ This replaces the four v2 festivals. It runs on day 14 of spring, summer and fal
 
 ---
 
-## 11. Build order
+## 11. Releases and build parts
 
-Each part gets its own spec, plan and review before it's built. The robot parts come first because they're the new and risky work.
+The work is built in eight **parts**. Each part gets its own spec, plan and review before it's built. Parts ship to players in five **releases**. The robot parts come first because they're the new and risky work.
 
-| Part | Contents | Playable result |
+### 11.1 Releases
+
+| Release | Parts | What players get |
 | --- | --- | --- |
-| 1 Robot core | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes and recovery, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm. |
-| 2 Language | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
-| 3 Robot screen | Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs. |
-| 4 Fixed-path jobs | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, Stats tab, sizes at the workshop. **Also decides where other farmers' fields are**: this design hasn't put them on a map yet. | The first hour of the new game |
-| 5 Coordination | Messages, mailboxes, claims, triggers, schedules, power states | Multi-robot farms |
-| 6 Workshop and personality | Parts, paint, voices, personalities, line bank, fun facts, quirks, limited editions, parts exchange | Robots with character |
-| 7 Open jobs | Jobs 4 to 8, Ziggy, Wendell and Hollis, crew roles, supervisor, steam engine, rain barrel, sun panel, rage events (robots on other maps, the chase and the catch) | The full curriculum |
-| 8 v2 remainder | Animals, forest changes, Claw Fair, town cleanup and cuts, loose ends, feel, quality of life | Release candidate |
+| **1. Your first farmclaw** | 1, 2, 3, 4 | Sol and his parts exchange (basic stock); robots in three sizes from Juniper's workshop; the robot screen with the block editor; the first .MD cards; the wood burner and the token pool; jobs 1 to 3 with Cosmo and Barnaby |
+| **2. Teamwork** | 5 | Robots messaging each other, with types; triggers, schedules and claims; helper blocks and variables; Ziggy's untangle job (job 4); Sol's crew as tester, supervisor and mechanic (job 5); the program library |
+| **3. Personality** | 6 | Paint, voices, the eight personalities and their line bank, fun facts, quirks; custom robots and weekly limited editions; the Claw Fair with its Tidy Program contest |
+| **4. Guardrails** | 7 | Wendell's three jobs (6 to 8); the full .MD card set; rage events with the off-map chase; the steam engine, rain barrel and sun panel; Hollis and the hand-harvest bonus |
+| **5. The valley** | 8 | The rest of v2: animals, forest foraging, town cleanup (cooking and friendship cut), loose ends, feel, the title screen and save slots, settings, touch and gamepad controls |
+
+**Why release 1 is four parts.** Parts 1 to 3 have nothing a player can see: no robot reaches the player until Sol hands one over in part 4. Four parts is the smallest release that ships robots. It's also the whole first hour of the new game, so it stands on its own.
+
+**Order:**
+- **Releases 2 and 3 can swap.** Personality only needs release 1. Shipping it second gets the charm out sooner, and the coordination depth comes third.
+- **Release 4 comes after release 2.** The supervisor, who stops rage events at the farm gate, comes with Sol's crew in release 2. Rage events with no way to contain them would be harsh.
+- **Release 5 is mostly independent.** Animals and the quality-of-life features don't touch robots. They can be split off and shipped between robot releases for variety, or if the robot work stalls.
+
+**Every release:**
+- builds on the live game on `main`, which already has the v2 foundations: three maps, chests, sprinklers, crafting and music
+- migrates live saves forward (section 12)
+- passes a browser check of everything it adds, on desktop and phone width
+- updates the README for players
+- merges to `main`, gets a tag, and goes live on Vercel after you've played it
+
+Release 1 also includes the balance pass for the "Do it well and it works well" target (section 2).
+
+### 11.2 Parts
+
+| Part | Release | Contents | Playable result |
+| --- | --- | --- | --- |
+| 1 Robot core | 1 | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes, carrying and repairs, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm (development builds only). |
+| 2 Language | 1 | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
+| 3 Robot screen | 1 | Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
+| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye) and repairs. Juniper's workshop with ready-made robots in all three sizes. The balance pass. **Also decides where other farmers' fields are**: this design hasn't put them on a map yet. | The first hour of the new game, shippable |
+| 5 Coordination | 2 | Messages, mailboxes, claims, triggers, schedules, power states, the Antenna. Job 4 (Ziggy) and job 5 (Sol's crew): tester and Test run, supervisor, mechanic, program library. | Multi-robot farms |
+| 6 Character | 3 | Paint, voices, personalities, line bank, fun facts, quirks, the efficient and quick cores, custom robots, limited editions, the Claw Fair | Robots with character |
+| 7 Guardrails | 4 | Jobs 6 to 8, Wendell and Hollis, the full .MD card set, rage events (robots on other maps, the chase and the catch), steam engine, rain barrel, sun panel, the hand-harvest bonus | The full curriculum |
+| 8 The valley | 5 | Animals, forest changes, town cleanup and cuts, loose ends, feel, quality of life | The finished game |
 
 **The editor library** is decided in the part 3 spec. The default is Google Blockly, loaded only when the robot screen first opens, because it already does typed sockets, dropdown fields and keyboard access. Part 3 measures its size against the build and replaces it with a small custom editor only if it misses the size budget set in that spec.
 
@@ -629,7 +657,7 @@ Each part gets its own spec, plan and review before it's built. The robot parts 
 
 ## 12. Save versions
 
-Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. Part 8's migration also drops the cut v2 fields (friendship, gifts, cooking recipes).
+Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. A release can therefore carry several version steps, and the loader runs them in order, so a live save from any earlier release loads. Part 8's migration also drops the cut v2 fields (friendship, gifts, cooking recipes).
 
 ---
 
@@ -646,7 +674,7 @@ Each part that adds saved fields bumps the save version by one and adds one migr
 
 ## 14. Risks
 
-- **Size.** This is bigger than v2 as planned. The build order front-loads the risky parts, and each part is playable on its own, so the work can stop at any part with a working game.
+- **Size.** This is bigger than v2 as planned. The build order front-loads the risky parts, and every release after the first is a complete game, so the work can stop after any release with something worth playing. Release 1 is the big one, because nothing is playable before part 4.
 - **The editor.** Blockly's size and styling in a Three.js game is the biggest technical unknown. It's contained in part 3, which has a fallback.
 - **Tone.** The cast must never preach or mock. Serious AI safety concerns aren't a joke. Wendell's framing is comic, but the game proves his underlying point. Every NPC line gets a tone review.
 - **Line bank quality.** Over 2,500 lines is a lot of writing. Lines are drafted in batches per personality, and each batch is reviewed before it ships.
