@@ -42,4 +42,16 @@ describe('addRobot with a scripted spec', () => {
     const result = addRobot(BASE, scriptedRobotSpec({ steps: [], parts: ['claw'] }, AT));
     expect('error' in result).toBe(true);
   });
+
+  it('returns an error instead of throwing for an unknown size', () => {
+    const spec = scriptedRobotSpec({ steps: STEPS, parts: ['claw'], size: 'huge' as never }, AT);
+    expect(addRobot(BASE, spec)).toEqual({ error: "A robot's size is one of mini, standard, big." });
+  });
+
+  it('returns an error instead of throwing for a bad place', () => {
+    const msg = { error: 'A robot needs a place: tx, tz and facing.' };
+    expect(addRobot(BASE, scriptedRobotSpec({ steps: STEPS, parts: ['claw'] }, null as never))).toEqual(msg);
+    expect(addRobot(BASE, scriptedRobotSpec({ steps: STEPS, parts: ['claw'] }, { tx: 1.5, tz: 2, facing: Direction.South }))).toEqual(msg);
+    expect(addRobot(BASE, scriptedRobotSpec({ steps: STEPS, parts: ['claw'] }, { tx: 5, tz: 10, facing: 9 as never }))).toEqual(msg);
+  });
 });

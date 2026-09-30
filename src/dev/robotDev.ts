@@ -60,7 +60,7 @@ export function scriptedRobotSpec(input: ScriptedRobotInput, at: RobotPlace): Ro
 }
 
 function isScriptedInput(v: unknown): v is ScriptedRobotInput {
-  return typeof v === 'object' && v !== null && Array.isArray((v as ScriptedRobotInput).steps) && Array.isArray((v as ScriptedRobotInput).parts);
+  return typeof v === 'object' && v !== null && Array.isArray((v as Record<string, unknown>).steps) && Array.isArray((v as Record<string, unknown>).parts);
 }
 
 function withBurnerKnown(state: GameState): GameState {
