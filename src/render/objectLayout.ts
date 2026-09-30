@@ -60,6 +60,7 @@ export function objectLook(object: PlacedObject): ObjectLook {
     case 'decoration':
       return { kind: object.kind, variant: object.variant };
     case 'chest':
+    case 'woodBurner':
     case 'sprinkler':
     case 'qualitySprinkler':
     case 'scarecrow':

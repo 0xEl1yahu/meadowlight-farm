@@ -33,6 +33,7 @@ export const RECIPES: Readonly<Record<CraftingRecipeId, Recipe>> = {
   scarecrow: recipe('scarecrow', [need('wood', 25), need('fiber', 10), need('stone', 5)]),
   sprinkler: recipe('sprinkler', [need('copperOre', 1), need('stone', 10)]),
   qualitySprinkler: recipe('qualitySprinkler', [need('copperOre', 3), need('stone', 15), need('wood', 10)]),
+  woodBurner: recipe('woodBurner', [need('stone', 20), need('wood', 10), need('copperOre', 2)]),
   basicFertilizer: recipe('basicFertilizer', [need('sap', 2)], 5),
   qualityFertilizer: recipe('qualityFertilizer', [need('sap', 4), need('fiber', 2)], 5),
   speedGro: recipe('speedGro', [need('sap', 2), need('mushroom', 1)], 5),

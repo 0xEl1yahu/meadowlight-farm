@@ -3,7 +3,7 @@
  * returns false on any unexpected shape and never throws, so the save loader can reject a
  * corrupted save as a whole instead of half-loading it.
  */
-import { INVENTORY } from '../config';
+import { GENERATORS, INVENTORY } from '../config';
 import {
   Blocker,
   CROP_IDS,
@@ -92,6 +92,7 @@ const OBJECT_FIELDS: Readonly<Record<PlacedObjectKind, readonly string[]>> = {
   chest: ['slots'],
   sprinkler: [],
   qualitySprinkler: [],
+  woodBurner: ['fuel'],
   scarecrow: [],
   woodFence: [],
   woodPath: [],
@@ -121,6 +122,8 @@ export function isValidPlacedObject(v: unknown): v is PlacedObject {
       return isOneOf(v.festival, FESTIVAL_IDS) && isIntIn(v.year, 1, Number.MAX_SAFE_INTEGER);
     case 'decoration':
       return isOneOf(v.variant, DECORATION_IDS);
+    case 'woodBurner':
+      return isIntIn(v.fuel, 0, GENERATORS.woodBurner.hopper);
     case 'sprinkler':
     case 'qualitySprinkler':
     case 'scarecrow':

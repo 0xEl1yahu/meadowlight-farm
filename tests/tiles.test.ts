@@ -315,6 +315,7 @@ const SAMPLE_OBJECTS: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
   chest: { kind: 'chest', slots: Array.from({ length: INVENTORY.chestSlots }, () => null) },
   sprinkler: { kind: 'sprinkler' },
   qualitySprinkler: { kind: 'qualitySprinkler' },
+  woodBurner: { kind: 'woodBurner', fuel: 0 },
   scarecrow: { kind: 'scarecrow' },
   woodFence: { kind: 'woodFence' },
   woodPath: { kind: 'woodPath' },

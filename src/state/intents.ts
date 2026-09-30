@@ -242,6 +242,7 @@ const PICKUP_TOOL: Readonly<Record<PlaceableItemId, 'pickaxe' | 'axe'>> = {
   stonePath: 'pickaxe',
   sprinkler: 'pickaxe',
   qualitySprinkler: 'pickaxe',
+  woodBurner: 'pickaxe',
 };
 
 export function pickUpTool(kind: PlaceableItemId): 'pickaxe' | 'axe' {
@@ -258,13 +259,14 @@ function planPickUp(state: GameState, target: TileCoord, object: PlacedObject, t
   if (object.kind === 'chest' && object.slots.some((slot) => slot !== null)) {
     return blocked(target, tool, 'Empty the chest first.');
   }
+  if (object.kind === 'woodBurner' && object.fuel > 0) return blocked(target, tool, 'Burn off the wood first.');
   if (capacityFor(state.inventory, object.kind) < 1) return blocked(target, tool, 'Your inventory is full.');
   return plan(target, { kind: 'pickUp', itemId: object.kind }, tool);
 }
 
 /** Sprinklers and scarecrows work the fields, so they only go on the farm. */
 export function isFarmOnlyPlaceable(itemId: PlaceableItemId): boolean {
-  return itemId === 'sprinkler' || itemId === 'qualitySprinkler' || itemId === 'scarecrow';
+  return itemId === 'sprinkler' || itemId === 'qualitySprinkler' || itemId === 'scarecrow' || itemId === 'woodBurner';
 }
 
 /**

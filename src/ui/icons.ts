@@ -587,6 +587,12 @@ function placeableParts(item: PlaceableItem): SVGElement[] {
       return sprinklerParts(color, false);
     case 'qualitySprinkler':
       return sprinklerParts(color, true);
+    case 'woodBurner':
+      return [
+        faceted('6,12 26,12 26,28 6,28', hex(color), [facet('20,12 26,12 26,28 20,28', dark(color, 0.2))]),
+        faceted('10,18 22,18 22,24 10,24', hex(0xe8743b), [facet('10,18 22,18 22,20 10,20', light(0xe8743b, 0.35))]),
+        faceted('18,3 23,3 23,12 18,12', dark(color, 0.1), [facet('18,3 20,3 20,12 18,12', light(color, 0.25))]),
+      ];
   }
 }
 

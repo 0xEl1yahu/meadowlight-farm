@@ -105,6 +105,12 @@ const PLACEABLE_INFO: Readonly<Record<PlaceableItemId, SimpleInfo>> = {
   stonePath: { name: 'Stone Path', description: 'Lay it on grass. Pick it up with the pickaxe.', sellPrice: null, color: 0xa9a7b8 },
   scarecrow: { name: 'Scarecrow', description: 'Keeps crows off crops within 8 tiles.', sellPrice: null, color: 0xd8b45a },
   sprinkler: { name: 'Sprinkler', description: 'Waters the 4 tiles beside it every morning.', sellPrice: null, color: 0x9aa7b8 },
+  woodBurner: {
+    name: 'Wood Burner',
+    description: 'Burns wood overnight and turns it into tokens for your robots. Load it with wood (E).',
+    sellPrice: null,
+    color: 0x8a5a3c,
+  },
   qualitySprinkler: { name: 'Quality Sprinkler', description: 'Waters the 8 tiles around it every morning.', sellPrice: null, color: 0xd9a05b },
 };
 

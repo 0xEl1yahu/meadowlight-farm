@@ -44,6 +44,7 @@ import {
   createQualitySprinklerGeometry,
   createScarecrowFrameGeometry,
   createSprinklerGeometry,
+  createWoodBurnerGeometry,
   createStonePathGeometry,
   createWoodFencePostGeometry,
   createWoodPathGeometry,
@@ -79,6 +80,7 @@ const BOX_HEIGHT = {
     chest: 0.8,
     sprinkler: 0.5,
     qualitySprinkler: 0.55,
+    woodBurner: 0.9,
     scarecrow: 1.4,
     woodFence: 0.9,
     woodPath: 0.35,
@@ -227,6 +229,8 @@ function createGhostGeometry(kind: PlaceableItemId): THREE.BufferGeometry {
       return createSprinklerGeometry();
     case 'qualitySprinkler':
       return createQualitySprinklerGeometry();
+    case 'woodBurner':
+      return createWoodBurnerGeometry();
     case 'scarecrow':
       return createScarecrowFrameGeometry();
     case 'woodFence':

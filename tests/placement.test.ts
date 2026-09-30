@@ -93,7 +93,7 @@ describe('placing', () => {
 describe('picking up', () => {
   it('lifts each object with its tool, returning the item', () => {
     for (const id of PLACEABLE_ITEM_IDS) {
-      const tile = id === 'chest' ? { ...EMPTY_TILE, object: EMPTY_CHEST } : { ...EMPTY_TILE, object: { kind: id } };
+      const tile = id === 'chest' ? { ...EMPTY_TILE, object: EMPTY_CHEST } : { ...EMPTY_TILE, object: id === 'woodBurner' ? { kind: id, fuel: 0 } : { kind: id } };
       const tool = pickUpTool(id);
       const state = holding(scenario(tile), tool);
       const next = useTool(state);

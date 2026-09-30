@@ -40,6 +40,7 @@ describe('recipe table', () => {
       scarecrow: { makes: 1, cost: ['25 wood', '10 fiber', '5 stone'] },
       sprinkler: { makes: 1, cost: ['1 copperOre', '10 stone'] },
       qualitySprinkler: { makes: 1, cost: ['3 copperOre', '15 stone', '10 wood'] },
+      woodBurner: { makes: 1, cost: ['20 stone', '10 wood', '2 copperOre'] },
       basicFertilizer: { makes: 5, cost: ['2 sap'] },
       qualityFertilizer: { makes: 5, cost: ['4 sap', '2 fiber'] },
       speedGro: { makes: 5, cost: ['2 sap', '1 mushroom'] },

@@ -909,6 +909,7 @@ function everything(): GameState {
     [9, 11, { ...soilTile(TileState.Plowed, cropOf('parsnip')), fertilizer: 'speedGro' }],
     [10, 11, { ...soilTile(TileState.Watered), fertilizer: 'quality' }],
     [11, 11, { ...soilTile(TileState.Watered, cropOf('potato', { stage: 2 })), fertilizer: 'basic' }],
+    [12, 11, { ...EMPTY_TILE, object: { kind: 'woodBurner', fuel: 6 } }],
   ];
   let state: GameState = { ...BASE, ...livelySections() };
   for (const [tx, tz, tile] of farm) state = withTile(state, { tx, tz }, tile, 'farm');

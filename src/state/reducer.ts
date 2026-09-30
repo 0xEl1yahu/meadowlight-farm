@@ -22,6 +22,7 @@ import {
   type CraftingRecipeId,
   type CropId,
   type ItemStack,
+  type PlaceableItemId,
   type PlacedObject,
   type Quality,
   type SeedItemId,
@@ -120,6 +121,18 @@ function tick(state: GameState, minutes: number): GameState {
   const minuteOfDay = state.time.minuteOfDay + whole;
   if (minuteOfDay >= TIME.passOutMinute) return startNextDay(state, true);
   return { ...state, time: { ...state.time, minuteOfDay } };
+}
+
+/** The placed object a placeable item becomes: an empty chest, a cold wood burner, or the plain kind. */
+function placedObjectFor(itemId: PlaceableItemId): PlacedObject {
+  switch (itemId) {
+    case 'chest':
+      return { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) };
+    case 'woodBurner':
+      return { kind: 'woodBurner', fuel: 0 };
+    default:
+      return { kind: itemId };
+  }
 }
 
 /** Lifetime counters after a morning payout: gold earned and parsnips shipped (every quality). */
@@ -345,9 +358,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       };
 
     case 'place': {
-      const object: PlacedObject =
-        intent.itemId === 'chest' ? { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) } : { kind: intent.itemId };
-      const next = withTile(state, target, { ...tile, object });
+      const next = withTile(state, target, { ...tile, object: placedObjectFor(intent.itemId) });
       return { ...next, inventory: removeFromSlot(state.inventory, state.inventory.selected, 1) };
     }
 

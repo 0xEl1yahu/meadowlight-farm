@@ -233,6 +233,28 @@ export function createQualitySprinklerGeometry(): THREE.BufferGeometry {
 }
 
 // ---------------------------------------------------------------------------
+// Wood burner
+// ---------------------------------------------------------------------------
+
+/** A squat iron stove with a glowing grate, a chimney and a copper cap. */
+export function createWoodBurnerGeometry(): THREE.BufferGeometry {
+  const iron = 0x4a4541;
+  const ironDark = 0x34302d;
+  const ember = 0xe8743b;
+  return mergeParts(
+    [
+      box(0.5, 0.06, 0.44, { y: 0.03 }, ironDark),
+      box(0.44, 0.36, 0.38, { y: 0.24 }, iron),
+      box(0.3, 0.14, 0.02, { y: 0.2, z: 0.2 }, ember),
+      box(0.34, 0.03, 0.03, { y: 0.28, z: 0.205 }, ironDark),
+      cylinder(0.06, 0.06, 0.34, 8, { x: 0.12, y: 0.59, z: -0.08 }, ironDark),
+      cylinder(0.08, 0.08, 0.04, 8, { x: 0.12, y: 0.78, z: -0.08 }, OBJECT_COLORS.copper),
+    ],
+    'wood burner',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Scarecrow
 // ---------------------------------------------------------------------------
 
@@ -623,6 +645,7 @@ export const OBJECT_PART_IDS = [
   'chestLid',
   'sprinkler',
   'qualitySprinkler',
+  'woodBurner',
   'scarecrowFrame',
   'scarecrowShirt',
   'fencePost',
@@ -669,6 +692,7 @@ export const OBJECT_PARTS: Readonly<Record<ObjectPartId, ObjectPartSpec>> = {
   chestLid: part('chest', 'painted', createChestLidGeometry),
   sprinkler: part('sprinkler', 'painted', createSprinklerGeometry),
   qualitySprinkler: part('qualitySprinkler', 'painted', createQualitySprinklerGeometry),
+  woodBurner: part('woodBurner', 'painted', createWoodBurnerGeometry),
   scarecrowFrame: part('scarecrow', 'painted', createScarecrowFrameGeometry),
   scarecrowShirt: part('scarecrow', 'cloth', createScarecrowShirtGeometry),
   fencePost: part('woodFence', 'painted', createWoodFencePostGeometry),
@@ -729,6 +753,8 @@ export function objectPartsFor(object: PlacedObject, stoneVariant: number): read
       return ['sprinkler'];
     case 'qualitySprinkler':
       return ['qualitySprinkler'];
+    case 'woodBurner':
+      return ['woodBurner'];
     case 'scarecrow':
       return ['scarecrowFrame', 'scarecrowShirt'];
     case 'woodFence':

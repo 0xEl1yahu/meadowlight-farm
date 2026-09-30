@@ -82,6 +82,7 @@ const SAMPLES: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
   chest: emptyChest(),
   sprinkler: { kind: 'sprinkler' },
   qualitySprinkler: { kind: 'qualitySprinkler' },
+  woodBurner: { kind: 'woodBurner', fuel: 0 },
   scarecrow: { kind: 'scarecrow' },
   woodFence: FENCE,
   woodPath: { kind: 'woodPath' },

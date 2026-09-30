@@ -118,6 +118,7 @@ export const PLACEABLE_ITEM_IDS = [
   'scarecrow',
   'sprinkler',
   'qualitySprinkler',
+  'woodBurner',
 ] as const;
 export type PlaceableItemId = (typeof PLACEABLE_ITEM_IDS)[number];
 
@@ -190,6 +191,7 @@ export const CRAFTING_RECIPE_IDS = [
   'basicFertilizer',
   'qualityFertilizer',
   'speedGro',
+  'woodBurner',
 ] as const;
 export type CraftingRecipeId = (typeof CRAFTING_RECIPE_IDS)[number];
 
@@ -238,6 +240,7 @@ export const PLACED_OBJECT_KINDS = [
   'forage',
   'trophy',
   'decoration',
+  'woodBurner',
 ] as const;
 export type PlacedObjectKind = (typeof PLACED_OBJECT_KINDS)[number];
 
@@ -319,6 +322,8 @@ export type PlacedObject =
   | { readonly kind: 'chest'; readonly slots: ChestSlots }
   | { readonly kind: 'sprinkler' }
   | { readonly kind: 'qualitySprinkler' }
+  /** Burns its wood overnight into the farm's token pool (farmclaws part 1 §5.7). */
+  | { readonly kind: 'woodBurner'; readonly fuel: number }
   | { readonly kind: 'scarecrow' }
   | { readonly kind: 'woodFence' }
   | { readonly kind: 'woodPath' }

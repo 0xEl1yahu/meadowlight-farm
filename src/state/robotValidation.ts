@@ -6,6 +6,7 @@ import { ROBOTS, TIME } from '../config';
 import {
   Blocker,
   CROP_IDS,
+  MAP_IDS,
   QUALITIES,
   ROBOT_BLOCK_REASONS,
   ROBOT_LOG_EVENT_KINDS,
@@ -22,7 +23,7 @@ import { isItemId } from '../items/items';
 import { ROBOT_ACTION_KINDS } from '../robots/parts';
 import { bagStacks, batteryFor } from '../robots/stats';
 import { inBounds } from '../world/grid';
-import { getTile, isWalkable } from '../world/tiles';
+import { forEachTile, getTile, isWalkable } from '../world/tiles';
 import { isValidName } from './sectionValidation';
 import { hasExactKeys, isBool, isCanonicalSubset, isCount, isInt, isIntIn, isObj, isOneOf, isValidStack } from './validation';
 
@@ -32,6 +33,17 @@ const ROBOT_KEYS = [
   'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'program', 'pc',
   'nextActMinute', 'repairReadyDay', 'tokensToday', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
 ] as const;
+
+/** Wood burners work the farm's robots, so a burner on another map means a corrupt save. */
+function burnersOnlyOnFarm(maps: GameState['maps']): boolean {
+  let stray = false;
+  for (const id of MAP_IDS.filter((mapId) => mapId !== 'farm')) {
+    forEachTile(maps[id], (tile) => {
+      if (tile.object?.kind === 'woodBurner') stray = true;
+    });
+  }
+  return !stray;
+}
 
 export function isValidRobotAction(v: unknown): v is RobotAction {
   if (!isObj(v) || typeof v.kind !== 'string') return false;
@@ -199,5 +211,5 @@ export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player
   if (carried !== (player.carrying === null ? 0 : 1)) return false;
   const fuel = v.lastNightFuel;
   if (!isCount(v.pool) || !isObj(fuel) || !hasExactKeys(fuel, ['wood', 'tokens']) || !isCount(fuel.wood) || !isCount(fuel.tokens)) return false;
-  return isValidLog(v.log, maps.farm);
+  return isValidLog(v.log, maps.farm) && burnersOnlyOnFarm(maps);
 }
