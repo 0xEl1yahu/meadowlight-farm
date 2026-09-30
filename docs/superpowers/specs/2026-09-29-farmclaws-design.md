@@ -697,3 +697,9 @@ These are decided in this document so it has no gaps. Each is easy to change in 
 9. **The Claw Fair** runs in spring, summer and fall (not winter) and has a Tidy Program contest.
 10. **Blockly** is the default editor, loaded when the robot screen first opens.
 11. **Numbers:** all prices, battery sizes and generator outputs are first guesses.
+
+## 16. Parked ideas
+
+Ideas raised after this design was agreed. Each needs its own brainstorm before it joins a part.
+
+- **Sustainable fuel (raised 2026-09-30).** Trees can be regrown (saplings or replanting stumps), so wood becomes a renewable crop instead of a one-off clearing. Build on it with sustainable fuel and condensers, so a farm can make safe, eco-friendly tokens, and teach it through a later tutorial job. Why it matters: today nothing regrows trees and every generator but the sun panel burns wood, so a robot farm slowly strips the forest. Likely home: release 4 (generators and Wendell's efficiency jobs; job 8 already measures fuel burned), with tree regrowth touching part 8's forest changes. Open questions: how saplings grow and where they may be planted; what a condenser takes in and makes (water for the steam engine, or tokens itself); whether "clean" tokens differ from wood tokens in any way the player sees; what the tutorial job asks for.
