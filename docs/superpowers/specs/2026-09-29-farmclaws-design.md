@@ -354,7 +354,9 @@ There are five types: **Number**, **Text**, **Yes/No**, **Item** and **Tile**.
 
 ## 6. The robot screen
 
-The player interacts with a robot (E) to open its screen. It has five tabs:
+Robots are modded at a **workbench**, a placed object on the farm. The player carries a robot to a workbench and sets it down on it to open its screen; that is the only way to change a robot's program, .MD, parts or looks. Pressing E on a robot in the field only picks it up or puts it down. A robot on the bench is out of work until it's carried off, so reprogramming is a deliberate trip, like taking a machine into the workshop. (Decided 2026-10-02. Part 3 settles where the first workbench comes from, its recipe or price, and whether the Log and Stats tabs can also be read in the field.)
+
+The screen has five tabs:
 
 | Tab | Contents |
 | --- | --- |
@@ -644,7 +646,7 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 | --- | --- | --- | --- |
 | 1 Robot core | 1 | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes, carrying and repairs, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm (development builds only). |
 | 2 Language | 1 | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
-| 3 Robot screen | 1 | Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
+| 3 Robot screen | 1 | The workbench, Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
 | 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye) and repairs. Juniper's workshop with ready-made robots in all three sizes. The balance pass. **Also decides where other farmers' fields are**: this design hasn't put them on a map yet. | The first hour of the new game, shippable |
 | 5 Coordination | 2 | Messages, mailboxes, claims, triggers, schedules, power states, the Antenna. Job 4 (Ziggy) and job 5 (Sol's crew): tester and Test run, supervisor, mechanic, program library. | Multi-robot farms |
 | 6 Character | 3 | Paint, voices, personalities, line bank, fun facts, quirks, the efficient and quick cores, custom robots, limited editions, the Claw Fair | Robots with character |
