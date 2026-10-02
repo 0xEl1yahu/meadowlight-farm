@@ -10,7 +10,7 @@
  *   code erasable (no TypeScript runtime enums) and JSON-serialisable.
  */
 
-export const SAVE_VERSION = 4 as const;
+export const SAVE_VERSION = 5 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -572,8 +572,14 @@ export interface Robot {
   /** True while the player holds it (player.carrying === id). A carried robot never acts. */
   readonly carried: boolean;
   readonly program: RobotProgram;
-  /** Index of the next script step. */
+  /** Index of the next script step; always 0 for a block program. */
   readonly pc: number;
+  /** Where a block program is; null for scripts. */
+  readonly exec: RobotExec | null;
+  /** The Managing Directive: 0 … ROBOTS.sizes[size].mdCards cards. */
+  readonly md: readonly MdCard[];
+  /** Why the robot ignores everything until morning. Separate from `power` (farmclaws design §5.4). Part 3 adds 'player'. */
+  readonly off: null | 'dizzy' | 'done';
   /** The next minute of the day it acts in. */
   readonly nextActMinute: number;
   /** Absolute day it comes back from repair; null unless power is 'repairing'. */
@@ -658,6 +664,8 @@ export interface RobotsState {
   readonly log: { readonly nextId: number; readonly entries: readonly RobotLogEntry[] };
   /** What generators burned last night. */
   readonly lastNightFuel: { readonly wood: number; readonly tokens: number };
+  /** Named farm rectangles for programs and .MDs; null is an empty zone. */
+  readonly zones: Readonly<Record<ZoneId, ZoneRect | null>>;
 }
 
 // ---------------------------------------------------------------------------

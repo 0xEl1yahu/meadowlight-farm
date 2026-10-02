@@ -1,11 +1,12 @@
 /**
- * Save validation for the robots section (farmclaws part 1 spec §6.2). Every check is a type
- * guard that returns false on any unexpected shape and never throws.
+ * Save validation for the robots section (farmclaws part 1 spec §6.2, part 2 spec §10.2).
+ * Every check is a type guard that returns false on any unexpected shape and never throws.
  */
 import { ROBOTS, TIME } from '../config';
 import {
   Blocker,
   CROP_IDS,
+  EVERY_CHOICES,
   MAP_IDS,
   QUALITIES,
   ROBOT_BLOCK_REASONS,
@@ -13,25 +14,38 @@ import {
   ROBOT_PART_IDS,
   ROBOT_POWERS,
   ROBOT_SIZES,
+  VALUE_TYPES,
+  ZONE_IDS,
+  type BlockProgram,
+  type Frame,
   type GameState,
+  type ListRef,
+  type MdCard,
+  type Robot,
   type RobotAction,
+  type RobotExec,
   type RobotPartId,
-  type RobotScript,
+  type RobotProgram,
+  type TileCoord,
+  type Trigger,
+  type ValueType,
   type WorldState,
 } from '../core/types';
 import { isItemId } from '../items/items';
+import { checkMd, checkProgram, isValidZoneRect } from '../robots/check';
 import { ROBOT_ACTION_KINDS } from '../robots/parts';
+import { farmContains, resolveList } from '../robots/program';
 import { bagStacks, batteryFor } from '../robots/stats';
 import { inBounds } from '../world/grid';
 import { forEachTile, getTile, isWalkable } from '../world/tiles';
 import { isValidName } from './sectionValidation';
-import { hasExactKeys, isBool, isCanonicalSubset, isCount, isInt, isIntIn, isObj, isOneOf, isValidStack } from './validation';
+import { hasExactKeys, isBool, isCanonicalSubset, isCount, isInt, isIntIn, isObj, isOneOf, isValidStack, type Obj } from './validation';
 
 const MAX = Number.MAX_SAFE_INTEGER;
 
 const ROBOT_KEYS = [
   'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'program', 'pc',
-  'nextActMinute', 'repairReadyDay', 'tokensToday', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
+  'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'tokensToday', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
 ] as const;
 
 /** Wood burners work the farm's robots, so a burner on another map means a corrupt save. */
@@ -74,18 +88,335 @@ export function isValidRobotAction(v: unknown): v is RobotAction {
   }
 }
 
-/** A part 1 script: 1 … maxScriptSteps valid steps and a loop flag. Block programs are checked separately. */
-export function isValidRobotProgram(v: unknown): v is RobotScript {
+// --- Block programs, .MDs and exec (farmclaws part 2 spec §10.2) ---------------------------
+
+const isString = (v: unknown): v is string => typeof v === 'string';
+const isNumber = (v: unknown): v is number => typeof v === 'number';
+const isList = (v: unknown): v is readonly unknown[] => Array.isArray(v);
+
+function isFarmTile(v: unknown): v is TileCoord {
+  return isObj(v) && hasExactKeys(v, ['tx', 'tz']) && isInt(v.tx) && isInt(v.tz) && farmContains(v.tx, v.tz);
+}
+
+/** The shape of one expression: a known kind with exactly its fields, each of the right JSON type. Ranges are checkProgram's job. */
+function isExprShape(v: unknown): boolean {
+  if (!isObj(v) || !isString(v.kind)) return false;
+  switch (v.kind) {
+    case 'num':
+      return hasExactKeys(v, ['kind', 'value']) && isNumber(v.value);
+    case 'text':
+      return hasExactKeys(v, ['kind', 'value']) && isString(v.value);
+    case 'yes':
+      return hasExactKeys(v, ['kind', 'value']) && isBool(v.value);
+    case 'item':
+    case 'countInBag':
+    case 'bagHas':
+      return hasExactKeys(v, ['kind', 'itemId']) && isItemId(v.itemId);
+    case 'tile':
+      return hasExactKeys(v, ['kind', 'tx', 'tz']) && isNumber(v.tx) && isNumber(v.tz);
+    case 'var':
+      return hasExactKeys(v, ['kind', 'name']) && isString(v.name);
+    case 'myTile':
+    case 'tileAhead':
+    case 'tokensLeft':
+    case 'cropIsReady':
+    case 'soilIsDry':
+    case 'tileIsTilled':
+    case 'bagIsFull':
+    case 'itIsRaining':
+      return hasExactKeys(v, ['kind']);
+    case 'arith':
+      return hasExactKeys(v, ['kind', 'op', 'a', 'b']) && isOneOf(v.op, ['+', '-', '×']) && isExprShape(v.a) && isExprShape(v.b);
+    case 'compare':
+      return hasExactKeys(v, ['kind', 'op', 'a', 'b']) && isOneOf(v.op, ['=', '≠', '<', '>']) && isExprShape(v.a) && isExprShape(v.b);
+    case 'and':
+    case 'or':
+      return hasExactKeys(v, ['kind', 'a', 'b']) && isExprShape(v.a) && isExprShape(v.b);
+    case 'not':
+      return hasExactKeys(v, ['kind', 'a']) && isExprShape(v.a);
+    case 'cropIs':
+      return hasExactKeys(v, ['kind', 'cropId']) && isOneOf(v.cropId, CROP_IDS);
+    case 'atEdgeOf':
+      return hasExactKeys(v, ['kind', 'zone']) && isOneOf(v.zone, ZONE_IDS);
+    case 'tokensBelow':
+      return hasExactKeys(v, ['kind', 'n']) && isExprShape(v.n);
+    case 'tileAheadIs':
+      return hasExactKeys(v, ['kind', 'what']) && isOneOf(v.what, ['water', 'blocked', 'clear']);
+    case 'timeIsAfter':
+      return hasExactKeys(v, ['kind', 'minute']) && isNumber(v.minute);
+    default:
+      return false;
+  }
+}
+
+function isActionBlockShape(v: unknown): boolean {
+  if (!isObj(v) || !isString(v.kind)) return false;
+  switch (v.kind) {
+    case 'move':
+    case 'water':
+    case 'harvest':
+    case 'till':
+    case 'refill':
+    case 'deposit':
+    case 'powerDown':
+      return hasExactKeys(v, ['kind']);
+    case 'turn':
+      return hasExactKeys(v, ['kind', 'side']) && (v.side === 'left' || v.side === 'right');
+    case 'plant':
+      return hasExactKeys(v, ['kind', 'cropId']) && isOneOf(v.cropId, CROP_IDS);
+    case 'take':
+      return hasExactKeys(v, ['kind', 'item']) && isExprShape(v.item);
+    case 'say':
+      return hasExactKeys(v, ['kind', 'text']) && isExprShape(v.text);
+    case 'wait':
+      return hasExactKeys(v, ['kind', 'minutes']) && isExprShape(v.minutes);
+    default:
+      return false;
+  }
+}
+
+function isStatementListShape(v: unknown): boolean {
+  return isList(v) && v.every(isStatementShape);
+}
+
+function isStatementShape(v: unknown): boolean {
+  if (!isObj(v) || !isString(v.kind)) return false;
+  switch (v.kind) {
+    case 'do':
+      return hasExactKeys(v, ['kind', 'action']) && isActionBlockShape(v.action);
+    case 'repeatTimes':
+      return hasExactKeys(v, ['kind', 'times', 'body']) && isExprShape(v.times) && isStatementListShape(v.body);
+    case 'repeatUntil':
+      return hasExactKeys(v, ['kind', 'until', 'body']) && isExprShape(v.until) && isStatementListShape(v.body);
+    case 'repeatForever':
+      return hasExactKeys(v, ['kind', 'body']) && isStatementListShape(v.body);
+    case 'if':
+      return (
+        hasExactKeys(v, ['kind', 'cond', 'then', 'else']) &&
+        isExprShape(v.cond) &&
+        isStatementListShape(v.then) &&
+        (v.else === null || isStatementListShape(v.else))
+      );
+    case 'forEachTile':
+      return hasExactKeys(v, ['kind', 'zone', 'body']) && isOneOf(v.zone, ZONE_IDS) && isStatementListShape(v.body);
+    case 'goTo':
+      return hasExactKeys(v, ['kind', 'tile']) && isExprShape(v.tile);
+    case 'set':
+      return hasExactKeys(v, ['kind', 'name', 'value']) && isString(v.name) && isExprShape(v.value);
+    case 'change':
+      return hasExactKeys(v, ['kind', 'name', 'by']) && isString(v.name) && isExprShape(v.by);
+    case 'runHelper':
+      return hasExactKeys(v, ['kind', 'name']) && isString(v.name);
+    default:
+      return false;
+  }
+}
+
+function isTriggerShape(v: unknown): boolean {
+  if (!isObj(v) || !isString(v.kind)) return false;
+  switch (v.kind) {
+    case 'morning':
+    case 'bagFull':
+    case 'startsRaining':
+      return hasExactKeys(v, ['kind']);
+    case 'atTime':
+      return hasExactKeys(v, ['kind', 'minute']) && isNumber(v.minute);
+    case 'every':
+      return hasExactKeys(v, ['kind', 'minutes']) && isOneOf(v.minutes, EVERY_CHOICES);
+    default:
+      return false;
+  }
+}
+
+function isBlockProgramShape(v: Obj): boolean {
+  return (
+    hasExactKeys(v, ['kind', 'vars', 'stacks', 'helpers']) &&
+    isList(v.vars) &&
+    v.vars.every(
+      (d) => isObj(d) && hasExactKeys(d, ['name', 'type', 'initial']) && isString(d.name) && isOneOf(d.type, VALUE_TYPES) && isExprShape(d.initial),
+    ) &&
+    isList(v.stacks) &&
+    v.stacks.every((s) => isObj(s) && hasExactKeys(s, ['trigger', 'body']) && isTriggerShape(s.trigger) && isStatementListShape(s.body)) &&
+    isList(v.helpers) &&
+    v.helpers.every((h) => isObj(h) && hasExactKeys(h, ['name', 'body']) && isString(h.name) && isStatementListShape(h.body))
+  );
+}
+
+/**
+ * Whether `v` is shaped like a program, so checkProgram can read it: a script (its steps an
+ * array; checkProgram checks each step) or a block program whose every node has a known kind
+ * and exactly its fields. Never throws: input nested too deeply (or cyclic, from the console)
+ * is rejected.
+ */
+export function isProgramShape(v: unknown): v is RobotProgram {
+  try {
+    if (!isObj(v)) return false;
+    if (v.kind === 'script') return hasExactKeys(v, ['kind', 'steps', 'loop']) && isList(v.steps) && isBool(v.loop);
+    return v.kind === 'blocks' && isBlockProgramShape(v);
+  } catch {
+    return false;
+  }
+}
+
+function isMdCardShape(v: unknown): boolean {
+  if (!isObj(v) || !isString(v.kind)) return false;
+  switch (v.kind) {
+    case 'dontLeave':
+      return hasExactKeys(v, ['kind', 'zone']) && isOneOf(v.zone, ZONE_IDS);
+    case 'dontGoIntoWater':
+      return hasExactKeys(v, ['kind']);
+    case 'dontHarvest':
+      return hasExactKeys(v, ['kind', 'cropId']) && isOneOf(v.cropId, CROP_IDS);
+    case 'dontDeposit':
+      return hasExactKeys(v, ['kind', 'itemId']) && isItemId(v.itemId);
+    case 'doReturn': {
+      const to = v.to;
+      const toShape =
+        isObj(to) &&
+        ((to.kind === 'generator' && hasExactKeys(to, ['kind'])) || (to.kind === 'tile' && hasExactKeys(to, ['kind', 'tx', 'tz']) && isNumber(to.tx) && isNumber(to.tz)));
+      return hasExactKeys(v, ['kind', 'to', 'minute']) && toShape && isNumber(v.minute);
+    }
+    case 'doPowerDown': {
+      const when = v.when;
+      const whenShape =
+        isObj(when) &&
+        (((when.kind === 'bagFull' || when.kind === 'raining') && hasExactKeys(when, ['kind'])) ||
+          (when.kind === 'tokensBelow' && hasExactKeys(when, ['kind', 'n']) && isNumber(when.n)));
+      return hasExactKeys(v, ['kind', 'when']) && whenShape;
+    }
+    default:
+      return false;
+  }
+}
+
+/** Whether `v` is a list of .MD cards, each a known kind with exactly its fields. Ranges are checkMd's job. */
+export function isMdShape(v: unknown): v is readonly MdCard[] {
+  return isList(v) && v.every(isMdCardShape);
+}
+
+/** A value of `type`: a whole number within ±maxNumber, text within maxTextLength, a yes/no, a known item or a farm tile. */
+function isValueOf(v: unknown, type: ValueType): boolean {
+  if (!isObj(v) || !hasExactKeys(v, ['type', 'value']) || v.type !== type) return false;
+  switch (type) {
+    case 'number':
+      return isIntIn(v.value, -ROBOTS.maxNumber, ROBOTS.maxNumber);
+    case 'text':
+      return isString(v.value) && Array.from(v.value).length <= ROBOTS.maxTextLength;
+    case 'yesNo':
+      return isBool(v.value);
+    case 'item':
+      return isItemId(v.value);
+    case 'tile':
+      return isFarmTile(v.value);
+  }
+}
+
+function isListRefShape(v: unknown): v is ListRef {
   return (
     isObj(v) &&
-    hasExactKeys(v, ['kind', 'steps', 'loop']) &&
-    v.kind === 'script' &&
-    isBool(v.loop) &&
-    Array.isArray(v.steps) &&
-    v.steps.length >= 1 &&
-    v.steps.length <= ROBOTS.maxScriptSteps &&
-    v.steps.every(isValidRobotAction)
+    hasExactKeys(v, ['root', 'index', 'path']) &&
+    (v.root === 'stack' || v.root === 'helper') &&
+    isCount(v.index) &&
+    isList(v.path) &&
+    v.path.every((step) => isList(step) && step.length === 2 && isCount(step[0]) && isOneOf(step[1], ['body', 'then', 'else']))
   );
+}
+
+const LOOP_STATEMENTS = { times: 'repeatTimes', until: 'repeatUntil', forever: 'repeatForever', forEach: 'forEachTile' } as const;
+
+/**
+ * A list frame: its list resolves, `next` is 0 … its length, and its loop state matches the list:
+ * a loop body (a 'body' branch) has the state of that loop's kind, any other list has none.
+ */
+function isValidListFrame(v: Obj, program: BlockProgram): boolean {
+  const ref: unknown = v.list;
+  if (!hasExactKeys(v, ['kind', 'list', 'next', 'loop']) || !isListRefShape(ref)) return false;
+  const list = resolveList(program, ref);
+  if (list === null || !isIntIn(v.next, 0, list.length)) return false;
+  const last = ref.path[ref.path.length - 1];
+  if (last === undefined || last[1] !== 'body') return v.loop === null;
+  const parent = resolveList(program, { ...ref, path: ref.path.slice(0, -1) });
+  const loopStatement = parent?.[last[0]];
+  const loop = v.loop;
+  if (loopStatement === undefined || !isObj(loop) || !isOneOf(loop.kind, Object.keys(LOOP_STATEMENTS))) return false;
+  if (LOOP_STATEMENTS[loop.kind as keyof typeof LOOP_STATEMENTS] !== loopStatement.kind) return false;
+  switch (loop.kind) {
+    case 'times':
+      return hasExactKeys(loop, ['kind', 'left']) && isIntIn(loop.left, 0, ROBOTS.maxRepeatTimes);
+    case 'forEach':
+      return hasExactKeys(loop, ['kind', 'tiles', 'i']) && isList(loop.tiles) && loop.tiles.every(isFarmTile) && isIntIn(loop.i, 0, loop.tiles.length - 1);
+    default:
+      return hasExactKeys(loop, ['kind']);
+  }
+}
+
+function isValidRouteFrame(v: Obj): boolean {
+  return (
+    hasExactKeys(v, ['kind', 'target', 'path', 'why']) &&
+    isFarmTile(v.target) &&
+    isList(v.path) &&
+    v.path.every(isFarmTile) &&
+    isOneOf(v.why, ['goTo', 'forEach', 'doReturn'])
+  );
+}
+
+function isValidFrame(v: unknown, program: BlockProgram): v is Frame {
+  if (!isObj(v)) return false;
+  if (v.kind === 'list') return isValidListFrame(v, program);
+  return v.kind === 'route' && isValidRouteFrame(v);
+}
+
+/** The minutes a stack's trigger may still be due at: its own time for `atTime`, any minute up to pass-out plus n for `every n`. */
+function isValidDue(v: unknown, trigger: Trigger): boolean {
+  if (v === null) return true;
+  if (trigger.kind === 'atTime') return v === trigger.minute;
+  if (trigger.kind === 'every') return isIntIn(v, TIME.dayStartMinute, TIME.passOutMinute + trigger.minutes);
+  return false;
+}
+
+/**
+ * A block program's exec (spec §10.2 and plan refinement R1): one value per variable of its
+ * declared type; one due and one firedToday entry per stack; running null or a stack index;
+ * frames empty exactly when nothing runs, except a lone DO-return route frame; at most
+ * maxFrames frames, each valid for the program; doneCards whole and without repeats (which DO
+ * cards they name is checked against the robot's .MD).
+ */
+export function isValidExec(v: unknown, program: BlockProgram): v is RobotExec {
+  if (!isObj(v) || !hasExactKeys(v, ['running', 'frames', 'vars', 'due', 'firedToday', 'doneCards'])) return false;
+  const { running, frames, vars, due, firedToday, doneCards } = v;
+  if (!isList(vars) || vars.length !== program.vars.length || !program.vars.every((decl, i) => isValueOf(vars[i], decl.type))) return false;
+  if (!isList(due) || due.length !== program.stacks.length || !program.stacks.every((stack, i) => isValidDue(due[i], stack.trigger))) return false;
+  if (!isList(firedToday) || firedToday.length !== program.stacks.length || !firedToday.every(isBool)) return false;
+  if (!isList(doneCards) || !doneCards.every(isCount) || new Set(doneCards).size !== doneCards.length) return false;
+  if (!(running === null || isIntIn(running, 0, program.stacks.length - 1))) return false;
+  if (!isList(frames) || frames.length > ROBOTS.maxFrames || !frames.every((frame) => isValidFrame(frame, program))) return false;
+  const returning = (frame: unknown): boolean => isObj(frame) && frame.kind === 'route' && frame.why === 'doReturn';
+  if (running === null) return frames.length === 0 || (frames.length === 1 && returning(frames[0]));
+  return frames.length > 0 && !frames.some(returning);
+}
+
+const isDoCard = (card: MdCard | undefined): boolean => card !== undefined && (card.kind === 'doReturn' || card.kind === 'doPowerDown');
+
+/**
+ * A robot's program, pc, exec and .MD: a shaped program that passes checkProgram for its body;
+ * a script with exec null and pc on a step, or a block program with pc 0 and a valid exec whose
+ * doneCards name DO cards of its .MD; a shaped .MD that passes checkMd.
+ */
+function isValidMind(v: Obj, body: Pick<Robot, 'size' | 'parts'>): boolean {
+  const { program, pc, exec, md } = v;
+  if (!isProgramShape(program) || checkProgram(program, body) !== null) return false;
+  if (!isMdShape(md) || checkMd(md, body) !== null) return false;
+  if (program.kind === 'script') return exec === null && isIntIn(pc, 0, program.steps.length - 1);
+  return pc === 0 && isValidExec(exec, program) && exec.doneCards.every((i) => isDoCard(md[i]));
+}
+
+function isValidZones(v: unknown): boolean {
+  if (!isObj(v) || !hasExactKeys(v, ZONE_IDS)) return false;
+  return ZONE_IDS.every((id) => {
+    const rect = v[id];
+    if (rect === null) return true;
+    return isObj(rect) && hasExactKeys(rect, ['x0', 'z0', 'w', 'd']) && isInt(rect.x0) && isInt(rect.z0) && isInt(rect.w) && isInt(rect.d) && isValidZoneRect({ x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d });
+  });
 }
 
 function isValidDetail(v: unknown): boolean {
@@ -177,7 +508,9 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!isIntIn(v.tank, 0, ROBOTS.tankCapacity) || (v.tank > 0 && !parts.includes('wateringHead'))) return false;
   if (!isIntIn(v.tokens, 0, batteryFor(v.size)) || !isCount(v.tokensToday)) return false;
   if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried)) return false;
-  if (!isValidRobotProgram(v.program) || !isIntIn(v.pc, 0, v.program.steps.length - 1)) return false;
+  if (!isValidMind(v, { size: v.size, parts })) return false;
+  if (!(v.off === null || v.off === 'dizzy' || v.off === 'done')) return false;
+  if (v.off !== null && v.power !== 'working' && v.power !== 'standby') return false;
   if (!isIntIn(v.nextActMinute, TIME.dayStartMinute, TIME.passOutMinute + ROBOTS.maxWaitMinutes)) return false;
   if (!isCount(v.moveSeq) || !isCount(v.teleportSeq) || !isCount(v.actionSeq)) return false;
   if (!isValidLastAction(v.lastAction, v.actionSeq)) return false;
@@ -193,10 +526,11 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
 /**
  * The robots section: ids unique, ascending and below nextId; at most maxRobots; every robot
  * valid on the farm; the carried robot (if any) matches `player.carrying` and the player is on
- * the farm; the pool, last night's fuel and the log valid.
+ * the farm; the pool, last night's fuel, the log and the zones valid.
  */
 export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player: unknown): boolean {
-  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel']) || !isObj(player)) return false;
+  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones']) || !isObj(player)) return false;
+  if (!isValidZones(v.zones)) return false;
   if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || v.list.length > ROBOTS.maxRobots) return false;
   let previous = 0;
   let carried = 0;

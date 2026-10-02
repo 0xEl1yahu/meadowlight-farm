@@ -30,6 +30,8 @@ import {
   type Tile,
   type TileCoord,
   type WorldState,
+  type ZoneId,
+  type ZoneRect,
 } from '../src/core/types';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
@@ -393,6 +395,9 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
     carried: false,
     program: { kind: 'script', steps: [{ kind: 'turn', side: 'right' }], loop: true },
     pc: 0,
+    exec: null,
+    md: [],
+    off: null,
     nextActMinute: TIME.dayStartMinute + 4,
     repairReadyDay: null,
     tokensToday: 0,
@@ -408,4 +413,9 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
 export function withRobots(state: GameState, robots: readonly Robot[]): GameState {
   const nextId = robots.reduce((max, robot) => Math.max(max, robot.id), 0) + 1;
   return { ...state, robots: { ...state.robots, list: robots, nextId } };
+}
+
+/** Sets some zones (farmclaws part 2), leaving the others as they are. */
+export function withZones(state: GameState, zones: Partial<Record<ZoneId, ZoneRect | null>>): GameState {
+  return { ...state, robots: { ...state.robots, zones: { ...state.robots.zones, ...zones } } };
 }

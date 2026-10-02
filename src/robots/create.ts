@@ -2,12 +2,25 @@
  * Adding robots to the farm (farmclaws part 1 spec §3.4).
  */
 import { PROFILE, ROBOTS } from '../config';
-import { DIRECTIONS, ROBOT_PART_IDS, ROBOT_SIZES, type GameState, type Robot, type RobotPartId, type RobotPlace, type RobotProgram, type RobotSize } from '../core/types';
-import { isValidRobotProgram } from '../state/robotValidation';
+import {
+  DIRECTIONS,
+  ROBOT_PART_IDS,
+  ROBOT_SIZES,
+  type GameState,
+  type MdCard,
+  type Robot,
+  type RobotPartId,
+  type RobotPlace,
+  type RobotProgram,
+  type RobotSize,
+} from '../core/types';
+import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { isValidName } from '../state/sectionValidation';
 import { isCanonicalSubset, isInt } from '../state/validation';
 import { MAPS, isReservedTile } from '../world/maps';
 import { getTile, isWalkable } from '../world/tiles';
+import { checkMd, checkProgram } from './check';
+import { freshExec } from './exec';
 import { batteryFor, hasPart, periodFor } from './stats';
 
 export interface RobotSpec {
@@ -17,6 +30,8 @@ export interface RobotSpec {
   /** Where it's delivered. */
   readonly place: RobotPlace;
   readonly program: RobotProgram;
+  /** The robot's .MD; none when left out. */
+  readonly md?: readonly MdCard[];
 }
 
 export type AddRobotResult = { readonly state: GameState; readonly id: number } | { readonly error: string };
@@ -27,7 +42,13 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
   if (!(ROBOT_SIZES as readonly unknown[]).includes(spec.size)) return `A robot's size is one of ${ROBOT_SIZES.join(', ')}.`;
   if (!isCanonicalSubset(spec.parts, ROBOT_PART_IDS)) return 'Parts must be listed once each, in catalogue order.';
   if (spec.parts.length > ROBOTS.sizes[spec.size].partSlots) return `A ${spec.size} robot has room for ${ROBOTS.sizes[spec.size].partSlots} parts.`;
-  if (!isValidRobotProgram(spec.program)) return 'That program is not a valid script.';
+  if (!isProgramShape(spec.program)) return 'That program is not a script or a block program.';
+  const programProblem = checkProgram(spec.program, spec);
+  if (programProblem !== null) return programProblem;
+  const md: unknown = spec.md ?? [];
+  if (!isMdShape(md)) return 'That .MD is not a list of cards.';
+  const mdProblem = checkMd(md, spec);
+  if (mdProblem !== null) return mdProblem;
   const place: unknown = spec.place;
   if (typeof place !== 'object' || place === null) return 'A robot needs a place: tx, tz and facing.';
   const { tx, tz, facing } = place as Record<string, unknown>;
@@ -37,7 +58,10 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
   return null;
 }
 
-/** Adds a robot at `spec.place`, fully charged (not from the pool), working and not carried. */
+/**
+ * Adds a robot at `spec.place`, fully charged (not from the pool), working and not carried. A
+ * block program starts idle (freshExec); its morning stack first runs at the next morning reset.
+ */
 export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
   const problem = specProblem(state, spec);
   if (problem !== null) return { error: problem };
@@ -57,6 +81,9 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     carried: false,
     program: spec.program,
     pc: 0,
+    exec: spec.program.kind === 'blocks' ? freshExec(spec.program) : null,
+    md: spec.md ?? [],
+    off: null,
     nextActMinute: state.time.minuteOfDay + periodFor(spec),
     repairReadyDay: null,
     tokensToday: 0,

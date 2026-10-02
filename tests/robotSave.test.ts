@@ -74,13 +74,13 @@ describe('save version 4', () => {
     delete (save.player as SaveJson).carrying;
     save.version = 3;
     const migrated = migrateSave(save) as SaveJson;
-    expect(migrated.version).toBe(4);
+    expect(migrated.version).toBe(5);
     expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
   });
 
-  it('migrates the version-2 fixture all the way to 4', () => {
+  it('migrates the version-2 fixture all the way to 5', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(4);
+    expect(loaded.version).toBe(5);
     expect(loaded.robots.list).toEqual([]);
     expect(loaded.player.carrying).toBeNull();
   });

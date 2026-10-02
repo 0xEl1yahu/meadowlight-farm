@@ -353,6 +353,17 @@ function migrateV3toV4(save: Obj): Obj {
 }
 
 /**
+ * Version 4 predates the robot language: every robot keeps its script and gains `exec: null`,
+ * an empty .MD and `off: null`, and every zone starts empty.
+ */
+function migrateV4toV5(save: Obj): Obj {
+  const robots = save.robots;
+  if (!isObj(robots) || !Array.isArray(robots.list)) return save;
+  const list = (robots.list as readonly unknown[]).map((robot) => (isObj(robot) ? { ...robot, exec: null, md: [], off: null } : robot));
+  return { ...save, version: 5, robots: { ...robots, list, zones: createDefaultSections().robots.zones } };
+}
+
+/**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
  * validator.
@@ -362,6 +373,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 1) v = migrateV1toV2(v);
   if (isObj(v) && v.version === 2) v = migrateV2toV3(v);
   if (isObj(v) && v.version === 3) v = migrateV3toV4(v);
+  if (isObj(v) && v.version === 4) v = migrateV4toV5(v);
   return v;
 }
 

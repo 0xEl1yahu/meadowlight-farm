@@ -163,7 +163,14 @@ describe('createDefaultSections', () => {
       builtCoop: false,
     },
     festival: { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false },
-    robots: { nextId: 1, list: [], pool: 0, log: { nextId: 0, entries: [] }, lastNightFuel: { wood: 0, tokens: 0 } },
+    robots: {
+      nextId: 1,
+      list: [],
+      pool: 0,
+      log: { nextId: 0, entries: [] },
+      lastNightFuel: { wood: 0, tokens: 0 },
+      zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
+    },
   };
 
   it('matches the spec exactly', () => {
