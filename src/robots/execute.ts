@@ -107,20 +107,25 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
 }
 
 /**
- * Finishes a robot's turn: advances pc (a non-looping script past its end goes to standby and
- * logs 'finished'), schedules its next action and records lastAction for the renderer.
+ * Finishes a robot's turn: advances a script's pc (a non-looping script past its end goes to
+ * standby and logs 'finished'; a block program's pc stays 0), schedules its next action and
+ * records lastAction for the renderer.
  */
 function settle(state: GameState, robotId: number, action: RobotAction, success: boolean, bickered: boolean): GameState {
   const robot = requireRobot(state, robotId);
+  const program = robot.program;
   const seq = robot.actionSeq + 1;
-  let pc = robot.pc + 1;
+  let pc = robot.pc;
   let power = robot.power;
   let finished = false;
-  if (pc >= robot.program.steps.length) {
-    pc = 0;
-    if (!robot.program.loop && power === 'working') {
-      power = 'standby';
-      finished = true;
+  if (program.kind === 'script') {
+    pc = robot.pc + 1;
+    if (pc >= program.steps.length) {
+      pc = 0;
+      if (!program.loop && power === 'working') {
+        power = 'standby';
+        finished = true;
+      }
     }
   }
   const minute = state.time.minuteOfDay;

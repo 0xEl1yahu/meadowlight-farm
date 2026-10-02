@@ -535,8 +535,8 @@ export interface RobotScript {
   /** After the last step: true starts again at step 0, false goes to standby. */
   readonly loop: boolean;
 }
-/** Part 2 widens this union with block programs. */
-export type RobotProgram = RobotScript;
+/** A part 1 script or a part 2 block program. */
+export type RobotProgram = RobotScript | BlockProgram;
 
 export interface RobotPlace {
   readonly tx: number;
@@ -659,6 +659,192 @@ export interface RobotsState {
   /** What generators burned last night. */
   readonly lastNightFuel: { readonly wood: number; readonly tokens: number };
 }
+
+// ---------------------------------------------------------------------------
+// Robot language (docs/superpowers/specs/2026-10-02-farmclaws-part2-language.md)
+// ---------------------------------------------------------------------------
+
+export const ZONE_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
+export type ZoneId = (typeof ZONE_IDS)[number];
+
+/** A rectangle of farm tiles: x0 … x0+w-1, z0 … z0+d-1. w, d ≥ 1; wholly inside the farm. */
+export interface ZoneRect {
+  readonly x0: number;
+  readonly z0: number;
+  readonly w: number;
+  readonly d: number;
+}
+
+/**
+ * `Every [n] minutes` options. Declared here rather than in config so the Trigger type needs
+ * no config import (config imports this file); ROBOTS.everyChoices is this list.
+ */
+export const EVERY_CHOICES = [5, 10, 15, 30, 60] as const;
+
+export const VALUE_TYPES = ['number', 'text', 'yesNo', 'item', 'tile'] as const;
+export type ValueType = (typeof VALUE_TYPES)[number];
+
+/** A runtime value. Numbers are integers in ±ROBOTS.maxNumber; texts 0 … ROBOTS.maxTextLength characters; tiles are farm tiles. */
+export type Value =
+  | { readonly type: 'number'; readonly value: number }
+  | { readonly type: 'text'; readonly value: string }
+  | { readonly type: 'yesNo'; readonly value: boolean }
+  | { readonly type: 'item'; readonly value: ItemId }
+  | { readonly type: 'tile'; readonly value: TileCoord };
+
+/** One expression. Its type is decided by the checker (src/robots/check.ts), not by TypeScript. */
+export type Expr =
+  // literals (count 0 blocks)
+  | { readonly kind: 'num'; readonly value: number }
+  | { readonly kind: 'text'; readonly value: string }
+  | { readonly kind: 'yes'; readonly value: boolean }
+  | { readonly kind: 'item'; readonly itemId: ItemId }
+  | { readonly kind: 'tile'; readonly tx: number; readonly tz: number }
+  // values
+  | { readonly kind: 'var'; readonly name: string }
+  | { readonly kind: 'myTile' }
+  | { readonly kind: 'tileAhead' }
+  | { readonly kind: 'tokensLeft' }
+  | { readonly kind: 'countInBag'; readonly itemId: ItemId }
+  | { readonly kind: 'arith'; readonly op: '+' | '-' | '×'; readonly a: Expr; readonly b: Expr }
+  | { readonly kind: 'compare'; readonly op: '=' | '≠' | '<' | '>'; readonly a: Expr; readonly b: Expr }
+  | { readonly kind: 'and' | 'or'; readonly a: Expr; readonly b: Expr }
+  | { readonly kind: 'not'; readonly a: Expr }
+  // sensors (all Yes/No, all free; the last three need a sensor eye)
+  | { readonly kind: 'cropIsReady' }
+  | { readonly kind: 'soilIsDry' }
+  | { readonly kind: 'tileIsTilled' }
+  | { readonly kind: 'cropIs'; readonly cropId: CropId }
+  | { readonly kind: 'bagIsFull' }
+  | { readonly kind: 'bagHas'; readonly itemId: ItemId }
+  | { readonly kind: 'atEdgeOf'; readonly zone: ZoneId }
+  | { readonly kind: 'tokensBelow'; readonly n: Expr }
+  | { readonly kind: 'tileAheadIs'; readonly what: 'water' | 'blocked' | 'clear' }
+  | { readonly kind: 'itIsRaining' }
+  | { readonly kind: 'timeIsAfter'; readonly minute: number };
+
+/** An action block. Mirrors RobotAction, with expressions where the editor has sockets. */
+export type ActionBlock =
+  | { readonly kind: 'move' }
+  | { readonly kind: 'turn'; readonly side: 'left' | 'right' }
+  | { readonly kind: 'water' }
+  | { readonly kind: 'harvest' }
+  | { readonly kind: 'till' }
+  | { readonly kind: 'plant'; readonly cropId: CropId }
+  | { readonly kind: 'refill' }
+  | { readonly kind: 'deposit' }
+  /** `item` is an Item expression. */
+  | { readonly kind: 'take'; readonly item: Expr }
+  /** `text` is a Text expression. */
+  | { readonly kind: 'say'; readonly text: Expr }
+  /** `minutes` is a Number expression. */
+  | { readonly kind: 'wait'; readonly minutes: Expr }
+  | { readonly kind: 'powerDown' };
+
+export type Statement =
+  | { readonly kind: 'do'; readonly action: ActionBlock }
+  | { readonly kind: 'repeatTimes'; readonly times: Expr; readonly body: readonly Statement[] }
+  | { readonly kind: 'repeatUntil'; readonly until: Expr; readonly body: readonly Statement[] }
+  | { readonly kind: 'repeatForever'; readonly body: readonly Statement[] }
+  | { readonly kind: 'if'; readonly cond: Expr; readonly then: readonly Statement[]; readonly else: readonly Statement[] | null }
+  | { readonly kind: 'forEachTile'; readonly zone: ZoneId; readonly body: readonly Statement[] }
+  /** `tile` is a Tile expression. */
+  | { readonly kind: 'goTo'; readonly tile: Expr }
+  | { readonly kind: 'set'; readonly name: string; readonly value: Expr }
+  /** Adds `by` to a Number variable. */
+  | { readonly kind: 'change'; readonly name: string; readonly by: Expr }
+  | { readonly kind: 'runHelper'; readonly name: string };
+
+export type Trigger =
+  /** Starts at the morning reset (TIME.dayStartMinute) only. */
+  | { readonly kind: 'morning' }
+  | { readonly kind: 'atTime'; readonly minute: number }
+  | { readonly kind: 'bagFull' }
+  | { readonly kind: 'startsRaining' }
+  /** `minutes` is one of ROBOTS.everyChoices. */
+  | { readonly kind: 'every'; readonly minutes: (typeof EVERY_CHOICES)[number] };
+
+/** A variable; `initial` is a literal of `type`, restored each morning. */
+export interface VarDecl {
+  readonly name: string;
+  readonly type: ValueType;
+  readonly initial: Expr;
+}
+
+export interface TriggerStack {
+  readonly trigger: Trigger;
+  readonly body: readonly Statement[];
+}
+
+export interface HelperDef {
+  readonly name: string;
+  readonly body: readonly Statement[];
+}
+
+export interface BlockProgram {
+  readonly kind: 'blocks';
+  readonly vars: readonly VarDecl[];
+  /** 1 … ROBOTS.maxStacks. */
+  readonly stacks: readonly TriggerStack[];
+  readonly helpers: readonly HelperDef[];
+}
+
+/** Which statement list a frame walks: a stack or helper body, then (statement index, branch) steps down. */
+export interface ListRef {
+  readonly root: 'stack' | 'helper';
+  readonly index: number;
+  readonly path: readonly (readonly [statement: number, branch: 'body' | 'then' | 'else'])[];
+}
+
+export type LoopState =
+  /** `left`: iterations still to start, after this one. */
+  | { readonly kind: 'times'; readonly left: number }
+  | { readonly kind: 'until' }
+  | { readonly kind: 'forever' }
+  | { readonly kind: 'forEach'; readonly tiles: readonly TileCoord[]; readonly i: number };
+
+export type Frame =
+  /** Walking a statement list. `loop` is set when the list is a loop's body. */
+  | { readonly kind: 'list'; readonly list: ListRef; readonly next: number; readonly loop: LoopState | null }
+  /** Walking a route to `target`, one move or turn per due minute. `why` says who asked. */
+  | {
+      readonly kind: 'route';
+      readonly target: TileCoord;
+      readonly path: readonly TileCoord[];
+      readonly why: 'goTo' | 'forEach' | 'doReturn';
+    };
+
+/** Where a block program is. Scripts keep `Robot.pc` instead and have `exec: null`. */
+export interface RobotExec {
+  /** The trigger stack running, or null while idle. */
+  readonly running: number | null;
+  /** Innermost last. Empty while idle. At most ROBOTS.maxFrames. */
+  readonly frames: readonly Frame[];
+  /** One per program.vars, same order and type. */
+  readonly vars: readonly Value[];
+  /** Per stack: the next minute an `every` / `atTime` trigger may fire today, or null when spent. Other triggers: null. */
+  readonly due: readonly (number | null)[];
+  /** Per stack: whether a once-a-day trigger (bagFull, startsRaining) already fired today. */
+  readonly firedToday: readonly boolean[];
+  /** Indices of DO cards already carried out today. */
+  readonly doneCards: readonly number[];
+}
+
+/** One card of the Managing Directive (.MD): DON'T cards forbid, DO cards take over. */
+export type MdCard =
+  | { readonly kind: 'dontLeave'; readonly zone: ZoneId }
+  | { readonly kind: 'dontGoIntoWater' }
+  | { readonly kind: 'dontHarvest'; readonly cropId: CropId }
+  | { readonly kind: 'dontDeposit'; readonly itemId: ItemId }
+  | {
+      readonly kind: 'doReturn';
+      readonly to: { readonly kind: 'tile'; readonly tx: number; readonly tz: number } | { readonly kind: 'generator' };
+      readonly minute: number;
+    }
+  | {
+      readonly kind: 'doPowerDown';
+      readonly when: { readonly kind: 'bagFull' } | { readonly kind: 'tokensBelow'; readonly n: number } | { readonly kind: 'raining' };
+    };
 
 // ---------------------------------------------------------------------------
 // Sections for later workstreams (data only in Phase 0)

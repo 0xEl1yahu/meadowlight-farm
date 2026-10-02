@@ -16,7 +16,7 @@ import {
   type GameState,
   type RobotAction,
   type RobotPartId,
-  type RobotProgram,
+  type RobotScript,
   type WorldState,
 } from '../core/types';
 import { isItemId } from '../items/items';
@@ -74,7 +74,8 @@ export function isValidRobotAction(v: unknown): v is RobotAction {
   }
 }
 
-export function isValidRobotProgram(v: unknown): v is RobotProgram {
+/** A part 1 script: 1 … maxScriptSteps valid steps and a loop flag. Block programs are checked separately. */
+export function isValidRobotProgram(v: unknown): v is RobotScript {
   return (
     isObj(v) &&
     hasExactKeys(v, ['kind', 'steps', 'loop']) &&

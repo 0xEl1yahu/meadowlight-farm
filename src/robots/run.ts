@@ -21,16 +21,21 @@ function goFlat(state: GameState, robotId: number): GameState {
  * One minute (state.time.minuteOfDay is the minute being processed): every due robot chooses
  * against the state at the start of the minute; robots that can't pay go flat; successful
  * tile actions on a shared tile bicker; the rest are re-planned and applied in id order.
+ * Due robots are working script robots that aren't carried; a script robot chooses `steps[pc]`.
  */
 export function runRobotsMinute(state: GameState): GameState {
   const minute = state.time.minuteOfDay;
-  const due = state.robots.list.filter((r) => !r.carried && r.power === 'working' && r.nextActMinute <= minute);
+  const due = state.robots.list.filter(
+    (r) => r.program.kind === 'script' && !r.carried && r.power === 'working' && r.nextActMinute <= minute,
+  );
   if (due.length === 0) return state;
 
   let next = state;
   const chosen: { readonly id: number; readonly plan: RobotPlan }[] = [];
   for (const robot of due) {
-    const action = robot.program.steps[robot.pc];
+    const program = robot.program;
+    invariant(program.kind === 'script', `robot ${robot.id} is due without a script`);
+    const action = program.steps[robot.pc];
     invariant(action !== undefined, `robot ${robot.id} pc ${robot.pc} outside its script`);
     const plan = planRobotAction(state, robot, action);
     if (robot.tokens < plan.cost) next = goFlat(next, robot.id);

@@ -2,7 +2,7 @@
  * Global tuning constants. Everything that shapes the simulation lives here so gameplay
  * can be rebalanced without touching system code.
  */
-import { Direction, type ItemStack, type RobotActionKind, type RobotSize, type TileCoord, type TileRect } from './core/types';
+import { Direction, EVERY_CHOICES, type ItemStack, type RobotActionKind, type RobotSize, type TileCoord, type TileRect } from './core/types';
 
 /** Settings shared by every map. Each map's size lives in its definition (src/world/maps/). */
 export const WORLD = {
@@ -225,12 +225,18 @@ export interface RobotSizeSpec {
   readonly bagStacks: number;
   readonly partSlots: number;
   readonly costMultiplier: number;
+  /** Most blocks a program may hold (farmclaws part 2 §3). */
+  readonly blocks: number;
+  /** Most variables a program may declare. */
+  readonly vars: number;
+  /** Most .MD cards. */
+  readonly mdCards: number;
 }
 
 const ROBOT_SIZE_SPECS = {
-  mini: { price: 1500, battery: 80, bagStacks: 1, partSlots: 1, costMultiplier: 1 },
-  standard: { price: 4000, battery: 200, bagStacks: 3, partSlots: 2, costMultiplier: 2 },
-  big: { price: 10000, battery: 500, bagStacks: 9, partSlots: 3, costMultiplier: 4 },
+  mini: { price: 1500, battery: 80, bagStacks: 1, partSlots: 1, costMultiplier: 1, blocks: 12, vars: 1, mdCards: 3 },
+  standard: { price: 4000, battery: 200, bagStacks: 3, partSlots: 2, costMultiplier: 2, blocks: 30, vars: 3, mdCards: 6 },
+  big: { price: 10000, battery: 500, bagStacks: 9, partSlots: 3, costMultiplier: 4, blocks: 80, vars: 6, mdCards: 10 },
 } as const satisfies Readonly<Record<RobotSize, RobotSizeSpec>>;
 
 /** Base token cost of each action, for a Mini before the multiplier and the efficient core. */
@@ -274,6 +280,24 @@ export const ROBOTS = {
   repairDropOff: { tx: 9, tz: 6 } satisfies TileCoord,
   sayMaxLength: 60,
   maxWaitMinutes: 240,
+  /** Free blocks a robot may pass in one due minute before it gets dizzy (part 2 §5.1). */
+  stepBudget: 50,
+  /** Trigger stacks per program. */
+  maxStacks: 8,
+  /** Frame stack depth: nesting plus helper calls. */
+  maxFrames: 16,
+  /** Numbers clamp to ±this after arithmetic. */
+  maxNumber: 999_999,
+  /** Longest text value (the same as sayMaxLength). */
+  maxTextLength: 60,
+  /** Longest variable or helper name. */
+  maxIdentifierLength: 16,
+  /** `Every [n] minutes` options. */
+  everyChoices: EVERY_CHOICES,
+  /** Base tokens to wake from standby on a trigger; scaled like an action cost. */
+  wakeCost: 1,
+  /** `Repeat [n] times` clamps n to 0 … this at run time. */
+  maxRepeatTimes: 999,
 } as const;
 
 export const GENERATORS = {

@@ -40,10 +40,19 @@ export function carryEnergyFor(robot: Pick<Robot, 'size'>): number {
   return ROBOTS.carryEnergy[robot.size];
 }
 
-/** Tokens an action costs: 0 stays 0; otherwise base × size, × 0.75 with an efficient core, floored, at least 1. */
-export function actionCost(robot: RobotBody, kind: RobotActionKind): number {
-  const base: number = ROBOTS.cost[kind];
-  if (base === 0) return 0;
+/** A base (Mini) token cost scaled for this robot: × size, × 0.75 with an efficient core, floored, at least 1. */
+export function scaledCost(robot: RobotBody, base: number): number {
   const factor = hasPart(robot, 'efficientCore') ? ROBOTS.efficientCoreFactor : 1;
   return Math.max(1, Math.floor(base * ROBOTS.sizes[robot.size].costMultiplier * factor));
+}
+
+/** Tokens an action costs: 0 stays 0; otherwise scaledCost of its base cost. */
+export function actionCost(robot: RobotBody, kind: RobotActionKind): number {
+  const base: number = ROBOTS.cost[kind];
+  return base === 0 ? 0 : scaledCost(robot, base);
+}
+
+/** Tokens a trigger costs to wake the robot from standby (farmclaws part 2 §7). */
+export function wakeCostFor(robot: RobotBody): number {
+  return scaledCost(robot, ROBOTS.wakeCost);
 }
