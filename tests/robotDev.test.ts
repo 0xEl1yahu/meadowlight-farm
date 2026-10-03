@@ -133,9 +133,16 @@ describe('programmedRobot', () => {
 });
 
 describe('withMd', () => {
+  /** An idle block robot: .MD cards only apply to block programs. */
+  const BLOCKY = robotOf({ program: WALK, exec: freshExec(WALK), power: 'standby' });
+
   it('sets the cards', () => {
     const cards: MdCard[] = [{ kind: 'dontGoIntoWater' }, RETURN];
-    expect(withMd(robotOf(), cards)).toEqual({ ...robotOf(), md: cards });
+    expect(withMd(BLOCKY, cards)).toEqual({ ...BLOCKY, md: cards, exec: { ...freshExec(WALK), doneCards: [] } });
+  });
+
+  it('refuses a robot running a script', () => {
+    expect(withMd(robotOf(), [{ kind: 'dontGoIntoWater' }])).toBe('.MD cards only apply to block programs.');
   });
 
   it("forgets today's carried-out DO cards and stops a DO return under way", () => {
@@ -162,13 +169,13 @@ describe('withMd', () => {
   it("returns the checker's sentence for cards the robot can't hold", () => {
     // A Mini's .MD holds 3 cards.
     const four: MdCard[] = [{ kind: 'dontGoIntoWater' }, { kind: 'dontLeave', zone: 'A' }, { kind: 'dontLeave', zone: 'B' }, { kind: 'dontHarvest', cropId: 'pumpkin' }];
-    const problem = checkMd(four, robotOf());
+    const problem = checkMd(four, BLOCKY);
     expect(typeof problem).toBe('string');
-    expect(withMd(robotOf(), four)).toBe(problem);
+    expect(withMd(BLOCKY, four)).toBe(problem);
   });
 
   it("returns the usage for something that isn't a list of cards", () => {
-    for (const junk of [42, null, 'water', [{ kind: 'dance' }]]) expect(withMd(robotOf(), junk as never)).toBe(MD_USAGE);
+    for (const junk of [42, null, 'water', [{ kind: 'dance' }]]) expect(withMd(BLOCKY, junk as never)).toBe(MD_USAGE);
   });
 });
 
@@ -229,7 +236,7 @@ describe('console input never throws', () => {
     const holeyScript = { kind: 'script', steps: [{ kind: 'move' }, , { kind: 'move' }], loop: true } as unknown as RobotProgram;
     expect(programmedRobot(robotOf(), holeyScript, TIME.dayStartMinute)).toBe(PROGRAM_USAGE);
     expect(addRobot(BASE, { name: 'Holey', size: 'mini', parts: ['claw'], place: AT, program: holeyScript })).toHaveProperty('error');
-    expect(withMd(robotOf(), new Array(1) as never)).toBe(MD_USAGE);
+    expect(withMd(robotOf({ program: WALK, exec: freshExec(WALK) }), new Array(1) as never)).toBe(MD_USAGE);
   });
 
   it('answers a 60-deep DAG of shared and nodes promptly, with the usage', () => {

@@ -93,6 +93,7 @@ const PROGRAM_USAGE = 'Usage: setProgram(name, blocks.program({ stacks: [blocks.
 const MD_USAGE = "Usage: setMd(name, [{ kind: 'dontGoIntoWater' }, { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 }])";
 const ZONE_USAGE = "Usage: setZone('A', { x0, z0, w, d }) sets a zone and setZone('A', null) clears it. Zones are A to H.";
 const ZONE_OFF_FARM = 'A zone is at least 1 × 1 tile and lies wholly inside the farm.';
+const MD_SCRIPT = '.MD cards only apply to block programs.';
 
 /** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first. */
 const KEPT_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['flat', 'broken', 'repairing']);
@@ -127,14 +128,15 @@ export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay
 /**
  * `robot` with a new .MD. The cards apply at once: today's carried-out DO cards are forgotten
  * (their indices may name other cards now), and a DO return under way stops, because its card
- * may be gone; a working robot then stands by until a trigger or a DO card moves it.
+ * may be gone; a working robot then stands by until a trigger or a DO card moves it. A robot
+ * running a script is refused: .MD cards only apply to block programs.
  */
 export function withMd(robot: Robot, md: readonly MdCard[]): Robot | string {
   if (!isMdShape(md)) return MD_USAGE;
+  const exec = robot.exec;
+  if (exec === null) return MD_SCRIPT;
   const problem = checkMd(md, robot);
   if (problem !== null) return problem;
-  const exec = robot.exec;
-  if (exec === null) return { ...robot, md };
   const returning = exec.running === null && exec.frames.length > 0;
   return {
     ...robot,
