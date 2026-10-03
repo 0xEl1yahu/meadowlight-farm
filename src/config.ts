@@ -395,3 +395,13 @@ export const ROBOT_PAINTS = [
   { name: 'Slate', color: 0x5e6670 },
   { name: 'Cream', color: 0xece2c6 },
 ] as const satisfies readonly { readonly name: string; readonly color: number }[];
+
+/** The robot screen (farmclaws part 3 spec §4, §5). */
+export const ROBOT_SCREEN = {
+  /** Below this window width (px) the robot screen uses its phone layout. */
+  phoneMaxWidth: 700,
+  /** Vertical gap (px) between the top-level stacks of a loaded program. */
+  stackGap: 40,
+  /** Minutes between the options of the editor's time dropdowns. */
+  timeStep: 10,
+} as const;
