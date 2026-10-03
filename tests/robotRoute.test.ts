@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { Blocker, Direction, TileState, type GameState, type MdCard, type TileCoord } from '../src/core/types';
 import { dontForbids, keptItems, moveForbiddenBy } from '../src/robots/md';
-import { nextRouteAction, planRoute } from '../src/robots/route';
+import { nextRouteAction, planRoute, reachableFrom } from '../src/robots/route';
 import { blockedTile } from '../src/world/tiles';
 import { BASE, TARGET, matureCrop, robotOf, soilTile, stack, withTile, withZones } from './testUtils';
 
@@ -19,6 +19,25 @@ const WATER: MdCard = { kind: 'dontGoIntoWater' };
 const LEAVE_A: MdCard = { kind: 'dontLeave', zone: 'A' };
 /** Zone A: x 4…6, z 9…11, around TARGET (5, 10). */
 const ZONE_A = { x0: 4, z0: 9, w: 3, d: 3 };
+
+describe('reachableFrom', () => {
+  it('holds the start and every tile planRoute can reach, and none behind a wall', () => {
+    const boxed = rockAt(BASE, { tx: 5, tz: 9 }, { tx: 6, tz: 10 }, { tx: 5, tz: 11 }, { tx: 4, tz: 10 });
+    const reach = reachableFrom(boxed, robotOf());
+    expect([...reach]).toEqual(['5,10']);
+    const open = reachableFrom(BASE, robotOf());
+    expect(open.has('5,10') && open.has('5,13')).toBe(true);
+    for (const t of [{ tx: 7, tz: 12 }, { tx: 2, tz: 9 }]) expect(open.has(`${t.tx},${t.tz}`)).toBe(planRoute(BASE, robotOf(), t) !== null);
+  });
+
+  it("stays inside a DON'T leave zone and skips rocks", () => {
+    const state = rockAt(withZones(BASE, { A: ZONE_A }), { tx: 6, tz: 10 });
+    const reach = reachableFrom(state, robotOf({ md: [LEAVE_A] }));
+    expect(reach.has('6,10')).toBe(false);
+    expect(reach.has('4,9')).toBe(true);
+    expect(reach.has('5,12')).toBe(false);
+  });
+});
 
 describe('planRoute', () => {
   it('goes straight to a tile in line', () => {

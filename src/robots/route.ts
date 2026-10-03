@@ -18,15 +18,8 @@ export function canEnter(state: GameState, robot: Robot, from: TileCoord, to: Ti
   return standable(state, to) && moveForbiddenBy(robot, from, to, state) === null;
 }
 
-/**
- * The shortest walkable path from the robot to `target`, by breadth-first search in DIRECTIONS
- * order, over steps its DON'T cards allow. Excludes the start, includes the target; `[]` when
- * the robot stands on it; null when the target can't be stood on or can't be reached. Other
- * robots never block a route.
- */
-export function planRoute(state: GameState, robot: Robot, target: TileCoord): readonly TileCoord[] | null {
-  if (!standable(state, target)) return null;
-  if (robot.tx === target.tx && robot.tz === target.tz) return [];
+/** Breadth-first search from the robot's tile in DIRECTIONS order: each reached tile's parent (null for the start). */
+function search(state: GameState, robot: Robot): { readonly parent: Map<number, TileCoord | null>; readonly key: (c: TileCoord) => number } {
   const grid = state.maps.farm.grid;
   const key = (c: TileCoord): number => c.tz * grid.width + c.tx;
   const parent = new Map<number, TileCoord | null>([[key(robot), null]]);
@@ -38,20 +31,38 @@ export function planRoute(state: GameState, robot: Robot, target: TileCoord): re
       const next = stepTile(current, direction);
       if (!inBounds(grid, next.tx, next.tz) || parent.has(key(next)) || !canEnter(state, robot, current, next)) continue;
       parent.set(key(next), current);
-      if (next.tx === target.tx && next.tz === target.tz) {
-        const path: TileCoord[] = [next];
-        for (let back = current; back.tx !== robot.tx || back.tz !== robot.tz; ) {
-          path.push(back);
-          const up = parent.get(key(back));
-          invariant(up !== undefined && up !== null, 'planRoute: broken parent chain');
-          back = up;
-        }
-        return path.reverse();
-      }
       queue.push(next);
     }
   }
-  return null;
+  return { parent, key };
+}
+
+/**
+ * The shortest walkable path from the robot to `target`, by breadth-first search in DIRECTIONS
+ * order, over steps its DON'T cards allow. Excludes the start, includes the target; `[]` when
+ * the robot stands on it; null when the target can't be stood on or can't be reached. Other
+ * robots never block a route.
+ */
+export function planRoute(state: GameState, robot: Robot, target: TileCoord): readonly TileCoord[] | null {
+  if (!standable(state, target)) return null;
+  if (robot.tx === target.tx && robot.tz === target.tz) return [];
+  const { parent, key } = search(state, robot);
+  if (!parent.has(key(target))) return null;
+  const path: TileCoord[] = [];
+  for (let back: TileCoord = target; back.tx !== robot.tx || back.tz !== robot.tz; ) {
+    path.push(back);
+    const up = parent.get(key(back));
+    invariant(up !== undefined && up !== null, 'planRoute: broken parent chain');
+    back = up;
+  }
+  return path.reverse();
+}
+
+/** Every tile (as `${tx},${tz}`) a route from the robot's tile can reach, that tile included, under the rules `planRoute` uses. */
+export function reachableFrom(state: GameState, robot: Robot): ReadonlySet<string> {
+  const { parent } = search(state, robot);
+  const width = state.maps.farm.grid.width;
+  return new Set(Array.from(parent.keys(), (k) => `${k % width},${Math.floor(k / width)}`));
 }
 
 /** `move` when the robot faces `next` (an adjacent tile), otherwise the shorter turn toward it (`right` on a tie). */

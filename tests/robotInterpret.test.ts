@@ -22,8 +22,9 @@ import {
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
 import { startStack, stepProgram, type GaveUp, type Step } from '../src/robots/interpret';
+import { snakeTiles } from '../src/robots/zones';
 import { stepTile } from '../src/world/grid';
-import { blockedTile } from '../src/world/tiles';
+import { blockedTile, getTile, isWalkable } from '../src/world/tiles';
 import { BASE, TARGET, must, robotOf, soilTile, withTile, withZones } from './testUtils';
 
 /** A program with one morning stack running `body`. */
@@ -394,5 +395,28 @@ describe('For each tile', () => {
     const result = waterer(row, [{ kind: 'dontLeave', zone: 'A' }], { tx: 4, tz: 10 });
     expect(result.outcomes).toEqual([{ kind: 'water' }, say('Done'), 'idle']);
     expect(result.gaveUp).toEqual([{ target: { tx: 6, tz: 10 }, why: 'forEach' }]);
+  });
+
+  it('logs every unreachable tile as a free give-up, never dizzy, behind a DON\'T leave (review focus 5)', () => {
+    const far = { x0: 10, z0: 14, w: 8, d: 7 };
+    const state = withZones(BASE, { A: far, B: { x0: 4, z0: 9, w: 3, d: 3 } });
+    const robot = running(prog([b.forEach('A', b.water()), b.say('Done')]), { parts: ['wateringHead'], tank: 20, md: [{ kind: 'dontLeave', zone: 'B' }] });
+    const step = stepProgram(state, robot);
+    expect(step.kind).toBe('act');
+    expect(step.kind === 'act' && step.action).toEqual(say('Done'));
+    const standable = snakeTiles(far).filter((t) => {
+      const tile = getTile(BASE.maps.farm, t.tx, t.tz);
+      return tile !== null && isWalkable(tile);
+    });
+    expect(standable.length).toBeGreaterThanOrEqual(ROBOTS.stepBudget);
+    expect(step.kind === 'act' && step.gaveUp).toEqual(standable.map((target) => ({ target, why: 'forEach' })));
+  });
+
+  it('logs every tile of a zone it is boxed in from, in snake order, when rocks surround it', () => {
+    const big = { x0: 4, z0: 12, w: 10, d: 6 };
+    const state = rockAt(withZones(BASE, { A: big }), { tx: 5, tz: 9 }, { tx: 6, tz: 10 }, { tx: 5, tz: 11 }, { tx: 4, tz: 10 });
+    const step = stepProgram(state, running(prog([b.forEach('A', b.water()), b.say('Done')])));
+    expect(step.kind).toBe('act');
+    expect(step.kind === 'act' && step.gaveUp).toEqual(snakeTiles(big).map((target) => ({ target, why: 'forEach' })));
   });
 });

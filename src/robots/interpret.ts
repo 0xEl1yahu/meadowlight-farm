@@ -27,7 +27,7 @@ import { manhattanDistance } from '../world/grid';
 import { getTile, isWalkable } from '../world/tiles';
 import { clampNumber, evaluate, type EvalContext } from './eval';
 import { resolveList } from './program';
-import { canEnter, nextRouteAction, planRoute } from './route';
+import { canEnter, nextRouteAction, planRoute, reachableFrom } from './route';
 import { snakeTiles, zoneOf } from './zones';
 
 /** A route the interpreter abandoned this turn, for the caller to log as `gaveUp`. */
@@ -70,16 +70,6 @@ function loopStatement(program: BlockProgram, ref: ListRef): Statement {
   const statement = listOf(program, { ...ref, path: ref.path.slice(0, -1) })[last[0]];
   invariant(statement !== undefined, 'a loop frame has a loop statement');
   return statement;
-}
-
-/** Index of the first tile at or after `from` a robot can stand on now, or -1. */
-function nextStandable(state: GameState, tiles: readonly TileCoord[], from: number): number {
-  for (let i = from; i < tiles.length; i++) {
-    const coord = tiles[i];
-    const tile = coord === undefined ? null : getTile(state.maps.farm, coord.tx, coord.tz);
-    if (tile !== null && isWalkable(tile)) return i;
-  }
-  return -1;
 }
 
 function numberOf(value: Value): number {
@@ -168,6 +158,22 @@ export function stepProgram(state: GameState, robot: Robot): Step {
     steps++;
     return steps >= ROBOTS.stepBudget;
   };
+  /**
+   * Index of the first tile at or after `from` the robot can stand on and reach (one flood fill,
+   * the rule `planRoute` uses), or -1. Standable tiles it can't reach are logged as given up, free.
+   */
+  const nextReachable = (tiles: readonly TileCoord[], from: number): number => {
+    let reach: ReadonlySet<string> | null = null;
+    for (let i = from; i < tiles.length; i++) {
+      const coord = tiles[i];
+      const tile = coord === undefined ? null : getTile(state.maps.farm, coord.tx, coord.tz);
+      if (coord === undefined || tile === null || !isWalkable(tile)) continue;
+      reach ??= reachableFrom(state, robot);
+      if (reach.has(`${coord.tx},${coord.tz}`)) return i;
+      gaveUp.push({ target: coord, why: 'forEach' });
+    }
+    return -1;
+  };
   const setVar = (name: string, value: Value): void => {
     const index = program.vars.findIndex((decl) => decl.name === name);
     invariant(index !== -1, `unknown variable ${name}`);
@@ -223,7 +229,7 @@ export function stepProgram(state: GameState, robot: Robot): Step {
           again = loop;
           break;
         case 'forEach': {
-          const i = nextStandable(state, loop.tiles, loop.i + 1);
+          const i = nextReachable(loop.tiles, loop.i + 1);
           again = i === -1 ? null : { kind: 'forEach', tiles: loop.tiles, i };
           break;
         }
@@ -265,7 +271,7 @@ export function stepProgram(state: GameState, robot: Robot): Step {
       case 'forEachTile': {
         const rect = zoneOf(state, statement.zone);
         const tiles = rect === null ? [] : snakeTiles(rect);
-        const i = nextStandable(state, tiles, 0);
+        const i = nextReachable(tiles, 0);
         const first = tiles[i];
         if (first !== undefined) {
           frames.push(bodyFrame(top.list, top.next, 'body', { kind: 'forEach', tiles, i }));
