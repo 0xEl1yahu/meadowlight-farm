@@ -21,7 +21,7 @@ import {
 import { b } from '../robots/blocks';
 import { checkMd, checkProgram, isValidZoneRect } from '../robots/check';
 import { addRobot, type RobotSpec } from '../robots/create';
-import { freshExec, morningExec } from '../robots/exec';
+import { execAt, morningExec } from '../robots/exec';
 import { robotSays, whatHappened } from '../robots/logText';
 import { periodFor } from '../robots/stats';
 import { withRobot } from '../robots/world';
@@ -100,17 +100,18 @@ const KEPT_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['flat'
 /**
  * `robot` with a new program, set up the way the morning reset would (spec §12). A block
  * program starts its `morning` stack only if `minuteOfDay` is no later than the robot's first
- * act of the day (TIME.dayStartMinute + its period); later it idles until a trigger fires. A
- * script runs from step 0. Either way the robot turns back on and acts one period from now; a
- * flat, broken or repairing robot keeps its power. Returns the checker's sentence instead when
- * the program fails, or the usage when it isn't a program at all.
+ * act of the day (TIME.dayStartMinute + its period); later it idles until a trigger fires, with
+ * the atTime triggers already past today spent (execAt). A script runs from step 0. Either way
+ * the robot turns back on and acts one period from now; a flat, broken or repairing robot keeps
+ * its power. Returns the checker's sentence instead when the program fails, or the usage when it
+ * isn't a program at all.
  */
 export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay: number): Robot | string {
   if (!isProgramShape(program)) return PROGRAM_USAGE;
   const problem = checkProgram(program, robot);
   if (problem !== null) return problem;
   const early = minuteOfDay <= TIME.dayStartMinute + periodFor(robot);
-  const exec = program.kind === 'blocks' ? (early ? morningExec(program) : freshExec(program)) : null;
+  const exec = program.kind === 'blocks' ? (early ? morningExec(program) : execAt(program, minuteOfDay)) : null;
   const runs = exec === null || exec.running !== null;
   return {
     ...robot,

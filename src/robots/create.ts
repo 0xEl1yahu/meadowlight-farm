@@ -20,7 +20,7 @@ import { isCanonicalSubset, isInt } from '../state/validation';
 import { MAPS, isReservedTile } from '../world/maps';
 import { getTile, isWalkable } from '../world/tiles';
 import { checkMd, checkProgram } from './check';
-import { freshExec } from './exec';
+import { execAt } from './exec';
 import { batteryFor, hasPart, periodFor } from './stats';
 
 export interface RobotSpec {
@@ -60,7 +60,8 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
 
 /**
  * Adds a robot at `spec.place`, fully charged (not from the pool), working and not carried. A
- * block program starts idle (freshExec); its morning stack first runs at the next morning reset.
+ * block program starts idle (execAt: atTime triggers already past today are spent); its morning
+ * stack first runs at the next morning reset.
  */
 export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
   const problem = specProblem(state, spec);
@@ -81,7 +82,7 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     carried: false,
     program: spec.program,
     pc: 0,
-    exec: spec.program.kind === 'blocks' ? freshExec(spec.program) : null,
+    exec: spec.program.kind === 'blocks' ? execAt(spec.program, state.time.minuteOfDay) : null,
     md: spec.md ?? [],
     off: null,
     nextActMinute: state.time.minuteOfDay + periodFor(spec),

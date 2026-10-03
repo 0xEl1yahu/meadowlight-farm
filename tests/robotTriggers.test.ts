@@ -5,13 +5,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { Weather, type BlockProgram, type GameState, type Robot } from '../src/core/types';
+import { programmedRobot } from '../src/dev/robotDev';
 import { b } from '../src/robots/blocks';
-import { freshExec, morningExec } from '../src/robots/exec';
+import { addRobot } from '../src/robots/create';
+import { execAt, freshExec, morningExec } from '../src/robots/exec';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
-import { BASE, must, robotOf, withRobots } from './testUtils';
+import { BASE, TARGET, must, robotOf, withRobots } from './testUtils';
 
 const tick = (state: GameState, minutes: number): GameState => gameReducer(state, actions.tick(minutes));
 const sleep = (state: GameState): GameState => gameReducer(state, actions.sleep());
@@ -110,6 +112,35 @@ describe('waking', () => {
     const next = tick(withRobots(BASE, [idle(program, { tokens: 1 })]), 8);
     expect(requireRobot(next, 1)).toMatchObject({ power: 'flat', tokens: 1 });
     expect(must(requireRobot(next, 1).exec).due).toEqual([365]);
+  });
+});
+
+describe('an exec rebuilt mid-day (spec §12)', () => {
+  const MIXED = b.program({
+    stacks: [b.when(b.morning(), b.move()), b.when(b.every(15), b.move()), b.when(b.atTime(540), b.turn('right')), b.when(b.bagFull(), b.deposit())],
+  });
+  /** Turns right at 9:00 am and left at 4:00 pm. */
+  const TWICE = b.program({ stacks: [b.when(b.atTime(540), b.turn('right')), b.when(b.atTime(960), b.turn('left'))] });
+  const at = (minute: number): GameState => ({ ...BASE, time: { ...BASE.time, minuteOfDay: minute } });
+
+  it('spends the atTime triggers already past today and leaves the others as a fresh exec has them', () => {
+    expect(execAt(MIXED, 900)).toEqual({ ...freshExec(MIXED), due: [null, 375, null, null] });
+    expect(execAt(MIXED, 500)).toEqual(freshExec(MIXED));
+    expect(execAt(MIXED, 540)).toEqual(freshExec(MIXED));
+  });
+
+  it('a robot added in the afternoon never fires the morning atTime stack', () => {
+    const result = addRobot(at(900), { name: 'Late', size: 'mini', parts: ['claw'], place: { tx: TARGET.tx, tz: TARGET.tz, facing: 2 }, program: TWICE });
+    if ('error' in result) throw new Error(result.error);
+    expect(must(requireRobot(result.state, result.id).exec).due).toEqual([null, 960]);
+    expect(minutesOf(tick(result.state, 120), 'woke')).toEqual([960]);
+  });
+
+  it('a robot reprogrammed in the afternoon never fires the morning atTime stack', () => {
+    const programmed = programmedRobot(robotOf(), TWICE, 900);
+    if (typeof programmed === 'string') throw new Error(programmed);
+    expect(must(programmed.exec).due).toEqual([null, 960]);
+    expect(minutesOf(tick(withRobots(at(900), [programmed]), 120), 'woke')).toEqual([960]);
   });
 });
 

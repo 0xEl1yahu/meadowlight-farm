@@ -29,6 +29,19 @@ export function freshExec(program: BlockProgram): RobotExec {
 }
 
 /**
+ * A fresh exec for a program set up at `minuteOfDay` rather than at the morning reset (spec §12):
+ * an `atTime` trigger whose minute is earlier than `minuteOfDay` has already passed today, so its
+ * `due` is spent (null). Every other trigger is as freshExec has it.
+ */
+export function execAt(program: BlockProgram, minuteOfDay: number): RobotExec {
+  const exec = freshExec(program);
+  const due = program.stacks.map((stack, i) =>
+    stack.trigger.kind === 'atTime' && stack.trigger.minute < minuteOfDay ? null : (exec.due[i] ?? null),
+  );
+  return { ...exec, due };
+}
+
+/**
  * A block program's exec at the morning reset (spec §7): fresh, with the first `morning` stack
  * started. Idle when the program has no `morning` stack.
  */
