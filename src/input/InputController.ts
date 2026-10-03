@@ -10,6 +10,8 @@
  *   Use tool      Space, J, left mouse button on the canvas. Hold to repeat.
  *   Interact      E, K, Enter, right mouse button on the canvas (Ctrl + click on macOS).
  *                 While the backpack or a chest is open, E, K and Enter close it instead.
+ *   Peek          Shift + any interact key or button (part 3 spec §2.3). Every change of the
+ *                 Shift key is reported through `onShiftChange`, so the HUD hint can follow it.
  *   Hotbar        1–9, 0, -, = select slots 0–11 (INVENTORY.hotbarSize). Tab / Shift+Tab and
  *                 the mouse wheel cycle within those 12.
  *   Backpack      I toggles the inventory screen; with a chest open, I closes the chest.
@@ -52,6 +54,8 @@ export interface InputControllerOptions {
   readonly canvas: HTMLCanvasElement;
   readonly store: Store<GameState, GameAction>;
   readonly rig: CameraRig;
+  /** Called whenever Shift goes down or up (and with false when held keys are cleared). */
+  readonly onShiftChange?: (held: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +159,7 @@ export class InputController {
   private readonly canvas: HTMLCanvasElement;
   private readonly store: Store<GameState, GameAction>;
   private readonly rig: CameraRig;
+  private readonly onShiftChange: ((held: boolean) => void) | undefined;
 
   /** Held direction key codes in press order; the last one steers. */
   private readonly directionKeys: string[] = [];
@@ -175,6 +180,7 @@ export class InputController {
     this.canvas = options.canvas;
     this.store = options.store;
     this.rig = options.rig;
+    this.onShiftChange = options.onShiftChange;
 
     this.target.addEventListener('keydown', this.onKeyDown);
     this.target.addEventListener('keyup', this.onKeyUp);
@@ -252,7 +258,7 @@ export class InputController {
   // -------------------------------------------------------------------------
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    this.shiftHeld = event.shiftKey;
+    this.setShiftHeld(event.shiftKey);
     if (event.defaultPrevented || event.isComposing) return;
     if (isEditableTarget(event.target)) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -261,7 +267,7 @@ export class InputController {
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
-    this.shiftHeld = event.shiftKey;
+    this.setShiftHeld(event.shiftKey);
     const code = event.code;
     if (META_KEYS.has(code)) {
       this.releaseAll();
@@ -294,8 +300,8 @@ export class InputController {
       return true;
     }
     const state = this.store.getState();
-    // I, E / K / Enter, B and Escape: open, close or toggle panels, or interact.
-    const command = panelKeyCommand(code, state);
+    // I, E / K / Enter, B and Escape: open, close or toggle panels, interact, or peek with Shift.
+    const command = panelKeyCommand(code, state, event.shiftKey);
     if (command !== null) {
       if (!event.repeat && command !== IGNORED) this.store.dispatch(command);
       return true;
@@ -375,7 +381,7 @@ export class InputController {
       this.capturePointer(event.pointerId);
       this.pressTool(pointerSource(event.pointerId), false);
     } else if (event.button === 2 || (event.button === 0 && event.ctrlKey)) {
-      this.store.dispatch(actions.interact());
+      this.store.dispatch(event.shiftKey ? actions.peek() : actions.interact());
     }
   };
 
@@ -448,10 +454,17 @@ export class InputController {
     if (this.document.visibilityState === 'hidden') this.releaseAll();
   };
 
+  /** Tracks Shift and reports every change to `onShiftChange`. */
+  private setShiftHeld(held: boolean): void {
+    if (held === this.shiftHeld) return;
+    this.shiftHeld = held;
+    this.onShiftChange?.(held);
+  }
+
   private releaseAll(): void {
     this.directionKeys.length = 0;
     this.toolSources.clear();
-    this.shiftHeld = false;
+    this.setShiftHeld(false);
     this.moveElapsed = 0;
     this.toolElapsed = 0;
     this.wheelAccumulator = 0;

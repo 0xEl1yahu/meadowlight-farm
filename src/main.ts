@@ -104,7 +104,13 @@ function bootstrap(): () => void {
       triangles: ctx.renderer.info.render.triangles,
     }),
   });
-  const input = new InputController({ target: window, canvas: ctx.renderer.domElement, store, rig: ctx.rig });
+  const input = new InputController({
+    target: window,
+    canvas: ctx.renderer.domElement,
+    store,
+    rig: ctx.rig,
+    onShiftChange: (held) => hud.setShiftHeld(held),
+  });
 
   for (const system of systems) system.sync(initial, null);
   hud.sync(initial, null);

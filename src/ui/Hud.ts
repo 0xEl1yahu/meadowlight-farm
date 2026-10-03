@@ -38,7 +38,7 @@ import { CROPS, totalGrowDays } from '../farming/crops';
 import { isSeedItemId, sellPriceFor, type SeedItem } from '../items/items';
 import type { FrameContext } from '../render/types';
 import { actions, type GameAction } from '../state/actions';
-import { describeIntent, planInteraction, planPrimaryAction } from '../state/intents';
+import { describeIntent, planInteraction, planPrimaryAction, planShiftInteraction } from '../state/intents';
 import { capacityFor, countItem } from '../state/inventory';
 import {
   selectActiveWorld,
@@ -532,13 +532,16 @@ class ContextHint {
   private readonly primaryAlt = h('span', 'hud-hint__alt');
   private readonly primaryVerb = h('span', 'hud-hint__verb');
   private readonly interact = h('span', 'hud-chip hud-hint__action');
+  private readonly interactKey = kbd('E');
   private readonly interactVerb = h('span', 'hud-hint__verb');
+  /** Whether Shift is held: the interact chip then shows Shift + E (part 3 spec §2.3). */
+  private shift = false;
 
   constructor() {
     this.primaryAlt.append(h('span', 'hud-hint__sep', '/'), kbd('E'));
     this.primaryAlt.hidden = true;
     this.primary.append(kbd('Space'), this.primaryAlt, this.primaryVerb);
-    this.interact.append(kbd('E'), this.interactVerb);
+    this.interact.append(this.interactKey, this.interactVerb);
     this.primary.hidden = true;
     this.interact.hidden = true;
     this.element.append(this.item, this.primary, this.interact);
@@ -560,8 +563,10 @@ class ContextHint {
     if (frozen) return;
 
     const primary = describeIntent(planPrimaryAction(state).intent);
-    const interact = describeIntent(planInteraction(state).intent);
-    const merged = primary !== null && primary === interact;
+    const interact = describeIntent((this.shift ? planShiftInteraction(state) : planInteraction(state)).intent);
+    // Space never peeks, so with Shift held the two chips never merge.
+    const merged = !this.shift && primary !== null && primary === interact;
+    setText(this.interactKey, this.shift ? 'Shift + E' : 'E');
 
     setHidden(this.primary, primary === null);
     setHidden(this.primaryAlt, !merged);
@@ -572,6 +577,13 @@ class ContextHint {
     const item = selectSelectedItem(state);
     setText(this.item, item === null ? 'Empty hands' : item.name);
     this.item.classList.toggle('is-empty', item === null);
+  }
+
+  /** Follows the Shift key; redraws from `state` (the last synced one) when it changed. */
+  setShift(held: boolean, state: GameState | null): void {
+    if (held === this.shift) return;
+    this.shift = held;
+    if (state !== null) this.sync(state, null);
   }
 }
 
@@ -1141,6 +1153,8 @@ export class Hud {
   private readonly help: HelpChip;
   private phase: DayPhase | null = null;
   private frozen: boolean | null = null;
+  /** The last synced state, for redraws that a key rather than the store asks for. */
+  private last: GameState | null = null;
 
   constructor(options: HudOptions) {
     hudInstanceCount += 1;
@@ -1191,6 +1205,7 @@ export class Hud {
   }
 
   sync(state: GameState, prev: GameState | null): void {
+    this.last = state;
     if (prev === null || state.time.minuteOfDay !== prev.time.minuteOfDay) this.syncPhase(state.time.minuteOfDay);
     if (prev === null || state.ui !== prev.ui) this.syncFrozen(selectIsFrozen(state));
     this.clock.sync(state, prev);
@@ -1202,6 +1217,11 @@ export class Hud {
     this.inventory.sync(state, prev);
     this.pause.sync(state, prev);
     this.dayTransition.sync(state, prev);
+  }
+
+  /** Shift went down or up (InputController's onShiftChange): the interact hint switches to Shift + E's plan. */
+  setShiftHeld(held: boolean): void {
+    this.hint.setShift(held, this.last);
   }
 
   update(frame: FrameContext): void {

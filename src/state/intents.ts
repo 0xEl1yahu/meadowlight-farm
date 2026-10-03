@@ -68,6 +68,8 @@ export type Intent =
   | { readonly kind: 'benchRobot'; readonly robotId: number; readonly name: string }
   /** Reopen the screen of the robot on the workbench. */
   | { readonly kind: 'openBench'; readonly robotId: number; readonly name: string }
+  /** Shift + E on a standing robot: its screen opens read-only, for free (part 3 spec §2.3). */
+  | { readonly kind: 'peekRobot'; readonly robotId: number; readonly name: string }
   /** `hint`, when set, is the HUD hint of a plan that does nothing (the empty workbench). */
   | { readonly kind: 'blocked'; readonly reason: string | null; readonly hint?: string };
 
@@ -488,6 +490,24 @@ export function planPrimaryAction(state: GameState): ActionPlan {
   }
 }
 
+/**
+ * Plan for Shift + an interact key (part 3 spec §2.3), decided in this order:
+ *   1. the workbench ahead: exactly what E does there;
+ *   2. a standing robot ahead (on the farm, not carried, at repairs or on the bench): peek at
+ *      it, which costs nothing and changes nothing but the open panel;
+ *   3. otherwise nothing, silently.
+ */
+export function planShiftInteraction(state: GameState): ActionPlan {
+  const target = selectTargetTile(state);
+  const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
+  if (tile?.object?.kind === 'workbench') return planInteraction(state);
+  if (target !== null && state.player.mapId === 'farm') {
+    const robot = robotsOnTile(state, target.tx, target.tz)[0];
+    if (robot !== undefined) return plan(target, { kind: 'peekRobot', robotId: robot.id, name: robot.name }, 'none');
+  }
+  return blocked(target, 'none');
+}
+
 /** Short verb for HUD hints, e.g. "Till", or null when the plan does nothing. */
 export function describeIntent(intent: Intent): string | null {
   switch (intent.kind) {
@@ -535,6 +555,8 @@ export function describeIntent(intent: Intent): string | null {
       return `Put ${intent.name} on the bench`;
     case 'openBench':
       return `Work on ${intent.name}`;
+    case 'peekRobot':
+      return `Look at ${intent.name}`;
     case 'blocked':
       return intent.hint ?? null;
   }

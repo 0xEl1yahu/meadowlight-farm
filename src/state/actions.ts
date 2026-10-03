@@ -13,6 +13,8 @@ export type GameAction =
   | { readonly type: 'player/useTool' }
   /** Context action on the forward tile: harvest, ship, sleep, refill. */
   | { readonly type: 'player/interact' }
+  /** Shift + an interact key: E's meaning at the workbench ahead, else a peek at a standing robot ahead (part 3 spec §2.3). */
+  | { readonly type: 'player/peek' }
   | { readonly type: 'inventory/select'; readonly slot: number }
   | { readonly type: 'inventory/cycle'; readonly delta: number }
   /** Moves `quantity` units (null = the whole stack) between two slots: player ↔ player or player ↔ open chest. */
@@ -49,6 +51,7 @@ export const actions = {
   face: (direction: Direction): GameAction => ({ type: 'player/face', direction }),
   useTool: (): GameAction => ({ type: 'player/useTool' }),
   interact: (): GameAction => ({ type: 'player/interact' }),
+  peek: (): GameAction => ({ type: 'player/peek' }),
   selectSlot: (slot: number): GameAction => ({ type: 'inventory/select', slot }),
   cycleSlot: (delta: number): GameAction => ({ type: 'inventory/cycle', delta }),
   moveItem: (from: SlotRef, to: SlotRef, quantity: number | null = null): GameAction => ({

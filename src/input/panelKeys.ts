@@ -2,7 +2,8 @@
  * Panel and menu keys, decided from the state alone so the rules can be tested without a DOM.
  *
  *   I              toggles the inventory; closes an open chest
- *   E, K, Enter    interact, or close an open inventory or chest instead
+ *   E, K, Enter    interact, or close an open inventory or chest instead; with Shift, peek
+ *                  (planShiftInteraction: E's meaning at the workbench, else a robot's screen)
  *   B              toggles the seed shop; does nothing while the inventory or a chest is open
  *   Escape         closes any open panel, otherwise toggles pause
  *
@@ -28,11 +29,14 @@ export function isInventoryScreenOpen(state: GameState): boolean {
 
 /**
  * What a panel key does now: an action to dispatch, IGNORED for a game key with nothing to do,
- * or null when `code` is not a panel key.
+ * or null when `code` is not a panel key. `shift` is whether Shift is held with the key.
  */
-export function panelKeyCommand(code: string, state: GameState): PanelKeyCommand | null {
+export function panelKeyCommand(code: string, state: GameState, shift = false): PanelKeyCommand | null {
   const panel = state.ui.panel.kind;
-  if (INTERACT_KEYS.has(code)) return isInventoryScreenOpen(state) ? actions.closePanel() : actions.interact();
+  if (INTERACT_KEYS.has(code)) {
+    if (isInventoryScreenOpen(state)) return actions.closePanel();
+    return shift ? actions.peek() : actions.interact();
+  }
   switch (code) {
     case 'KeyI':
       if (panel === 'chest') return actions.closePanel();

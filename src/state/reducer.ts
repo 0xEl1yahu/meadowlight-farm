@@ -52,7 +52,7 @@ import { inBounds, stepTile } from '../world/grid';
 import { findWarp, getMap, mapSeed, type Warp } from '../world/maps';
 import { EMPTY_TILE, blockedTile, getTile, isWalkable, requireTile, setTile, setTiles } from '../world/tiles';
 import type { GameAction } from './actions';
-import { planInteraction, planPrimaryAction, type ActionPlan, type Intent } from './intents';
+import { planInteraction, planPrimaryAction, planShiftInteraction, type ActionPlan, type Intent } from './intents';
 import {
   addItem,
   capacityFor,
@@ -88,6 +88,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return selectIsFrozen(state) ? state : executePlan(state, planPrimaryAction(state));
     case 'player/interact':
       return selectIsFrozen(state) ? state : executePlan(state, planInteraction(state));
+    case 'player/peek':
+      return selectIsFrozen(state) ? state : executePlan(state, planShiftInteraction(state));
     case 'inventory/select':
       return selectSlot(state, action.slot);
     case 'inventory/cycle':
@@ -449,6 +451,9 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
 
     case 'openBench':
       return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'bench' } } };
+
+    case 'peekRobot':
+      return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'peek' } } };
 
     case 'fuel': {
       const object = tile.object;

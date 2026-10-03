@@ -93,3 +93,27 @@ describe('panel keys', () => {
     }
   });
 });
+
+describe('panel keys with Shift (part 3 spec §2.3)', () => {
+  it('Shift + E, K or Enter peeks; without Shift they interact', () => {
+    for (const code of INTERACT_KEYS) {
+      expect(panelKeyCommand(code, NONE, true)).toEqual(actions.peek());
+      expect(panelKeyCommand(code, NONE, false)).toEqual(actions.interact());
+      expect(panelKeyCommand(code, NONE)).toEqual(actions.interact());
+    }
+  });
+
+  it('Shift + E still closes the backpack or a chest', () => {
+    for (const code of INTERACT_KEYS) {
+      expect(panelKeyCommand(code, INVENTORY_OPEN, true)).toEqual(actions.closePanel());
+      expect(panelKeyCommand(code, CHEST_OPEN, true)).toEqual(actions.closePanel());
+    }
+  });
+
+  it('Shift changes nothing for the other keys', () => {
+    expect(panelKeyCommand('KeyI', NONE, true)).toEqual(actions.setInventoryOpen(true));
+    expect(panelKeyCommand('KeyB', NONE, true)).toEqual(actions.setShopOpen(true));
+    expect(panelKeyCommand('Escape', NONE, true)).toEqual(actions.setPaused(true));
+    expect(panelKeyCommand('KeyW', NONE, true)).toBeNull();
+  });
+});
