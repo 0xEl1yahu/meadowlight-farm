@@ -92,7 +92,17 @@ export function isValidRobotAction(v: unknown): v is RobotAction {
 
 const isString = (v: unknown): v is string => typeof v === 'string';
 const isNumber = (v: unknown): v is number => typeof v === 'number';
-const isList = (v: unknown): v is readonly unknown[] => Array.isArray(v);
+
+/**
+ * An array with no holes. `every` and `map` skip holes, so a sparse array from the console would
+ * pass the shape checks and reach code that reads `undefined`. The key count is checked first
+ * so a huge sparse array is refused without walking its length.
+ */
+function isList(v: unknown): v is readonly unknown[] {
+  if (!Array.isArray(v) || Object.keys(v).length < v.length) return false;
+  for (let i = 0; i < v.length; i++) if (!(i in v)) return false;
+  return true;
+}
 
 function isFarmTile(v: unknown): v is TileCoord {
   return isObj(v) && hasExactKeys(v, ['tx', 'tz']) && isInt(v.tx) && isInt(v.tz) && farmContains(v.tx, v.tz);
@@ -250,29 +260,47 @@ function isBlockProgramShape(v: Obj): boolean {
  */
 const MAX_SHAPE_DEPTH = 64;
 
-/** Whether any chain of nested nodes (objects and arrays) in `v` is deeper than `limit`. Iterative, so it can't overflow. */
-function nestsDeeperThan(v: unknown, limit: number): boolean {
+/**
+ * The most objects and arrays isProgramShape lets through, counting a node shared by several
+ * parents once per parent (the program as a tree). A block is at most a few nodes (an `if` is
+ * itself and its two lists; a compare is itself and two literals; a stack is itself, its trigger
+ * and its body), so any program checkProgram accepts on the biggest robot is far below this.
+ */
+const MAX_SHAPE_NODES = Math.max(...Object.values(ROBOTS.sizes).map((size) => size.blocks)) * 32;
+
+/**
+ * Whether `v`, read as a tree (a node shared by several parents counts once per parent), has at
+ * most `maxNodes` objects and arrays and no chain of them deeper than `maxDepth`. Every later
+ * walk of the program (the shape checks, blockCount, statementDepth, the rest of checkProgram)
+ * takes time in that tree size, so this keeps them all short: a console DAG of shared `and`
+ * nodes 60 deep is a tree of 2^60 nodes and is refused after `maxNodes` steps. Cycles are
+ * refused too. Iterative, so it can't overflow.
+ */
+function isSmallTree(v: unknown, maxDepth: number, maxNodes: number): boolean {
+  let nodes = 0;
   const pending: Array<[unknown, number]> = [[v, 0]];
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     const [node, depth] = next;
     if (typeof node !== 'object' || node === null) continue;
-    if (depth > limit) return true;
+    nodes++;
+    if (depth > maxDepth || nodes > maxNodes) return false;
     for (const child of Object.values(node)) pending.push([child, depth + 1]);
   }
-  return false;
+  return true;
 }
 
 /**
  * Whether `v` is shaped like a program, so checkProgram can read it: a script (its steps an
- * array; checkProgram checks each step) or a block program whose every node has a known kind
- * and exactly its fields, nested no deeper than MAX_SHAPE_DEPTH. Never throws: input nested too
- * deeply (or cyclic, from the console) is rejected.
+ * array with no holes; checkProgram checks each step) or a block program whose every node has a
+ * known kind and exactly its fields, whose lists have no holes, and which as a tree is nested no
+ * deeper than MAX_SHAPE_DEPTH and has at most MAX_SHAPE_NODES nodes. Never throws: input nested
+ * too deeply, too big (a DAG of shared nodes, from the console) or cyclic is rejected.
  */
 export function isProgramShape(v: unknown): v is RobotProgram {
   try {
     if (!isObj(v)) return false;
     if (v.kind === 'script') return hasExactKeys(v, ['kind', 'steps', 'loop']) && isList(v.steps) && isBool(v.loop);
-    return v.kind === 'blocks' && !nestsDeeperThan(v, MAX_SHAPE_DEPTH * 2) && isBlockProgramShape(v);
+    return v.kind === 'blocks' && isSmallTree(v, MAX_SHAPE_DEPTH * 2, MAX_SHAPE_NODES) && isBlockProgramShape(v);
   } catch {
     return false;
   }

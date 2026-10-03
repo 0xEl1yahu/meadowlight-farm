@@ -427,7 +427,7 @@ One addition: a **dizzy** robot plays a spin clip once (a full yaw turn over 1 s
 ### 10.2 Validation
 
 On top of part 1's rules:
-- **Programs:** the program passes `isProgramShape` (which refuses programs nested deeper than `MAX_SHAPE_DEPTH`, 64 levels of statements and expressions) and then `checkProgram` for the robot's size and parts, and `checkMd` passes.
+- **Programs:** the program passes `isProgramShape` (which refuses programs nested deeper than `MAX_SHAPE_DEPTH`, 64 levels of statements and expressions, programs whose tree, counting a shared node once per parent, has more than `MAX_SHAPE_NODES` nodes, and arrays with holes) and then `checkProgram` for the robot's size and parts, and `checkMd` passes.
 - **Scripts:** `exec` is null and `pc` is in range.
 - **Block programs:** `pc` is 0 and `exec` is valid:
   - `vars` match the declarations in number and type.
@@ -473,7 +473,7 @@ All of these follow part 1's `deliver` pattern: they validate, dispatch `game/lo
 - `setMd(name, cards)`: runs `checkMd`. The cards apply at once: today's carried-out DO cards are forgotten and a DO return under way stops, leaving the robot idle. Returns "Set {name}'s .MD." or the problem. The pure core is `withMd(robot, cards)`.
 - `setZone(id, rect | null)`: validates the rect against the farm and keeps only its four fields. Returns "Set Zone {id}." or "Cleared Zone {id}.", or the problem. The pure core is `withZone(state, id, rect)`.
 - Input that isn't a program, a card list or a zone gets a usage line; a name that matches no robot gets "No robot is called {name}."
-- Programs from the console go through `isProgramShape` before `checkProgram`: it refuses programs nested deeper than `MAX_SHAPE_DEPTH` (64 levels of statements and expressions), so console input can never overflow the checker, and the dev hooks and `addRobot` return a message instead of throwing. Part 3's workbench must call `isProgramShape` before `checkProgram` too.
+- Programs from the console go through `isProgramShape` before `checkProgram`: it refuses programs nested deeper than `MAX_SHAPE_DEPTH` (64 levels of statements and expressions), programs too big as a tree (`MAX_SHAPE_NODES`, 32 nodes per block of the biggest robot; a node reused in several places counts once per place, so a DAG of shared nodes can't make the checker take exponential time) and sparse arrays, so console input can never overflow or stall the checker, and the dev hooks and `addRobot` return a message instead of throwing. Part 3's workbench must call `isProgramShape` before `checkProgram` too.
 - `blocks`: the builder (section 13), so console programs read like the tests.
 
 The dist check gains `addScriptedRobot`, `setMd` and `setZone`. It leaves out `setProgram`, which three.js's `WebGLRenderer` uses internally, so it always appears in the bundle's source map.

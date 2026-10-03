@@ -220,4 +220,31 @@ describe('console input never throws', () => {
     expect(typeof programmedRobot(robotOf(), deep(2000), TIME.dayStartMinute)).toBe('string');
     expect(addRobot(BASE, { name: 'Deep', size: 'mini', parts: ['claw'], place: AT, program: deep(2000) })).toHaveProperty('error');
   });
+
+  it('answers sparse arrays with the usage', () => {
+    const holeyStacks = { kind: 'blocks', vars: [], stacks: new Array(1), helpers: [] } as unknown as RobotProgram;
+    expect(programmedRobot(robotOf(), holeyStacks, TIME.dayStartMinute)).toBe(PROGRAM_USAGE);
+    const holeyBody = b.program({ stacks: [{ trigger: b.morning(), body: [b.move(), , b.move()] as never }] });
+    expect(programmedRobot(robotOf(), holeyBody, TIME.dayStartMinute)).toBe(PROGRAM_USAGE);
+    const holeyScript = { kind: 'script', steps: [{ kind: 'move' }, , { kind: 'move' }], loop: true } as unknown as RobotProgram;
+    expect(programmedRobot(robotOf(), holeyScript, TIME.dayStartMinute)).toBe(PROGRAM_USAGE);
+    expect(addRobot(BASE, { name: 'Holey', size: 'mini', parts: ['claw'], place: AT, program: holeyScript })).toHaveProperty('error');
+    expect(withMd(robotOf(), new Array(1) as never)).toBe(MD_USAGE);
+  });
+
+  it('answers a 60-deep DAG of shared and nodes promptly, with the usage', () => {
+    let cond: Record<string, unknown> = { kind: 'yes', value: true };
+    for (let i = 0; i < 60; i++) cond = { kind: 'and', a: cond, b: cond };
+    const dag = b.program({ stacks: [b.when(b.morning(), b.if(cond as never, [b.move()]))] });
+    const started = performance.now();
+    expect(programmedRobot(robotOf(), dag, TIME.dayStartMinute)).toBe(PROGRAM_USAGE);
+    expect(addRobot(BASE, { name: 'Dag', size: 'mini', parts: ['claw'], place: AT, program: dag })).toHaveProperty('error');
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('still takes a program that reuses a statement in two stacks', () => {
+    const turn = b.turn('right');
+    const reused = b.program({ stacks: [b.when(b.morning(), turn), b.when(b.atTime(600), turn)] });
+    expect(programmedRobot(robotOf(), reused, TIME.dayStartMinute)).toMatchObject({ program: reused, exec: morningExec(reused) });
+  });
 });
