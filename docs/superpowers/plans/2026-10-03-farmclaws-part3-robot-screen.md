@@ -260,7 +260,7 @@ Every task's **Interfaces** block repeats the part of this contract it consumes 
 - Discard prompt: "Discard your changes to {name}'s program?" with "Discard" / "Keep editing". Scrap prompt: "Scrap {name} for {gold}g? This can't be undone." with "Scrap" / "Keep".
 
 #### Contract for Task 12: The Program tab
-- `package.json`: `blockly@^13.3.0` in `dependencies`. Its media are copied into `public/blockly-media/` and passed as `media` (plan R16).
+- `package.json`: `blockly@^13.3.0` in `dependencies`. Its media are copied into `public/blockly-media/` and passed as `media: 'blockly-media/'`, a path relative to the page, so the dev server, `dist/` and `dist-single/` opened from disk all find the media folder (plan R16).
 - `src/ui/robotScreen/blockly/blockDefs.ts`: `export function defineBlocks(Blockly: typeof import('blockly/core')): void` (JSON block definitions for every `BLOCK_TYPES` entry, with `fc_var` / `fc_set` / `fc_change` dropdowns generated from the workspace's `fc_varDecl` names).
 - `src/ui/robotScreen/blockly/theme.ts`: `export function createTheme(Blockly): Blockly.Theme` (Zelos).
 - `src/ui/robotScreen/blockly/toolbox.ts` (pure, tested): `export function toolboxFor(robot: Pick<Robot, 'size' | 'parts'>, unlocks: RobotUnlocks): ToolboxJson`. `export function dropdownOptions(kind: 'minute' | 'every' | 'item' | 'crop' | 'zone', current: string | number | null): readonly [string, string][]` (always includes `current`). Data dropdowns are registered `field_fc_*` subclasses that accept any well-formed value.
@@ -293,7 +293,7 @@ Decided while drafting this plan. Task 15 writes each into the part 3 spec.
 - R5. The robot screen's load-failure toast needs an action, so `ui/notify` is added.
 - R6. `ROBOTS.weekLength` (7) carries the week rollover, since no week constant existed.
 - R7. Until Task 11, an open robot panel shows nothing, and Escape still closes it through the existing `panelKeyCommand` path. Task 11 hands the keyboard to the screen.
-- R8–R16 are recorded by the tasks that make them (Tasks 2, 10, 6, 14, 5 and 12); Task 15 lists them all in the spec.
+- R8–R16 are recorded by the tasks that make them (Tasks 2, 10, 6, 14, 5 and 12); R17–R24 are recorded by Task 15 itself. Task 15 lists them all in the spec.
 
 ---
 
@@ -575,13 +575,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: part 2's `isProgramShape`, `isMdShape` (`src/state/robotValidation.ts`), `checkProgram`, `checkMd`, `isValidZoneRect` (`src/robots/check.ts`), `execAt`, `morningExec` (`src/robots/exec.ts`), `periodFor`; `findRobot`, `withRobot` (`src/robots/world.ts`); `pushMessage`. Task 1's `SAVE_VERSION = 6` (nothing else).
 - Produces:
   - `src/robots/edits.ts` (pure):
-    - `export const PROGRAM_SHAPE = 'That program is not a script or a block program.'`, `MD_SHAPE = 'That .MD is not a list of cards.'`, `ZONE_SHAPE = 'Zones are A to H, and a zone is { x0, z0, w, d } or null.'`, `ZONE_OFF_FARM` and `MD_SCRIPT` (both moved verbatim). The dev hooks' three `…_USAGE` lines stay in `src/dev/robotDev.ts`: see "Notes for the coordinator".
+    - `export const PROGRAM_SHAPE = 'That program is not a script or a block program.'`, `MD_SHAPE = 'That .MD is not a list of cards.'`, `ZONE_SHAPE = 'Zones are A to H, and a zone is { x0, z0, w, d } or null.'`, `ZONE_OFF_FARM` and `MD_SCRIPT` (both moved verbatim). The dev hooks' three `…_USAGE` lines stay in `src/dev/robotDev.ts` (plan R8).
     - `export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay: number): Robot | string` (moved unchanged apart from returning `PROGRAM_SHAPE`; the spec's `withProgram`, plan R1);
     - `export function withMd(robot: Robot, md: readonly MdCard[]): Robot | string`;
     - `export function withZone(state: GameState, id: ZoneId, rect: ZoneRect | null): GameState | string`.
   - `src/dev/robotDev.ts`: `export function consoleText(refusal: string): string` (a shape refusal becomes the hook's usage line; anything else prints as it is). `setProgram`, `setMd` and `setZone` print exactly what they printed before.
   - `src/state/actions.ts`: `{ type: 'robot/program'; robotId: number; program: RobotProgram }` → `actions.programRobot(robotId, program)`; `{ type: 'robot/md'; robotId: number; md: readonly MdCard[] }` → `actions.setRobotMd(robotId, md)`.
-  - `src/state/reducer.ts`: private `editRobot(state, robotId, edit, done)`. Success toasts (tone `success`): "Programmed {name}." / "Set {name}'s .MD.". A string result is a `warn` toast and no other change. An unknown robot id returns `state` itself. Edits are not blocked by `selectIsFrozen` (the robot screen is a panel). Task 5 adds the bench-only refusal and Task 7 the ruined one, both inside `editRobot`'s callers.
+  - `src/state/reducer.ts`: private `editRobot(state, robotId, edit, done)`. Success toasts (tone `success`): "Programmed {name}." / "Set {name}'s .MD.". A string result is a `warn` toast and no other change. An unknown robot id returns `state` itself. Edits are not blocked by `selectIsFrozen` (the robot screen is a panel). Task 5 adds the bench-only refusal and Task 7 the ruined one, both inside `editRobot` (Task 5 before `edit(robot)`, Task 7 after the bench check).
   - `src/robots/create.ts` returns `PROGRAM_SHAPE` / `MD_SHAPE` (same text as before).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2906,20 +2906,13 @@ function migrateV5toV6(save: Obj): Obj {
 
 - [ ] **Step 7: The dev hook (`src/dev/robotDev.ts`)**
 
-Replace:
+Task 2 removed the `periodFor` import from this file. Insert
 
 ```ts
-import { periodFor } from '../robots/stats';
-```
-
-with:
-
-```ts
-import { periodFor } from '../robots/stats';
 import { ALL_UNLOCKS, withUnlocks } from '../robots/unlocks';
 ```
 
-(If Task 2 removed the `periodFor` import from this file, add the `../robots/unlocks` line directly after the `import { b } from '../robots/blocks';` line instead.) In `type RobotDevHandle`, replace:
+directly after `import { robotSays, whatHappened } from '../robots/logText';` (before `import { withRobot } from '../robots/world';`). In `type RobotDevHandle`, replace:
 
 ```ts
   readonly blocks: typeof b;
@@ -3050,6 +3043,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `src/robots/workbench.ts`
 - Modify: `src/core/types.ts` (`PLACED_OBJECT_KINDS` ~line 243; `PlacedObject` ~line 340; `UiPanel` ~line 464; `Robot.carried` ~line 573 and `Robot.off` ~line 582)
 - Modify: `src/config.ts` (new `WORKBENCH` directly above `GENERATORS`)
+- Modify: `src/robots/create.ts` (`addRobot`'s robot literal gets `onBench: false`, Step 3d)
 - Modify: `src/state/validation.ts` (`OBJECT_FIELDS` ~line 103; `isValidPlacedObject` ~line 132)
 - Modify: `src/state/initialState.ts` (imports; `createInitialState`, ~lines 56–64)
 - Modify: `src/state/intents.ts` (imports ~line 28; `Intent` ~line 66; constants above `PICKUP_TOOL` ~line 246; `planPickUp` ~line 267; `planCarry` ~line 356; new `planBench` above `planFuel` ~line 380; `planInteraction` ~line 397; `describeIntent` ~line 503)
@@ -3058,6 +3052,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/robots/run.ts` (`isDue`, ~lines 37–45)
 - Modify: `src/robots/world.ts` (`robotsOnTile`, ~lines 47–50)
 - Modify: `src/robots/overnight.ts` (`resetForMorning`, ~lines 131–167)
+- Modify: `src/robots/edits.ts` (`programmedRobot`, Step 8d)
 - Modify: `src/state/robotValidation.ts` (`ROBOT_KEYS`; new `oneWorkbench` after `burnersOnlyOnFarm`; `isValidRobot`; `isValidRobotsSection`)
 - Modify: `src/state/persistence.ts` (imports; export `isValidWorld` ~line 100; `migrateRobotV5` and `migrateV5toV6` from Tasks 3–4; new `placeWorkbenchV6`)
 - Modify: `src/render/objectGeometry.ts` (imports ~line 20; `OBJECT_COLORS` ~line 65; new workbench section above the scarecrow section ~line 258; `OBJECT_PART_IDS` ~line 675; `OBJECT_PARTS` ~line 722; `objectPartsFor` ~line 774)
@@ -3066,7 +3061,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/render/robotLayout.ts` (config import, line 6; new `benchLift` above the "Carrying, badge and sparks" banner, ~line 99)
 - Modify: `src/render/RobotRenderer.ts` (robotLayout import ~line 38; `groundOf` ~line 118; `animate` ~line 327)
 - Modify: `tests/testUtils.ts` (config import; `robotOf`; new `benchedRobotOf`; `v5Save`)
-- Modify (the workbench on every farm): `tests/objectLayout.test.ts` (config import line 11; `SAMPLES` line 93; `describe('ObjectRenderer')` lines 420–656), `tests/tiles.test.ts` (`SAMPLE_OBJECTS` line 326), `tests/renderMaps.test.ts` (`SAMPLE_OBJECTS` line 51; `expected` ~line 122), `tests/maps.test.ts` (imports line 10; lines 104 and 858), `tests/worldgen.test.ts` (imports line 10; lines 38–39), `tests/sections.test.ts` (config import; ~line 426), `tests/persistence.test.ts` (config import line 11; lines 736–741), `tests/robotEdits.test.ts` (Task 2's `FARM` fixture and its `describe`)
+- Modify (the workbench on every farm): `tests/objectLayout.test.ts` (config import line 11; `SAMPLES` line 93; `describe('ObjectRenderer')` lines 421–656), `tests/tiles.test.ts` (`SAMPLE_OBJECTS` line 326), `tests/renderMaps.test.ts` (`SAMPLE_OBJECTS` line 51; `expected` ~line 122), `tests/maps.test.ts` (imports line 10; lines 104 and 858), `tests/worldgen.test.ts` (imports line 10; lines 38–39), `tests/sections.test.ts` (config import; ~line 426), `tests/persistence.test.ts` (config import line 11; lines 736–741), `tests/robotEdits.test.ts` (Task 2's `FARM` fixture and its `describe`)
 - Test: `tests/robotBench.test.ts` (create), `tests/robotSaveV6.test.ts` (extend), `tests/robotEdits.test.ts` (extend)
 
 **Interfaces:**
@@ -3075,7 +3070,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `src/core/types.ts`: `'workbench'` in `PLACED_OBJECT_KINDS`; `PlacedObject` gains `{ readonly kind: 'workbench' }`; `Robot.onBench: boolean`; `Robot.off: null | 'dizzy' | 'done' | 'player'`; `UiPanel` gains `{ readonly kind: 'robot'; readonly robotId: number; readonly mode: 'bench' | 'peek' }`.
   - `src/config.ts`: `WORKBENCH = { home: { tx: 6, tz: 4 } satisfies TileCoord, topHeight: 0.55 } as const`.
   - `src/robots/workbench.ts`: `workbenchTile(farm: WorldState): TileCoord | null`; `freeSpotNear(farm: WorldState, from: TileCoord, taken: readonly TileCoord[]): TileCoord`; `withWorkbenchAt(farm: WorldState, at: TileCoord): WorldState` (throws unless `at` is free ground; writes a plain grass tile holding the workbench); `robotOnBench(state: GameState): Robot | null`.
-  - `src/state/intents.ts`: `Intent` gains `{ kind: 'benchRobot'; robotId: number; name: string }` and `{ kind: 'openBench'; robotId: number; name: string }`; the `blocked` intent gains an optional `hint?: string`, which `describeIntent` returns (see Notes). Hints: "Put {name} on the bench", "Work on {name}", "Bring a robot here to work on it". Refusals: "There's already a robot on the bench.", "It's part of the farm.".
+  - `src/state/intents.ts`: `Intent` gains `{ kind: 'benchRobot'; robotId: number; name: string }` and `{ kind: 'openBench'; robotId: number; name: string }`; the `blocked` intent gains an optional `hint?: string`, which `describeIntent` returns (only the empty bench sets it). Hints: "Put {name} on the bench", "Work on {name}", "Bring a robot here to work on it". Refusals: "There's already a robot on the bench.", "It's part of the farm.".
   - Actions: `{ type: 'robot/liftOff'; robotId: number }` → `actions.liftOffBench(robotId)`; `{ type: 'robot/switch'; robotId: number; on: boolean }` → `actions.switchRobot(robotId, on)`.
   - Reducer: `benchRobot` and `openBench` intents open `{ kind: 'robot', robotId, mode: 'bench' }`; `editRobot` refuses a robot off the bench with "Put {name} on the workbench first." (warn), which covers `programRobot` and `setRobotMd`; `liftOffBench` (carry energy, "You're too tired to carry {name}.", closes that robot's panel); `switchRobot` (free; the same refusal off the bench; switching off a robot that isn't working, standby or flat is refused with "{name} can't be switched off while it's broken." (warn)).
   - `src/robots/run.ts`: `isDue` is false for a carried or benched robot and for any robot whose `off` isn't null (plan R2). `src/robots/world.ts`: `robotsOnTile` skips benched robots. `src/robots/overnight.ts`: `resetForMorning` never moves a benched robot and keeps `off: 'player'`.
@@ -3171,7 +3166,7 @@ describe('the workbench on the farm', () => {
     expect(freeSpotNear(built, HOME, [{ tx: 6, tz: 3 }, { tx: 7, tz: 4 }, { tx: 6, tz: 5 }])).toEqual({ tx: 6, tz: 2 });
   });
 
-  it('never picks tilled, fertilised or planted soil, a path or a reserved tile', () => {
+  it('never picks fertilised or planted soil, a path or a reserved tile', () => {
     let state = withTile(BASE, HOME, { ...EMPTY_TILE, object: chest }, 'farm');
     state = withTile(state, { tx: 6, tz: 3 }, { ...soilTile(TileState.Plowed), fertilizer: 'basic' }, 'farm');
     state = withTile(state, { tx: 7, tz: 4 }, soilTile(TileState.Watered, matureCrop('parsnip')), 'farm');
@@ -3601,7 +3596,7 @@ and insert directly before that `describe`'s closing `});` (after its "edits whi
 - [ ] **Step 2: Run them and see them fail**
 
 Run: `npx vitest run tests/robotBench.test.ts tests/robotSaveV6.test.ts tests/robotEdits.test.ts`
-Expected: FAIL — `robotBench.test.ts` with `Failed to resolve import "../src/robots/workbench"`; `robotSaveV6.test.ts` and `robotEdits.test.ts` with `SyntaxError: The requested module './testUtils' does not provide an export named 'benchedRobotOf'`.
+Expected: FAIL — `robotBench.test.ts` with `Failed to resolve import "../src/robots/workbench"`; `robotEdits.test.ts` with `TypeError: benchedRobotOf is not a function` (Vitest turns a missing named export into `undefined`, so it fails when the test calls it); `robotSaveV6.test.ts` with `TypeError: Cannot read properties of undefined (reading 'home')` (`WORKBENCH` isn't in `src/config.ts` yet).
 
 - [ ] **Step 3: Types and config**
 
@@ -3731,6 +3726,23 @@ with:
   }
 }
 ```
+
+**3d. `src/robots/create.ts`.** `Robot.onBench` is now required, so `addRobot`'s robot literal needs it (without this `npm run typecheck` fails with `Property 'onBench' is missing`). Replace:
+
+```ts
+    carried: false,
+    program: spec.program,
+```
+
+with:
+
+```ts
+    carried: false,
+    onBench: false,
+    program: spec.program,
+```
+
+(`addRobot`'s literal in this file and `robotOf` in `tests/testUtils.ts`, Step 11, are the only places that build a whole `Robot`: `grep -rn "teleportSeq: 0\|actionSeq: 0" src` also finds `createInitialState`'s player, which isn't a robot. Tasks 3 and 7 add `stats` and `paint` to the same two places.)
 
 - [ ] **Step 4: Create `src/robots/workbench.ts`**
 
@@ -4398,7 +4410,7 @@ with:
   return isValidLog(v.log, maps.farm) && burnersOnlyOnFarm(maps) && oneWorkbench(maps);
 ```
 
-Also update `isValidRobotsSection`'s doc comment: after `the carried robot (if any) matches `player.carrying` and the player is on the farm;` add ` at most one robot is on the bench; exactly one workbench stands on the farm;`.
+Also update `isValidRobotsSection`'s doc comment (it wraps lines inside the clause): after the clause ending `the player is on the farm;` add ` at most one robot is on the bench; exactly one workbench stands on the farm;`.
 
 **9b. `src/state/persistence.ts`.** Replace Task 4's:
 
@@ -4824,7 +4836,7 @@ Each edit below is the whole change to that file (checked by running the suite w
       /** The new farm without its workbench, so each test counts only the objects it places. */
       const FARM = withTile(BASE, WORKBENCH.home, EMPTY_TILE, 'farm');
     ```
-    and inside that `describe` replace every `BASE` with `FARM`: lines 422, 493, 511, 525, 526, 527 (`renderer.sync(next, BASE);`), 536, 545, 583, 607, 632 and 643 (13 occurrences; the new `FARM` line itself keeps `BASE`).
+    and inside that `describe` replace every `BASE` with `FARM`: lines 422, 493, 511, 525, 526, 527 (`renderer.sync(next, BASE);`), 536, 545, 583, 607, 632 and 643 (12 occurrences; the new `FARM` line itself keeps `BASE`).
 - `tests/tiles.test.ts`, in `SAMPLE_OBJECTS` (line 326), replace
   ```ts
     decoration: { kind: 'decoration', variant: 'stoneLantern' },
@@ -4930,7 +4942,7 @@ Each edit below is the whole change to that file (checked by running the suite w
 - [ ] **Step 13: Run them and see them pass**
 
 Run: `npx vitest run tests/robotBench.test.ts tests/robotSaveV6.test.ts tests/robotEdits.test.ts tests/objectLayout.test.ts tests/tiles.test.ts tests/renderMaps.test.ts tests/maps.test.ts tests/worldgen.test.ts tests/sections.test.ts tests/persistence.test.ts tests/robotSave.test.ts tests/robotSaveV5.test.ts tests/robotInteract.test.ts tests/robotOvernight.test.ts tests/robotRun.test.ts`
-Expected: PASS (`robotBench.test.ts`: 23 tests; `robotSaveV6.test.ts`: 39; `robotEdits.test.ts`: Task 2's count + 2). `objectLayout.test.ts`'s "builds every part flat-shaded, standing on the ground inside its footprint" now also checks the workbench part (it stays within ±0.42 tile and starts at y = 0).
+Expected: PASS (`robotBench.test.ts`: 23 tests; `robotSaveV6.test.ts`: 39; `robotEdits.test.ts`: Task 2's count + 3, so 33). `objectLayout.test.ts`'s "builds every part flat-shaded, standing on the ground inside its footprint" now also checks the workbench part (it stays within ±0.42 tile and starts at y = 0).
 
 - [ ] **Step 14: The full gate**
 
@@ -4940,7 +4952,7 @@ Expected: all green.
 - [ ] **Step 15: Commit**
 
 ```bash
-git add src/robots/workbench.ts src/core/types.ts src/config.ts src/state/validation.ts src/state/initialState.ts src/state/intents.ts src/state/actions.ts src/state/reducer.ts src/robots/run.ts src/robots/world.ts src/robots/overnight.ts src/state/robotValidation.ts src/state/persistence.ts src/render/objectGeometry.ts src/render/objectLayout.ts src/render/TileHighlighter.ts src/render/robotLayout.ts src/render/RobotRenderer.ts tests/testUtils.ts tests/robotBench.test.ts tests/robotSaveV6.test.ts tests/robotEdits.test.ts tests/objectLayout.test.ts tests/tiles.test.ts tests/renderMaps.test.ts tests/maps.test.ts tests/worldgen.test.ts tests/sections.test.ts tests/persistence.test.ts src/robots/edits.ts
+git add src/robots/workbench.ts src/robots/create.ts src/core/types.ts src/config.ts src/state/validation.ts src/state/initialState.ts src/state/intents.ts src/state/actions.ts src/state/reducer.ts src/robots/run.ts src/robots/world.ts src/robots/overnight.ts src/state/robotValidation.ts src/state/persistence.ts src/render/objectGeometry.ts src/render/objectLayout.ts src/render/TileHighlighter.ts src/render/robotLayout.ts src/render/RobotRenderer.ts tests/testUtils.ts tests/robotBench.test.ts tests/robotSaveV6.test.ts tests/robotEdits.test.ts tests/objectLayout.test.ts tests/tiles.test.ts tests/renderMaps.test.ts tests/maps.test.ts tests/worldgen.test.ts tests/sections.test.ts tests/persistence.test.ts src/robots/edits.ts
 git commit -m "Farmclaws part 3: the workbench, the bench and the on/off switch
 
 Every farm has a workbench at (6, 4), placed by createInitialState and by the v6
@@ -5917,24 +5929,24 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/robots/stats.ts` (config import line 4; `resumedPower` ~lines 30–37; end of file)
 - Modify: `src/robots/overnight.ts` (header; new `ruinSoaked` above `recharge` ~line 84; `recharge` ~line 94; `resetForMorning` ~line 148; `runRobotsOvernight` ~line 174)
 - Modify: `src/robots/logText.ts` (`listNames` ~line 77; `robotSays`, `whatHappened` after Task 6's `crashed` cases)
-- Modify: `src/robots/edits.ts` (`KEPT_POWERS`)
+- Modify: `src/robots/edits.ts` (`KEPT_POWERS` and the doc comments of `KEPT_POWERS` and `programmedRobot`)
 - Modify: `src/robots/create.ts` (`addRobot`'s robot literal, ~line 94)
 - Modify: `src/state/intents.ts` (`Intent` doc ~line 62; `planCarry` ~line 358; `describeIntent` ~line 501)
 - Modify: `src/state/actions.ts` (two actions and creators)
 - Modify: `src/state/reducer.ts` (imports; `repairRobot` toast ~line 424; `editRobot` (Task 2); Task 5's `robot/switch` handler; new `robot/scrap`, `robot/paint` cases and functions)
 - Modify: `src/state/robotValidation.ts` (config import line 5; `ROBOT_KEYS` ~line 48; `isValidRobot` ~lines 599 and 611)
-- Modify: `src/state/persistence.ts` (`migrateRobotV5`, Task 3/5)
+- Modify: `src/state/persistence.ts` (`migrateRobotV5` and its doc comment, Task 3/5)
 - Modify: `src/render/robotLayout.ts` (header, imports, `ROBOT_MESH_IDS`, `robotMeshes`, `robotPose`, `eyeLevel`, end of file)
 - Modify: `src/render/robotGeometry.ts` (header, `ROBOT_COLORS`, `HEAD_MESHES`, `body` / `head` cases)
-- Modify: `src/render/RobotRenderer.ts` (imports, a new field, constructor, `sync`, `clearAll`, `syncMeshes`, the spark check)
-- Modify: `tests/testUtils.ts` (`robotOf`, `v5Save`)
+- Modify: `src/render/RobotRenderer.ts` (header comment, imports, a new field, constructor, `sync`, `clearAll`, `syncMeshes`, the spark check)
+- Modify: `tests/testUtils.ts` (`robotOf`, `v5Save`: paint, ruin and the crashed and ruined log events)
 - Test: `tests/robotRuin.test.ts` (create), `tests/robotScrapPaint.test.ts` (create), `tests/robotSaveV6.test.ts` (append), `tests/robotRender.test.ts` (extend), `tests/robotLogText.test.ts` (extend), `tests/robotInteract.test.ts` (line 143), `tests/robotOvernight.test.ts` (lines 124–132)
 
 **Interfaces:**
 - Consumes:
   - Task 2: `src/robots/edits.ts` (`KEPT_POWERS`, `programmedRobot`); the reducer's private `editRobot(state, robotId, edit, done)`; `actions.programRobot(robotId, program)`, `actions.setRobotMd(robotId, md)`.
   - Task 3: `migrateRobotV5` in `persistence.ts`; `v5Save`'s per-robot loop in `tests/testUtils.ts`; `ROBOT_KEYS` with `'stats'`.
-  - Task 5: `Robot.onBench`, `WORKBENCH.home`, the `{ kind: 'robot'; robotId; mode }` panel, `actions.switchRobot(robotId, on)` and its reducer handler, the bench-only toast "Put {name} on the workbench first.", `robotsOnTile` excluding benched robots.
+  - Task 5: `Robot.onBench`, `WORKBENCH.home`, `benchedRobotOf(overrides: Partial<Robot> = {}): Robot` in `tests/testUtils.ts` (a `robotOf` on the bench, which the new test files import), the `{ kind: 'robot'; robotId; mode }` panel, `actions.switchRobot(robotId, on)` and its reducer handler, the bench-only toast "Put {name} on the workbench first.", `robotsOnTile` excluding benched robots.
   - Task 6: `'crashed'` in the log types and `logText`.
 - Produces:
   - `src/core/types.ts`: `ROBOT_POWERS` ends in `'ruined'`; `'ruined'` in `ROBOT_LOG_EVENT_KINDS` and `{ readonly kind: 'ruined' }` in `RobotLogEvent`; `Robot.paint: number`.
@@ -5944,7 +5956,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - Actions: `{ type: 'robot/scrap'; robotId: number }` → `actions.scrapRobot(robotId)`; `{ type: 'robot/paint'; robotId: number; paint: number }` → `actions.paintRobot(robotId, paint)`.
   - `src/render/robotLayout.ts`: `ROBOT_MESH_IDS` gains `'bodyShell'` (after `'body'`) and `'headShell'` (after `'head'`); `export function shellColor(robot: Pick<Robot, 'paint' | 'power'>): number`; `export function sparks(robot: Pick<Robot, 'power' | 'carried'>): boolean` (both new).
   - `src/render/robotGeometry.ts`: `export const SHELL_MESHES: ReadonlySet<RobotMeshId>`; `ROBOT_COLORS.body` becomes `ROBOT_COLORS.shell` (white).
-  - `tests/testUtils.ts`: `robotOf` gains `paint: 0`; `v5Save` drops `paint` and throws for a ruined robot.
+  - `tests/testUtils.ts`: `robotOf` gains `paint: 0`; `v5Save` drops `paint` and throws for a ruined robot and for a log entry whose event is `crashed` or `ruined`.
 
 Rules this task fixes:
 - Ruin (spec §3.2): at the morning reset, after `returnRepaired` (so after a carried robot is set down at spawn) and before `recharge`, every `broken` robot that isn't carried or benched and stands on a water tile becomes `ruined`, logs `{ kind: 'ruined' }` (in id order) and adds the warn note. Migration never ruins.
@@ -5967,7 +5979,7 @@ Create `tests/robotRuin.test.ts`:
  * refusal for ruined robots; and the edits a ruined robot refuses.
  */
 import { describe, expect, it } from 'vitest';
-import { PLAYER, WORKBENCH } from '../src/config';
+import { PLAYER } from '../src/config';
 import { Blocker, Direction, type GameState, type Robot } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { robotSays, whatHappened } from '../src/robots/logText';
@@ -5978,7 +5990,7 @@ import { describeIntent, planInteraction } from '../src/state/intents';
 import { deserializeGame, isValidGameState, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
-import { BASE, must, robotOf, v5Save, withGold, withPlayer, withRobots, withTile } from './testUtils';
+import { BASE, benchedRobotOf, must, robotOf, v5Save, withGold, withPlayer, withRobots, withTile } from './testUtils';
 
 const POND = { tx: 6, tz: 12 };
 const SHORE = { tx: 6, tz: 11 };
@@ -5997,7 +6009,6 @@ const lastText = (state: GameState): string | undefined => state.messages.entrie
 const loadedFrom = (state: GameState): GameState => ({ ...state, ui: { ...state.ui, panel: { kind: 'none' }, paused: false } });
 /** The player on the shore, facing the pond. */
 const onShore = (state: GameState): GameState => withPlayer(state, SHORE, Direction.South, 'farm');
-const benched = (overrides: Partial<Robot> = {}): Robot => robotOf({ onBench: true, tx: WORKBENCH.home.tx, tz: WORKBENCH.home.tz, ...overrides });
 
 describe('ruin overnight', () => {
   it('ruins a broken robot still in the water at the morning reset, where it sank', () => {
@@ -6028,7 +6039,7 @@ describe('ruin overnight', () => {
   });
 
   it('leaves broken robots on land and on the bench broken', () => {
-    const next = sleep(withRobots(wet(), [robotOf({ id: 1, power: 'broken', tx: SHORE.tx, tz: SHORE.tz }), benched({ id: 2, name: 'Bolt', power: 'broken' })]));
+    const next = sleep(withRobots(wet(), [robotOf({ id: 1, power: 'broken', tx: SHORE.tx, tz: SHORE.tz }), benchedRobotOf({ id: 2, name: 'Bolt', power: 'broken' })]));
     expect([requireRobot(next, 1).power, requireRobot(next, 2).power]).toEqual(['broken', 'broken']);
     expect(next.robots.log.entries).toEqual([]);
   });
@@ -6080,7 +6091,7 @@ describe('a ruined robot', () => {
 
   it('refuses a new program, a new .MD, the switch and a paint job', () => {
     const program = b.program({ stacks: [b.when(b.morning(), b.move())] });
-    const state = withRobots(BASE, [benched({ power: 'ruined' })]);
+    const state = withRobots(BASE, [benchedRobotOf({ power: 'ruined' })]);
     for (const action of [actions.programRobot(1, program), actions.setRobotMd(1, []), actions.switchRobot(1, false), actions.paintRobot(1, 3)]) {
       const next = gameReducer(state, action);
       expect(requireRobot(next, 1), action.type).toBe(requireRobot(state, 1));
@@ -6125,7 +6136,7 @@ Create `tests/robotScrapPaint.test.ts`:
  * toast, and paint never changing what a robot does.
  */
 import { describe, expect, it } from 'vitest';
-import { ROBOT_CARE, ROBOT_PAINTS, WORKBENCH } from '../src/config';
+import { ROBOT_CARE, ROBOT_PAINTS } from '../src/config';
 import { Direction, type GameState, type Robot, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';
 import { addRobot } from '../src/robots/create';
 import { whatHappened } from '../src/robots/logText';
@@ -6133,9 +6144,8 @@ import { scrapValue } from '../src/robots/stats';
 import { findRobot, requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
-import { BASE, robotOf, withGold, withRobots } from './testUtils';
+import { BASE, benchedRobotOf, robotOf, withGold, withRobots } from './testUtils';
 
-const benched = (overrides: Partial<Robot> = {}): Robot => robotOf({ onBench: true, tx: WORKBENCH.home.tx, tz: WORKBENCH.home.tz, ...overrides });
 const bolt = robotOf({ id: 2, name: 'Bolt', tx: 5, tz: 12 });
 const lastMessage = (state: GameState) => state.messages.entries.at(-1);
 /** `robots` on the farm with Sprocket's robot screen open at the bench. */
@@ -6161,7 +6171,7 @@ describe('scrapping', () => {
         entry(3, 2, { kind: 'crashed', withId: 1, forgot: null }),
       ],
     };
-    const before = atBench([benched(), bolt]);
+    const before = atBench([benchedRobotOf(), bolt]);
     const state: GameState = { ...before, robots: { ...before.robots, log } };
     const next = gameReducer(state, actions.scrapRobot(1));
     expect(next.robots.list).toEqual([bolt]);
@@ -6180,7 +6190,7 @@ describe('scrapping', () => {
   });
 
   it('pays the same for a ruined Big robot, and a new robot never reuses the id', () => {
-    const state = atBench([benched({ size: 'big', power: 'ruined', tokens: 0 })]);
+    const state = atBench([benchedRobotOf({ size: 'big', power: 'ruined', tokens: 0 })]);
     const next = gameReducer(state, actions.scrapRobot(1));
     expect(next.player.gold).toBe(state.player.gold + 2500);
     expect(lastMessage(next)?.text).toBe('Scrapped Sprocket for 2500g.');
@@ -6213,7 +6223,7 @@ describe('paint', () => {
   });
 
   it('paints the robot on the bench for 50g', () => {
-    const state = atBench([benched()]);
+    const state = atBench([benchedRobotOf()]);
     const next = gameReducer(state, actions.paintRobot(1, 1));
     expect(requireRobot(next, 1).paint).toBe(1);
     expect(next.player.gold).toBe(state.player.gold - 50);
@@ -6222,12 +6232,12 @@ describe('paint', () => {
   });
 
   it('refuses the same colour, a short purse and a robot off the bench', () => {
-    const same = atBench([benched({ paint: 15 })]);
+    const same = atBench([benchedRobotOf({ paint: 15 })]);
     const again = gameReducer(same, actions.paintRobot(1, 15));
     expect(lastMessage(again)).toMatchObject({ text: 'Sprocket is already Cream.', tone: 'warn' });
     expect(again.player.gold).toBe(same.player.gold);
 
-    const poor = withGold(atBench([benched()]), 49);
+    const poor = withGold(atBench([benchedRobotOf()]), 49);
     const short = gameReducer(poor, actions.paintRobot(1, 7));
     expect(lastMessage(short)?.text).toBe('A paint job costs 50g.');
     expect(requireRobot(short, 1).paint).toBe(0);
@@ -6242,7 +6252,7 @@ describe('paint', () => {
   });
 
   it('ignores a paint outside the 16 and an unknown robot', () => {
-    const state = atBench([benched()]);
+    const state = atBench([benchedRobotOf()]);
     for (const paint of [16, -1, 1.5, Number.NaN]) expect(gameReducer(state, actions.paintRobot(1, paint))).toBe(state);
     expect(gameReducer(state, actions.paintRobot(9, 1))).toBe(state);
   });
@@ -6298,6 +6308,16 @@ describe('save version 6: ruin and paint', () => {
     expect(((save.robots as SaveJson).list as SaveJson[]).map((r) => 'paint' in r)).toEqual([false]);
     expect(must(deserializeGame(JSON.stringify(save))).robots.list.map((r) => r.paint)).toEqual([0]);
     expect(() => v5Save(ruinedAndPainted())).toThrow('version 5 has no ruined robots');
+  });
+
+  it('v5Save refuses the version 6 crashed and ruined log events', () => {
+    const entries = ruinedAndPainted().robots.log.entries;
+    const logged = (index: number): GameState => {
+      const state = withRobots(BASE, [robotOf()]);
+      return { ...state, robots: { ...state.robots, log: { nextId: 1, entries: [{ ...entries[index]!, id: 0, robotId: 1 }] } } };
+    };
+    expect(() => v5Save(logged(0))).toThrow('version 5 has no crashed log events');
+    expect(() => v5Save(logged(1))).toThrow('version 5 has no ruined log events');
   });
 
   const rejections: readonly [string, (robots: SaveJson & { list: SaveJson[]; log: SaveJson & { entries: SaveJson[] } }) => void][] = [
@@ -6460,7 +6480,7 @@ Run: `npx vitest run tests/robotRuin.test.ts tests/robotScrapPaint.test.ts tests
 Expected: FAIL. Among them:
 - `robotRuin.test.ts`: "ruins a broken robot …" `expected 'broken' to be 'ruined'`; the bin test `expected 'Send Sprocket for repair · 300g' to be 'Send Sprocket for a new core · 300g'`; the ruined refusal `TypeError: actions.paintRobot is not a function`; the migration test fails at `paint: 0` (`paint` is undefined).
 - `robotScrapPaint.test.ts`: `TypeError: scrapValue is not a function`, `TypeError: Cannot read properties of undefined (reading 'map')` (`ROBOT_PAINTS`), `TypeError: actions.scrapRobot is not a function`.
-- `robotSaveV6.test.ts`: the round trip `expected null to deeply equal …` (power `'ruined'` and the `paint` key are rejected), and `v5Save` doesn't throw. (The rejection cases pass already, because the unedited farm doesn't load yet.)
+- `robotSaveV6.test.ts`: the round trip `expected null to deeply equal …` (power `'ruined'` and the `paint` key are rejected), and the `v5Save` tests don't throw. (The rejection cases pass already, because the unedited farm doesn't load yet.)
 - `robotRender.test.ts`: the mesh lists, `TypeError: shellColor is not a function`, `sparks is not a function`.
 - `robotLogText.test.ts`: `expected undefined to match / ✓$/`.
 - `robotInteract.test.ts` and `robotOvernight.test.ts`: the old toast and `'broken'` come back.
@@ -6685,10 +6705,11 @@ with:
     if (robot.power === 'broken' || robot.power === 'ruined' || robot.power === 'repairing' || returned.has(robot.id)) continue;
 ```
 
-In `resetForMorning`, replace:
+In `resetForMorning`, replace Task 5's two lines:
 
 ```ts
-    const standable = tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater));
+    // A robot on the workbench stays on it (part 3 spec §2.2); the bench tile itself isn't walkable.
+    const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater)));
 ```
 
 with:
@@ -6696,7 +6717,8 @@ with:
 ```ts
     // A broken or ruined robot may stay sunk in the water (part 3 spec §3.2).
     const sunk = robot.power === 'broken' || robot.power === 'ruined';
-    const standable = tile !== null && (isWalkable(tile) || (sunk && inWater));
+    // A robot on the workbench stays on it (part 3 spec §2.2); the bench tile itself isn't walkable.
+    const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (sunk && inWater)));
 ```
 
 In `runRobotsOvernight`, replace:
@@ -6773,6 +6795,32 @@ const KEPT_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['flat'
 ```
 
 (The `setProgram` dev hook isn't limited to benched or working robots, so a ruined robot it reprograms stays ruined.)
+
+The two doc comments that describe it say so too. Replace:
+
+```ts
+/** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first. */
+```
+
+with:
+
+```ts
+/** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first, or can only be scrapped (ruined). */
+```
+
+and, in `programmedRobot`'s doc comment, replace:
+
+```ts
+ * the robot turns back on and acts one period from now; a flat, broken or repairing robot keeps
+ * its power. Returns the checker's sentence instead when the program fails, or PROGRAM_SHAPE when
+```
+
+with:
+
+```ts
+ * the robot turns back on and acts one period from now; a flat, broken, repairing or ruined robot
+ * keeps its power. Returns the checker's sentence instead when the program fails, or PROGRAM_SHAPE when
+```
 
 In `src/robots/create.ts`'s `addRobot`, replace:
 
@@ -6961,16 +7009,16 @@ with:
   'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction', 'paint',
 ```
 
-In `isValidRobot`, replace:
+In `isValidRobot`, replace Task 5's line:
 
 ```ts
-  if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried)) return false;
+  if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried) || !isBool(v.onBench)) return false;
 ```
 
 with:
 
 ```ts
-  if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried)) return false;
+  if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried) || !isBool(v.onBench)) return false;
   if (!isIntIn(v.paint, 0, ROBOT_PAINTS.length - 1)) return false;
 ```
 
@@ -6987,10 +7035,28 @@ with:
   if (v.power === 'broken' || v.power === 'ruined') return tile.blocker === Blocker.Water || isWalkable(tile);
 ```
 
-In `src/state/persistence.ts`, `migrateRobotV5` (Task 3, extended by Task 5 with `onBench: false`) also gives the robot `paint: 0`: its returned object reads
+In `src/state/persistence.ts`, `migrateRobotV5` (Task 3, extended by Task 5 with `onBench: false`) also gives the robot `paint: 0`. In its doc comment, replace:
 
 ```ts
-  return { ...rest, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } }, onBench: false, paint: 0 };
+/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted, and off the bench. */
+```
+
+with:
+
+```ts
+/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted, and off the bench, with paint 0. */
+```
+
+and append `, paint: 0` to Task 5's return line, replacing:
+
+```ts
+  return { ...rest, onBench: false, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } } };
+```
+
+with:
+
+```ts
+  return { ...rest, onBench: false, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } }, paint: 0 };
 ```
 
 (Migration never ruins a robot: a v5 broken robot in the water stays broken until the next morning reset.)
@@ -7011,28 +7077,38 @@ with:
 and in `v5Save`'s per-robot loop (Task 3's), replace:
 
 ```ts
-      robot.tokensToday = today.tokens;
-      delete robot.stats;
+    robot.tokensToday = today.tokens;
+    delete robot.stats;
 ```
 
 with:
 
 ```ts
-      robot.tokensToday = today.tokens;
-      delete robot.stats;
-      // Ruin and paint (part 3 spec §3.2, §3.4): version 5 has no ruined power and no paint.
-      if (robot.power === 'ruined') throw new Error(`v5Save: version 5 has no ruined robots (robot ${String(robot.id)})`);
-      delete robot.paint;
+    robot.tokensToday = today.tokens;
+    delete robot.stats;
+    // Ruin and paint (part 3 spec §3.2, §3.4): version 5 has no ruined power and no paint.
+    if (robot.power === 'ruined') throw new Error(`v5Save: version 5 has no ruined robots (robot ${String(robot.id)})`);
+    delete robot.paint;
+```
+
+Directly above Task 4's comment line `  // Unlocks: a v5 save has none; the migration gives it job 1's.`, insert (the `crashed` and `ruined` log events are version 6's, part 3 spec §3.1 and §3.2):
+
+```ts
+  // Log: version 5 has no crashed or ruined events.
+  for (const entry of (save.robots as { log: { entries: SaveJson[] } }).log.entries) {
+    const kind = (entry.event as { kind: string }).kind;
+    if (kind === 'crashed' || kind === 'ruined') throw new Error(`v5Save: version 5 has no ${kind} log events (log entry ${String(entry.id)})`);
+  }
 ```
 
 - [ ] **Step 12: Render rules in `src/render/robotLayout.ts`**
 
-Replace:
+Replace (Task 5 already made the import line `import { TIME, WORKBENCH } from '../config';`):
 
 ```ts
  * Part 2 spec §9 adds the dizzy spin and how bright a robot's eyes are while it is off.
  */
-import { TIME } from '../config';
+import { TIME, WORKBENCH } from '../config';
 import type { Robot, RobotActionEvent, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
 import { periodFor } from '../robots/stats';
 ```
@@ -7043,7 +7119,7 @@ with:
  * Part 2 spec §9 adds the dizzy spin and how bright a robot's eyes are while it is off. Part 3
  * spec §3.2 and §3.4 add the painted shells and the ruined look.
  */
-import { ROBOT_CARE, TIME } from '../config';
+import { ROBOT_CARE, TIME, WORKBENCH } from '../config';
 import type { Robot, RobotActionEvent, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
 import { paintAt, periodFor } from '../robots/stats';
 ```
@@ -7335,6 +7411,20 @@ with:
   }
 ```
 
+In the header comment, replace:
+
+```ts
+ *   bickers show a red badge; broken robots spark; working robots bob gently.
+```
+
+with:
+
+```ts
+ *   bickers show a red badge; broken robots spark (ruined ones don't); working robots bob gently.
+ * - Each robot's body and head shells are drawn in its paint colour, darkened when it is ruined
+ *   (robotLayout.shellColor); their instance colours are written only when that colour changes.
+```
+
 In `animate`, replace:
 
 ```ts
@@ -7352,7 +7442,7 @@ with:
 - [ ] **Step 15: Run them and see them pass**
 
 Run: `npx vitest run tests/robotRuin.test.ts tests/robotScrapPaint.test.ts tests/robotSaveV6.test.ts tests/robotRender.test.ts tests/robotLogText.test.ts tests/robotInteract.test.ts tests/robotOvernight.test.ts tests/robotBump.test.ts tests/robotDev.test.ts tests/robotSave.test.ts tests/robotSaveV5.test.ts`
-Expected: PASS (`robotRuin.test.ts`: 11 tests, `robotScrapPaint.test.ts`: 9 tests, the appended save block: 12 tests).
+Expected: PASS (`robotRuin.test.ts`: 11 tests, `robotScrapPaint.test.ts`: 9 tests, the appended save block: 13 tests).
 
 - [ ] **Step 16: The full gate**
 
@@ -8057,7 +8147,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - Task 2: `withZone(state: GameState, id: ZoneId, rect: ZoneRect | null): GameState | string` in `src/robots/edits.ts` (its string results are the neutral `ZONE_SHAPE` / `ZONE_OFF_FARM`, shown as they are), imported by the reducer as `import { programmedRobot, withMd } from '../robots/edits';`.
   - Task 4: `RobotsState.unlocks` and `'unlocks'` in `isValidRobotsSection`'s exact keys; the `unlocks` default in `tests/sections.test.ts`.
   - Task 5: `UiPanel` robot kind; `WORKBENCH.home`; `planInteraction` at an empty bench → a blocked plan whose `hint` (shown by `describeIntent`) is "Bring a robot here to work on it".
-  - Task 8: `planShiftInteraction`, the `peekRobot` intent and its `applyIntent` case, `actions.peek()`, `panelKeyCommand(code, state, shift = false)`, `InputController`'s `setShiftHeld`.
+  - Task 8: `planShiftInteraction`, the `peekRobot` intent and its `applyIntent` case, `actions.peek()`, `panelKeyCommand(code, state, shift = false)`.
 - Produces:
   - `src/core/types.ts`: `TOOL_TYPES` = `['hoe', 'wateringCan', 'pickaxe', 'axe', 'scythe', 'zoneMarker']` (so `ActionKind` gains `'zoneMarker'`); `UiState.zoneDraft: null | { readonly zone: ZoneId; readonly corner: TileCoord }`; `UiState.zoneLetter: ZoneId`; `RobotsState.pendingMarker: boolean`.
   - `src/config.ts`: `TOOLS.energyCost.zoneMarker: 0`; `ZONE_MARKER = { colors: [0xe2563f, 0xf2c14e, 0x5fa84a, 0x2f6fb0, 0x8e5ba8, 0xf28a3a, 0x3aa59c, 0xe87fa3], outlineHeight: 0.03 } as const` (A … H).
@@ -8827,18 +8917,21 @@ export function isZoneMarkerSelected(state: GameState): boolean {
 
 ```
 
-**3k. `src/state/initialState.ts`.** Replace the first two imports:
+**3k. `src/state/initialState.ts`.** Leave the `../config` import line alone (Tasks 4 and 5 added `UNLOCKS` and `WORKBENCH` to it). Directly after it, add:
 
 ```ts
-import { INVENTORY, PLAYER, TOOLS, WORLD } from '../config';
+import { invariant } from '../core/invariant';
+```
+
+and replace the `../core/types` import line:
+
+```ts
 import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type NpcId, type NpcRelation } from '../core/types';
 ```
 
-with (keep any name an earlier task added to these two lines):
+with (keep any name an earlier task added to that line):
 
 ```ts
-import { INVENTORY, PLAYER, TOOLS, WORLD } from '../config';
-import { invariant } from '../core/invariant';
 import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type InventoryState, type NpcId, type NpcRelation } from '../core/types';
 ```
 
@@ -10189,7 +10282,7 @@ Every new farm now holds the marker in slot 6, and `UiState` has two more fields
       expect(next.ui).toEqual({ ...BASE.ui, panel: { kind: 'none' }, paused: false, timeScale: 2 });
   ```
 
-If a test that Tasks 1–8 added assumes slot 6 is the first free slot of a new farm (the first item added to `BASE`, or `holding(BASE, …)` of an item the kit doesn't hold), it now gets slot 7: move its expectation to 7. `tests/intents.test.ts`'s property test already draws the marker from `TOOL_TYPES` and needs no change.
+If a test that Tasks 1–8 added assumes slot 6 is the first free slot of a new farm (the first item added to `BASE`, or `holding(BASE, …)` of an item the kit doesn't hold), it now gets slot 7: move its expectation to 7. `tests/intents.test.ts`'s property test already draws the marker from `TOOL_TYPES`: run it; if its `fertilize` count falls to 3 or below (the new tool reshuffles the `mulberry32(0xa11ce)` stream), change only the seed.
 
 - [ ] **Step 10: Run the new tests and the touched suites**
 
@@ -10745,6 +10838,14 @@ describe('countWorkspaceBlocks', () => {
     );
     expect(countWorkspaceBlocks(json)).toBe(4);
     expect(workspaceToProgram(json)).toStrictEqual({ error: FILL, blockId: 'r' });
+  });
+
+  it('counts nothing under a declaration, as blockCount ignores declarations', () => {
+    const json = ws(
+      morning(block('fc_wait', 'w', { inputs: { MINUTES: slot(num('five', 5)) } })),
+      block('fc_varDecl', 'v', { fields: { NAME: 'n', TYPE: 'number' }, inputs: { INITIAL: slot(block('fc_tokensLeft', 'inner')) } }),
+    );
+    expect(countWorkspaceBlocks(json)).toBe(2);
   });
 
   it('counts the design programs exactly as blockCount does', () => {
@@ -11431,9 +11532,9 @@ export function workspaceToProgram(json: BlocklyWorkspaceJson): TranslationResul
 }
 
 /**
- * Blocks in a workspace the way blockCount counts a program: literals and variable declarations 0,
- * every other block 1, loose blocks and unfilled slots included, so the editor's counter works
- * mid-edit. A slot's shadow counts only when it holds no block. Never throws; iterative, so any
+ * Blocks in a workspace the way blockCount counts a program: literals and variable declarations 0
+ * (and everything under a declaration's starting value, which blockCount never reads), every other
+ * block 1, loose blocks and unfilled slots included, so the editor's counter works mid-edit. A slot's shadow counts only when it holds no block. Never throws; iterative, so any
  * depth is fine, and each block object counts once.
  */
 export function countWorkspaceBlocks(json: BlocklyWorkspaceJson): number {
@@ -11445,6 +11546,7 @@ export function countWorkspaceBlocks(json: BlocklyWorkspaceJson): number {
     if (!isRaw(block) || seen.has(block)) continue;
     seen.add(block);
     if (typeof block.type === 'string' && !FREE_BLOCKS.has(block.type)) count++;
+    if (block.type === 'fc_varDecl') continue;
     const inputs = block.inputs;
     if (isRaw(inputs)) for (const slot of Object.values(inputs)) pending.push(slotContent(slot));
     pending.push(slotContent(block.next));
@@ -11456,7 +11558,7 @@ export function countWorkspaceBlocks(json: BlocklyWorkspaceJson): number {
 - [ ] **Step 5: Run it and see it pass**
 
 Run: `npx vitest run tests/translate.test.ts`
-Expected: PASS (131 tests), in well under a second.
+Expected: PASS (132 tests), in well under a second.
 
 - [ ] **Step 6: The full gate**
 
@@ -11873,7 +11975,7 @@ Expected: FAIL. `tests/robotScreen.test.ts` fails to load: `Error: Cannot find m
 **3a. `src/state/actions.ts`.** In the type import, add `MessageTone`:
 
 ```ts
-import type { CraftingRecipeId, Direction, GameState, MessageTone, SeedItemId, SlotRef } from '../core/types';
+import type { CraftingRecipeId, Direction, GameState, MdCard, MessageTone, RobotProgram, SeedItemId, SlotRef } from '../core/types';
 ```
 
 (Keep any names Tasks 2–9 added to that import; only `MessageTone` is new.) In the `GameAction` union, directly after the `| { readonly type: 'ui/closePanel' }` member, add:
@@ -11905,7 +12007,7 @@ add:
 
 (`pushMessage` is already imported from `./messages`.)
 
-**3c. `src/input/panelKeys.ts`.** In the module comment, after the line `*   Escape         closes any open panel, otherwise toggles pause` add the line:
+**3c. `src/input/panelKeys.ts`.** In the module comment, after the line ` *   Escape         closes any open panel, otherwise drops a zone draft, otherwise toggles pause` (Task 9 reworded it) add the line, before the ` *` / `markerToolCommand` lines:
 
 ```ts
  *   (none)         while a robot screen is open: it owns the keyboard (part 3 spec §4.1)
@@ -14192,7 +14294,7 @@ Use the `game-driven-qa` skill: `preview_start {name: "meadowlight-dev"}`, navig
 4. Switch: click "Off" (`find` "Off", then `computer left_click`). The header shows "Switched off" and the button reads "On"; `__qa.robot('Drizzle').off === 'player'`. Click "On": `off` is `null` again.
 5. Looks: click "Looks", click the "Sky" swatch: the preview turns blue and "Sky" shows under it. Click "Paint · 50g": the toast "Painted Drizzle Sky." shows bottom-centre above the screen, `__qa.robot('Drizzle').paint === 7`, and the gold dropped by 50.
 6. Log: click "Log": rows show a time, "Robot says" and "What happened", or "Nothing yet today." on a fresh robot.
-7. Stats appears with its unlock: `__meadowlight.unlockAll()`; the "Stats" tab appears without reopening. Click it: two columns, "Today" and "This week", "Tokens per crop" reads "—".
+7. Stats appears with its unlock: `__meadowlight.unlockAll()` (the screen closes, because `unlockAll` reloads the state; press E at the bench to reopen it); the "Stats" tab now shows. Click it: two columns, "Today" and "This week", "Tokens per crop" reads "—".
 8. Escape closes: `await __qa.key('Escape'); [__qa.state().ui.panel.kind, __qa.state().ui.paused]` → `['none', false]`. Press E at the bench (`await __qa.key('KeyE')`): the screen reopens.
 9. Scrap prompt: click "Scrap": the dialog reads "Scrap Drizzle for 375g? This can't be undone." Press Escape: only the dialog closes (`__qa.state().ui.panel.kind === 'robot'`). Click "Scrap" then "Keep": nothing changes.
 10. Peek: close the screen, `__meadowlight.addRobot('spinner', { tx: 8, tz: 8, facing: 2 })`, `__qa.patch((s) => { s.player.tx = 8; s.player.tz = 9; s.player.facing = 0; })`, `await __qa.key('KeyE', 60, { shiftKey: true })`. The screen opens with only "Stats" and "Log", no switch, no "Lift off", no "Scrap".
@@ -14228,6 +14330,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `package.json`, `package-lock.json` (`blockly` in `dependencies`, through `npm install`)
+- Create: `public/blockly-media/` (copied from `node_modules/blockly/media`, Step 1)
 - Create: `src/ui/robotScreen/blockly/toolbox.ts` (pure: toolbox, dropdowns, editor text)
 - Create: `src/ui/robotScreen/blockly/theme.ts`
 - Create: `src/ui/robotScreen/blockly/blockDefs.ts`
@@ -14256,13 +14359,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `src/ui/robotScreen/tabs/ProgramTab.ts`: `ProgramTab implements RobotTabView`; Save dispatches `actions.programRobot`.
 
 Rules this task settles (recorded in the commit message):
-- **Dropdowns never drop a value.** Blockly's `FieldDropdown` rejects any value that isn't among its cached options, so a loaded `atTime` 583 would silently become 6:00 am. Every dropdown whose value can be unusual is a registered subclass (`field_fc_minute`, `field_fc_every`, `field_fc_item`, `field_fc_crop`, `field_fc_zone`, `field_fc_var`, `field_fc_helper`) whose menu generator adds the current value, whose validation accepts any well-formed value of its kind (`menuAccepts`), and whose shown text comes from `menuLabel`. `field_fc_every` is a menu too, so `dropdownOptions` takes `'every'` beside the contract's four kinds.
+- **Dropdowns never drop a value.** Blockly's `FieldDropdown` rejects any value that isn't among its cached options, so a loaded `atTime` 583 would silently become 6:00 am. Every dropdown whose value can be unusual is a registered subclass (`field_fc_minute`, `field_fc_every`, `field_fc_item`, `field_fc_crop`, `field_fc_zone`, `field_fc_var`, `field_fc_helper`) whose menu generator adds the current value, whose validation accepts any well-formed value of its kind (`menuAccepts`), and whose shown text comes from `menuLabel`. `field_fc_every` is a menu too, so `dropdownOptions` takes `'every'`, one of the contract's five kinds.
 - **Loading doesn't count as an edit.** The saved program is loaded with Blockly's events disabled, then rendered, re-spaced (each top-level block `ROBOT_SCREEN.stackGap` below the previous one's bottom, in JSON order) and given its variable checks. "Unsaved edits" is any later non-UI workspace event; Save and Revert clear it.
 - **Variables.** "Make a variable" opens an in-screen form (name, type) and adds an `fc_varDecl` holding the type's default literal at the top-left of the view. The listener keeps `fc_var`'s output check on its declaration's type, sets each declaration's `INITIAL` check, swaps the literal for the new type's default when a declaration's type changes, and renames `fc_var` / `fc_set` / `fc_change` (and `fc_runHelper` for helpers) when a declaration (or helper) is renamed.
 - **Sensor eye.** Without one, `tileAheadIs`, `itIsRaining` and `timeIsAfter` come into the toolbox with the disabled reason `fc_needsSensorEye`, so they can't be dragged out, and an extension switches their tooltip to "Needs a sensor eye".
 - **Phone.** Under the phone width the category column is hidden (`toolbox.setVisible(false)`) and a "Blocks" button opens a menu of the categories; picking one opens its flyout (`selectItemByPosition`).
 - **Shape check.** A translated program that `isProgramShape` rejects (too deep or too big to store) shows "This program is too big or too deeply nested to save." The spec names no sentence for it.
-- Blockly's media (the trash-can and zoom sprites, the drag cursors and the field icons) are copied from the package into `public/blockly-media/` and served by the game itself, so the editor never fetches from Blockly's host (plan refinement R16). Sounds are off.
+- Blockly's media (the trash-can and zoom sprites, the drag cursors and the field icons) are copied from the package into `public/blockly-media/` and served by the game itself from a relative `blockly-media/` folder, so the dev server, `dist/` and `dist-single/` opened from disk all find it and the editor never fetches from Blockly's host (plan refinement R16). Sounds are off.
 
 - [ ] **Step 1: Add Blockly**
 
@@ -14284,7 +14387,6 @@ Expected: the nine files listed. The sound files (`*.mp3`) aren't copied: sounds
 In `tests/robotScreen.test.ts`, add to the imports at the top:
 
 ```ts
-import { ROBOTS, ROBOT_SCREEN, TIME } from '../src/config';
 import { mulberry32 } from '../src/core/hash';
 import { b } from '../src/robots/blocks';
 import { BLOCK_DEFINITIONS, type BlockDefinitionJson } from '../src/ui/robotScreen/blockly/blockDefs';
@@ -14309,7 +14411,7 @@ import { BLOCK_TYPES, programToWorkspace, type BlocklyBlockJson } from '../src/u
 import { randomProgram } from './programGen';
 ```
 
-and merge `ROBOTS`, `ROBOT_SCREEN` and `TIME` into the existing `../src/config` import rather than adding a second one (`import { ROBOTS, ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, TIME, UNLOCKS } from '../src/config';`). Then append:
+and make the existing `../src/config` import read `import { ROBOTS, ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, TIME, UNLOCKS } from '../src/config';` (it gains `ROBOTS`, `ROBOT_SCREEN` and `TIME` as needed; there is only one). Then append:
 
 ```ts
 describe('toolboxFor', () => {
@@ -15102,7 +15204,8 @@ export const BLOCK_DEFINITIONS: readonly BlockDefinitionJson[] = [
         'TYPE',
         VALUE_TYPES.map((type) => [VALUE_TYPE_LABELS[type], type] as const),
       ),
-      valueInput('INITIAL', NUMBER),
+      // No static check: refreshChecks sets it, and only after a load or append, where Blockly's serializer would throw on a mismatch.
+      valueInput('INITIAL'),
     ],
     inputsInline: true,
     style: categoryStyle('values'),
@@ -15583,8 +15686,8 @@ export class ProgramTab implements RobotTabView {
       zoom: EDITOR_ZOOM,
       move: { scrollbars: true, drag: true, wheel: false },
       sounds: false,
-      // Served from public/blockly-media (copied from the package in Step 1), never Blockly's host.
-      media: `${import.meta.env.BASE_URL}blockly-media/`,
+      // Relative to the page: public/blockly-media (copied from the package in Step 1) is served beside the page in the dev server, dist/ and dist-single/ opened from disk, never from Blockly's host.
+      media: 'blockly-media/',
       comments: false,
       collapse: false,
       disable: false,
@@ -15934,7 +16037,13 @@ Expected: PASS (the Task 11 cases and the new `toolboxFor`, `dropdownOptions`, `
 - [ ] **Step 6: The full gate**
 
 Run: `npm run typecheck && npm test && npm run build`
-Expected: all green. The build now emits two more lazy chunks: one holding `blockly/core` (the largest asset, several hundred KB before gzip) and a small `en-*.js` for the messages. `grep -l "FieldDropdown" dist/assets/index-*.js dist/assets/RobotScreen-*.js` prints nothing: Blockly stays out of the main and screen chunks.
+Expected: all green. The build now emits two more lazy chunks: one holding `blockly/core` (the largest asset, several hundred KB before gzip) and a small `en-*.js` for the messages. Blockly stays out of the main and screen chunks: run
+
+```bash
+node -e "const fs=require('fs');for(const f of fs.readdirSync('dist/assets').filter(n=>/^(index|RobotScreen)-.*\.js\.map$/.test(n)))console.log(f,JSON.parse(fs.readFileSync('dist/assets/'+f,'utf8')).sources.some(s=>s.includes('node_modules/blockly/')))"
+```
+
+It prints `false` for the `index-*.js.map` file and for the `RobotScreen-*.js.map` file, since neither source map lists `node_modules/blockly/`. (A `grep` for `FieldDropdown` would find the screen chunk, because `blockDefs.ts` names `api.FieldDropdown`, so don't use one.)
 
 - [ ] **Step 7: Browser check**
 
@@ -15957,8 +16066,8 @@ Use the `game-driven-qa` skill as in Task 11, Step 6 (fresh farm, probe loaded, 
 5. Typing stays in the editor: click the variable name field on the declaration, then `await __qa.key('KeyE'); await __qa.key('KeyW'); await __qa.key('Space')` (also type with `computer type "ew "`): the player doesn't move, the panel stays open, and the field shows the typed text. Press Escape: the edit is cancelled, the name is back to "aVeryLongName123", and the screen stays open.
 6. A loose block: open "Actions", drag "Move forward" onto empty workspace (`computer left_click_drag`), click "Save": "Every block must be inside a When … stack or a helper." shows under the toolbar and the block is outlined red; the robot's program is unchanged. Click "Revert": the loose block is gone and the message cleared.
 7. Over the limit: drag eight "Move forward" blocks into the stack, one under another, until the counter reads "13 / 12 blocks" in red; "Save" shows "Mini robots hold 12 blocks; this program has 13." and nothing is saved. "Revert".
-8. Make a variable: Drizzle (a Mini) already has one; `__meadowlight.unlockAll()`, then click "Make a variable", type "spare", choose "Tile", click "Add": a "Variable spare is a Tile starting at tile X 6 Z 4" block appears, and the counter reads "2 / 1 variables" in red. Change its type to "Number": the literal becomes 0. "Revert".
-9. Sensor eye: after `unlockAll()`, open "Sensors": "tile ahead is", "it is raining" and "time is after" are greyed; hovering one shows "Needs a sensor eye"; it can't be dragged out.
+8. Make a variable: Drizzle (a Mini) already has one; `__meadowlight.unlockAll()` (the screen closes, because `unlockAll` reloads the state; press E at the bench to reopen it), then open the Program tab and click "Make a variable", type "spare", choose "Tile", click "Add": a "Variable spare is a Tile starting at tile X 6 Z 4" block appears, and the counter reads "2 / 1 variables" in red. Change its type to "Number": the literal becomes 0. "Revert".
+9. Sensor eye: after `unlockAll()` (the screen closes; press E at the bench to reopen it, then open the Program tab), open "Sensors": "tile ahead is", "it is raining" and "time is after" are greyed; hovering one shows "Needs a sensor eye"; it can't be dragged out.
 10. Close with edits: drag one block in, press Escape → "Discard your changes to Drizzle's program?"; "Keep editing" keeps the screen; Escape again and "Discard" closes it; reopen: the edit is gone.
 11. A script robot: reopen the bench (E at the bench) and click "Lift off": Drizzle is carried and the screen closes. Put it down away from the bench: `__qa.patch((s) => { s.player.tx = 6; s.player.tz = 8; s.player.facing = 2; })`, `await __qa.key('KeyE')`. Then `__meadowlight.addRobot('spinner', { tx: 6, tz: 6, facing: 2 })` and bench Spinner as in Task 11, Step 6.1: the Program tab shows "Spinner runs a fixed script. Saving here replaces it with a block program." over an empty workspace, and the counter reads "0 / 12 blocks".
 12. Phone: `resize_window {preset: "mobile"}`, reload without `?new`, reopen the bench: the category column is gone and "Blocks" opens the category menu; picking "Actions" opens its flyout. Screenshot, then `resize_window {preset: "desktop"}`.
@@ -16000,7 +16109,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/config.ts` (`ROBOT_SCREEN` gains `cardDefaults`)
 - Create: `src/ui/robotScreen/mdFields.ts` (pure)
 - Create: `src/ui/robotScreen/tabs/MdTab.ts`
-- Modify: `src/ui/robotScreen/RobotScreen.ts` (the import list and `TAB_FACTORIES`, now complete)
+- Modify: `src/ui/robotScreen/RobotScreen.ts` (the import list, and the doc comment and `TAB_FACTORIES`, now complete)
 - Test: `tests/robotScreen.test.ts` (extend)
 
 **Interfaces:**
@@ -16013,13 +16122,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - Part 2: `checkMd(md, robot)` (`src/robots/check.ts`), `isMdShape` (`src/state/robotValidation.ts`), `isItemId`, `MAPS`.
 - Produces:
   - `src/config.ts`: `ROBOT_SCREEN.cardDefaults = { returnMinute: 1080, tokensBelow: 10 }` (a new DO return is at 6:00 pm; switching a power-down card to "tokens are below" starts at 10).
-  - `src/ui/robotScreen/mdFields.ts`: `MdCardKind`, `MdFieldKey`, `MdField`; `cardFields(card: MdCard): readonly MdField[]`; `newCard(kind: MdCardKind): MdCard`; `setCardValue(card, key, raw, robot): MdCard`; `cardSection(card): 'do' | 'dont'`; `moveCard(cards, index, step)`; `removeCard(cards, index)`; `addCardOptions(unlocks)`; `CARD_LABELS`; `mdTitle(name)`; `mdCountText(md, size): string` ("{n} / {limit} cards"); `mdOverLimit(md, size)`; `isMdFieldKey`; `MD_TEXT`.
+  - `src/ui/robotScreen/mdFields.ts`: `MdCardKind`, `MdFieldKey`, `MdField`; `cardFields(card: MdCard, size: RobotSize): readonly MdField[]`; `newCard(kind: MdCardKind): MdCard`; `setCardValue(card, key, raw, robot): MdCard`; `cardSection(card): 'do' | 'dont'`; `moveCard(cards, index, step)`; `removeCard(cards, index)`; `addCardOptions(unlocks)`; `CARD_LABELS`; `mdTitle(name)`; `mdCountText(md, size): string` ("{n} / {limit} cards"); `mdOverLimit(md, size)`; `isMdFieldKey`; `MD_TEXT`.
   - `src/ui/robotScreen/tabs/MdTab.ts`: `MdTab implements RobotTabView`; Save dispatches `actions.setRobotMd`.
 
 Rules this task settles (recorded in the commit message):
 - The .MD shows as the design's markdown card: "# {NAME}.MD", then "## DO" and "## DON'T", each card one line of text and fields. Cards keep one list in .MD order (DO returns tie by that order); "↑" and "↓" swap a card with the nearest card of its own section.
 - `newCard` takes only the kind (the contract's `robot` argument would be unused): a DO return starts at "the nearest generator" at `cardDefaults.returnMinute`. Switching a return to "a tile" starts at the robot's tile; the player edits X and Z.
-- A number field that isn't a whole number leaves the card unchanged and is redrawn with the card's value. Range rules (tiles on the farm, 1 … battery tokens) stay with `checkMd`, whose sentence shows under the toolbar on Save.
+- A number field that isn't a whole number leaves the card unchanged and is redrawn with the card's value. Range rules (tiles on the farm, 1 … battery tokens) stay with `checkMd`, whose sentence shows under the toolbar on Save. The "Power down below [n] tokens" field's maximum is the robot's battery, `batteryFor(size)`, as `checkMd` caps it, so `cardFields` takes the robot's size.
 - The sentences the spec doesn't give: "No cards yet." under an empty section, and "These cards can't be saved." when `isMdShape` refuses (the editor only builds well-formed cards, so this guards the gate rather than a reachable state).
 
 - [ ] **Step 1: Write the failing tests**
@@ -16045,24 +16154,24 @@ import {
 } from '../src/ui/robotScreen/mdFields';
 ```
 
-and add `MD_CARD_KINDS` and `MdCard` to the existing `../src/core/types` import (`import { MD_CARD_KINDS, type GameState, type MdCard, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';`). Then append:
+and add `MD_CARD_KINDS` and `MdCard` to the existing `../src/core/types` import (`import { MD_CARD_KINDS, type GameState, type MdCard, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';`), and add `import { batteryFor } from '../src/robots/stats';` beside the other `../src/robots` imports. Then append:
 
 ```ts
 describe('.MD card fields', () => {
   const ZONES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((zone) => [`Zone ${zone}`, zone]);
 
   it('gives each card its words and fields', () => {
-    expect(cardFields({ kind: 'dontLeave', zone: 'B' })).toEqual([
+    expect(cardFields({ kind: 'dontLeave', zone: 'B' }, 'mini')).toEqual([
       { kind: 'text', text: 'Leave' },
       { kind: 'select', key: 'zone', label: 'Zone', value: 'B', options: ZONES },
     ]);
-    expect(cardFields({ kind: 'dontGoIntoWater' })).toEqual([{ kind: 'text', text: 'Go into water' }]);
-    expect(cardFields({ kind: 'dontHarvest', cropId: 'pumpkin' })[1]).toMatchObject({ kind: 'select', key: 'cropId', value: 'pumpkin' });
-    expect(cardFields({ kind: 'dontDeposit', itemId: 'hoe' })[1]).toMatchObject({ kind: 'select', key: 'itemId', value: 'hoe' });
+    expect(cardFields({ kind: 'dontGoIntoWater' }, 'mini')).toEqual([{ kind: 'text', text: 'Go into water' }]);
+    expect(cardFields({ kind: 'dontHarvest', cropId: 'pumpkin' }, 'mini')[1]).toMatchObject({ kind: 'select', key: 'cropId', value: 'pumpkin' });
+    expect(cardFields({ kind: 'dontDeposit', itemId: 'hoe' }, 'mini')[1]).toMatchObject({ kind: 'select', key: 'itemId', value: 'hoe' });
   });
 
   it('shows a DO return to a tile as two number fields and a time', () => {
-    expect(cardFields({ kind: 'doReturn', to: { kind: 'tile', tx: 4, tz: 9 }, minute: 1080 })).toEqual([
+    expect(cardFields({ kind: 'doReturn', to: { kind: 'tile', tx: 4, tz: 9 }, minute: 1080 }, 'mini')).toEqual([
       { kind: 'text', text: 'Return to' },
       { kind: 'select', key: 'to', label: 'Where', value: 'tile', options: [['a tile', 'tile'], ['the nearest generator', 'generator']] },
       { kind: 'number', key: 'tx', label: 'X', value: 4, min: 0, max: 47 },
@@ -16073,14 +16182,14 @@ describe('.MD card fields', () => {
   });
 
   it("keeps a card's unusual time in its dropdown", () => {
-    const fields = cardFields({ kind: 'doReturn', to: { kind: 'generator' }, minute: 583 });
+    const fields = cardFields({ kind: 'doReturn', to: { kind: 'generator' }, minute: 583 }, 'mini');
     expect(fields).toHaveLength(4);
     const time = fields[3];
     expect(time?.kind === 'select' && time.options.some(([label, value]) => label === '9:43 am' && value === '583')).toBe(true);
   });
 
   it('shows the token count only for "tokens are below"', () => {
-    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 10 } })).toEqual([
+    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 10 } }, 'mini')).toEqual([
       { kind: 'text', text: 'Power down when' },
       {
         kind: 'select',
@@ -16089,9 +16198,10 @@ describe('.MD card fields', () => {
         value: 'tokensBelow',
         options: [['my bag is full', 'bagFull'], ['tokens are below', 'tokensBelow'], ['it rains', 'raining']],
       },
-      { kind: 'number', key: 'n', label: 'Tokens', value: 10, min: 1, max: ROBOTS.maxNumber },
+      { kind: 'number', key: 'n', label: 'Tokens', value: 10, min: 1, max: batteryFor('mini') },
     ]);
-    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'raining' } })).toHaveLength(2);
+    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 10 } }, 'big')[2]).toMatchObject({ max: batteryFor('big') });
+    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'raining' } }, 'mini')).toHaveLength(2);
   });
 });
 
@@ -16239,6 +16349,7 @@ import {
   type ZoneId,
 } from '../../core/types';
 import { isItemId } from '../../items/items';
+import { batteryFor } from '../../robots/stats';
 import { MAPS } from '../../world/maps';
 import { dropdownOptions } from './blockly/toolbox';
 
@@ -16336,8 +16447,8 @@ const numberField = (key: MdFieldKey, label: string, value: number, min: number,
   max,
 });
 
-/** A card's line: its words with dropdowns and number fields (spec §4.3). */
-export function cardFields(card: MdCard): readonly MdField[] {
+/** A card's line: its words with dropdowns and number fields (spec §4.3). The token count goes up to the battery of a robot of `size`, as checkMd allows. */
+export function cardFields(card: MdCard, size: RobotSize): readonly MdField[] {
   switch (card.kind) {
     case 'dontLeave':
       return [text('Leave'), select('zone', 'Zone', card.zone, dropdownOptions('zone', card.zone))];
@@ -16361,7 +16472,7 @@ export function cardFields(card: MdCard): readonly MdField[] {
     }
     case 'doPowerDown': {
       const when = card.when;
-      const tokens = when.kind === 'tokensBelow' ? [numberField('n', 'Tokens', when.n, 1, ROBOTS.maxNumber)] : [];
+      const tokens = when.kind === 'tokensBelow' ? [numberField('n', 'Tokens', when.n, 1, batteryFor(size))] : [];
       return [text('Power down when'), select('when', 'When', when.kind, POWER_WHEN), ...tokens];
     }
   }
@@ -16497,7 +16608,7 @@ export function mdOverLimit(md: readonly MdCard[], size: RobotSize): boolean {
  * the same checks in withMd. A part 1 script robot gets a note instead of the editor; a ruined
  * robot's cards are read-only.
  */
-import { MD_CARD_KINDS, type GameState, type MdCard, type Robot, type RobotUnlocks } from '../../../core/types';
+import { MD_CARD_KINDS, type GameState, type MdCard, type Robot, type RobotSize, type RobotUnlocks } from '../../../core/types';
 import { checkMd } from '../../../robots/check';
 import { findRobot } from '../../../robots/world';
 import { actions } from '../../../state/actions';
@@ -16658,17 +16769,17 @@ export class MdTab implements RobotTabView {
     const doItems: HTMLElement[] = [];
     const dontItems: HTMLElement[] = [];
     this.cards.forEach((card, index) => {
-      (cardSection(card) === 'do' ? doItems : dontItems).push(this.cardItem(card, index));
+      (cardSection(card) === 'do' ? doItems : dontItems).push(this.cardItem(card, index, robot.size));
     });
     this.doList.replaceChildren(...(doItems.length > 0 ? doItems : [h('li', 'rs-md__none', MD_TEXT.noCards)]));
     this.dontList.replaceChildren(...(dontItems.length > 0 ? dontItems : [h('li', 'rs-md__none', MD_TEXT.noCards)]));
   }
 
-  private cardItem(card: MdCard, index: number): HTMLElement {
+  private cardItem(card: MdCard, index: number, size: RobotSize): HTMLElement {
     const item = h('li', 'rs-md__card');
     item.dataset.index = String(index);
     item.append(h('span', 'rs-md__bullet', '-'));
-    for (const field of cardFields(card)) item.append(this.fieldControl(field));
+    for (const field of cardFields(card, size)) item.append(this.fieldControl(field));
     if (!this.readOnly) {
       const tools = h('span', 'rs-md__tools');
       tools.append(
@@ -16818,7 +16929,19 @@ export class MdTab implements RobotTabView {
 import { MdTab } from './tabs/MdTab';
 ```
 
-and replace `TAB_FACTORIES` (every tab now has a view, so the table is a full record):
+and replace the doc comment and `TAB_FACTORIES` as Task 12 left them:
+
+```ts
+/** The tab views this screen can show; a tab without one never shows. */
+const TAB_FACTORIES: Partial<Record<RobotTab, TabFactory>> = {
+  program: (context) => new ProgramTab(context),
+  looks: (context) => new LooksTab(context),
+  stats: (context) => new StatsTab(context),
+  log: (context) => new LogTab(context),
+};
+```
+
+with the full record (every tab now has a view):
 
 ```ts
 /** The view of each tab. */
@@ -17372,7 +17495,7 @@ console.log('check-bundle: OK');
 
 ```js
 /**
- * Post-build step: inlines the Vite bundle (JS + CSS) into a single self-contained HTML file,
+ * Post-build step: inlines the Vite bundle (JS + CSS) into a single HTML page,
  * dist-single/index.html, so the playable build can be shared as one page. It expects the
  * `single` build mode (vite.config.ts), which inlines every dynamic import into the entry
  * script, and fails if a lazy chunk is still imported from assets/ (farmclaws part 3 spec §10.2).
@@ -17481,7 +17604,7 @@ with
 
 ```
 npm run build:check  # the production build, then its size budgets and the dev-hook check
-npm run build:single # the whole game as one self-contained HTML file in dist-single/
+npm run build:single # the whole game as one HTML page in dist-single/, with Blockly's icon folder blockly-media/ beside it
 ```
 
 - [ ] **Step 6: Confirm the baseline**
@@ -17585,7 +17708,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - State: `Robot.onBench` and `UiPanel` `{ kind: 'robot'; robotId; mode: 'bench' | 'peek' }` (Task 5), `Robot.off: 'player'` (Task 5), `Robot.stats` (Task 3), `'ruined'` and `Robot.paint` (Task 7), `ui.zoneDraft`, `ui.zoneLetter`, the `'zoneMarker'` item (Task 9), `robots.zones` (part 2).
   - Player-facing text from the spec, verbatim: hints "Put {name} on the bench", "Work on {name}", "Bring a robot here to work on it", "Look at {name}", "Send {name} for a new core · {cost}g", "Fish out {name}", "Put down {name}", "Pick up {name}"; toasts "Programmed {name}.", "Set {name}'s .MD.", "Zone A · 3×3.", "Cleared Zone A.", "{name} bumped into {other} and forgot what to do when {trigger}.", "{name} is off for a new core. Back tomorrow.", "{name} spent the night in the water and is ruined. Scrap it at the workbench.", "{name} is beyond repair. Scrap it at the workbench.", "Scrapped {name} for {gold}g.", "Painted {name} {colour}.", "{name} is already {colour}."; screen text "Opening the editor…", "{used} / {limit} blocks", "{n} / {limit} cards", "Every block must be inside a When … stack or a helper.", "Discard your changes to {name}'s program?" (Discard / Keep editing), "Scrap {name} for {gold}g? This can't be undone." (Scrap / Keep), "Switched off", "Off until morning", "{name} is ruined. It can only be scrapped.", "{name} runs a fixed script. Saving here replaces it with a block program.", "Paint · {cost}g"; the HUD chip "Zone A · 3×3" / "Zone A · not set" / " · corner set".
   - `npm run build:check` and `npm run build:single` (Task 14).
-  - The plan's R1–R7, the coordinator's R8–R11 and Task 14's R12–R14.
+  - The plan's R1–R7, the coordinator's R8–R11, Task 14's R12–R14, Task 5's R15 and Task 12's R16.
 - Produces: the playbook; part 1's check 3 updated for Task 6's `pair` preset (both robots stay on the delivery tile and loop `[harvest, turn right]`); `__qa.shift(code)`, `__qa.same(a, b)` and `__qa.bench(name)` in the probe; the `meadowlight-single` launch configuration; the spec edits below.
 
 The playbook drives behaviour Tasks 1–14 built. A FAIL is a bug in that earlier code unless the spec supports what the game did.
@@ -17616,7 +17739,7 @@ clicks, drags and keys: `__qa.key` dispatches on `window`, which never reaches B
 `computer {action: 'key', text: 'Escape'}` closes the screen (after closing an open dropdown,
 widget or flyout first).
 
-**Morning stacks.** Save (`programRobot`) and `setProgram` start a `When morning` stack only up
+**Morning stacks.** Save (`programRobot`) and `setProgram` start a `When morning comes` stack only up
 to 6:04. Each setup that saves a morning program loads the clock to 6:00 (minute 360) just
 before it opens the bench, and the frozen screen holds the clock while you edit. If a save
 still lands after 6:04 (`exec.running` is null after Save), finish the check's steps, then
@@ -17665,12 +17788,12 @@ Mini, the watering-head icon, its tokens, the On/Off switch, **Lift off** and **
 script. Saving here replaces it with a block program.", an empty workspace and "0 / 12 blocks".
 Build, by dragging:
 ```
-When morning
+When morning comes
   Repeat until  (tokens left) < (10)
     Water
     Move forward
 ```
-"When morning" is under Triggers; "Repeat until" under Control; the comparison, "tokens left"
+"When morning comes" is under Triggers; "Repeat until" under Control; the comparison, "tokens left"
 and the number block under Values; "Water" and "Move forward" under Actions. Along the way:
 
 a. **Keys stay in the editor.** Click the number block's field, then `computer type "wasd e"`,
@@ -17869,7 +17992,7 @@ await __qa.key('KeyE');
 Expect `said: "Unlocked every block, card and tab."` and `'robot'`; the Stats tab now shows in
 the header. Program → Control now has "For each tile in [A]". Build:
 ```
-When morning
+When morning comes
   For each tile in [A]
     Water
   Power down
@@ -17929,7 +18052,7 @@ await __qa.key('KeyE');
 ({ hint, panel: __qa.state().ui.panel })
 ```
 Expect `hint: true` and `panel: { kind: 'robot', robotId: 1, mode: 'bench' }`. The header says
-"Off until morning". Program tab: one "When morning" block with nothing inside, "1 / 12 blocks".
+"Off until morning". Program tab: one "When morning comes" block with nothing inside, "1 / 12 blocks".
 Screenshot.
 
 ## 8. The pond: a new core the same day, ruin overnight, scrapping
@@ -18099,8 +18222,8 @@ __qa.bench('Spinner')
 (the page saves as it unloads, so the benched robot comes back) and load the probe again. Then
 `await __qa.key('KeyE')` ("Work on Spinner"). Screenshot: the tabs are a strip under the
 header and the active tab fills the rest of the screen. Program tab: no docked toolbox, but a
-button that opens it as a flyout; tap it, screenshot the open flyout, and drag one "Move
-forward" into the workspace ("1 / 12 blocks"). .MD tab: screenshot; the card lines fit the
+**Blocks** button that opens a category menu; tap **Blocks**, pick **Actions** (its flyout
+opens), screenshot, then drag one "Move forward" into the workspace ("1 / 12 blocks"). .MD tab: screenshot; the card lines fit the
 width. `computer key "Escape"` and click **Discard** in the prompt, then
 `resize_window {preset: 'desktop'}`.
 
@@ -18139,7 +18262,7 @@ location.reload();
 ```
 After the reload, `computer {action: 'key', text: 'e'}` ("Work on Spinner"): the robot screen
 opens. `find "Program"` → click: "Opening the editor…", then the empty workspace with the
-fixed-script note. Drag "When morning" in ("1 / 12 blocks") and screenshot. Then:
+fixed-script note. Drag "When morning comes" in ("1 / 12 blocks") and screenshot. Then:
 - `read_console_messages {onlyErrors: true}` → none;
 - `read_network_requests {urlPattern: '/assets/'}` → no request: the screen and the editor came
   from the one page.
@@ -18215,7 +18338,7 @@ In the Gotchas table, directly after the row that starts `| `setProgram` worked 
 
 ```markdown
 | Keys do nothing while a robot screen is open | By design: the screen owns the keyboard and the game is frozen. `__qa.key` events go to `window` and never reach Blockly's fields; use `computer` keys. `computer key "Escape"` closes a dropdown or flyout first, then the screen (with the discard prompt if there are unsaved edits) |
-| A saved `When morning` program sits idle | The save happened after 6:04. Load the clock to 6:00 just before opening the bench (the open screen holds the clock), or `__qa.sleep()` and watch from 6:04 |
+| A saved `When morning comes` program sits idle | The save happened after 6:04. Load the clock to 6:00 just before opening the bench (the open screen holds the clock), or `__qa.sleep()` and watch from 6:04 |
 ```
 
 **2c.** Replace `.claude/launch.json` with:
@@ -18483,11 +18606,19 @@ Decided by the part 3 implementation plan and its execution. Each one keeps the 
 - **R9.** The translator only orders top-level blocks (section 5); the Program tab re-spaces them `ROBOT_SCREEN.stackGap` apart after loading.
 - **R10.** The long-variable-name case for "values outside the editor's usual options" uses 16 characters, `ROBOTS.maxIdentifierLength`, the longest name the checker accepts.
 - **R11.** The dev preset `pair` now harvests in place and turns: both robots stay on the tile they're delivered to and loop `Harvest`, `Turn right`, because two robots can no longer walk onto one tile (section 3.1). It still demonstrates a bicker and never bumps.
-- **R12.** The main-chunk baseline is 275,539 bytes: part 2's `index-CUmkGRNG.js` through `zlib.gzipSync` at level 6, the measure `check-bundle.mjs` uses. The 274,312 first written here was the `gzip -6` command line's figure for the same file (section 10.1).
+- **R12.** The main-chunk baseline is 275,539 bytes: part 2's `index-CUmkGRNG.js` through `zlib.gzipSync` at level 6, the measure `check-bundle.mjs` uses. The 274,312 first written here was the `gzip -6` command line's figure for the same file. The budgets in section 10.1 read 1 KB as 1,024 bytes, the unit `check-bundle.mjs` prints (section 10.1).
 - **R13.** The `single` build mode sets Rolldown's `codeSplitting: false`; Vite 8 still accepts `inlineDynamicImports` but warns that it is deprecated (section 10.2).
 - **R14.** The editor budget adds up every lazy chunk whose source map lists `node_modules/blockly/`, since `blockly/core` and `blockly/msg/en` load as two chunks. Vite writes lazy imports relative to the importing chunk, so `build-single.mjs` refuses any `import(` of a built `.js` file that is relative or under `assets/` (sections 10.1 and 10.2).
 - **R15.** A new program clears `off: 'dizzy'` and `'done'` but keeps `'player'`: only the bench's switch turns a robot the player switched off back on (sections 2.4 and 4.7).
-- **R16.** Blockly's media (sprites, cursors, field icons) are copied from the package into `public/blockly-media/` and passed to Blockly as `media`, because the package exports no media path to bundle; the editor never fetches from Blockly's host. `build-single.mjs` copies the folder beside `dist-single/index.html` (sections 4.2 and 10.2).
+- **R16.** Blockly's media (sprites, cursors, field icons) are copied from the package into `public/blockly-media/` and passed to Blockly as `media: 'blockly-media/'`, because the package exports no media path to bundle; the editor never fetches from Blockly's host. The media are served from a relative `blockly-media/` folder, so the dev server, `dist/` and `dist-single/` opened from disk all find it. `build-single.mjs` copies the folder beside `dist-single/index.html` (sections 4.2 and 10.2).
+- **R17.** Escape while the game is paused keeps a zone draft: `panelKeyCommand` drops the draft only when the game isn't paused, so Escape resumes first (section 8).
+- **R18.** `game/load` keeps `ui.zoneLetter` (it resets only the draft); `deserializeGame` is what resets the letter to A (section 8).
+- **R19.** Switching a robot off is refused unless it is working, on standby or flat: "{name} can't be switched off while it's broken." The save allows `off: 'player'` only in those powers (sections 2.4 and 9.2).
+- **R20.** The axe, like the pickaxe, is refused on the workbench ("It's part of the farm."), so the bench can't be chopped or broken (section 2.2).
+- **R21.** `freeSpotNear` skips fertilised soil, because a placed object on fertilised soil is invalid (section 2.1).
+- **R22.** The `blocked` intent has an optional `hint`, set only by the empty workbench so the HUD shows "Bring a robot here to work on it" (section 2.2).
+- **R23.** Gold in the scrap toast and prompt is a plain number ("1000g"), where section 3.3 writes "1,000g" (section 3.3).
+- **R24.** The UI labels the spec doesn't give, which the plan invents: "No parts", "Nothing to show yet.", "No cards yet.", "Yesterday", the power labels "Standing by", "Shorted out", "Getting a new core" and "Ruined", and "This program is too big or too deeply nested to save." (sections 4 to 6).
 ```
 
 - [ ] **Step 4: Copy in the rulings recorded during execution**
@@ -18496,7 +18627,7 @@ List the part 3 commit bodies:
 
 `git log --reverse --grep='^Farmclaws part 3' --format='%n%h %s%n%b'`
 
-Every ruling a commit body records (the spec's "pick the smallest change that keeps the rule's intent and write it down in the step's commit message", including any browser-check fix from Step 6) that R1–R16 and edits 3a–3d don't already cover gets two edits in the part 3 spec: the section it changes is reworded to say the rule as it now stands, and section 15 gains a bullet numbered on from R16 (R17, R18, …) that names the commit's short hash. Task 14's own commit records R12–R14, Task 6's records R11, Task 5's records R15 and Task 12's records R16; all are already in.
+Every ruling a commit body records (the spec's "pick the smallest change that keeps the rule's intent and write it down in the step's commit message", including any browser-check fix from Step 6) that R1–R24 and edits 3a–3d don't already cover gets two edits in the part 3 spec: the section it changes is reworded to say the rule as it now stands, and section 15 gains a bullet numbered on from R24 (R25, R26, …) that names the commit's short hash. Task 14's own commit records R12–R14, Task 6's records R11, Task 5's records R15 and Task 12's records R16; all are already in, and Step 3d writes R17–R24 into the spec.
 
 - [ ] **Step 5: The full gate**
 
