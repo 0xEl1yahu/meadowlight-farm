@@ -5,9 +5,10 @@
  */
 import { GENERATORS, PLAYER, ROBOTS, TIME } from '../config';
 import { joinWithAnd } from '../core/text';
-import { Blocker, Direction, type GameState, type MessageTone, type Robot, type TileCoord } from '../core/types';
+import { Blocker, Direction, type GameState, type MessageTone, type Robot, type RobotExec, type TileCoord } from '../core/types';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
+import { morningExec } from './exec';
 import { logRobotEvent, pruneRobotLog } from './log';
 import { batteryFor, periodFor, resumedPower } from './stats';
 import { nearestWalkable, withFarm, withRobot } from './world';
@@ -106,11 +107,36 @@ function recharge(state: GameState, burners: readonly TileCoord[], returned: Rea
   return next;
 }
 
+/** Deep equality for plain save data: numbers, strings, booleans, null, arrays and plain objects. */
+function samePlainData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Readonly<Record<string, unknown>>;
+  const right = b as Readonly<Record<string, unknown>>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => key in right && samePlainData(left[key], right[key]));
+}
+
+/**
+ * The morning's exec (part 2 spec §7): null for a script; for a block program, the robot's own
+ * exec when it already is exactly the morning's, so a robot the morning didn't change keeps its
+ * reference (the render contract).
+ */
+function morningExecOf(robot: Robot): RobotExec | null {
+  if (robot.program.kind !== 'blocks') return null;
+  const fresh = morningExec(robot.program);
+  return robot.exec !== null && samePlainData(robot.exec, fresh) ? robot.exec : fresh;
+}
+
 /**
  * Every robot not at repairs stays where it is, restarts its script and resets its day. One whose
  * tile is no longer walkable (weeds or a giant crop grew there) moves to the nearest walkable
  * tile; a broken robot may keep standing in water. Broken robots are included so a broken robot
  * on land is never left on an unwalkable tile, which the save validator rejects.
+ *
+ * A block program (part 2 spec §7) gets the morning's exec: variables back to their initials,
+ * triggers re-armed, its first `morning` stack started. It works if that stack started and waits
+ * on standby otherwise; flat and broken robots stay so. Every robot is turned back on.
  */
 function resetForMorning(state: GameState): GameState {
   let next = state;
@@ -122,6 +148,8 @@ function resetForMorning(state: GameState): GameState {
     const standable = tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater));
     const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestWalkable(farm, robot);
     const moved = at.tx !== robot.tx || at.tz !== robot.tz;
+    const exec = morningExecOf(robot);
+    const resumed = resumedPower(robot);
     next = withRobot(next, {
       ...robot,
       tx: at.tx,
@@ -130,7 +158,9 @@ function resetForMorning(state: GameState): GameState {
       pc: 0,
       tokensToday: 0,
       nextActMinute: TIME.dayStartMinute + periodFor(robot),
-      power: resumedPower(robot),
+      power: resumed === 'working' && exec !== null && exec.running === null ? 'standby' : resumed,
+      exec,
+      off: null,
     });
   }
   return next;

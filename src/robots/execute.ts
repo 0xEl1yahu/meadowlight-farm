@@ -1,6 +1,8 @@
 /**
  * The robot executor (farmclaws part 1 spec §4): plans one robot action against the same tile
- * rules as the player's tools, then applies it and pays for it in tokens. Pure.
+ * rules as the player's tools, then applies it and pays for it in tokens. Part 2 adds the .MD's
+ * kept items for deposits, the committed exec of block programs, and the turns that take no tile
+ * action (part 2 spec §6.1, §7). Pure.
  */
 import { ROBOTS } from '../config';
 import { invariant } from '../core/invariant';
@@ -9,12 +11,14 @@ import {
   TileState,
   type Direction,
   type GameState,
+  type ItemId,
   type ItemStack,
   type Robot,
   type RobotAction,
   type RobotActionKind,
   type RobotBlockReason,
   type RobotDidDetail,
+  type RobotExec,
   type RobotLogEvent,
   type TileCoord,
 } from '../core/types';
@@ -30,11 +34,23 @@ import { addToBag, addToSlots, bagCount, bagRoom, removeFromBag, slotsRoom, take
 import { logRobotEvent } from './log';
 import { canDo } from './parts';
 import { actionCost, bagStacks, periodFor } from './stats';
+import type { Turn } from './turn';
 import { chestSlots, containerOf, requireRobot, withFarm, withRobot } from './world';
 
+/** `keep`: items a deposit leaves in the bag (the .MD's DON'T deposit cards, plan R3). */
 export type RobotPlan =
-  | { readonly ok: true; readonly action: RobotAction; readonly target: TileCoord; readonly cost: number }
-  | { readonly ok: false; readonly action: RobotAction; readonly target: TileCoord; readonly reason: RobotBlockReason; readonly cost: number };
+  | { readonly ok: true; readonly action: RobotAction; readonly target: TileCoord; readonly cost: number; readonly keep: ReadonlySet<ItemId> }
+  | {
+      readonly ok: false;
+      readonly action: RobotAction;
+      readonly target: TileCoord;
+      readonly reason: RobotBlockReason;
+      readonly cost: number;
+      readonly keep: ReadonlySet<ItemId>;
+    };
+
+/** Nothing kept back: scripts, and robots without DON'T deposit cards. */
+export const NO_KEEP: ReadonlySet<ItemId> = new Set<ItemId>();
 
 type OkPlan = Extract<RobotPlan, { readonly ok: true }>;
 
@@ -45,13 +61,16 @@ function turned(facing: Direction, side: 'left' | 'right'): Direction {
   return ((facing + (side === 'left' ? 3 : 1)) % 4) as Direction;
 }
 
-/** What `action` would do for `robot` now, and what it costs. Reads only the farm, time, shipping and the robot. */
-export function planRobotAction(state: GameState, robot: Robot, action: RobotAction): RobotPlan {
+/**
+ * What `action` would do for `robot` now, and what it costs. Reads only the farm, time, shipping
+ * and the robot. A deposit offers only the bag's stacks whose item isn't in `keep`.
+ */
+export function planRobotAction(state: GameState, robot: Robot, action: RobotAction, keep: ReadonlySet<ItemId> = NO_KEEP): RobotPlan {
   const own: TileCoord = { tx: robot.tx, tz: robot.tz };
   const target = AHEAD.has(action.kind) ? stepTile(own, robot.facing) : own;
   const cost = actionCost(robot, action.kind);
-  const ok: RobotPlan = { ok: true, action, target, cost };
-  const no = (reason: RobotBlockReason): RobotPlan => ({ ok: false, action, target, reason, cost: reason === 'noPart' ? 0 : cost });
+  const ok: RobotPlan = { ok: true, action, target, cost, keep };
+  const no = (reason: RobotBlockReason): RobotPlan => ({ ok: false, action, target, reason, cost: reason === 'noPart' ? 0 : cost, keep });
   if (!canDo(robot, action.kind)) return no('noPart');
   const tile = getTile(state.maps.farm, target.tx, target.tz);
 
@@ -89,12 +108,13 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
     case 'deposit': {
       const kind = containerOf(tile);
       if (kind === null) return no('nothingAhead');
-      if (robot.bag.length === 0) return no('bagEmpty');
+      const offered = robot.bag.filter((s) => !keep.has(s.itemId));
+      if (offered.length === 0) return no('bagEmpty');
       const slots = chestSlots(tile);
       const fits =
         kind === 'bin'
-          ? robot.bag.some((s) => getItem(s.itemId).sellPrice !== null)
-          : robot.bag.some((s) => slotsRoom(slots, s.itemId, s.quality) > 0);
+          ? offered.some((s) => getItem(s.itemId).sellPrice !== null)
+          : offered.some((s) => slotsRoom(slots, s.itemId, s.quality) > 0);
       return fits ? ok : no('containerFull');
     }
     case 'take': {
@@ -107,11 +127,12 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
 }
 
 /**
- * Finishes a robot's turn: advances a script's pc (a non-looping script past its end goes to
- * standby and logs 'finished'; a block program's pc stays 0), schedules its next action and
- * records lastAction for the renderer.
+ * Finishes a robot's turn: a script advances pc (a non-looping script past its end goes to
+ * standby and logs 'finished'); a block program leaves pc at 0 and takes `exec`, the position its
+ * turn committed (part 2 spec §5.2). Then it schedules the next action and records lastAction
+ * for the renderer.
  */
-function settle(state: GameState, robotId: number, action: RobotAction, success: boolean, bickered: boolean): GameState {
+function settle(state: GameState, robotId: number, action: RobotAction, success: boolean, bickered: boolean, exec: RobotExec | null): GameState {
   const robot = requireRobot(state, robotId);
   const program = robot.program;
   const seq = robot.actionSeq + 1;
@@ -133,6 +154,7 @@ function settle(state: GameState, robotId: number, action: RobotAction, success:
     ...robot,
     pc,
     power,
+    exec: exec ?? robot.exec,
     nextActMinute: minute + (action.kind === 'wait' ? action.minutes : periodFor(robot)),
     actionSeq: seq,
     lastAction: { seq, kind: action.kind, success, bickered },
@@ -147,22 +169,73 @@ function pay(state: GameState, robotId: number, cost: number): { readonly state:
   return { state: withRobot(state, robot), robot };
 }
 
-/** Pays for `plan`, carries it out (or logs why not) and settles the robot's turn. */
-export function applyRobotPlan(state: GameState, robotId: number, plan: RobotPlan): GameState {
+/**
+ * Pays for `plan`, carries it out (or logs why not) and settles the robot's turn. A block
+ * program passes the exec its turn committed.
+ */
+export function applyRobotPlan(state: GameState, robotId: number, plan: RobotPlan, exec: RobotExec | null = null): GameState {
   const paid = pay(state, robotId, plan.cost);
   if (!plan.ok) {
     const logged = logRobotEvent(paid.state, robotId, { kind: 'blocked', action: plan.action.kind, reason: plan.reason });
-    return settle(logged, robotId, plan.action, false, false);
+    return settle(logged, robotId, plan.action, false, false, exec);
   }
   const { next, event } = perform(paid.state, paid.robot, plan);
-  return settle(logRobotEvent(next, robotId, event), robotId, plan.action, true, false);
+  return settle(logRobotEvent(next, robotId, event), robotId, plan.action, true, false, exec);
 }
 
 /** A bicker: the robot pays, the world doesn't change, and the clash is logged with the other robots' ids. */
-export function applyBickerPlan(state: GameState, robotId: number, plan: RobotPlan, withIds: readonly number[]): GameState {
+export function applyBickerPlan(state: GameState, robotId: number, plan: RobotPlan, withIds: readonly number[], exec: RobotExec | null = null): GameState {
   const paid = pay(state, robotId, plan.cost);
   const logged = logRobotEvent(paid.state, robotId, { kind: 'bickered', action: plan.action.kind, withIds });
-  return settle(logged, robotId, plan.action, false, true);
+  return settle(logged, robotId, plan.action, false, true, exec);
+}
+
+/**
+ * Pays `cost` tokens to wake (part 2 spec §7) and marks the robot working: a block robot taking a
+ * turn is awake for it. With cost 0 on a working robot the state is unchanged.
+ */
+export function chargeWake(state: GameState, robotId: number, cost: number): GameState {
+  const paid = pay(state, robotId, cost);
+  return paid.robot.power === 'working' ? paid.state : withRobot(paid.state, { ...paid.robot, power: 'working' });
+}
+
+/**
+ * Applies a block-program turn that takes no tile action (part 2 spec §6.1, §7). `wait`: the idle
+ * robot checks again one period later, free, on standby. Otherwise the turn's events are logged
+ * first, then the wake is paid (the caller made sure the robot can), then:
+ * - skip: the forbidden action costs nothing, exec moves past it and the turn is taken
+ * - finish: the stack ended; standby, logged 'finished', the next check one period later
+ * - shutDown: standby and off until morning, with the deciding event
+ * - dizzy: off until morning, power unchanged, logged and toasted
+ */
+export function applyTurn(state: GameState, robotId: number, turn: Exclude<Turn, { readonly kind: 'act' }>): GameState {
+  const minute = state.time.minuteOfDay;
+  if (turn.kind === 'wait') {
+    const robot = requireRobot(state, robotId);
+    return withRobot(state, { ...robot, power: 'standby', nextActMinute: minute + periodFor(robot) });
+  }
+  let next = state;
+  for (const event of turn.events) next = logRobotEvent(next, robotId, event);
+  if (turn.kind === 'shutDown') {
+    const robot = requireRobot(next, robotId);
+    return logRobotEvent(withRobot(next, { ...robot, power: 'standby', off: 'done', exec: turn.exec }), robotId, turn.event);
+  }
+  next = chargeWake(next, robotId, turn.wakeCost);
+  const robot = requireRobot(next, robotId);
+  switch (turn.kind) {
+    case 'skip': {
+      const skipped = logRobotEvent(next, robotId, { kind: 'skipped', action: turn.action.kind, card: turn.card });
+      return settle(skipped, robotId, turn.action, false, false, turn.exec);
+    }
+    case 'finish': {
+      const standby = withRobot(next, { ...robot, power: 'standby', exec: turn.exec, nextActMinute: minute + periodFor(robot) });
+      return logRobotEvent(standby, robotId, { kind: 'finished' });
+    }
+    case 'dizzy': {
+      const dizzy = logRobotEvent(withRobot(next, { ...robot, off: 'dizzy' }), robotId, { kind: 'dizzy' });
+      return pushMessage(dizzy, `${robot.name} got dizzy going round in circles.`, 'warn');
+    }
+  }
 }
 
 function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next: GameState; readonly event: RobotLogEvent } {
@@ -211,7 +284,7 @@ function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next:
     case 'refill':
       return { next: withRobot(state, { ...robot, tank: ROBOTS.tankCapacity }), event: none };
     case 'deposit':
-      return deposit(state, robot, target);
+      return deposit(state, robot, target, plan.keep);
     case 'take': {
       const tile = requireTile(farm, target.tx, target.tz);
       const taken = takeIntoBag(chestSlots(tile), robot.bag, bagStacks(robot), action.itemId);
@@ -229,7 +302,8 @@ function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next:
   }
 }
 
-function deposit(state: GameState, robot: Robot, target: TileCoord): { readonly next: GameState; readonly event: RobotLogEvent } {
+/** Empties the bag into the bin or chest ahead, leaving the `keep` items (and whatever didn't fit) in the bag. */
+function deposit(state: GameState, robot: Robot, target: TileCoord, keep: ReadonlySet<ItemId>): { readonly next: GameState; readonly event: RobotLogEvent } {
   const farm = state.maps.farm;
   const tile = requireTile(farm, target.tx, target.tz);
   const kept: ItemStack[] = [];
@@ -238,7 +312,7 @@ function deposit(state: GameState, robot: Robot, target: TileCoord): { readonly 
   if (containerOf(tile) === 'bin') {
     let pending = state.shipping.pending;
     for (const s of robot.bag) {
-      if (getItem(s.itemId).sellPrice === null) {
+      if (keep.has(s.itemId) || getItem(s.itemId).sellPrice === null) {
         kept.push(s);
         continue;
       }
@@ -251,6 +325,10 @@ function deposit(state: GameState, robot: Robot, target: TileCoord): { readonly 
   }
   let slots = chestSlots(tile);
   for (const s of robot.bag) {
+    if (keep.has(s.itemId)) {
+      kept.push(s);
+      continue;
+    }
     const result = addToSlots(slots, s);
     slots = result.slots;
     if (result.added > 0) {
