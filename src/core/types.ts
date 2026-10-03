@@ -839,9 +839,15 @@ export type Frame =
 
 /** Where a block program is. Scripts keep `Robot.pc` instead and have `exec: null`. */
 export interface RobotExec {
-  /** The trigger stack running, or null while idle. */
+  /**
+   * The trigger stack running, or null while idle. Also null during a DO return, which stops
+   * the program: then `frames` holds exactly the return's route frame.
+   */
   readonly running: number | null;
-  /** Innermost last. Empty while idle. At most ROBOTS.maxFrames. */
+  /**
+   * Innermost last. At most ROBOTS.maxFrames. Empty exactly when `running` is null, except
+   * during a DO return: then it is exactly one `route` frame with `why: 'doReturn'` (plan R1).
+   */
   readonly frames: readonly Frame[];
   /** One per program.vars, same order and type. */
   readonly vars: readonly Value[];
