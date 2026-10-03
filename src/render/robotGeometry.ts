@@ -1,7 +1,8 @@
 /**
  * Low-poly robot geometry (farmclaws part 1 spec §7.1), authored at Standard size (0.6 tall),
  * facing +Z, feet at y = 0. One merged, vertex-painted geometry per mesh id; eyes and particles
- * are unpainted and take their colour from the instance.
+ * are unpainted and take their colour from the instance, and the body and head shells are white
+ * and take the robot's paint from the instance (farmclaws part 3 spec §3.4).
  */
 import * as THREE from 'three';
 import { box, glassBox, mergeParts, normalizePart } from './geometryParts';
@@ -9,7 +10,8 @@ import { cylinder } from './objectGeometry';
 import type { RobotMeshId } from './robotLayout';
 
 export const ROBOT_COLORS = {
-  body: 0xf2c14e,
+  /** The painted shells are authored white; the robot's paint (ROBOT_PAINTS, Sunflower first) is their instance colour. */
+  shell: 0xffffff,
   trim: 0xf4efe6,
   tread: 0x3a3836,
   metal: 0x9aa0b5,
@@ -23,7 +25,9 @@ export const ROBOT_COLORS = {
 } as const;
 
 /** Meshes that ride on the head (they pitch with it). */
-export const HEAD_MESHES: ReadonlySet<RobotMeshId> = new Set<RobotMeshId>(['head', 'eyes', 'antenna', 'lens']);
+export const HEAD_MESHES: ReadonlySet<RobotMeshId> = new Set<RobotMeshId>(['head', 'headShell', 'eyes', 'antenna', 'lens']);
+/** The painted shells of the body and head: white geometry tinted per instance with the robot's paint. */
+export const SHELL_MESHES: ReadonlySet<RobotMeshId> = new Set<RobotMeshId>(['bodyShell', 'headShell']);
 /** Height of the neck pivot. */
 export const NECK_Y = 0.36;
 /** The green and orange core lights sit side by side, this far either side of centre, so they never overlap. */
@@ -35,12 +39,13 @@ export function createRobotMeshGeometry(id: RobotMeshId): THREE.BufferGeometry {
     case 'treads':
       return mergeParts([box(0.1, 0.1, 0.34, { x: -0.14, y: 0.05 }, c.tread), box(0.1, 0.1, 0.34, { x: 0.14, y: 0.05 }, c.tread)], 'robot treads');
     case 'body':
-      return mergeParts(
-        [box(0.36, 0.24, 0.3, { y: 0.22 }, c.body), box(0.38, 0.03, 0.32, { y: 0.335 }, c.trim), box(0.1, 0.04, 0.1, { y: 0.36 }, c.metal)],
-        'robot body',
-      );
+      return mergeParts([box(0.38, 0.03, 0.32, { y: 0.335 }, c.trim), box(0.1, 0.04, 0.1, { y: 0.36 }, c.metal)], 'robot body');
+    case 'bodyShell':
+      return mergeParts([box(0.36, 0.24, 0.3, { y: 0.22 }, c.shell)], 'robot body shell');
     case 'head':
-      return mergeParts([box(0.28, 0.18, 0.24, { y: 0.47 }, c.body), box(0.3, 0.03, 0.26, { y: 0.565 }, c.trim)], 'robot head');
+      return mergeParts([box(0.3, 0.03, 0.26, { y: 0.565 }, c.trim)], 'robot head');
+    case 'headShell':
+      return mergeParts([box(0.28, 0.18, 0.24, { y: 0.47 }, c.shell)], 'robot head shell');
     case 'eyes':
       // Unpainted boxes: the eye colour comes from the instance.
       return mergeParts([glassBox(0.06, 0.05, 0.02, { x: -0.06, y: 0.48, z: 0.121 }), glassBox(0.06, 0.05, 0.02, { x: 0.06, y: 0.48, z: 0.121 })], 'robot eyes');

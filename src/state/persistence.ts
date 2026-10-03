@@ -365,11 +365,11 @@ function migrateV4toV5(save: Obj): Obj {
   return { ...save, version: 5, robots: { ...robots, list, zones: createDefaultSections().robots.zones } };
 }
 
-/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted, and off the bench. */
+/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted, and off the bench, with paint 0. */
 function migrateRobotV5(robot: unknown): unknown {
   if (!isObj(robot)) return robot;
   const { tokensToday, ...rest } = robot;
-  return { ...rest, onBench: false, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } } };
+  return { ...rest, onBench: false, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } }, paint: 0 };
 }
 
 /**

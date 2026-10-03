@@ -356,3 +356,33 @@ export const WORKBENCH = {
 export const GENERATORS = {
   woodBurner: { hopper: 10, tokensPerWood: 6 },
 } as const;
+
+/** The workbench's other jobs and the ruined look (farmclaws part 3 spec §3.2–3.4). */
+export const ROBOT_CARE = {
+  /** Scrapping pays this share of the size's price, whatever the robot's power. */
+  scrapShare: 0.25,
+  /** Gold per paint job. */
+  paintCost: 50,
+  /** A ruined robot's paint is drawn at this brightness. */
+  ruinedShade: 0.45,
+} as const;
+
+/** The 16 base paints (`Robot.paint` indexes this list). Sunflower is the factory colour. */
+export const ROBOT_PAINTS = [
+  { name: 'Sunflower', color: 0xf2c14e },
+  { name: 'Tomato', color: 0xe2563f },
+  { name: 'Pumpkin', color: 0xf28a3a },
+  { name: 'Peach', color: 0xf4b38a },
+  { name: 'Rose', color: 0xe87fa3 },
+  { name: 'Plum', color: 0x8e5ba8 },
+  { name: 'Lavender', color: 0xa99be0 },
+  { name: 'Sky', color: 0x6fb7e8 },
+  { name: 'Ocean', color: 0x2f6fb0 },
+  { name: 'Teal', color: 0x3aa59c },
+  { name: 'Mint', color: 0x8fdcb0 },
+  { name: 'Leaf', color: 0x5fa84a },
+  { name: 'Olive', color: 0x8a8f3c },
+  { name: 'Cocoa', color: 0x8a5a3c },
+  { name: 'Slate', color: 0x5e6670 },
+  { name: 'Cream', color: 0xece2c6 },
+] as const satisfies readonly { readonly name: string; readonly color: number }[];

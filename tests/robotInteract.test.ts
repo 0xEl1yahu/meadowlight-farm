@@ -140,7 +140,7 @@ describe('repairs at the shipping bin', () => {
     expect(next.player.gold).toBe(state.player.gold - 300);
     expect(next.player.carrying).toBeNull();
     expect(requireRobot(next, 1)).toMatchObject({ power: 'repairing', repairReadyDay: 1, carried: false });
-    expect(lastText(next)).toBe('Sprocket is off to be repaired. Back tomorrow.');
+    expect(lastText(next)).toBe('Sprocket is off for a new core. Back tomorrow.');
   });
 
   it('refuses without the gold, and refuses robots that are not broken', () => {

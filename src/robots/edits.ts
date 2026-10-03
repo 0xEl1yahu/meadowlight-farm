@@ -20,16 +20,16 @@ export const ZONE_SHAPE = 'Zones are A to H, and a zone is { x0, z0, w, d } or n
 export const ZONE_OFF_FARM = 'A zone is at least 1 × 1 tile and lies wholly inside the farm.';
 export const MD_SCRIPT = '.MD cards only apply to block programs.';
 
-/** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first. */
-const KEPT_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['flat', 'broken', 'repairing']);
+/** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first, or can only be scrapped (ruined). */
+const KEPT_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['flat', 'broken', 'repairing', 'ruined']);
 
 /**
  * `robot` with a new program, set up the way the morning reset would (part 2 spec §12). A block
  * program starts its `morning` stack only if `minuteOfDay` is no later than the robot's first
  * act of the day (TIME.dayStartMinute + its period); later it idles until a trigger fires, with
  * the atTime triggers already past today spent (execAt). A script runs from step 0. Either way
- * the robot turns back on and acts one period from now; a flat, broken or repairing robot keeps
- * its power. Returns the checker's sentence instead when the program fails, or PROGRAM_SHAPE when
+ * the robot turns back on and acts one period from now; a flat, broken, repairing or ruined robot
+ * keeps its power. Returns the checker's sentence instead when the program fails, or PROGRAM_SHAPE when
  * it isn't a program at all.
  */
 export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay: number): Robot | string {

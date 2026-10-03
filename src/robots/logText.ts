@@ -74,7 +74,8 @@ const DID: Readonly<Record<RobotActionKind, string>> = {
 };
 
 function listNames(ids: readonly number[], names: ReadonlyMap<number, string>): string {
-  const list = ids.map((id) => names.get(id) ?? `robot ${id}`);
+  // A robot missing from the farm was scrapped (part 3 spec §3.3); ids are never reused.
+  const list = ids.map((id) => names.get(id) ?? 'a scrapped robot');
   return joinWithAnd(list, 'another robot');
 }
 
@@ -112,6 +113,8 @@ export function robotSays(entry: RobotLogEntry): string {
       return 'Powering down ✓';
     case 'crashed':
       return 'Made a new friend ✓';
+    case 'ruined':
+      return 'Having a long bath ✓';
   }
 }
 
@@ -202,5 +205,7 @@ export function whatHappened(entry: RobotLogEntry, names: ReadonlyMap<number, st
       const bumped = `Bumped into ${listNames([event.withId], names)} and got dizzy.`;
       return event.forgot === null ? bumped : `${bumped} Forgot everything under "When ${triggerText(event.forgot)}".`;
     }
+    case 'ruined':
+      return 'Spent the night in the water. Ruined: it can only be scrapped.';
   }
 }

@@ -114,6 +114,19 @@ describe('robots overnight', () => {
     }
   });
 
+  it('sets a carried robot down on a free tile when a robot already stands on the spawn tile (part 3 spec §3.1)', () => {
+    const standing = robotOf({ id: 2, name: 'Bolt', tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz });
+    const state = withRobots({ ...BASE, player: { ...BASE.player, carrying: 1 } }, [robotOf({ carried: true }), standing]);
+    const next = sleep(state);
+    const carried = requireRobot(next, 1);
+    expect(carried.carried).toBe(false);
+    expect(carried.teleportSeq).toBe(1);
+    expect([carried.tx, carried.tz]).not.toEqual([PLAYER.spawn.tx, PLAYER.spawn.tz]);
+    expect(Math.max(Math.abs(carried.tx - PLAYER.spawn.tx), Math.abs(carried.tz - PLAYER.spawn.tz))).toBe(1);
+    expect(requireRobot(next, 2)).toMatchObject({ tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz });
+    expect(isValidGameState(next)).toBe(true);
+  });
+
   it('sets a carried broken robot down on the spawn tile still broken (review focus 1)', () => {
     const state = withRobots({ ...BASE, player: { ...BASE.player, carrying: 1 } }, [robotOf({ carried: true, power: 'broken' })]);
     const late = { ...state, time: { ...state.time, minuteOfDay: TIME.passOutMinute - 10 } };
@@ -124,7 +137,7 @@ describe('robots overnight', () => {
     }
   });
 
-  it('brings repaired robots back charged in front of the bin, and keeps broken ones broken', () => {
+  it('brings repaired robots back charged in front of the bin, and leaves a robot in the water where it sank', () => {
     const ready = robotOf({ id: 1, power: 'repairing', repairReadyDay: 1, tokens: 0 });
     const later = robotOf({ id: 2, name: 'Bolt', power: 'repairing', repairReadyDay: 2 });
     const wet = withTile(BASE, { tx: 6, tz: 10 }, blockedTile(Blocker.Water), 'farm');
@@ -132,7 +145,8 @@ describe('robots overnight', () => {
     const next = sleep(withRobots(wet, [ready, later, broken]));
     expect(requireRobot(next, 1)).toMatchObject({ power: 'working', tx: ROBOTS.repairDropOff.tx, tz: ROBOTS.repairDropOff.tz, tokens: 80, repairReadyDay: null });
     expect(requireRobot(next, 2).power).toBe('repairing');
-    expect(requireRobot(next, 3)).toMatchObject({ power: 'broken', tx: 6, tz: 10 });
+    // A night in the water ruins it (part 3 spec §3.2); it stays where it sank.
+    expect(requireRobot(next, 3)).toMatchObject({ power: 'ruined', tx: 6, tz: 10 });
     expect(texts(next)).toContain('Sprocket is back from repairs.');
     // It spent the day at the repair shop, not away from a generator.
     expect(texts(next).some((t) => t.endsWith(AWAY))).toBe(false);

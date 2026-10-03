@@ -512,8 +512,11 @@ export const ROBOT_PART_IDS = [
 ] as const;
 export type RobotPartId = (typeof ROBOT_PART_IDS)[number];
 
-/** What a robot's power is doing. Being carried is separate (`Robot.carried`). */
-export const ROBOT_POWERS = ['working', 'standby', 'flat', 'broken', 'repairing'] as const;
+/**
+ * What a robot's power is doing. Being carried is separate (`Robot.carried`). `ruined`: a broken
+ * robot left in the water overnight; it can only be scrapped (farmclaws part 3 spec §3.2).
+ */
+export const ROBOT_POWERS = ['working', 'standby', 'flat', 'broken', 'repairing', 'ruined'] as const;
 export type RobotPower = (typeof ROBOT_POWERS)[number];
 
 /**
@@ -620,6 +623,8 @@ export interface Robot {
   readonly teleportSeq: number;
   readonly actionSeq: number;
   readonly lastAction: RobotActionEvent | null;
+  /** Index into ROBOT_PAINTS (0 … 15). Presentation only: it never changes what the robot does (part 3 spec §3.4). */
+  readonly paint: number;
 }
 
 export const ROBOT_BLOCK_REASONS = [
@@ -667,6 +672,7 @@ export const ROBOT_LOG_EVENT_KINDS = [
   'doPowerDown',
   'conflict',
   'crashed',
+  'ruined',
 ] as const;
 
 export type RobotLogEvent =
@@ -687,7 +693,9 @@ export type RobotLogEvent =
   | { readonly kind: 'doPowerDown'; readonly card: MdCard }
   | { readonly kind: 'conflict'; readonly doCard: MdCard; readonly dontCard: MdCard }
   // Farmclaws part 3 (spec §3.1): a bump into robot `withId`; `forgot` is the trigger of the stack it forgot.
-  | { readonly kind: 'crashed'; readonly withId: number; readonly forgot: Trigger | null };
+  | { readonly kind: 'crashed'; readonly withId: number; readonly forgot: Trigger | null }
+  // A night in the water (part 3 spec §3.2).
+  | { readonly kind: 'ruined' };
 
 export interface RobotLogEntry {
   readonly id: number;

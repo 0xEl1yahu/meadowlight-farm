@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, UNLOCKS, WORKBENCH } from '../src/config';
-import { Direction, SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
+import { Blocker, Direction, SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
 import { ALL_UNLOCKS, withUnlocks } from '../src/robots/unlocks';
@@ -14,7 +14,7 @@ import { actions } from '../src/state/actions';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
-import { EMPTY_TILE } from '../src/world/tiles';
+import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
 import { BASE, benchedRobotOf, must, robotOf, v5Save, withPlayer, withRobots, withTile, withZones, type SaveJson } from './testUtils';
 
@@ -234,5 +234,71 @@ describe('the workbench in save version 6', () => {
   it.each(rejections)('rejects %s', (_label, state, edit) => {
     expect(deserializeGame(serializeGame(state))).not.toBeNull();
     expect(corrupt(state, edit)).toBeNull();
+  });
+});
+
+describe('save version 6: ruin and paint', () => {
+  const POND = { tx: 6, tz: 12 };
+  const ROCK = { tx: 8, tz: 12 };
+
+  /** Sprocket ruined in the pond (painted Rose), Bolt ruined on land, Cog painted Cream, and a crashed and a ruined entry. */
+  function ruinedAndPainted(): GameState {
+    const ground = withTile(withTile(BASE, POND, blockedTile(Blocker.Water), 'farm'), ROCK, blockedTile(Blocker.Rock, 2), 'farm');
+    const state = withRobots(ground, [
+      robotOf({ id: 1, power: 'ruined', tx: POND.tx, tz: POND.tz, paint: 4 }),
+      robotOf({ id: 2, name: 'Bolt', power: 'ruined', tx: 4, tz: 12 }),
+      robotOf({ id: 3, name: 'Cog', tx: 3, tz: 12, paint: 15 }),
+    ]);
+    const entries = [
+      { id: 0, day: 0, minute: 380, robotId: 3, tx: 3, tz: 12, event: { kind: 'crashed' as const, withId: 2, forgot: { kind: 'atTime' as const, minute: 840 } }, count: 1 },
+      { id: 1, day: 0, minute: 380, robotId: 1, tx: POND.tx, tz: POND.tz, event: { kind: 'ruined' as const }, count: 1 },
+    ];
+    return { ...state, robots: { ...state.robots, log: { nextId: 2, entries } } };
+  }
+
+  /** Serialises `state`, lets `edit` change the saved robots section, and loads it again. */
+  function edited(edit: (robots: SaveJson & { list: SaveJson[]; log: SaveJson & { entries: SaveJson[] } }) => void): GameState | null {
+    const save = JSON.parse(serializeGame(ruinedAndPainted())) as SaveJson;
+    edit(save.robots as SaveJson & { list: SaveJson[]; log: SaveJson & { entries: SaveJson[] } });
+    return deserializeGame(JSON.stringify(save));
+  }
+
+  it('round-trips ruined robots in the water and on land, paint, and the crashed and ruined events', () => {
+    const state = ruinedAndPainted();
+    expect(deserializeGame(serializeGame(state))).toEqual(loadedFrom(state));
+  });
+
+  it('migrates every robot to paint 0, and v5Save refuses a ruined robot', () => {
+    const save = v5Save(withRobots(BASE, [robotOf({ paint: 9 })]));
+    expect(((save.robots as SaveJson).list as SaveJson[]).map((r) => 'paint' in r)).toEqual([false]);
+    expect(must(deserializeGame(JSON.stringify(save))).robots.list.map((r) => r.paint)).toEqual([0]);
+    expect(() => v5Save(ruinedAndPainted())).toThrow('version 5 has no ruined robots');
+  });
+
+  it('v5Save refuses the version 6 crashed and ruined log events', () => {
+    const entries = ruinedAndPainted().robots.log.entries;
+    const logged = (index: number): GameState => {
+      const state = withRobots(BASE, [robotOf()]);
+      return { ...state, robots: { ...state.robots, log: { nextId: 1, entries: [{ ...entries[index]!, id: 0, robotId: 1 }] } } };
+    };
+    expect(() => v5Save(logged(0))).toThrow('version 5 has no crashed log events');
+    expect(() => v5Save(logged(1))).toThrow('version 5 has no ruined log events');
+  });
+
+  const rejections: readonly [string, (robots: SaveJson & { list: SaveJson[]; log: SaveJson & { entries: SaveJson[] } }) => void][] = [
+    ['a paint past the 16 colours', (s) => void (s.list[2]!.paint = 16)],
+    ['a negative paint', (s) => void (s.list[2]!.paint = -1)],
+    ['a fractional paint', (s) => void (s.list[2]!.paint = 1.5)],
+    ['a paint that is not a number', (s) => void (s.list[2]!.paint = '3')],
+    ['a robot without paint', (s) => void delete s.list[2]!.paint],
+    ['a ruined robot on a rock', (s) => void Object.assign(s.list[1]!, { tx: ROCK.tx, tz: ROCK.tz })],
+    ['a ruined robot that is off', (s) => void (s.list[1]!.off = 'dizzy')],
+    ['a ruined robot with a repair day', (s) => void (s.list[1]!.repairReadyDay = 3)],
+    ['an unknown power', (s) => void (s.list[1]!.power = 'rusty')],
+    ['a ruined event with a field', (s) => void ((s.log.entries[1]!.event as SaveJson).withId = 2)],
+  ];
+
+  it.each(rejections)('rejects %s', (_label, edit) => {
+    expect(edited(edit)).toBeNull();
   });
 });

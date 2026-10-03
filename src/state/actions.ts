@@ -34,7 +34,11 @@ export type GameAction =
   /** Lifts the robot on the workbench into the player's arms (farmclaws part 3 spec §2.2). */
   | { readonly type: 'robot/liftOff'; readonly robotId: number }
   /** The workbench's on/off switch (part 3 spec §2.4). */
-  | { readonly type: 'robot/switch'; readonly robotId: number; readonly on: boolean };
+  | { readonly type: 'robot/switch'; readonly robotId: number; readonly on: boolean }
+  /** Scraps the robot on the workbench for gold (farmclaws part 3 spec §3.3). */
+  | { readonly type: 'robot/scrap'; readonly robotId: number }
+  /** Paints the robot on the workbench ROBOT_PAINTS[paint] (part 3 spec §3.4). */
+  | { readonly type: 'robot/paint'; readonly robotId: number; readonly paint: number };
 
 export type GameActionType = GameAction['type'];
 
@@ -65,4 +69,6 @@ export const actions = {
   setRobotMd: (robotId: number, md: readonly MdCard[]): GameAction => ({ type: 'robot/md', robotId, md }),
   liftOffBench: (robotId: number): GameAction => ({ type: 'robot/liftOff', robotId }),
   switchRobot: (robotId: number, on: boolean): GameAction => ({ type: 'robot/switch', robotId, on }),
+  scrapRobot: (robotId: number): GameAction => ({ type: 'robot/scrap', robotId }),
+  paintRobot: (robotId: number, paint: number): GameAction => ({ type: 'robot/paint', robotId, paint }),
 } as const;

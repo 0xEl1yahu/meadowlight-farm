@@ -322,6 +322,14 @@ export function v5Save(state: GameState): SaveJson {
     }
     robot.tokensToday = today.tokens;
     delete robot.stats;
+    // Ruin and paint (part 3 spec §3.2, §3.4): version 5 has no ruined power and no paint.
+    if (robot.power === 'ruined') throw new Error(`v5Save: version 5 has no ruined robots (robot ${String(robot.id)})`);
+    delete robot.paint;
+  }
+  // Log: version 5 has no crashed or ruined events.
+  for (const entry of (save.robots as { log: { entries: SaveJson[] } }).log.entries) {
+    const kind = (entry.event as { kind: string }).kind;
+    if (kind === 'crashed' || kind === 'ruined') throw new Error(`v5Save: version 5 has no ${kind} log events (log entry ${String(entry.id)})`);
   }
   // Unlocks: a v5 save has none; the migration gives it job 1's.
   const robots = save.robots as SaveJson;
@@ -449,6 +457,7 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
     teleportSeq: 0,
     actionSeq: 0,
     lastAction: null,
+    paint: 0,
     ...overrides,
   };
 }

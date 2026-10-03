@@ -23,14 +23,18 @@ import {
   robotMeshes,
   robotPose,
   sharedTileOffsets,
+  shellColor,
+  sparks,
   startsDizzySpin,
 } from '../src/render/robotLayout';
 import { robotOf } from './testUtils';
 
 describe('robot render rules', () => {
   it('shows the body plus one mesh per part', () => {
-    expect(robotMeshes(robotOf({ parts: ['claw'] }))).toEqual(['treads', 'body', 'head', 'eyes', 'arm', 'claw']);
-    expect(robotMeshes(robotOf({ size: 'big', parts: ['wateringHead', 'basket', 'quickCore'] }))).toEqual(['treads', 'body', 'head', 'eyes', 'arm', 'spout', 'basket', 'coreOrange']);
+    expect(robotMeshes(robotOf({ parts: ['claw'] }))).toEqual(['treads', 'body', 'bodyShell', 'head', 'headShell', 'eyes', 'arm', 'claw']);
+    expect(robotMeshes(robotOf({ size: 'big', parts: ['wateringHead', 'basket', 'quickCore'] }))).toEqual([
+      'treads', 'body', 'bodyShell', 'head', 'headShell', 'eyes', 'arm', 'spout', 'basket', 'coreOrange',
+    ]);
   });
 
   it('lerps faster at higher speeds and never over the cap', () => {
@@ -67,6 +71,8 @@ describe('robot render rules', () => {
     expect(robotPose('broken', false)).toMatchObject({ eyes: 'off', sink: 0.25 });
     expect(robotPose('repairing', false).visible).toBe(false);
     expect(robotPose('broken', true)).toMatchObject({ sink: 0, tilt: 0, eyes: 'off' });
+    expect(robotPose('ruined', false)).toEqual(robotPose('broken', false));
+    expect(robotPose('ruined', true)).toEqual(robotPose('broken', true));
   });
 
   it('plays clips for actions, smaller when they fail, and shakes on a bicker', () => {
@@ -120,6 +126,7 @@ describe('robots that are off (part 2 spec §9)', () => {
       ['standby', 'done', 0.5],
       ['flat', null, 0],
       ['broken', null, 0],
+      ['ruined', null, 0],
       ['repairing', null, 0],
     ];
     for (const [power, off, level] of table) expect(eyeLevel(power, off), `${power} / ${String(off)}`).toBe(level);
@@ -134,5 +141,23 @@ describe('robots that are off (part 2 spec §9)', () => {
     expect(startsDizzySpin(on, robotOf({ off: 'done' }))).toBe(false);
     expect(startsDizzySpin(on, on)).toBe(false);
     expect(startsDizzySpin(dizzy, on)).toBe(false);
+  });
+});
+
+describe('paint and ruin (part 3 spec §3.2, §3.4)', () => {
+  it("tints the shells with the robot's paint, darkened when it is ruined", () => {
+    expect(shellColor({ paint: 0, power: 'working' })).toBe(0xf2c14e);
+    expect(shellColor({ paint: 1, power: 'broken' })).toBe(0xe2563f);
+    expect(shellColor({ paint: 15, power: 'flat' })).toBe(0xece2c6);
+    // Sunflower × 0.45 per channel: 242 → 109, 193 → 87, 78 → 35.
+    expect(shellColor({ paint: 0, power: 'ruined' })).toBe(0x6d5723);
+    expect(shellColor({ paint: 8, power: 'ruined' })).toBe((Math.round(0x2f * 0.45) << 16) | (Math.round(0x6f * 0.45) << 8) | Math.round(0xb0 * 0.45));
+  });
+
+  it('sparks only while broken on the ground: never ruined, never carried', () => {
+    expect(sparks({ power: 'broken', carried: false })).toBe(true);
+    expect(sparks({ power: 'broken', carried: true })).toBe(false);
+    expect(sparks({ power: 'ruined', carried: false })).toBe(false);
+    expect(sparks({ power: 'working', carried: false })).toBe(false);
   });
 });

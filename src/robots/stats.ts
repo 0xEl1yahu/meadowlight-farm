@@ -1,7 +1,8 @@
 /**
  * Numbers derived from a robot's size and parts (farmclaws part 1 spec §3.3). Pure.
  */
-import { ROBOTS } from '../config';
+import { ROBOT_CARE, ROBOT_PAINTS, ROBOTS } from '../config';
+import { invariant } from '../core/invariant';
 import type { Robot, RobotActionKind, RobotPartId, RobotPower, RobotSize, RobotStatCounts, RobotStats } from '../core/types';
 
 export type RobotBody = Pick<Robot, 'size' | 'parts'>;
@@ -29,10 +30,11 @@ export function repairCost(robot: Pick<Robot, 'size'>): number {
 
 /**
  * Power of a robot going back to work, after being put down or each morning (spec §5.7, §5.8):
- * a broken robot stays broken; any other robot works if it has tokens, else it's flat.
+ * a broken robot stays broken and a ruined one ruined (part 3 spec §3.2); any other robot works
+ * if it has tokens, else it's flat.
  */
 export function resumedPower(robot: Pick<Robot, 'power' | 'tokens'>): RobotPower {
-  if (robot.power === 'broken') return 'broken';
+  if (robot.power === 'broken' || robot.power === 'ruined') return robot.power;
   return robot.tokens > 0 ? 'working' : 'flat';
 }
 
@@ -85,4 +87,16 @@ export function addRobotStats(stats: RobotStats, add: Partial<RobotStatCounts>):
 /** Whether a day of the season starts a stats week: days 1, 8, 15 and 22. */
 export function isWeekStart(dayOfSeason: number): boolean {
   return (dayOfSeason - 1) % ROBOTS.weekLength === 0;
+}
+
+/** Gold for scrapping a robot (part 3 spec §3.3): a share of its size's price, whatever its power. */
+export function scrapValue(robot: Pick<Robot, 'size'>): number {
+  return Math.round(ROBOTS.sizes[robot.size].price * ROBOT_CARE.scrapShare);
+}
+
+/** ROBOT_PAINTS[index]. Saves and the reducer keep `Robot.paint` in range, so a miss is a bug. */
+export function paintAt(index: number): (typeof ROBOT_PAINTS)[number] {
+  const paint = ROBOT_PAINTS[index];
+  invariant(paint !== undefined, `paintAt: no paint ${index}`);
+  return paint;
 }

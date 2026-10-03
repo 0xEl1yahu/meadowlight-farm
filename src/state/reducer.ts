@@ -7,7 +7,7 @@
  * hash in core/hash.ts, so an action log replayed from the same initial state reproduces the
  * exact same game.
  */
-import { INVENTORY, PLAYER, TIME, TOOLS } from '../config';
+import { INVENTORY, PLAYER, ROBOT_CARE, ROBOT_PAINTS, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
 import { joinWithAnd, qualityPrefix } from '../core/text';
 import {
@@ -44,7 +44,7 @@ import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { programmedRobot, withMd } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
-import { carryEnergyFor, periodFor, putDownPower } from '../robots/stats';
+import { carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
 import { findRobot, requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
@@ -118,6 +118,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return liftOffBench(state, action.robotId);
     case 'robot/switch':
       return switchRobot(state, action.robotId, action.on);
+    case 'robot/scrap':
+      return scrapRobot(state, action.robotId);
+    case 'robot/paint':
+      return paintRobot(state, action.robotId, action.paint);
     default: {
       const unknown: never = action;
       void unknown;
@@ -431,7 +435,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
         { ...state, player: { ...state.player, carrying: null, gold: state.player.gold - intent.cost } },
         { ...robot, carried: false, power: 'repairing', repairReadyDay: state.time.absoluteDay + 1 },
       );
-      return pushMessage(sent, `${robot.name} is off to be repaired. Back tomorrow.`, 'info');
+      return pushMessage(sent, `${robot.name} is off for a new core. Back tomorrow.`, 'info');
     }
 
     case 'benchRobot': {
@@ -666,6 +670,11 @@ function setTimeScale(state: GameState, timeScale: number): GameState {
 // Robot edits (farmclaws part 3 spec §4.7)
 // ---------------------------------------------------------------------------
 
+/** The refusal for a ruined robot, which can only be scrapped (part 3 spec §3.2), or null for any other. */
+function ruinedRefusal(state: GameState, robot: Robot): GameState | null {
+  return robot.power === 'ruined' ? pushMessage(state, `${robot.name} is ruined. It can only be scrapped.`, 'warn') : null;
+}
+
 /**
  * Applies a program or .MD edit to robot `robotId`: the edited robot and a success toast, or the
  * edit's refusal as a warn toast with nothing else changed. The robot must be on the workbench
@@ -678,6 +687,8 @@ function editRobot(state: GameState, robotId: number, edit: (robot: Robot) => Ro
   if (robot === null) return state;
   const away = offBenchRefusal(robot);
   if (away !== null) return pushMessage(state, away, 'warn');
+  const ruined = ruinedRefusal(state, robot);
+  if (ruined !== null) return ruined;
   const edited = edit(robot);
   if (typeof edited === 'string') return pushMessage(state, edited, 'warn');
   return pushMessage(withRobot(state, edited), done(robot.name), 'success');
@@ -724,9 +735,55 @@ function switchRobot(state: GameState, robotId: number, on: boolean): GameState 
   if (robot === null) return state;
   const away = offBenchRefusal(robot);
   if (away !== null) return pushMessage(state, away, 'warn');
+  const ruined = ruinedRefusal(state, robot);
+  if (ruined !== null) return ruined;
   if (on) return robot.off === 'player' ? withRobot(state, { ...robot, off: null }) : state;
   if (!SWITCHABLE_POWERS.has(robot.power)) return pushMessage(state, `${robot.name} can't be switched off while it's broken.`, 'warn');
   return withRobot(state, { ...robot, off: 'player' });
+}
+
+// ---------------------------------------------------------------------------
+// The workbench's other jobs (farmclaws part 3 spec §3.3–3.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * `robot/scrap`: the robot on the bench leaves the farm with its own log entries, the player gets
+ * scrapValue in gold, and the open panel closes. Ids (and log ids) are never reused.
+ */
+function scrapRobot(state: GameState, robotId: number): GameState {
+  const robot = findRobot(state, robotId);
+  if (robot === null) return state;
+  const away = offBenchRefusal(robot);
+  if (away !== null) return pushMessage(state, away, 'warn');
+  const gold = scrapValue(robot);
+  const { log } = state.robots;
+  const next: GameState = {
+    ...state,
+    player: { ...state.player, gold: state.player.gold + gold },
+    robots: {
+      ...state.robots,
+      list: state.robots.list.filter((r) => r.id !== robotId),
+      log: { ...log, entries: log.entries.filter((e) => e.robotId !== robotId) },
+    },
+    ui: state.ui.panel.kind === 'none' ? state.ui : { ...state.ui, panel: { kind: 'none' } },
+  };
+  return pushMessage(next, `Scrapped ${robot.name} for ${gold}g.`, 'success');
+}
+
+/** `robot/paint`: a coat of ROBOT_PAINTS[paint] for ROBOT_CARE.paintCost gold. A paint outside the list does nothing. */
+function paintRobot(state: GameState, robotId: number, paint: number): GameState {
+  const robot = findRobot(state, robotId);
+  if (robot === null || !Number.isInteger(paint) || paint < 0 || paint >= ROBOT_PAINTS.length) return state;
+  const away = offBenchRefusal(robot);
+  if (away !== null) return pushMessage(state, away, 'warn');
+  const ruined = ruinedRefusal(state, robot);
+  if (ruined !== null) return ruined;
+  const colour = paintAt(paint).name;
+  if (robot.paint === paint) return pushMessage(state, `${robot.name} is already ${colour}.`, 'warn');
+  const cost = ROBOT_CARE.paintCost;
+  if (state.player.gold < cost) return pushMessage(state, `A paint job costs ${cost}g.`, 'warn');
+  const painted = withRobot({ ...state, player: { ...state.player, gold: state.player.gold - cost } }, { ...robot, paint });
+  return pushMessage(painted, `Painted ${robot.name} ${colour}.`, 'success');
 }
 
 /** Replaces the whole state (new game / loaded save): no panel open, unpaused, the player flagged as teleported. */

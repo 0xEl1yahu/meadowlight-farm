@@ -60,7 +60,7 @@ export type Intent =
   /** Pick up (or fish out) a robot: it stops and rides in the player's arms. */
   | { readonly kind: 'pickUpRobot'; readonly robotId: number; readonly name: string; readonly fromWater: boolean }
   | { readonly kind: 'putDownRobot'; readonly robotId: number; readonly name: string }
-  /** Send the carried broken robot for repair from the shipping bin. */
+  /** Send the carried broken robot for a new core from the shipping bin (part 3 spec §3.2). */
   | { readonly kind: 'repairRobot'; readonly robotId: number; readonly name: string; readonly cost: number }
   /** Load wood from the selected stack into a wood burner. */
   | { readonly kind: 'fuel'; readonly quantity: number }
@@ -372,6 +372,7 @@ function planCarry(state: GameState, robotId: number): ActionPlan {
     return plan(target, { kind: 'benchRobot', robotId, name: robot.name }, 'place');
   }
   if (tile.blocker === Blocker.ShippingBin) {
+    if (robot.power === 'ruined') return blocked(target, 'place', `${robot.name} is beyond repair. Scrap it at the workbench.`);
     if (robot.power !== 'broken') return blocked(target, 'place', 'Only broken robots go for repair.');
     const cost = repairCost(robot);
     if (state.player.gold < cost) return blocked(target, 'place', `Repairs cost ${cost}g.`);
@@ -527,7 +528,7 @@ export function describeIntent(intent: Intent): string | null {
     case 'putDownRobot':
       return `Put down ${intent.name}`;
     case 'repairRobot':
-      return `Send ${intent.name} for repair · ${intent.cost}g`;
+      return `Send ${intent.name} for a new core · ${intent.cost}g`;
     case 'fuel':
       return 'Load wood';
     case 'benchRobot':

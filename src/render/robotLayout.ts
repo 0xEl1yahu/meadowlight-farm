@@ -1,15 +1,16 @@
 /**
  * Pure render rules for robots (farmclaws part 1 spec §7): which meshes a robot shows, how it
  * poses in each power state, its action clips, shared-tile offsets, movement timing and idle bob.
- * Part 2 spec §9 adds the dizzy spin and how bright a robot's eyes are while it is off.
+ * Part 2 spec §9 adds the dizzy spin and how bright a robot's eyes are while it is off. Part 3
+ * spec §3.2 and §3.4 add the painted shells and the ruined look.
  */
-import { TIME, WORKBENCH } from '../config';
+import { ROBOT_CARE, TIME, WORKBENCH } from '../config';
 import type { Robot, RobotActionEvent, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
-import { periodFor } from '../robots/stats';
+import { paintAt, periodFor } from '../robots/stats';
 import { CAMERA } from './constants';
 
 export const ROBOT_MESH_IDS = [
-  'treads', 'body', 'head', 'eyes', 'arm', 'claw', 'spout', 'tines', 'hopper', 'basket', 'antenna', 'lens', 'coreGreen', 'coreOrange',
+  'treads', 'body', 'bodyShell', 'head', 'headShell', 'eyes', 'arm', 'claw', 'spout', 'tines', 'hopper', 'basket', 'antenna', 'lens', 'coreGreen', 'coreOrange',
 ] as const;
 export type RobotMeshId = (typeof ROBOT_MESH_IDS)[number];
 
@@ -26,7 +27,7 @@ const PART_MESH: Readonly<Record<RobotPartId, RobotMeshId>> = {
 };
 
 export function robotMeshes(robot: Pick<Robot, 'parts'>): readonly RobotMeshId[] {
-  return ['treads', 'body', 'head', 'eyes', 'arm', ...robot.parts.map((p) => PART_MESH[p])];
+  return ['treads', 'body', 'bodyShell', 'head', 'headShell', 'eyes', 'arm', ...robot.parts.map((p) => PART_MESH[p])];
 }
 
 /**
@@ -153,6 +154,7 @@ export function robotPose(power: RobotPower, carried: boolean): RobotPose {
     case 'flat':
       return { sink: 0, tilt: 0, headPitch: FLAT_HEAD_PITCH, eyes, visible: true };
     case 'broken':
+    case 'ruined':
       return { sink: BROKEN_SINK, tilt: BROKEN_TILT, headPitch: BROKEN_HEAD_PITCH, eyes, visible: true };
     case 'repairing':
       return { sink: 0, tilt: 0, headPitch: 0, eyes, visible: false };
@@ -245,7 +247,7 @@ const EYE_OUT = 0;
  * dizzy or done robot sits like a standby one), out when flat, broken or away for repair.
  */
 export function eyeLevel(power: RobotPower, off: Robot['off']): number {
-  if (power === 'flat' || power === 'broken' || power === 'repairing') return EYE_OUT;
+  if (power === 'flat' || power === 'broken' || power === 'ruined' || power === 'repairing') return EYE_OUT;
   return power === 'working' && off === null ? EYE_LIT : EYE_DIM;
 }
 
@@ -255,4 +257,21 @@ export function eyeLevel(power: RobotPower, off: Robot['off']): number {
  */
 export function startsDizzySpin(prev: Robot | undefined, next: Robot): boolean {
   return prev !== undefined && prev.off !== 'dizzy' && next.off === 'dizzy';
+}
+
+// ---------------------------------------------------------------------------
+// Paint and ruin (farmclaws part 3 spec §3.2, §3.4)
+// ---------------------------------------------------------------------------
+
+/** Whether a robot throws sparks: broken and on the ground. A ruined robot is past sparking. */
+export function sparks(robot: Pick<Robot, 'power' | 'carried'>): boolean {
+  return robot.power === 'broken' && !robot.carried;
+}
+
+/** The colour of a robot's painted shells: its paint, each channel × ROBOT_CARE.ruinedShade (rounded) when it is ruined. */
+export function shellColor(robot: Pick<Robot, 'paint' | 'power'>): number {
+  const color = paintAt(robot.paint).color;
+  if (robot.power !== 'ruined') return color;
+  const channel = (shift: number): number => Math.round(((color >> shift) & 0xff) * ROBOT_CARE.ruinedShade) << shift;
+  return channel(16) | channel(8) | channel(0);
 }

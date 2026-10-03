@@ -7,7 +7,9 @@
  * - Robots are drawn only while the player is on the farm.
  * - A new moveSeq lerps to the new tile; a new teleportSeq, a rebuild or a new robot snaps.
  * - A new actionSeq plays a clip (robotLayout.clipFor); water and till clips spray particles,
- *   bickers show a red badge; broken robots spark; working robots bob gently.
+ *   bickers show a red badge; broken robots spark (ruined ones don't); working robots bob gently.
+ * - Each robot's body and head shells are drawn in its paint colour, darkened when it is ruined
+ *   (robotLayout.shellColor); their instance colours are written only when that colour changes.
  * - A carried robot is drawn above the player's visual position (the carryAnchor callback).
  * - A robot that just got dizzy spins once (robotLayout.dizzySpin; never on a rebuild). Eyes
  *   follow robotLayout.eyeLevel, so dizzy and done robots look like standby ones and don't bob.
@@ -22,7 +24,7 @@ import { getTile, isSoil } from '../world/tiles';
 import { CAMERA, HEIGHTS } from './constants';
 import { InstanceSlotMap } from './InstanceSlotMap';
 import { createFlatMaterial } from './materials';
-import { HEAD_MESHES, NECK_Y, createBadgeGeometry, createParticleGeometry, createRobotMeshGeometry } from './robotGeometry';
+import { HEAD_MESHES, NECK_Y, SHELL_MESHES, createBadgeGeometry, createParticleGeometry, createRobotMeshGeometry } from './robotGeometry';
 import {
   BADGE_HEIGHT,
   BADGE_SECONDS,
@@ -48,6 +50,8 @@ import {
   robotPose,
   sharedOffsetXZ,
   sharedTileOffsets,
+  shellColor,
+  sparks,
   startsDizzySpin,
   type EyeState,
   type RobotClip,
@@ -141,6 +145,8 @@ export class RobotRenderer implements RenderSystem {
   private readonly badges: InstanceSlotMap;
   private readonly particles: InstanceSlotMap;
   private readonly visuals = new Map<number, Visual>();
+  /** The shell colour last written for each robot, so instance colours change only with its paint or ruin. */
+  private readonly shellColors = new Map<number, number>();
   private readonly live: Particle[] = [];
   private nextParticle = 0;
   private state: GameState | null = null;
@@ -157,7 +163,8 @@ export class RobotRenderer implements RenderSystem {
       mesh.castShadow = !eyes;
       mesh.frustumCulled = false;
       this.group.add(mesh);
-      meshes[id] = new InstanceSlotMap(mesh, eyes);
+      // Eyes and the painted shells take their colour from the instance.
+      meshes[id] = new InstanceSlotMap(mesh, eyes || SHELL_MESHES.has(id));
     }
     this.meshes = meshes;
     const badge = new THREE.InstancedMesh(createBadgeGeometry(), this.painted, ROBOTS.maxRobots);
@@ -223,6 +230,7 @@ export class RobotRenderer implements RenderSystem {
     for (const id of [...this.visuals.keys()]) {
       if (!seen.has(id)) {
         this.visuals.delete(id);
+        this.shellColors.delete(id);
         for (const mesh of Object.values(this.meshes)) mesh.remove(id);
         this.badges.remove(id);
       }
@@ -266,6 +274,7 @@ export class RobotRenderer implements RenderSystem {
 
   private clearAll(): void {
     this.visuals.clear();
+    this.shellColors.clear();
     for (const mesh of Object.values(this.meshes)) {
       mesh.clear();
       mesh.commit();
@@ -277,19 +286,36 @@ export class RobotRenderer implements RenderSystem {
     this.live.length = 0;
   }
 
-  /** Adds or removes this robot's instance on every mesh to match its parts and visibility. */
+  /**
+   * Adds or removes this robot's instance on every mesh to match its parts and visibility, then
+   * tints its two shells when their instances are new or its shell colour (paint or ruin) changed.
+   * Runs on sync only, never per frame.
+   */
   private syncMeshes(robot: Robot): void {
     const wanted = new Set(robotMeshes(robot));
     const visible = robotPose(robot.power, robot.carried).visible;
+    let added = false;
     for (const id of ROBOT_MESH_IDS) {
       const map = this.meshes[id];
       if (visible && wanted.has(id)) {
-        if (!map.has(robot.id)) map.set(robot.id, m.identity());
+        if (!map.has(robot.id)) {
+          map.set(robot.id, m.identity());
+          added = true;
+        }
       } else {
         map.remove(robot.id);
       }
     }
-    if (!visible) this.badges.remove(robot.id);
+    if (!visible) {
+      this.badges.remove(robot.id);
+      return;
+    }
+    const shell = shellColor(robot);
+    if (!added && this.shellColors.get(robot.id) === shell) return;
+    color.setHex(shell);
+    this.meshes.bodyShell.setColor(robot.id, color);
+    this.meshes.headShell.setColor(robot.id, color);
+    this.shellColors.set(robot.id, shell);
   }
 
   private animate(v: Visual, dt: number, elapsed: number, state: GameState): void {
@@ -357,7 +383,7 @@ export class RobotRenderer implements RenderSystem {
     }
 
     // Last: spray writes the scratch matrix `m`, which every mesh above has already read.
-    if (robot.power === 'broken' && !robot.carried) {
+    if (sparks(robot)) {
       v.sparkT += dt;
       if (v.sparkT >= SPARK_SECONDS) {
         v.sparkT = 0;

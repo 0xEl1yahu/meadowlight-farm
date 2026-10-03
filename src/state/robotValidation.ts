@@ -2,7 +2,7 @@
  * Save validation for the robots section (farmclaws part 1 spec §6.2, part 2 spec §10.2).
  * Every check is a type guard that returns false on any unexpected shape and never throws.
  */
-import { ROBOTS, TIME } from '../config';
+import { ROBOT_PAINTS, ROBOTS, TIME } from '../config';
 import {
   Blocker,
   CROP_IDS,
@@ -49,7 +49,7 @@ const MAX = Number.MAX_SAFE_INTEGER;
 
 const ROBOT_KEYS = [
   'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'onBench', 'program', 'pc',
-  'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
+  'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction', 'paint',
 ] as const;
 
 /** Wood burners work the farm's robots, so a burner on another map means a corrupt save. */
@@ -641,6 +641,7 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!isIntIn(v.tank, 0, ROBOTS.tankCapacity) || (v.tank > 0 && !parts.includes('wateringHead'))) return false;
   if (!isIntIn(v.tokens, 0, batteryFor(v.size)) || !isValidRobotStats(v.stats)) return false;
   if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried) || !isBool(v.onBench)) return false;
+  if (!isIntIn(v.paint, 0, ROBOT_PAINTS.length - 1)) return false;
   if (!isValidMind(v, { size: v.size, parts })) return false;
   if (!isOneOf(v.off, [null, 'dizzy', 'done', 'player'])) return false;
   if (v.off !== null && v.power !== 'working' && v.power !== 'standby' && v.power !== 'flat') return false;
@@ -657,7 +658,8 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   // On the bench means on the workbench tile, where part 1's walkable rule doesn't apply; no other robot stands there.
   const onWorkbench = tile.object !== null && tile.object.kind === 'workbench';
   if (v.onBench || onWorkbench) return v.onBench && onWorkbench;
-  if (v.power === 'broken') return tile.blocker === Blocker.Water || isWalkable(tile);
+  // A ruined robot is placed like a broken one (part 3 spec §9.2); the off and repairReadyDay rules above already hold it to null.
+  if (v.power === 'broken' || v.power === 'ruined') return tile.blocker === Blocker.Water || isWalkable(tile);
   return isWalkable(tile);
 }
 

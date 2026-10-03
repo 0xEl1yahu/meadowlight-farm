@@ -1,7 +1,8 @@
 /**
  * The robots' night, run inside startNextDay after the maps grow (farmclaws part 1 spec §5.7):
- * generators burn, a carried robot is set down, repairs come back, robots near a generator
- * recharge, and every robot is reset for the morning where it stands. Pure.
+ * generators burn, a carried robot is set down, repairs come back, broken robots left in the
+ * water are ruined (part 3 spec §3.2), robots near a generator recharge, and every robot is reset
+ * for the morning where it stands. Pure.
  */
 import { GENERATORS, PLAYER, ROBOTS, TIME } from '../config';
 import { joinWithAnd } from '../core/text';
@@ -58,12 +59,16 @@ function burnGenerators(state: GameState, notes: RobotNote[]): { readonly state:
   };
 }
 
-/** A robot still in the player's arms is set down on the spawn tile; the morning reset powers it. */
+/**
+ * A robot still in the player's arms is set down on the spawn tile, or the nearest walkable tile
+ * with no robot on it (part 3 spec §3.1); the morning reset powers it.
+ */
 function setDownCarried(state: GameState): GameState {
   const id = state.player.carrying;
   const robot = state.robots.list.find((r) => r.id === id);
   if (id === null || robot === undefined) return state;
-  const down: Robot = { ...robot, carried: false, tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz, facing: PLAYER.spawnFacing, teleportSeq: robot.teleportSeq + 1 };
+  const at = nearestFreeWalkable(state, PLAYER.spawn, robot.id);
+  const down: Robot = { ...robot, carried: false, tx: at.tx, tz: at.tz, facing: PLAYER.spawnFacing, teleportSeq: robot.teleportSeq + 1 };
   return withRobot({ ...state, player: { ...state.player, carrying: null } }, down);
 }
 
@@ -95,8 +100,24 @@ function returnRepaired(state: GameState, notes: RobotNote[]): { readonly state:
 }
 
 /**
+ * A broken robot still standing in the water at the end of the day (not carried, not on the
+ * bench) is ruined (part 3 spec §3.2): logged and noted, in id order. Runs after the carried
+ * robot is set down at spawn, so a robot the player is holding is safe.
+ */
+function ruinSoaked(state: GameState, notes: RobotNote[]): GameState {
+  let next = state;
+  for (const robot of state.robots.list) {
+    if (robot.power !== 'broken' || robot.carried || robot.onBench) continue;
+    if (getTile(state.maps.farm, robot.tx, robot.tz)?.blocker !== Blocker.Water) continue;
+    next = logRobotEvent(withRobot(next, { ...robot, power: 'ruined' }), robot.id, { kind: 'ruined' });
+    notes.push({ text: `${robot.name} spent the night in the water and is ruined. Scrap it at the workbench.`, tone: 'warn' });
+  }
+  return next;
+}
+
+/**
  * In id order, robots within chargeRadius of a burner fill up from the pool. Every other robot
- * that isn't broken or away at repairs (even a full one) is named as having missed out. A robot
+ * that isn't broken, ruined or away at repairs (even a full one) is named as having missed out. A robot
  * just back from repairs spent the day at the shop, so it's never named.
  */
 function recharge(state: GameState, burners: readonly TileCoord[], returned: ReadonlySet<number>, notes: RobotNote[]): GameState {
@@ -104,7 +125,7 @@ function recharge(state: GameState, burners: readonly TileCoord[], returned: Rea
   const short: Robot[] = [];
   const away: Robot[] = [];
   for (const robot of state.robots.list) {
-    if (robot.power === 'broken' || robot.power === 'repairing' || returned.has(robot.id)) continue;
+    if (robot.power === 'broken' || robot.power === 'ruined' || robot.power === 'repairing' || returned.has(robot.id)) continue;
     if (!burners.some((b) => chebyshevDistance(b, robot) <= ROBOTS.chargeRadius)) {
       away.push(robot);
       continue;
@@ -172,8 +193,10 @@ function resetForMorning(state: GameState): GameState {
     if (robot.power === 'repairing') continue;
     const tile = getTile(farm, robot.tx, robot.tz);
     const inWater = tile !== null && tile.blocker === Blocker.Water;
+    // A broken or ruined robot may stay sunk in the water (part 3 spec §3.2).
+    const sunk = robot.power === 'broken' || robot.power === 'ruined';
     // A robot on the workbench stays on it (part 3 spec §2.2); the bench tile itself isn't walkable.
-    const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater)));
+    const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (sunk && inWater)));
     // Off an unwalkable tile, onto the nearest walkable one with no robot on it (part 3 spec §3.1).
     const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestFreeWalkable(next, robot, robot.id);
     const moved = at.tx !== robot.tx || at.tz !== robot.tz;
@@ -201,7 +224,7 @@ export function runRobotsOvernight(state: GameState): { readonly state: GameStat
   const notes: RobotNote[] = [];
   const burned = burnGenerators(state, notes);
   const repaired = returnRepaired(setDownCarried(burned.state), notes);
-  let next = recharge(repaired.state, burned.burners, repaired.returned, notes);
+  let next = recharge(ruinSoaked(repaired.state, notes), burned.burners, repaired.returned, notes);
   next = resetForMorning(next);
   return { state: pruneRobotLog(next), notes };
 }

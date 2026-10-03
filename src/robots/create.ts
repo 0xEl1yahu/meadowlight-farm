@@ -94,6 +94,7 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     teleportSeq: 0,
     actionSeq: 0,
     lastAction: null,
+    paint: 0,
   };
   return { state: { ...state, robots: { ...state.robots, nextId: id + 1, list: [...state.robots.list, robot] } }, id };
 }
