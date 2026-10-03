@@ -22,7 +22,7 @@ import { getTile, isWalkable } from '../world/tiles';
 import { checkMd, checkProgram } from './check';
 import { MD_SHAPE, PROGRAM_SHAPE } from './edits';
 import { execAt } from './exec';
-import { batteryFor, hasPart, periodFor } from './stats';
+import { ZERO_ROBOT_STATS, batteryFor, hasPart, periodFor } from './stats';
 
 export interface RobotSpec {
   readonly name: string;
@@ -88,7 +88,7 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     off: null,
     nextActMinute: state.time.minuteOfDay + periodFor(spec),
     repairReadyDay: null,
-    tokensToday: 0,
+    stats: ZERO_ROBOT_STATS,
     moveSeq: 0,
     teleportSeq: 0,
     actionSeq: 0,

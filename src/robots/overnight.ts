@@ -5,12 +5,22 @@
  */
 import { GENERATORS, PLAYER, ROBOTS, TIME } from '../config';
 import { joinWithAnd } from '../core/text';
-import { Blocker, Direction, type GameState, type MessageTone, type Robot, type RobotExec, type TileCoord } from '../core/types';
+import {
+  Blocker,
+  Direction,
+  type GameState,
+  type MessageTone,
+  type Robot,
+  type RobotExec,
+  type RobotStatCounts,
+  type RobotStats,
+  type TileCoord,
+} from '../core/types';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
 import { morningExec } from './exec';
 import { logRobotEvent, pruneRobotLog } from './log';
-import { batteryFor, periodFor, resumedPower } from './stats';
+import { ZERO_ROBOT_STATS, batteryFor, isWeekStart, periodFor, resumedPower } from './stats';
 import { nearestWalkable, withFarm, withRobot } from './world';
 
 /** A morning toast the night produced. */
@@ -128,6 +138,18 @@ function morningExecOf(robot: Robot): RobotExec | null {
   return robot.exec !== null && samePlainData(robot.exec, fresh) ? robot.exec : fresh;
 }
 
+const isZero = (counts: RobotStatCounts): boolean => counts.tokens === 0 && counts.actions === 0 && counts.crops === 0;
+
+/**
+ * The morning's stats (part 3 spec §6.1): today starts again from 0, and so does the week on the
+ * first day of a week. `stats` itself when there is nothing to reset.
+ */
+function morningStats(stats: RobotStats, weekStart: boolean): RobotStats {
+  const today = isZero(stats.today) ? stats.today : ZERO_ROBOT_STATS.today;
+  const week = !weekStart || isZero(stats.week) ? stats.week : ZERO_ROBOT_STATS.week;
+  return today === stats.today && week === stats.week ? stats : { today, week };
+}
+
 /**
  * Every robot not at repairs stays where it is, restarts its script and resets its day. One whose
  * tile is no longer walkable (weeds or a giant crop grew there) moves to the nearest walkable
@@ -141,6 +163,7 @@ function morningExecOf(robot: Robot): RobotExec | null {
 function resetForMorning(state: GameState): GameState {
   let next = state;
   const farm = state.maps.farm;
+  const weekStart = isWeekStart(state.time.dayOfSeason);
   for (const robot of state.robots.list) {
     if (robot.power === 'repairing') continue;
     const tile = getTile(farm, robot.tx, robot.tz);
@@ -156,7 +179,7 @@ function resetForMorning(state: GameState): GameState {
       tz: at.tz,
       teleportSeq: moved ? robot.teleportSeq + 1 : robot.teleportSeq,
       pc: 0,
-      tokensToday: 0,
+      stats: morningStats(robot.stats, weekStart),
       nextActMinute: TIME.dayStartMinute + periodFor(robot),
       power: resumed === 'working' && exec !== null && exec.running === null ? 'standby' : resumed,
       exec,

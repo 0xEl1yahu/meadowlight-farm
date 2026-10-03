@@ -108,7 +108,7 @@ describe('save version 4', () => {
     ['a bag stack with no items', (s) => void (robotsOf(s).list[0]!.bag = [{ itemId: 'parsnip', quantity: 0, quality: 0 }])],
     ['a tank above capacity', (s) => void (robotsOf(s).list[3]!.tank = 21)],
     ['a negative token count', (s) => void (robotsOf(s).list[0]!.tokens = -1)],
-    ['a negative tokensToday', (s) => void (robotsOf(s).list[0]!.tokensToday = -1)],
+    ['a negative stats count', (s) => void (((robotsOf(s).list[0]!.stats as SaveJson).today as SaveJson).tokens = -1)],
     ['an empty script', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [])],
     ['an oversized script', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = Array.from({ length: 81 }, () => ({ kind: 'move' })))],
     ['an unknown crop in a plant step', (s) => void ((robotsOf(s).list[0]!.program as SaveJson).steps = [{ kind: 'plant', cropId: 'kale' }])],

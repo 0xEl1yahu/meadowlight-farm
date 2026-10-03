@@ -26,6 +26,7 @@ import {
   type ItemId,
   type ItemStack,
   type MapId,
+  type RobotStats,
   type Quality,
   type Tile,
   type TileCoord,
@@ -34,6 +35,7 @@ import {
   type ZoneRect,
 } from '../src/core/types';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
+import { ZERO_ROBOT_STATS } from '../src/robots/stats';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { countItem } from '../src/state/inventory';
 import { serializeGame } from '../src/state/persistence';
@@ -312,6 +314,15 @@ export function legacySave(state: GameState, version: 1 | 2): SaveJson {
 export function v5Save(state: GameState): SaveJson {
   const save = JSON.parse(serializeGame(state)) as SaveJson;
   save.version = 5;
+  // Stats: a v5 robot counts only today's tokens, as tokensToday.
+  for (const robot of (save.robots as { list: SaveJson[] }).list) {
+    const { today, week } = robot.stats as RobotStats;
+    if (today.actions !== 0 || today.crops !== 0 || !deepEqual(week, today)) {
+      throw new Error(`v5Save: a version-5 save counts only today's tokens (robot ${String(robot.id)})`);
+    }
+    robot.tokensToday = today.tokens;
+    delete robot.stats;
+  }
   return save;
 }
 
@@ -412,7 +423,7 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
     off: null,
     nextActMinute: TIME.dayStartMinute + 4,
     repairReadyDay: null,
-    tokensToday: 0,
+    stats: ZERO_ROBOT_STATS,
     moveSeq: 0,
     teleportSeq: 0,
     actionSeq: 0,

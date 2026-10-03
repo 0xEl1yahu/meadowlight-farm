@@ -62,7 +62,8 @@ describe('waking', () => {
     const next = tick(withRobots(BASE, [idle(EVERY_15)]), 16);
     expect(kinds(next)).toEqual(['woke', 'did']);
     expect(minutesOf(next, 'woke')).toEqual([376]);
-    expect(requireRobot(next, 1)).toMatchObject({ power: 'working', tokens: 78, tokensToday: 2, actionSeq: 1 });
+    expect(requireRobot(next, 1)).toMatchObject({ power: 'working', tokens: 78, actionSeq: 1 });
+    expect(requireRobot(next, 1).stats.today).toEqual({ tokens: 2, actions: 1, crops: 0 });
     expect(must(requireRobot(next, 1).exec).due).toEqual([391]);
   });
 
@@ -70,7 +71,8 @@ describe('waking', () => {
     const next = tick(withRobots(BASE, [idle(EVERY_15)]), 60);
     expect(minutesOf(next, 'woke')).toEqual([376, 392, 408]);
     expect(kinds(next)).toEqual(['woke', 'did', 'finished', 'woke', 'did', 'finished', 'woke', 'did', 'finished']);
-    expect(requireRobot(next, 1)).toMatchObject({ power: 'standby', tokens: 74, tokensToday: 6, nextActMinute: 424 });
+    expect(requireRobot(next, 1)).toMatchObject({ power: 'standby', tokens: 74, nextActMinute: 424 });
+    expect(requireRobot(next, 1).stats.today).toEqual({ tokens: 6, actions: 3, crops: 0 });
     expect(must(requireRobot(next, 1).exec).due).toEqual([423]);
   });
 

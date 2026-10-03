@@ -298,6 +298,8 @@ export const ROBOTS = {
   wakeCost: 1,
   /** `Repeat [n] times` clamps n to 0 … this at run time. */
   maxRepeatTimes: 999,
+  /** Days in a robot stats week; weeks start on day 1 of the season (part 3 §6.1). */
+  weekLength: 7,
 } as const;
 
 export const GENERATORS = {

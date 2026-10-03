@@ -47,7 +47,8 @@ describe('DON’T cards in the tick', () => {
     if (turn.kind !== 'skip') throw new Error(`expected a skip, got ${turn.kind}`);
     const next = tick(state, 4);
     const after = requireRobot(next, 1);
-    expect(after).toMatchObject({ tx: 5, tz: 12, tokens: 80, tokensToday: 0, actionSeq: 1, nextActMinute: 368, power: 'working' });
+    expect(after).toMatchObject({ tx: 5, tz: 12, tokens: 80, actionSeq: 1, nextActMinute: 368, power: 'working' });
+    expect(after.stats.today).toEqual({ tokens: 0, actions: 0, crops: 0 });
     expect(after.lastAction).toEqual({ seq: 1, kind: 'move', success: false, bickered: false });
     expect(after.exec).toEqual(turn.exec);
     expect(events(next)).toEqual([{ kind: 'skipped', action: 'move', card: LEAVE_A }]);

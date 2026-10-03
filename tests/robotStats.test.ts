@@ -3,9 +3,37 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROBOTS } from '../src/config';
-import { EVERY_CHOICES, type RobotActionKind, type RobotPartId, type RobotSize } from '../src/core/types';
+import {
+  EVERY_CHOICES,
+  TileState,
+  type GameState,
+  type Robot,
+  type RobotAction,
+  type RobotActionKind,
+  type RobotPartId,
+  type RobotSize,
+  type RobotStats,
+} from '../src/core/types';
+import { b } from '../src/robots/blocks';
+import { freshExec, morningExec } from '../src/robots/exec';
 import { PART_ACTIONS, ROBOT_ACTION_KINDS, canDo } from '../src/robots/parts';
-import { actionCost, bagStacks, batteryFor, carryEnergyFor, periodFor, repairCost, scaledCost, wakeCostFor } from '../src/robots/stats';
+import {
+  ZERO_ROBOT_STATS,
+  actionCost,
+  addRobotStats,
+  bagStacks,
+  batteryFor,
+  carryEnergyFor,
+  isWeekStart,
+  periodFor,
+  repairCost,
+  scaledCost,
+  wakeCostFor,
+} from '../src/robots/stats';
+import { requireRobot } from '../src/robots/world';
+import { actions } from '../src/state/actions';
+import { gameReducer } from '../src/state/reducer';
+import { BASE, TARGET, atDay, matureCrop, robotOf, soilTile, stack, withRobots, withTile, withZones } from './testUtils';
 
 const body = (size: RobotSize, parts: readonly RobotPartId[] = []) => ({ size, parts });
 
@@ -93,5 +121,86 @@ describe('robot stats for the language (part 2)', () => {
     });
     expect(ROBOTS.everyChoices).toEqual([5, 10, 15, 30, 60]);
     expect(ROBOTS.everyChoices).toBe(EVERY_CHOICES);
+  });
+});
+
+describe('robot stats today and this week (part 3)', () => {
+  const tick = (state: GameState, minutes: number): GameState => gameReducer(state, actions.tick(minutes));
+  const sleep = (state: GameState): GameState => gameReducer(state, actions.sleep());
+  const script = (...steps: RobotAction[]): Robot['program'] => ({ kind: 'script', steps, loop: true });
+  /** The same counts today and this week, as on a robot's first day. */
+  const both = (tokens: number, acts: number, crops: number): RobotStats => ({ today: { tokens, actions: acts, crops }, week: { tokens, actions: acts, crops } });
+  const statsOf = (state: GameState, id = 1): RobotStats => requireRobot(state, id).stats;
+  const BUSY: RobotStats = { today: { tokens: 12, actions: 4, crops: 1 }, week: { tokens: 50, actions: 20, crops: 6 } };
+  const ripe = withTile(BASE, TARGET, soilTile(TileState.Watered, matureCrop('parsnip')), 'farm');
+
+  it('starts at zero and adds to today and this week together', () => {
+    expect(ZERO_ROBOT_STATS).toEqual({ today: { tokens: 0, actions: 0, crops: 0 }, week: { tokens: 0, actions: 0, crops: 0 } });
+    expect(addRobotStats(BUSY, { tokens: 3, actions: 1, crops: 1 })).toEqual({
+      today: { tokens: 15, actions: 5, crops: 2 },
+      week: { tokens: 53, actions: 21, crops: 7 },
+    });
+    expect(addRobotStats(BUSY, { tokens: 1 })).toEqual({ today: { tokens: 13, actions: 4, crops: 1 }, week: { tokens: 51, actions: 20, crops: 6 } });
+  });
+
+  it('keeps the same stats object when there is nothing to add', () => {
+    expect(addRobotStats(BUSY, {})).toBe(BUSY);
+    expect(addRobotStats(BUSY, { tokens: 0, actions: 0, crops: 0 })).toBe(BUSY);
+  });
+
+  it('starts a week on days 1, 8, 15 and 22 of the season', () => {
+    expect(ROBOTS.weekLength).toBe(7);
+    expect([1, 8, 15, 22].map(isWeekStart)).toEqual([true, true, true, true]);
+    expect([2, 7, 9, 21, 28].map(isWeekStart)).toEqual([false, false, false, false, false]);
+  });
+
+  it('counts a harvest: its tokens, one action and one crop', () => {
+    const next = tick(withRobots(ripe, [robotOf({ program: script({ kind: 'harvest' }) })]), 4);
+    expect(statsOf(next)).toEqual(both(3, 1, 1));
+  });
+
+  it('counts a planting as a crop', () => {
+    const plowed = withTile(BASE, TARGET, soilTile(TileState.Plowed), 'farm');
+    const planter = robotOf({ parts: ['seeder'], bag: [stack('parsnip_seeds', 2)], program: script({ kind: 'plant', cropId: 'parsnip' }) });
+    expect(statsOf(tick(withRobots(plowed, [planter]), 4))).toEqual(both(3, 1, 1));
+  });
+
+  it('counts a blocked action and a bicker as actions, with their tokens and no crop', () => {
+    const blocked = tick(withRobots(BASE, [robotOf({ program: script({ kind: 'harvest' }) })]), 4);
+    expect(statsOf(blocked)).toEqual(both(3, 1, 0));
+    const harvest = script({ kind: 'harvest' });
+    const bickered = tick(withRobots(ripe, [robotOf({ id: 1, program: harvest }), robotOf({ id: 2, name: 'Bolt', program: harvest })]), 4);
+    expect([statsOf(bickered, 1), statsOf(bickered, 2)]).toEqual([both(3, 1, 0), both(3, 1, 0)]);
+  });
+
+  it("counts a wake's tokens but not as an action", () => {
+    const every = b.program({ stacks: [b.when(b.every(15), b.turn('right'))] });
+    const idle = robotOf({ power: 'standby', program: every, exec: freshExec(every) });
+    // Woken at 6:16 for 1 token, then a turn for 1 token: one action.
+    expect(statsOf(tick(withRobots(BASE, [idle]), 16))).toEqual(both(2, 1, 0));
+  });
+
+  it('adds nothing for a skipped action', () => {
+    const mover = b.program({ stacks: [b.when(b.morning(), b.forever(b.move()))] });
+    const robot = robotOf({ tz: 12, program: mover, exec: morningExec(mover), md: [{ kind: 'dontLeave', zone: 'A' }] });
+    const next = tick(withZones(withRobots(BASE, [robot]), { A: { x0: 3, z0: 9, w: 5, d: 4 } }), 4);
+    expect(next.robots.log.entries.map((e) => e.event.kind)).toEqual(['skipped']);
+    expect(statsOf(next)).toBe(ZERO_ROBOT_STATS);
+  });
+
+  it('starts today again each morning and keeps the week', () => {
+    const next = sleep(withRobots(BASE, [robotOf({ stats: BUSY })]));
+    expect(statsOf(next)).toEqual({ today: { tokens: 0, actions: 0, crops: 0 }, week: BUSY.week });
+  });
+
+  it('starts the week again on the morning of day 8, and on the first day of a season', () => {
+    expect(statsOf(sleep(withRobots(atDay(BASE, 6), [robotOf({ stats: BUSY })])))).toEqual(ZERO_ROBOT_STATS);
+    expect(statsOf(sleep(withRobots(atDay(BASE, 27), [robotOf({ stats: BUSY })])))).toEqual(ZERO_ROBOT_STATS);
+  });
+
+  it('keeps the stats object of a robot the morning has nothing to reset for', () => {
+    const resting: RobotStats = { today: ZERO_ROBOT_STATS.today, week: BUSY.week };
+    expect(statsOf(sleep(withRobots(BASE, [robotOf({ stats: resting })])))).toBe(resting);
+    expect(statsOf(sleep(withRobots(atDay(BASE, 6), [robotOf()])))).toBe(ZERO_ROBOT_STATS);
   });
 });

@@ -68,9 +68,12 @@ describe('robots overnight', () => {
   });
 
   it('leaves robots where they finished, restarts their scripts and resets the day counters', () => {
-    const robot = robotOf({ tx: 12, tz: 14, facing: Direction.East, pc: 0, tokensToday: 40, power: 'standby', program: { kind: 'script', steps: [{ kind: 'turn', side: 'left' }, { kind: 'move' }], loop: false } });
+    const week = { tokens: 90, actions: 30, crops: 4 };
+    const stats = { today: { tokens: 40, actions: 12, crops: 2 }, week };
+    const robot = robotOf({ tx: 12, tz: 14, facing: Direction.East, pc: 0, stats, power: 'standby', program: { kind: 'script', steps: [{ kind: 'turn', side: 'left' }, { kind: 'move' }], loop: false } });
     const next = sleep(withRobots(BASE, [{ ...robot, pc: 1 }]));
-    expect(requireRobot(next, 1)).toMatchObject({ tx: 12, tz: 14, facing: Direction.East, pc: 0, tokensToday: 0, power: 'working', nextActMinute: TIME.dayStartMinute + 4 });
+    expect(requireRobot(next, 1)).toMatchObject({ tx: 12, tz: 14, facing: Direction.East, pc: 0, power: 'working', nextActMinute: TIME.dayStartMinute + 4 });
+    expect(requireRobot(next, 1).stats).toEqual({ today: { tokens: 0, actions: 0, crops: 0 }, week });
     const flat = sleep(withRobots(BASE, [robotOf({ tokens: 0, power: 'flat' })]));
     expect(requireRobot(flat, 1).power).toBe('flat');
     const quick = sleep(withRobots(BASE, [robotOf({ parts: ['quickCore'] })]));

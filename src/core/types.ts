@@ -552,6 +552,23 @@ export interface RobotActionEvent {
   readonly bickered: boolean;
 }
 
+/** One period's robot counters (farmclaws part 3 spec §6.1). */
+export interface RobotStatCounts {
+  /** Tokens paid: actions, bickers, bumps and wakes. */
+  readonly tokens: number;
+  /** Resolved actions, blocked and bickered ones included; skips and wakes aren't actions. */
+  readonly actions: number;
+  /** Successful harvests plus plantings. */
+  readonly crops: number;
+}
+
+export interface RobotStats {
+  /** Since this morning. */
+  readonly today: RobotStatCounts;
+  /** Since the morning of this week's first day (day 1, 8, 15 or 22 of the season); never below today's. */
+  readonly week: RobotStatCounts;
+}
+
 export interface Robot {
   readonly id: number;
   readonly name: string;
@@ -584,8 +601,8 @@ export interface Robot {
   readonly nextActMinute: number;
   /** Absolute day it comes back from repair; null unless power is 'repairing'. */
   readonly repairReadyDay: number | null;
-  /** Tokens spent today; reset each morning. */
-  readonly tokensToday: number;
+  /** What it did today and this week (farmclaws part 3 spec §6.1). */
+  readonly stats: RobotStats;
   /** Render counters, like PlayerState's. */
   readonly moveSeq: number;
   readonly teleportSeq: number;

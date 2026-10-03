@@ -363,9 +363,19 @@ function migrateV4toV5(save: Obj): Obj {
   return { ...save, version: 5, robots: { ...robots, list, zones: createDefaultSections().robots.zones } };
 }
 
-/** Version 5 predates the robot screen (farmclaws part 3 spec §9.1). */
+/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted. */
+function migrateRobotV5(robot: unknown): unknown {
+  if (!isObj(robot)) return robot;
+  const { tokensToday, ...rest } = robot;
+  return { ...rest, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } } };
+}
+
+/** Version 5 predates the robot screen (farmclaws part 3 spec §9.1): robots gain stats in place of tokensToday. */
 function migrateV5toV6(save: Obj): Obj {
-  return { ...save, version: 6 };
+  const robots = save.robots;
+  if (!isObj(robots) || !Array.isArray(robots.list)) return save;
+  const list = (robots.list as readonly unknown[]).map(migrateRobotV5);
+  return { ...save, version: 6, robots: { ...robots, list } };
 }
 
 /**

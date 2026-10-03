@@ -12,7 +12,8 @@ function sameEvent(a: RobotLogEvent, b: RobotLogEvent): boolean {
 
 /**
  * Appends an event for `robotId` at the current day, minute and the robot's tile. If the most
- * recent entry of that robot has an equal event, its count goes up instead.
+ * recent entry of that robot is from today and has an equal event, its count goes up instead
+ * (farmclaws part 3 spec §6.2).
  */
 export function logRobotEvent(state: GameState, robotId: number, event: RobotLogEvent): GameState {
   const robot = requireRobot(state, robotId);
@@ -20,7 +21,7 @@ export function logRobotEvent(state: GameState, robotId: number, event: RobotLog
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry === undefined || entry.robotId !== robotId) continue;
-    if (!sameEvent(entry.event, event)) break;
+    if (entry.day !== state.time.absoluteDay || !sameEvent(entry.event, event)) break;
     const next = entries.slice();
     next[i] = { ...entry, count: entry.count + 1 };
     return { ...state, robots: { ...state.robots, log: { nextId, entries: next } } };

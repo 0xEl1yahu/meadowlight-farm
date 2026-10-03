@@ -20,6 +20,7 @@ import {
   type RobotDidDetail,
   type RobotExec,
   type RobotLogEvent,
+  type RobotStatCounts,
   type TileCoord,
 } from '../core/types';
 import { CROPS, createCropInstance, isInSeason, isMature, seedItemId } from '../farming/crops';
@@ -33,7 +34,7 @@ import { getTile, isSoil, isWalkable, requireTile, setTile } from '../world/tile
 import { addToBag, addToSlots, bagCount, bagRoom, removeFromBag, slotsRoom, takeIntoBag } from './bag';
 import { logRobotEvent } from './log';
 import { canDo } from './parts';
-import { actionCost, bagStacks, periodFor } from './stats';
+import { actionCost, addRobotStats, bagStacks, periodFor } from './stats';
 import type { Turn } from './turn';
 import { chestSlots, containerOf, requireRobot, withFarm, withRobot } from './world';
 
@@ -162,11 +163,20 @@ function settle(state: GameState, robotId: number, action: RobotAction, success:
   return finished ? logRobotEvent(next, robotId, { kind: 'finished' }) : next;
 }
 
-function pay(state: GameState, robotId: number, cost: number): { readonly state: GameState; readonly robot: Robot } {
+/**
+ * Takes `cost` tokens from the robot and counts them in its stats, with `counts` (part 3 spec
+ * §6.1). Paying nothing and counting nothing leaves the state unchanged.
+ */
+function pay(state: GameState, robotId: number, cost: number, counts: Partial<RobotStatCounts> = {}): { readonly state: GameState; readonly robot: Robot } {
   const before = requireRobot(state, robotId);
   invariant(before.tokens >= cost, `robot ${robotId} can't afford ${cost} tokens`);
-  const robot = { ...before, tokens: before.tokens - cost, tokensToday: before.tokensToday + cost };
+  const robot = { ...before, tokens: before.tokens - cost, stats: addRobotStats(before.stats, { ...counts, tokens: cost }) };
   return { state: withRobot(state, robot), robot };
+}
+
+/** What a resolved action counts besides its tokens: the action, and a crop for a harvest or planting that worked. */
+function actionCounts(action: RobotAction, success: boolean): Partial<RobotStatCounts> {
+  return { actions: 1, crops: success && (action.kind === 'harvest' || action.kind === 'plant') ? 1 : 0 };
 }
 
 /**
@@ -174,7 +184,7 @@ function pay(state: GameState, robotId: number, cost: number): { readonly state:
  * program passes the exec its turn committed.
  */
 export function applyRobotPlan(state: GameState, robotId: number, plan: RobotPlan, exec: RobotExec | null = null): GameState {
-  const paid = pay(state, robotId, plan.cost);
+  const paid = pay(state, robotId, plan.cost, actionCounts(plan.action, plan.ok));
   if (!plan.ok) {
     const logged = logRobotEvent(paid.state, robotId, { kind: 'blocked', action: plan.action.kind, reason: plan.reason });
     return settle(logged, robotId, plan.action, false, false, exec);
@@ -185,7 +195,7 @@ export function applyRobotPlan(state: GameState, robotId: number, plan: RobotPla
 
 /** A bicker: the robot pays, the world doesn't change, and the clash is logged with the other robots' ids. */
 export function applyBickerPlan(state: GameState, robotId: number, plan: RobotPlan, withIds: readonly number[], exec: RobotExec | null = null): GameState {
-  const paid = pay(state, robotId, plan.cost);
+  const paid = pay(state, robotId, plan.cost, actionCounts(plan.action, false));
   const logged = logRobotEvent(paid.state, robotId, { kind: 'bickered', action: plan.action.kind, withIds });
   return settle(logged, robotId, plan.action, false, true, exec);
 }

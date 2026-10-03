@@ -59,7 +59,8 @@ describe('robots in the tick', () => {
     expect(next.maps.farm).toBe(state.maps.farm);
     for (const id of [1, 2]) {
       const robot = requireRobot(next, id);
-      expect(robot).toMatchObject({ pc: 1, actionSeq: 1, tokens: 77, tokensToday: 3, bag: [], nextActMinute: TIME.dayStartMinute + 8 });
+      expect(robot).toMatchObject({ pc: 1, actionSeq: 1, tokens: 77, bag: [], nextActMinute: TIME.dayStartMinute + 8 });
+      expect(robot.stats.today).toEqual({ tokens: 3, actions: 1, crops: 0 });
       expect(robot.lastAction).toEqual({ seq: 1, kind: 'harvest', success: false, bickered: true });
     }
   });

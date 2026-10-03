@@ -26,6 +26,7 @@ import {
   type RobotExec,
   type RobotPartId,
   type RobotProgram,
+  type RobotStatCounts,
   type TileCoord,
   type Trigger,
   type ValueType,
@@ -45,7 +46,7 @@ const MAX = Number.MAX_SAFE_INTEGER;
 
 const ROBOT_KEYS = [
   'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'program', 'pc',
-  'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'tokensToday', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
+  'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
 ] as const;
 
 /** Wood burners work the farm's robots, so a burner on another map means a corrupt save. */
@@ -587,6 +588,19 @@ function isValidLastAction(v: unknown, actionSeq: number): boolean {
   );
 }
 
+function isValidStatCounts(v: unknown): v is RobotStatCounts {
+  return isObj(v) && hasExactKeys(v, ['tokens', 'actions', 'crops']) && isCount(v.tokens) && isCount(v.actions) && isCount(v.crops);
+}
+
+/** Today's and this week's counters: non-negative integers, today's never above the week's (part 3 spec §9.2). */
+function isValidRobotStats(v: unknown): boolean {
+  if (!isObj(v) || !hasExactKeys(v, ['today', 'week'])) return false;
+  const today: unknown = v.today;
+  const week: unknown = v.week;
+  if (!isValidStatCounts(today) || !isValidStatCounts(week)) return false;
+  return today.tokens <= week.tokens && today.actions <= week.actions && today.crops <= week.crops;
+}
+
 function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!isObj(v) || !hasExactKeys(v, ROBOT_KEYS)) return false;
   if (!isIntIn(v.id, 1, MAX) || !isValidName(v.name) || !isOneOf(v.size, ROBOT_SIZES)) return false;
@@ -595,7 +609,7 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!isInt(v.tx) || !isInt(v.tz) || !inBounds(farm.grid, v.tx, v.tz) || !isIntIn(v.facing, 0, 3)) return false;
   if (!Array.isArray(v.bag) || v.bag.length > bagStacks({ size: v.size, parts }) || !v.bag.every((s: unknown) => isValidStack(s, true))) return false;
   if (!isIntIn(v.tank, 0, ROBOTS.tankCapacity) || (v.tank > 0 && !parts.includes('wateringHead'))) return false;
-  if (!isIntIn(v.tokens, 0, batteryFor(v.size)) || !isCount(v.tokensToday)) return false;
+  if (!isIntIn(v.tokens, 0, batteryFor(v.size)) || !isValidRobotStats(v.stats)) return false;
   if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried)) return false;
   if (!isValidMind(v, { size: v.size, parts })) return false;
   if (!(v.off === null || v.off === 'dizzy' || v.off === 'done')) return false;

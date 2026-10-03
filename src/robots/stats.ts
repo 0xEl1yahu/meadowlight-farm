@@ -2,7 +2,7 @@
  * Numbers derived from a robot's size and parts (farmclaws part 1 spec §3.3). Pure.
  */
 import { ROBOTS } from '../config';
-import type { Robot, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
+import type { Robot, RobotActionKind, RobotPartId, RobotPower, RobotSize, RobotStatCounts, RobotStats } from '../core/types';
 
 export type RobotBody = Pick<Robot, 'size' | 'parts'>;
 
@@ -65,4 +65,24 @@ export function actionCost(robot: RobotBody, kind: RobotActionKind): number {
 /** Tokens a trigger costs to wake the robot from standby (farmclaws part 2 §7). */
 export function wakeCostFor(robot: RobotBody): number {
   return scaledCost(robot, ROBOTS.wakeCost);
+}
+
+const ZERO_COUNTS: RobotStatCounts = { tokens: 0, actions: 0, crops: 0 };
+
+/** A robot's stats before it has done anything (farmclaws part 3 spec §6.1). */
+export const ZERO_ROBOT_STATS: RobotStats = { today: ZERO_COUNTS, week: ZERO_COUNTS };
+
+function addCounts(counts: RobotStatCounts, add: Partial<RobotStatCounts>): RobotStatCounts {
+  return { tokens: counts.tokens + (add.tokens ?? 0), actions: counts.actions + (add.actions ?? 0), crops: counts.crops + (add.crops ?? 0) };
+}
+
+/** `stats` with `add` counted today and this week; `stats` itself when every addend is 0 or missing. */
+export function addRobotStats(stats: RobotStats, add: Partial<RobotStatCounts>): RobotStats {
+  if ((add.tokens ?? 0) === 0 && (add.actions ?? 0) === 0 && (add.crops ?? 0) === 0) return stats;
+  return { today: addCounts(stats.today, add), week: addCounts(stats.week, add) };
+}
+
+/** Whether a day of the season starts a stats week: days 1, 8, 15 and 22. */
+export function isWeekStart(dayOfSeason: number): boolean {
+  return (dayOfSeason - 1) % ROBOTS.weekLength === 0;
 }
