@@ -111,6 +111,13 @@ describe('values', () => {
     expect([clampNumber(5), clampNumber(1_000_000), clampNumber(-1_000_000)]).toEqual([5, ROBOTS.maxNumber, -ROBOTS.maxNumber]);
   });
 
+  it('never produces negative zero', () => {
+    const result = ev(b.mul(b.n(0), b.n(-3)));
+    expect(result).toEqual(num(0));
+    expect(Object.is((result as { value: number }).value, 0)).toBe(true);
+    expect(Object.is(clampNumber(-0), 0)).toBe(true);
+  });
+
   it('compares numbers by order and every type by equality', () => {
     expect([ev(b.lt(b.n(1), b.n(2))), ev(b.lt(b.n(2), b.n(2))), ev(b.gt(b.n(3), b.n(2))), ev(b.gt(b.n(2), b.n(3)))]).toEqual([
       yes(true),

@@ -37,9 +37,9 @@ export interface EvalContext {
   readonly vars: readonly Value[];
 }
 
-/** Clamps a number to ±ROBOTS.maxNumber. */
+/** Clamps a number to ±ROBOTS.maxNumber. Never returns -0 (it would not survive a JSON round-trip). */
 export function clampNumber(n: number): number {
-  return Math.max(-ROBOTS.maxNumber, Math.min(ROBOTS.maxNumber, n));
+  return Math.max(-ROBOTS.maxNumber, Math.min(ROBOTS.maxNumber, n)) + 0;
 }
 
 function numberOf(expr: Expr, ctx: EvalContext): number {
