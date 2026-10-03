@@ -9,7 +9,7 @@
  * BASE is deep-frozen: any reducer that mutates state instead of copying it throws a
  * TypeError the moment a test touches it.
  */
-import { INVENTORY, TIME } from '../src/config';
+import { INVENTORY, TIME, UNLOCKS } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import {
   Blocker,
@@ -323,6 +323,10 @@ export function v5Save(state: GameState): SaveJson {
     robot.tokensToday = today.tokens;
     delete robot.stats;
   }
+  // Unlocks: a v5 save has none; the migration gives it job 1's.
+  const robots = save.robots as SaveJson;
+  if (!deepEqual(robots.unlocks, UNLOCKS.job1)) throw new Error("v5Save: a version-5 save starts from job 1's unlocks");
+  delete robots.unlocks;
   return save;
 }
 

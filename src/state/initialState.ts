@@ -1,4 +1,4 @@
-import { INVENTORY, PLAYER, TOOLS, WORLD } from '../config';
+import { INVENTORY, PLAYER, TOOLS, UNLOCKS, WORLD } from '../config';
 import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type NpcId, type NpcRelation } from '../core/types';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
@@ -44,6 +44,7 @@ export function createDefaultSections(): GameSections {
       log: { nextId: 0, entries: [] },
       lastNightFuel: { wood: 0, tokens: 0 },
       zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
+      unlocks: UNLOCKS.job1,
     },
   };
 }

@@ -2,7 +2,7 @@
  * Save / load. GameState is plain JSON-compatible data, so persistence is serialisation plus a
  * strict structural validator — a corrupted or outdated save is rejected, never half-loaded.
  */
-import { INVENTORY, TIME } from '../config';
+import { INVENTORY, TIME, UNLOCKS } from '../config';
 import {
   Blocker,
   MAP_IDS,
@@ -370,12 +370,15 @@ function migrateRobotV5(robot: unknown): unknown {
   return { ...rest, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } } };
 }
 
-/** Version 5 predates the robot screen (farmclaws part 3 spec §9.1): robots gain stats in place of tokensToday. */
+/**
+ * Version 5 predates the robot screen (farmclaws part 3 spec §9.1): robots gain stats in place of
+ * tokensToday, and the robots section gains job 1's unlocks.
+ */
 function migrateV5toV6(save: Obj): Obj {
   const robots = save.robots;
   if (!isObj(robots) || !Array.isArray(robots.list)) return save;
   const list = (robots.list as readonly unknown[]).map(migrateRobotV5);
-  return { ...save, version: 6, robots: { ...robots, list } };
+  return { ...save, version: 6, robots: { ...robots, list, unlocks: UNLOCKS.job1 } };
 }
 
 /**

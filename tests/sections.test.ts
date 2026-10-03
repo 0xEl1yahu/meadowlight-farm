@@ -3,7 +3,7 @@
  * their defaults, the hash salts, and how saves carry the sections (validation and migration).
  */
 import { describe, expect, it } from 'vitest';
-import { APPEARANCE, INVENTORY, LAYOUT, PROFILE, TOOLS } from '../src/config';
+import { APPEARANCE, INVENTORY, LAYOUT, PROFILE, TOOLS, UNLOCKS } from '../src/config';
 import { Salt, hash32 } from '../src/core/hash';
 import {
   Blocker,
@@ -170,6 +170,7 @@ describe('createDefaultSections', () => {
       log: { nextId: 0, entries: [] },
       lastNightFuel: { wood: 0, tokens: 0 },
       zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
+      unlocks: UNLOCKS.job1,
     },
   };
 

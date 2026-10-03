@@ -10,6 +10,8 @@
  *   code erasable (no TypeScript runtime enums) and JSON-serialisable.
  */
 
+import type { BlockKind } from '../robots/blockKinds';
+
 export const SAVE_VERSION = 6 as const;
 
 // ---------------------------------------------------------------------------
@@ -698,6 +700,8 @@ export interface RobotsState {
   readonly lastNightFuel: { readonly wood: number; readonly tokens: number };
   /** Named farm rectangles for programs and .MDs; null is an empty zone. */
   readonly zones: Readonly<Record<ZoneId, ZoneRect | null>>;
+  /** What the robot screen offers (farmclaws part 3 spec §7). Gates the editor only, never the simulation. */
+  readonly unlocks: RobotUnlocks;
 }
 
 // ---------------------------------------------------------------------------
@@ -891,6 +895,27 @@ export type MdCard =
       readonly kind: 'doPowerDown';
       readonly when: { readonly kind: 'bagFull' } | { readonly kind: 'tokensBelow'; readonly n: number } | { readonly kind: 'raining' };
     };
+
+/** Every .MD card kind, in the order unlocks list them. */
+export const MD_CARD_KINDS = [
+  'dontLeave',
+  'dontGoIntoWater',
+  'dontHarvest',
+  'dontDeposit',
+  'doReturn',
+  'doPowerDown',
+] as const satisfies readonly MdCard['kind'][];
+
+/** The robot screen's tabs, in screen order. */
+export const ROBOT_TABS = ['program', 'md', 'looks', 'stats', 'log'] as const;
+export type RobotTab = (typeof ROBOT_TABS)[number];
+
+/** The unlocked blocks, cards and tabs (part 3 spec §7), each in canonical order without repeats. */
+export interface RobotUnlocks {
+  readonly blocks: readonly BlockKind[];
+  readonly cards: readonly MdCard['kind'][];
+  readonly tabs: readonly RobotTab[];
+}
 
 // ---------------------------------------------------------------------------
 // Sections for later workstreams (data only in Phase 0)

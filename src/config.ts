@@ -2,7 +2,16 @@
  * Global tuning constants. Everything that shapes the simulation lives here so gameplay
  * can be rebalanced without touching system code.
  */
-import { Direction, EVERY_CHOICES, type ItemStack, type RobotActionKind, type RobotSize, type TileCoord, type TileRect } from './core/types';
+import {
+  Direction,
+  EVERY_CHOICES,
+  type ItemStack,
+  type RobotActionKind,
+  type RobotSize,
+  type RobotUnlocks,
+  type TileCoord,
+  type TileRect,
+} from './core/types';
 
 /** Settings shared by every map. Each map's size lives in its definition (src/world/maps/). */
 export const WORLD = {
@@ -301,6 +310,40 @@ export const ROBOTS = {
   /** Days in a robot stats week; weeks start on day 1 of the season (part 3 §6.1). */
   weekLength: 7,
 } as const;
+
+/** What the robot screen offers (farmclaws part 3 spec §7). Part 4's jobs add to it through withUnlocks. */
+export const UNLOCKS = {
+  /** Job 1's set: the start for new farms and migrated saves. `tokensLeft` and `compare` give Repeat until a condition. */
+  job1: {
+    blocks: [
+      'morning',
+      'atTime',
+      'repeatTimes',
+      'repeatUntil',
+      'repeatForever',
+      'move',
+      'turn',
+      'goTo',
+      'water',
+      'refill',
+      'powerDown',
+      'wait',
+      'say',
+      'num',
+      'text',
+      'yes',
+      'item',
+      'tile',
+      'myTile',
+      'tileAhead',
+      'tokensLeft',
+      'compare',
+    ],
+    cards: ['dontLeave', 'dontGoIntoWater'],
+    tabs: ['program', 'md', 'looks', 'log'],
+  },
+} as const satisfies { readonly job1: RobotUnlocks };
+
 
 export const GENERATORS = {
   woodBurner: { hopper: 10, tokensPerWood: 6 },

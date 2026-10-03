@@ -8,12 +8,14 @@ import {
   CROP_IDS,
   EVERY_CHOICES,
   MAP_IDS,
+  MD_CARD_KINDS,
   QUALITIES,
   ROBOT_BLOCK_REASONS,
   ROBOT_LOG_EVENT_KINDS,
   ROBOT_PART_IDS,
   ROBOT_POWERS,
   ROBOT_SIZES,
+  ROBOT_TABS,
   VALUE_TYPES,
   ZONE_IDS,
   type BlockProgram,
@@ -33,6 +35,7 @@ import {
   type WorldState,
 } from '../core/types';
 import { isItemId } from '../items/items';
+import { BLOCK_KINDS } from '../robots/blockKinds';
 import { checkMd, checkProgram, isValidZoneRect } from '../robots/check';
 import { ROBOT_ACTION_KINDS } from '../robots/parts';
 import { farmContains, resolveList } from '../robots/program';
@@ -468,6 +471,17 @@ function isValidZones(v: unknown): boolean {
   });
 }
 
+/** The unlocks (part 3 spec §9.2): exactly blocks, cards and tabs, each a canonical list of known kinds. */
+function isValidUnlocks(v: unknown): boolean {
+  return (
+    isObj(v) &&
+    hasExactKeys(v, ['blocks', 'cards', 'tabs']) &&
+    isCanonicalSubset(v.blocks, BLOCK_KINDS) &&
+    isCanonicalSubset(v.cards, MD_CARD_KINDS) &&
+    isCanonicalSubset(v.tabs, ROBOT_TABS)
+  );
+}
+
 function isValidDetail(v: unknown): boolean {
   if (!isObj(v)) return false;
   switch (v.kind) {
@@ -632,8 +646,8 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
  * the farm; the pool, last night's fuel, the log and the zones valid.
  */
 export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player: unknown): boolean {
-  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones']) || !isObj(player)) return false;
-  if (!isValidZones(v.zones)) return false;
+  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks']) || !isObj(player)) return false;
+  if (!isValidZones(v.zones) || !isValidUnlocks(v.unlocks)) return false;
   if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || v.list.length > ROBOTS.maxRobots) return false;
   let previous = 0;
   let carried = 0;

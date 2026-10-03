@@ -4,9 +4,11 @@
  * adds its cases here.
  */
 import { describe, expect, it } from 'vitest';
+import { UNLOCKS } from '../src/config';
 import { SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
+import { ALL_UNLOCKS, withUnlocks } from '../src/robots/unlocks';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import saveV2Text from './fixtures/save-v2.json?raw';
 import { BASE, must, robotOf, v5Save, withRobots, withZones, type SaveJson } from './testUtils';
@@ -107,5 +109,23 @@ describe('robot stats in save version 6', () => {
 
   it.each(rejections)('rejects %s', (_label, edit) => {
     expect(corrupt(counted(), edit)).toBeNull();
+  });
+});
+
+describe('unlocks in save version 6', () => {
+  it("gives a v5 save job 1's unlocks", () => {
+    const save = v5Save(BASE);
+    expect(robotsOf(save)).not.toHaveProperty('unlocks');
+    expect(robotsOf(migrateSave(save) as SaveJson).unlocks).toEqual(UNLOCKS.job1);
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
+  });
+
+  it('round-trips every unlock', () => {
+    const state = withUnlocks(BASE, ALL_UNLOCKS);
+    expect(deserializeGame(serializeGame(state))).toEqual(loadedFrom(state));
+  });
+
+  it('cannot write unlocks beyond job 1 to a v5 save', () => {
+    expect(() => v5Save(withUnlocks(BASE, { tabs: ['stats'] }))).toThrow('v5Save');
   });
 });

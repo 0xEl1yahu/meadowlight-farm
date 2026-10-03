@@ -20,6 +20,7 @@ import { b } from '../robots/blocks';
 import { addRobot, type RobotSpec } from '../robots/create';
 import { MD_SHAPE, PROGRAM_SHAPE, ZONE_SHAPE, programmedRobot, withMd, withZone } from '../robots/edits';
 import { robotSays, whatHappened } from '../robots/logText';
+import { ALL_UNLOCKS, withUnlocks } from '../robots/unlocks';
 import { withRobot } from '../robots/world';
 import { actions, type GameAction } from '../state/actions';
 import { selectTargetTile } from '../state/selectors';
@@ -120,6 +121,7 @@ type RobotDevHandle = {
   readonly setMd: (name: string, cards: readonly MdCard[]) => string;
   readonly setZone: (id: ZoneId, rect: ZoneRect | null) => string;
   readonly blocks: typeof b;
+  readonly unlockAll: () => string;
 };
 
 export function installRobotDev(store: Store<GameState, GameAction>): void {
@@ -180,6 +182,12 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
     console.table(rows);
   };
 
-  const hooks: RobotDevHandle = { addRobot: add, addScriptedRobot: addScripted, robotLog: log, setProgram, setMd, setZone, blocks: b };
+  /** Unlocks every block, card and tab (part 3 spec §7), for trying the whole editor before part 4's jobs. */
+  const unlockAll = (): string => {
+    store.dispatch(actions.load(withUnlocks(store.getState(), ALL_UNLOCKS)));
+    return 'Unlocked every block, card and tab.';
+  };
+
+  const hooks: RobotDevHandle = { addRobot: add, addScriptedRobot: addScripted, robotLog: log, setProgram, setMd, setZone, blocks: b, unlockAll };
   Object.assign(handle, hooks);
 }
