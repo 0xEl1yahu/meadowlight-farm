@@ -222,6 +222,38 @@ describe('decideTurn: DO return', () => {
     });
   });
 
+  it('carries out the due card with the earliest minute, whatever the .MD order', () => {
+    const late = returnTo(9, 10, 1080);
+    const early = returnTo(5, 13, 1020);
+    const at1080 = at(BASE, 1080);
+    expect(dueReturnCard(at1080, running(SPIN, { md: [late, early] }))).toEqual({ card: early, index: 1 });
+    // Mid-return, the card walked is the early one: arriving records it, not the later card.
+    const home = returning([], { tz: 13, md: [late, early] });
+    expect(decideTurn(at1080, home)).toEqual({
+      kind: 'shutDown',
+      exec: { ...freshExec(SPIN), doneCards: [1] },
+      event: { kind: 'doReturn', card: early, phase: 'arrived' },
+      events: [],
+    });
+    // Afterwards the later card is the next one due.
+    const after = running(SPIN, { md: [late, early], exec: { ...execOf(running(SPIN)), doneCards: [1] } });
+    expect(dueReturnCard(at1080, after)).toEqual({ card: late, index: 0 });
+  });
+
+  it('fails a mid-return on the card being walked, with its conflict', () => {
+    const late = returnTo(9, 10, 1080);
+    const early = returnTo(5, 14, 1020);
+    const state = withZones(at(BASE, 1080), { A: ZONE_A });
+    const robot = returning([{ tx: 5, tz: 13 }, { tx: 5, tz: 14 }], { tz: 12, md: [late, early, LEAVE_A] });
+    const walking: RobotExec = { ...execOf(robot), frames: [{ kind: 'route', target: { tx: 5, tz: 14 }, path: [{ tx: 5, tz: 13 }, { tx: 5, tz: 14 }], why: 'doReturn' }] };
+    expect(decideTurn(state, { ...robot, exec: walking })).toEqual({
+      kind: 'shutDown',
+      exec: freshExec(SPIN),
+      event: { kind: 'doReturn', card: early, phase: 'failed' },
+      events: [{ kind: 'conflict', doCard: early, dontCard: LEAVE_A }],
+    });
+  });
+
   it('is carried out once a day: doneCards lets the program run', () => {
     const robot = running(SPIN, { md: [returnTo(5, 13)], exec: { ...execOf(running(SPIN)), doneCards: [0] } });
     expect(dueReturnCard(at(BASE, 1100), robot)).toBeNull();

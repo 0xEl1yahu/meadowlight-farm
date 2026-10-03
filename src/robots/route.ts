@@ -19,22 +19,28 @@ export function canEnter(state: GameState, robot: Robot, from: TileCoord, to: Ti
 }
 
 /** Breadth-first search from the robot's tile in DIRECTIONS order: each reached tile's parent (null for the start). */
-function search(state: GameState, robot: Robot): { readonly parent: Map<number, TileCoord | null>; readonly key: (c: TileCoord) => number } {
+function search(
+  state: GameState,
+  robot: Robot,
+): { readonly parent: Map<number, TileCoord | null>; readonly key: (c: TileCoord) => number; readonly order: readonly { readonly tile: TileCoord; readonly steps: number }[] } {
   const grid = state.maps.farm.grid;
   const key = (c: TileCoord): number => c.tz * grid.width + c.tx;
   const parent = new Map<number, TileCoord | null>([[key(robot), null]]);
   const queue: TileCoord[] = [{ tx: robot.tx, tz: robot.tz }];
+  const order: { readonly tile: TileCoord; readonly steps: number }[] = [{ tile: queue[0] as TileCoord, steps: 0 }];
   for (let head = 0; head < queue.length; head++) {
     const current = queue[head];
-    if (current === undefined) break;
+    const here = order[head];
+    if (current === undefined || here === undefined) break;
     for (const direction of DIRECTIONS) {
       const next = stepTile(current, direction);
       if (!inBounds(grid, next.tx, next.tz) || parent.has(key(next)) || !canEnter(state, robot, current, next)) continue;
       parent.set(key(next), current);
       queue.push(next);
+      order.push({ tile: next, steps: here.steps + 1 });
     }
   }
-  return { parent, key };
+  return { parent, key, order };
 }
 
 /**
@@ -75,4 +81,12 @@ export function nextRouteAction(robot: Pick<Robot, 'tx' | 'tz' | 'facing'>, next
   if (direction === robot.facing) return { kind: 'move' };
   const quarterTurnsRight = (direction - robot.facing + 4) % 4;
   return { kind: 'turn', side: quarterTurnsRight === 3 ? 'left' : 'right' };
+}
+
+/**
+ * Every tile a route from the robot's tile can reach, with its move count, in breadth-first
+ * discovery order (so `steps` never decreases). The robot's own tile comes first, at 0 steps.
+ */
+export function reachableInOrder(state: GameState, robot: Robot): readonly { readonly tile: TileCoord; readonly steps: number }[] {
+  return search(state, robot).order;
 }

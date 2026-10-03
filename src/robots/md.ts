@@ -4,13 +4,14 @@
  */
 import { ROBOTS } from '../config';
 import { invariant } from '../core/invariant';
-import { Blocker, DIRECTIONS, type Frame, type GameState, type ItemId, type MdCard, type Robot, type RobotAction, type RobotExec, type TileCoord } from '../core/types';
+import { Blocker, type Frame, type GameState, type ItemId, type MdCard, type Robot, type RobotAction, type RobotExec, type TileCoord } from '../core/types';
 import { CROPS } from '../farming/crops';
 import { getItem } from '../items/items';
 import { formatClock } from '../time/clock';
 import { weatherWaters } from '../time/weather';
-import { chebyshevDistance, stepTile } from '../world/grid';
-import { forEachTile, getTile, isWalkable } from '../world/tiles';
+import { chebyshevDistance } from '../world/grid';
+import { forEachTile, getTile } from '../world/tiles';
+import { reachableInOrder } from './route';
 import { bagStacks } from './stats';
 import { inZone, tileAheadOf, zoneOf } from './zones';
 
@@ -84,50 +85,20 @@ export function powerDownCard(state: GameState, robot: Robot): MdCard | null {
 }
 
 /**
- * The first DO return card whose minute has come and that wasn't carried out today, with its
- * index in the .MD (spec §6.1 step 2). Null while a return is already under way.
+ * The DO return card to carry out: among those whose minute has come and that weren't carried
+ * out today, the earliest minute, ties by .MD order, with its index in the .MD (spec §6.1 step 2). Null while a return is already under way.
  */
 export function dueReturnCard(state: GameState, robot: Robot): { readonly card: MdCard; readonly index: number } | null {
   const exec = robot.exec;
   if (exec === null || returnFrameOf(exec) !== null) return null;
+  let best: { readonly card: MdCard; readonly index: number; readonly minute: number } | null = null;
   for (let index = 0; index < robot.md.length; index++) {
     const card = robot.md[index];
     if (card === undefined || card.kind !== 'doReturn') continue;
-    if (card.minute <= state.time.minuteOfDay && !exec.doneCards.includes(index)) return { card, index };
+    if (card.minute > state.time.minuteOfDay || exec.doneCards.includes(index)) continue;
+    if (best === null || card.minute < best.minute) best = { card, index, minute: card.minute };
   }
-  return null;
-}
-
-/** A tile the robot can reach, and how many moves it takes. */
-interface Reached {
-  readonly tile: TileCoord;
-  readonly steps: number;
-}
-
-/**
- * Every tile the robot can reach under its DON'T cards, breadth-first in DIRECTIONS order from
- * the tile it stands on (0 steps), so `steps` never decreases along the list. The entry rule is
- * planRoute's: walkable, not water, and allowed by moveForbiddenBy.
- */
-function reachableTiles(state: GameState, robot: Robot): readonly Reached[] {
-  const farm = state.maps.farm;
-  const key = (c: TileCoord): number => c.tz * farm.grid.width + c.tx;
-  const start: TileCoord = { tx: robot.tx, tz: robot.tz };
-  const seen = new Set<number>([key(start)]);
-  const order: Reached[] = [{ tile: start, steps: 0 }];
-  for (let head = 0; head < order.length; head++) {
-    const current = order[head];
-    if (current === undefined) break;
-    for (const direction of DIRECTIONS) {
-      const next = stepTile(current.tile, direction);
-      const tile = getTile(farm, next.tx, next.tz);
-      if (tile === null || seen.has(key(next)) || !isWalkable(tile) || tile.blocker === Blocker.Water) continue;
-      if (moveForbiddenBy(robot, current.tile, next, state) !== null) continue;
-      seen.add(key(next));
-      order.push({ tile: next, steps: current.steps + 1 });
-    }
-  }
-  return order;
+  return best === null ? null : { card: best.card, index: best.index };
 }
 
 /** The farm's wood burners in tile order: by row (tz), then column (tx). */
@@ -149,8 +120,8 @@ export function returnTarget(state: GameState, robot: Robot, card: MdCard): Tile
   if (card.to.kind === 'tile') return { tx: card.to.tx, tz: card.to.tz };
   const burners = burnerTiles(state);
   if (burners.length === 0) return null;
-  const reached = reachableTiles(state, robot);
-  let best: Reached | null = null;
+  const reached = reachableInOrder(state, robot);
+  let best: { readonly tile: TileCoord; readonly steps: number } | null = null;
   for (const burner of burners) {
     const near = reached.find((r) => chebyshevDistance(r.tile, burner) <= ROBOTS.chargeRadius);
     if (near !== undefined && (best === null || near.steps < best.steps)) best = near;

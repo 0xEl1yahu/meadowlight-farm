@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { Blocker, Direction, TileState, type GameState, type MdCard, type TileCoord } from '../src/core/types';
 import { dontForbids, keptItems, moveForbiddenBy } from '../src/robots/md';
-import { nextRouteAction, planRoute, reachableFrom } from '../src/robots/route';
+import { nextRouteAction, planRoute, reachableFrom, reachableInOrder } from '../src/robots/route';
 import { blockedTile } from '../src/world/tiles';
 import { BASE, TARGET, matureCrop, robotOf, soilTile, stack, withTile, withZones } from './testUtils';
 
@@ -152,5 +152,18 @@ describe("what DON'T cards forbid", () => {
     const md: MdCard[] = [{ kind: 'dontDeposit', itemId: 'parsnip' }, LEAVE_A, { kind: 'dontDeposit', itemId: 'wood' }];
     expect([...keptItems(robotOf({ md }))]).toEqual(['parsnip', 'wood']);
     expect(keptItems(robotOf()).size).toBe(0);
+  });
+});
+
+describe('reachableInOrder', () => {
+  it('lists the robot tile first, then tiles by non-decreasing step count, matching reachableFrom', () => {
+    const state = waterAt(BASE, ...tiles([5, 11]));
+    const robot = robotOf({ tx: 5, tz: 10 });
+    const list = reachableInOrder(state, robot);
+    expect(list[0]).toEqual({ tile: { tx: 5, tz: 10 }, steps: 0 });
+    expect(list.every((r, i) => i === 0 || r.steps >= (list[i - 1]?.steps ?? 0))).toBe(true);
+    expect(list.find((r) => r.tile.tx === 5 && r.tile.tz === 11)).toBeUndefined();
+    expect(list.find((r) => r.tile.tx === 5 && r.tile.tz === 12)?.steps).toBe(4);
+    expect(new Set(list.map((r) => `${r.tile.tx},${r.tile.tz}`))).toEqual(reachableFrom(state, robot));
   });
 });
