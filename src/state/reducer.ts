@@ -44,7 +44,7 @@ import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { programmedRobot, withMd } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
-import { periodFor, putDownPower } from '../robots/stats';
+import { carryEnergyFor, periodFor, putDownPower } from '../robots/stats';
 import { findRobot, requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
@@ -114,6 +114,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return editRobot(state, action.robotId, (robot) => programmedRobot(robot, action.program, state.time.minuteOfDay), (name) => `Programmed ${name}.`);
     case 'robot/md':
       return editRobot(state, action.robotId, (robot) => withMd(robot, action.md), (name) => `Set ${name}'s .MD.`);
+    case 'robot/liftOff':
+      return liftOffBench(state, action.robotId);
+    case 'robot/switch':
+      return switchRobot(state, action.robotId, action.on);
     default: {
       const unknown: never = action;
       void unknown;
@@ -430,6 +434,18 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       return pushMessage(sent, `${robot.name} is off to be repaired. Back tomorrow.`, 'info');
     }
 
+    case 'benchRobot': {
+      const robot = requireRobot(state, intent.robotId);
+      const benched = withRobot(
+        { ...state, player: { ...state.player, carrying: null } },
+        { ...robot, carried: false, onBench: true, tx: target.tx, tz: target.tz, facing: state.player.facing, teleportSeq: robot.teleportSeq + 1 },
+      );
+      return { ...benched, ui: { ...benched.ui, panel: { kind: 'robot', robotId: robot.id, mode: 'bench' } } };
+    }
+
+    case 'openBench':
+      return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'bench' } } };
+
     case 'fuel': {
       const object = tile.object;
       invariant(object !== null && object.kind === 'woodBurner', 'fuel plan without a wood burner');
@@ -652,16 +668,66 @@ function setTimeScale(state: GameState, timeScale: number): GameState {
 
 /**
  * Applies a program or .MD edit to robot `robotId`: the edited robot and a success toast, or the
- * edit's refusal as a warn toast with nothing else changed. An unknown id changes nothing. Edits
+ * edit's refusal as a warn toast with nothing else changed. The robot must be on the workbench
+ * (part 3 spec §4.7); the dev hooks call the edits directly and aren't limited to it. An unknown id changes nothing. Edits
  * aren't frozen with the game: the robot screen that sends them is a panel.
  */
 function editRobot(state: GameState, robotId: number, edit: (robot: Robot) => Robot | string, done: (name: string) => string): GameState {
   const robot = findRobot(state, robotId);
   if (robot === null) return state;
+  const away = offBenchRefusal(robot);
+  if (away !== null) return pushMessage(state, away, 'warn');
   const edited = edit(robot);
   if (typeof edited === 'string') return pushMessage(state, edited, 'warn');
   return pushMessage(withRobot(state, edited), done(robot.name), 'success');
 }
+
+// ---------------------------------------------------------------------------
+// The workbench (farmclaws part 3 spec §2.2, §2.4)
+// ---------------------------------------------------------------------------
+
+/** The robot screen's refusal for a robot that isn't on the workbench, or null when it is. */
+function offBenchRefusal(robot: Robot): string | null {
+  return robot.onBench ? null : `Put ${robot.name} on the workbench first.`;
+}
+
+/**
+ * `robot/liftOff`: the robot on the bench goes into the player's arms for its carry energy, like a
+ * pick-up, and its screen closes. Refused with part 1's too-tired text when energy is short (the
+ * screen stays open), and silently for a robot not on the bench, while the player carries another
+ * robot, or off the farm.
+ */
+function liftOffBench(state: GameState, robotId: number): GameState {
+  const robot = findRobot(state, robotId);
+  if (robot === null || !robot.onBench || state.player.carrying !== null || state.player.mapId !== 'farm') return state;
+  const energy = carryEnergyFor(robot);
+  if (state.player.energy < energy) return pushMessage(state, `You're too tired to carry ${robot.name}.`, 'warn');
+  const lifted = withRobot(
+    { ...state, player: { ...state.player, carrying: robot.id, energy: state.player.energy - energy } },
+    { ...robot, onBench: false, carried: true },
+  );
+  const panel = lifted.ui.panel;
+  return panel.kind === 'robot' && panel.robotId === robot.id ? { ...lifted, ui: { ...lifted.ui, panel: { kind: 'none' } } } : lifted;
+}
+
+/** Powers a robot may be switched off in: the save allows `off` only with these (part 2 spec §10.2, part 3 §9.2). */
+const SWITCHABLE_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['working', 'standby', 'flat']);
+
+/**
+ * `robot/switch` (part 3 spec §2.4), free: off sets `off: 'player'` whatever it was; on clears
+ * only 'player'. The robot must be on the bench. A robot that isn't working, standby or flat
+ * can't be switched off (a broken robot needs its new core first), or the save wouldn't load.
+ */
+function switchRobot(state: GameState, robotId: number, on: boolean): GameState {
+  const robot = findRobot(state, robotId);
+  if (robot === null) return state;
+  const away = offBenchRefusal(robot);
+  if (away !== null) return pushMessage(state, away, 'warn');
+  if (on) return robot.off === 'player' ? withRobot(state, { ...robot, off: null }) : state;
+  if (!SWITCHABLE_POWERS.has(robot.power)) return pushMessage(state, `${robot.name} can't be switched off while it's broken.`, 'warn');
+  return withRobot(state, { ...robot, off: 'player' });
+}
+
 
 /** Replaces the whole state (new game / loaded save): no panel open, unpaused, the player flagged as teleported. */
 function loadState(prev: GameState, loaded: GameState): GameState {

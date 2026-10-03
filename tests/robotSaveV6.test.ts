@@ -4,14 +4,19 @@
  * adds its cases here.
  */
 import { describe, expect, it } from 'vitest';
-import { UNLOCKS } from '../src/config';
-import { SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
+import { INVENTORY, UNLOCKS, WORKBENCH } from '../src/config';
+import { Direction, SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
 import { ALL_UNLOCKS, withUnlocks } from '../src/robots/unlocks';
+import { requireRobot } from '../src/robots/world';
+import { actions } from '../src/state/actions';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
+import { gameReducer } from '../src/state/reducer';
+import { locateTile } from '../src/world/grid';
+import { EMPTY_TILE } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, must, robotOf, v5Save, withRobots, withZones, type SaveJson } from './testUtils';
+import { BASE, benchedRobotOf, must, robotOf, v5Save, withPlayer, withRobots, withTile, withZones, type SaveJson } from './testUtils';
 
 const WALK = b.program({ stacks: [b.when(b.morning(), b.move())] });
 
@@ -127,5 +132,107 @@ describe('unlocks in save version 6', () => {
 
   it('cannot write unlocks beyond job 1 to a v5 save', () => {
     expect(() => v5Save(withUnlocks(BASE, { tabs: ['stats'] }))).toThrow('v5Save');
+  });
+});
+
+describe('the workbench in save version 6', () => {
+  const HOME = WORKBENCH.home;
+  const AT_BENCH = { tx: HOME.tx, tz: HOME.tz + 1 };
+  const chest = { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) };
+  const benchTile = { ...EMPTY_TILE, object: { kind: 'workbench' as const } };
+  const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringify(save));
+
+  /** The saved farm tile at (tx, tz). */
+  function farmTile(save: SaveJson, tx: number, tz: number): SaveJson {
+    const farm = (save.maps as SaveJson).farm as { chunks: { tiles: SaveJson[] }[] };
+    const at = locateTile(BASE.maps.farm.grid, tx, tz);
+    return must(must(farm.chunks[at.chunkIndex]).tiles[at.localIndex]);
+  }
+  const savedRobot = (save: SaveJson, index: number): SaveJson => must(robotsOf(save).list[index]);
+
+  /** Sprocket switched off on the bench, Bolt working in the field. */
+  const BENCHED: GameState = withRobots(BASE, [benchedRobotOf({ off: 'player' }), robotOf({ id: 2, name: 'Bolt' })]);
+
+  /** Sprocket carried to the bench and put on it through the reducer: its screen is open. */
+  const carryToBench = (): GameState => {
+    const carrying = withRobots({ ...BASE, player: { ...BASE.player, carrying: 1 } }, [robotOf({ carried: true })]);
+    return gameReducer(withPlayer(carrying, AT_BENCH, Direction.North), actions.interact());
+  };
+
+  it('round-trips robots on and around the bench in every state the game makes', () => {
+    const real = carryToBench();
+    expect(real.ui.panel).toEqual({ kind: 'robot', robotId: 1, mode: 'bench' });
+    const lifted = gameReducer(real, actions.liftOffBench(1));
+    const states = [
+      BENCHED,
+      real,
+      lifted,
+      withRobots(BASE, [benchedRobotOf({ power: 'broken' })]),
+      withRobots(BASE, [benchedRobotOf({ power: 'flat', tokens: 0, off: 'player' })]),
+      withRobots(BASE, [robotOf({ power: 'repairing', repairReadyDay: 1, tx: HOME.tx, tz: HOME.tz })]),
+    ];
+    for (const state of states) expect(deserializeGame(serializeGame(state))).toEqual(loadedFrom(state));
+  });
+
+  it('migrates a v5 save: the workbench goes home and no robot is on it', () => {
+    const state = withRobots(BASE, [robotOf(), robotOf({ id: 2, name: 'Bolt', tx: 4, tz: 10 })]);
+    const v5 = v5Save(state);
+    expect(farmTile(v5, HOME.tx, HOME.tz).object).toBeNull();
+    const migrated = migrateSave(v5) as SaveJson;
+    expect(farmTile(migrated, HOME.tx, HOME.tz).object).toEqual({ kind: 'workbench' });
+    expect([savedRobot(migrated, 0).onBench, savedRobot(migrated, 1).onBench]).toEqual([false, false]);
+    expect(load(v5)).toEqual(state);
+  });
+
+  it('puts the workbench on the nearest free tile when home is built on, past robots and the player', () => {
+    // In v5 the player built a chest at home; a robot stands north of it and the player east of it.
+    let state = withTile(BASE, HOME, { ...EMPTY_TILE, object: chest }, 'farm');
+    state = withTile(state, AT_BENCH, benchTile, 'farm');
+    state = withPlayer(withRobots(state, [robotOf({ tx: HOME.tx, tz: HOME.tz - 1 })]), { tx: HOME.tx + 1, tz: HOME.tz }, Direction.West);
+    const v5 = v5Save(state);
+    expect(farmTile(v5, AT_BENCH.tx, AT_BENCH.tz).object).toBeNull();
+    expect(farmTile(migrateSave(v5) as SaveJson, AT_BENCH.tx, AT_BENCH.tz).object).toEqual({ kind: 'workbench' });
+    expect(load(v5)).toEqual(state);
+  });
+
+  it('counts a robot standing on home as built on, but not a carried robot that left from it', () => {
+    let standing = withTile(BASE, HOME, EMPTY_TILE, 'farm');
+    standing = withTile(standing, { tx: HOME.tx, tz: HOME.tz - 1 }, benchTile, 'farm');
+    standing = withRobots(standing, [robotOf({ tx: HOME.tx, tz: HOME.tz })]);
+    expect(load(v5Save(standing))).toEqual(standing);
+    const lifted = gameReducer(carryToBench(), actions.liftOffBench(1));
+    expect(requireRobot(lifted, 1)).toMatchObject({ carried: true, tx: HOME.tx, tz: HOME.tz });
+    expect(load(v5Save(lifted))).toEqual(lifted);
+  });
+
+  it('cannot write a robot on the bench or switched off to a v5 save', () => {
+    expect(() => v5Save(BENCHED)).toThrow('v5Save');
+    expect(() => v5Save(withRobots(BASE, [robotOf({ off: 'player' })]))).toThrow('v5Save');
+  });
+
+  it('rejects a workbench off the farm', () => {
+    const forest = { tx: 10, tz: 10 };
+    expect(deserializeGame(serializeGame(withTile(BASE, forest, { ...EMPTY_TILE, object: chest }, 'forest')))).not.toBeNull();
+    expect(deserializeGame(serializeGame(withTile(BASE, forest, benchTile, 'forest')))).toBeNull();
+  });
+
+  const rejections: readonly [string, GameState, (save: SaveJson) => void][] = [
+    ['no workbench on the farm', BASE, (s) => void (farmTile(s, HOME.tx, HOME.tz).object = null)],
+    ['a second workbench on the farm', BASE, (s) => void (farmTile(s, HOME.tx + 2, HOME.tz).object = { kind: 'workbench' })],
+    ['a workbench with a field', BASE, (s) => void (farmTile(s, HOME.tx, HOME.tz).object = { kind: 'workbench', level: 1 })],
+    ['a robot on the bench off the workbench tile', BENCHED, (s) => void (savedRobot(s, 0).tx = HOME.tx + 1)],
+    ['a carried robot on the bench', BENCHED, (s) => void (Object.assign(savedRobot(s, 0), { carried: true }), ((s.player as SaveJson).carrying = 1))],
+    ['a robot on the bench away for repairs', BENCHED, (s) => void Object.assign(savedRobot(s, 0), { power: 'repairing', repairReadyDay: 1, off: null })],
+    ['two robots on the bench', BENCHED, (s) => void Object.assign(savedRobot(s, 1), { onBench: true, tx: HOME.tx, tz: HOME.tz })],
+    ['a robot off the bench on the workbench tile', BENCHED, (s) => void (savedRobot(s, 0).onBench = false)],
+    ['a missing onBench', BENCHED, (s) => void delete savedRobot(s, 1).onBench],
+    ['an onBench that is not a boolean', BENCHED, (s) => void (savedRobot(s, 1).onBench = 0)],
+    ['an unknown off reason', BENCHED, (s) => void (savedRobot(s, 0).off = 'sleepy')],
+    ['a broken robot switched off', BENCHED, (s) => void Object.assign(savedRobot(s, 1), { power: 'broken', off: 'player' })],
+  ];
+
+  it.each(rejections)('rejects %s', (_label, state, edit) => {
+    expect(deserializeGame(serializeGame(state))).not.toBeNull();
+    expect(corrupt(state, edit)).toBeNull();
   });
 });

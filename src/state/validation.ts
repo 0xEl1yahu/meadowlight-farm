@@ -101,6 +101,7 @@ const OBJECT_FIELDS: Readonly<Record<PlacedObjectKind, readonly string[]>> = {
   forage: ['itemId', 'spawnDay'],
   trophy: ['festival', 'year'],
   decoration: ['variant'],
+  workbench: [],
 };
 
 /** Shape of one placed object. Placement rules against its tile live in `isValidTile`. */
@@ -130,6 +131,7 @@ export function isValidPlacedObject(v: unknown): v is PlacedObject {
     case 'woodFence':
     case 'woodPath':
     case 'stonePath':
+    case 'workbench':
       return true;
   }
 }

@@ -44,7 +44,8 @@ export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay
     program,
     pc: 0,
     exec,
-    off: null,
+    // A new program clears 'dizzy' and 'done'; only the bench's switch turns a 'player' robot on.
+    off: robot.off === 'player' ? 'player' : null,
     power: KEPT_POWERS.has(robot.power) ? robot.power : runs ? 'working' : 'standby',
     nextActMinute: minuteOfDay + periodFor(robot),
   };

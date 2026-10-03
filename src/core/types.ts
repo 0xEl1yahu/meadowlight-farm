@@ -243,6 +243,7 @@ export const PLACED_OBJECT_KINDS = [
   'trophy',
   'decoration',
   'woodBurner',
+  'workbench',
 ] as const;
 export type PlacedObjectKind = (typeof PLACED_OBJECT_KINDS)[number];
 
@@ -339,7 +340,9 @@ export type PlacedObject =
     }
   | { readonly kind: 'forage'; readonly itemId: ForageId; readonly spawnDay: number }
   | { readonly kind: 'trophy'; readonly festival: FestivalId; readonly year: number }
-  | { readonly kind: 'decoration'; readonly variant: DecorationId };
+  | { readonly kind: 'decoration'; readonly variant: DecorationId }
+  /** Built into every farm beside the farmhouse; robots are modded on it (farmclaws part 3 spec §2). Never picked up. */
+  | { readonly kind: 'workbench' };
 
 /**
  * A chunk is a TileRect of the grid. Its tiles are stored row-major using the chunk's *actual*
@@ -463,7 +466,9 @@ export type UiPanel =
   | { readonly kind: 'none' }
   | { readonly kind: 'shop' }
   | { readonly kind: 'inventory' }
-  | { readonly kind: 'chest'; readonly mapId: MapId; readonly tx: number; readonly tz: number };
+  | { readonly kind: 'chest'; readonly mapId: MapId; readonly tx: number; readonly tz: number }
+  /** The robot screen (farmclaws part 3 spec §4): editable at the workbench, read-only when peeking. */
+  | { readonly kind: 'robot'; readonly robotId: number; readonly mode: 'bench' | 'peek' };
 
 export interface UiState {
   readonly panel: UiPanel;
@@ -590,6 +595,8 @@ export interface Robot {
   readonly power: RobotPower;
   /** True while the player holds it (player.carrying === id). A carried robot never acts. */
   readonly carried: boolean;
+  /** True while it stands on the workbench (part 3 spec §2.2): on the workbench tile, never carried, never due. */
+  readonly onBench: boolean;
   readonly program: RobotProgram;
   /** Index of the next script step; always 0 for a block program. */
   readonly pc: number;
@@ -597,8 +604,11 @@ export interface Robot {
   readonly exec: RobotExec | null;
   /** The Managing Directive: 0 … ROBOTS.sizes[size].mdCards cards. */
   readonly md: readonly MdCard[];
-  /** Why the robot ignores everything until morning. Separate from `power` (farmclaws design §5.4). Part 3 adds 'player'. */
-  readonly off: null | 'dizzy' | 'done';
+  /**
+   * Why the robot ignores everything. Separate from `power` (farmclaws design §5.4). 'dizzy' and
+   * 'done' last until morning; 'player' (the bench's switch) lasts until it is switched on.
+   */
+  readonly off: null | 'dizzy' | 'done' | 'player';
   /** The next minute of the day it acts in. */
   readonly nextActMinute: number;
   /** Absolute day it comes back from repair; null unless power is 'repairing'. */

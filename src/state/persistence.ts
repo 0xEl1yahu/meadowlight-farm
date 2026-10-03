@@ -2,7 +2,7 @@
  * Save / load. GameState is plain JSON-compatible data, so persistence is serialisation plus a
  * strict structural validator — a corrupted or outdated save is rejected, never half-loaded.
  */
-import { INVENTORY, TIME, UNLOCKS } from '../config';
+import { INVENTORY, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
   MAP_IDS,
@@ -14,8 +14,10 @@ import {
   type GameState,
   type GridSpec,
   type MapId,
+  type TileCoord,
   type WorldState,
 } from '../core/types';
+import { freeSpotNear, withWorkbenchAt } from '../robots/workbench';
 import { calendarTime } from '../time/clock';
 import { chunkCount, chunkRectByIndex, createGridSpec, inBounds } from '../world/grid';
 import { MAPS, isReservedTile } from '../world/maps';
@@ -97,7 +99,7 @@ function isValidTime(time: unknown): boolean {
  * The map's grid (deep-equal to the map definition's: the same fields, no others), chunk
  * layout, every tile, and the world-level placed-object rules (giant crops).
  */
-function isValidWorld(world: unknown, id: MapId): world is WorldState {
+export function isValidWorld(world: unknown, id: MapId): world is WorldState {
   if (!isObj(world) || !isValidGrid(world.grid) || !Array.isArray(world.chunks)) return false;
   const grid = world.grid;
   const expected = MAPS[id].grid;
@@ -363,22 +365,43 @@ function migrateV4toV5(save: Obj): Obj {
   return { ...save, version: 5, robots: { ...robots, list, zones: createDefaultSections().robots.zones } };
 }
 
-/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted. */
+/** A v5 robot as a v6 one: `tokensToday` becomes today's and this week's tokens, with no actions or crops counted, and off the bench. */
 function migrateRobotV5(robot: unknown): unknown {
   if (!isObj(robot)) return robot;
   const { tokensToday, ...rest } = robot;
-  return { ...rest, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } } };
+  return { ...rest, onBench: false, stats: { today: { tokens: tokensToday, actions: 0, crops: 0 }, week: { tokens: tokensToday, actions: 0, crops: 0 } } };
 }
 
 /**
  * Version 5 predates the robot screen (farmclaws part 3 spec §9.1): robots gain stats in place of
- * tokensToday, and the robots section gains job 1's unlocks.
+ * tokensToday, the robots section gains job 1's unlocks, and the farm gains its workbench.
  */
 function migrateV5toV6(save: Obj): Obj {
   const robots = save.robots;
   if (!isObj(robots) || !Array.isArray(robots.list)) return save;
   const list = (robots.list as readonly unknown[]).map(migrateRobotV5);
-  return { ...save, version: 6, robots: { ...robots, list, unlocks: UNLOCKS.job1 } };
+  return placeWorkbenchV6({ ...save, version: 6, robots: { ...robots, list, unlocks: UNLOCKS.job1 } });
+}
+
+/**
+ * The workbench for a migrated farm (part 3 spec §2.1): WORKBENCH.home, or the nearest free farm
+ * tile when the player built something there. Standing robots (not carried, not away for repairs)
+ * and the player, when on the farm, take their tiles. A malformed farm passes through without one,
+ * so the validator rejects the save.
+ */
+function placeWorkbenchV6(save: Obj): Obj {
+  const maps = save.maps;
+  const robots = save.robots;
+  if (!isObj(maps) || !isObj(robots) || !Array.isArray(robots.list)) return save;
+  const farm: unknown = maps.farm;
+  if (!isValidWorld(farm, 'farm')) return save;
+  const taken: TileCoord[] = [];
+  for (const robot of robots.list as readonly unknown[]) {
+    if (isObj(robot) && robot.carried !== true && robot.power !== 'repairing' && isInt(robot.tx) && isInt(robot.tz)) taken.push({ tx: robot.tx, tz: robot.tz });
+  }
+  const player = save.player;
+  if (isObj(player) && player.mapId === 'farm' && isInt(player.tx) && isInt(player.tz)) taken.push({ tx: player.tx, tz: player.tz });
+  return { ...save, maps: { ...maps, farm: withWorkbenchAt(farm, freeSpotNear(farm, WORKBENCH.home, taken)) } };
 }
 
 /**

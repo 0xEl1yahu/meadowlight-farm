@@ -48,7 +48,7 @@ import { hasExactKeys, isBool, isCanonicalSubset, isCount, isInt, isIntIn, isObj
 const MAX = Number.MAX_SAFE_INTEGER;
 
 const ROBOT_KEYS = [
-  'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'program', 'pc',
+  'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'onBench', 'program', 'pc',
   'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction',
 ] as const;
 
@@ -61,6 +61,20 @@ function burnersOnlyOnFarm(maps: GameState['maps']): boolean {
     });
   }
   return !stray;
+}
+
+/** Exactly one workbench, on the farm (part 3 spec §9.2). */
+function oneWorkbench(maps: GameState['maps']): boolean {
+  let onFarm = 0;
+  let elsewhere = 0;
+  for (const id of MAP_IDS) {
+    forEachTile(maps[id], (tile) => {
+      if (tile.object?.kind !== 'workbench') return;
+      if (id === 'farm') onFarm++;
+      else elsewhere++;
+    });
+  }
+  return onFarm === 1 && elsewhere === 0;
 }
 
 export function isValidRobotAction(v: unknown): v is RobotAction {
@@ -624,18 +638,23 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!Array.isArray(v.bag) || v.bag.length > bagStacks({ size: v.size, parts }) || !v.bag.every((s: unknown) => isValidStack(s, true))) return false;
   if (!isIntIn(v.tank, 0, ROBOTS.tankCapacity) || (v.tank > 0 && !parts.includes('wateringHead'))) return false;
   if (!isIntIn(v.tokens, 0, batteryFor(v.size)) || !isValidRobotStats(v.stats)) return false;
-  if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried)) return false;
+  if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried) || !isBool(v.onBench)) return false;
   if (!isValidMind(v, { size: v.size, parts })) return false;
-  if (!(v.off === null || v.off === 'dizzy' || v.off === 'done')) return false;
+  if (!isOneOf(v.off, [null, 'dizzy', 'done', 'player'])) return false;
   if (v.off !== null && v.power !== 'working' && v.power !== 'standby' && v.power !== 'flat') return false;
   if (!isIntIn(v.nextActMinute, TIME.dayStartMinute, TIME.passOutMinute + ROBOTS.maxWaitMinutes)) return false;
   if (!isCount(v.moveSeq) || !isCount(v.teleportSeq) || !isCount(v.actionSeq)) return false;
   if (!isValidLastAction(v.lastAction, v.actionSeq)) return false;
+  // A robot on the bench is never carried or away for repairs (part 3 spec §9.2).
+  if (v.onBench && (v.carried || v.power === 'repairing')) return false;
   if (v.power === 'repairing') return isCount(v.repairReadyDay) && !v.carried;
   if (v.repairReadyDay !== null) return false;
   if (v.carried) return true;
   const tile = getTile(farm, v.tx, v.tz);
   if (tile === null) return false;
+  // On the bench means on the workbench tile, where part 1's walkable rule doesn't apply; no other robot stands there.
+  const onWorkbench = tile.object !== null && tile.object.kind === 'workbench';
+  if (v.onBench || onWorkbench) return v.onBench && onWorkbench;
   if (v.power === 'broken') return tile.blocker === Blocker.Water || isWalkable(tile);
   return isWalkable(tile);
 }
@@ -651,17 +670,19 @@ export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player
   if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || v.list.length > ROBOTS.maxRobots) return false;
   let previous = 0;
   let carried = 0;
+  let benched = 0;
   for (const robot of v.list as readonly unknown[]) {
     if (!isValidRobot(robot, maps.farm) || !isObj(robot) || !isInt(robot.id)) return false;
     if (robot.id <= previous || robot.id >= v.nextId) return false;
     previous = robot.id;
+    if (robot.onBench === true) benched++;
     if (robot.carried === true) {
       carried++;
       if (player.carrying !== robot.id || player.mapId !== 'farm') return false;
     }
   }
-  if (carried !== (player.carrying === null ? 0 : 1)) return false;
+  if (carried !== (player.carrying === null ? 0 : 1) || benched > 1) return false;
   const fuel = v.lastNightFuel;
   if (!isCount(v.pool) || !isObj(fuel) || !hasExactKeys(fuel, ['wood', 'tokens']) || !isCount(fuel.wood) || !isCount(fuel.tokens)) return false;
-  return isValidLog(v.log, maps.farm) && burnersOnlyOnFarm(maps);
+  return isValidLog(v.log, maps.farm) && burnersOnlyOnFarm(maps) && oneWorkbench(maps);
 }

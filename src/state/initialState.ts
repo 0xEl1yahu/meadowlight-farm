@@ -1,7 +1,8 @@
-import { INVENTORY, PLAYER, TOOLS, UNLOCKS, WORLD } from '../config';
+import { INVENTORY, PLAYER, TOOLS, UNLOCKS, WORKBENCH, WORLD } from '../config';
 import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type NpcId, type NpcRelation } from '../core/types';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
+import { withWorkbenchAt } from '../robots/workbench';
 import { generateMaps } from '../world/maps';
 import { createInventory } from './inventory';
 
@@ -54,12 +55,14 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
     throw new RangeError(`createInitialState: seed must be a 32-bit unsigned integer, got ${seed}`);
   }
   const time = createInitialTime();
+  const maps = generateMaps(seed);
   return {
     version: SAVE_VERSION,
     seed,
     time,
     weather: rollWeather(seed, time.absoluteDay),
-    maps: generateMaps(seed),
+    // The workbench is built into every farm (part 3 spec §2.1); its home is clear on every generated farm.
+    maps: { ...maps, farm: withWorkbenchAt(maps.farm, WORKBENCH.home) },
     player: {
       mapId: 'farm',
       tx: PLAYER.spawn.tx,

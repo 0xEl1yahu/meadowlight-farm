@@ -13,7 +13,7 @@ import { freshExec, morningExec } from '../src/robots/exec';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
-import { BASE, TARGET, atDay, robotOf, withRobots, withZones } from './testUtils';
+import { BASE, TARGET, atDay, benchedRobotOf, robotOf, withRobots, withZones } from './testUtils';
 
 const AT: RobotPlace = { tx: TARGET.tx, tz: TARGET.tz, facing: Direction.South };
 const STEPS: RobotAction[] = [{ kind: 'water' }, { kind: 'move' }];
@@ -34,6 +34,13 @@ describe('programmedRobot', () => {
       power: 'working',
       nextActMinute: FIRST_ACT + ROBOTS.period,
     });
+  });
+
+  it('keeps a robot the player switched off switched off', () => {
+    const program = b.program({ stacks: [b.when(b.morning(), b.move())] });
+    const next = programmedRobot(robotOf({ power: 'standby', off: 'player' }), program, 900);
+    expect(typeof next).not.toBe('string');
+    expect(next).toMatchObject({ off: 'player', program });
   });
 
   it('leaves the robot idle a minute later, waiting for a trigger', () => {
@@ -207,8 +214,14 @@ describe('malformed input never throws', () => {
 });
 
 describe('the programRobot and setRobotMd actions', () => {
-  /** Sprocket runs a script; Bolt is an idle block robot. */
-  const FARM = withRobots(BASE, [robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', tx: 4, tz: 10, power: 'standby', program: WALK, exec: freshExec(WALK) })]);
+  /**
+   * Sprocket runs a script; Bolt is an idle block robot. Both stand on the workbench, where the
+   * robot screen edits robots (part 3 spec §4.7); the save allows one there, but these tests never save.
+   */
+  const FARM = withRobots(BASE, [
+    benchedRobotOf({ id: 1 }),
+    benchedRobotOf({ id: 2, name: 'Bolt', power: 'standby', program: WALK, exec: freshExec(WALK) }),
+  ]);
   const last = (state: GameState) => state.messages.entries.at(-1);
 
   it('programs a robot exactly as programmedRobot does, with a toast', () => {
@@ -254,5 +267,20 @@ describe('the programRobot and setRobotMd actions', () => {
     const frozen: GameState = { ...FARM, ui: { ...FARM.ui, panel: { kind: 'inventory' } } };
     expect(requireRobot(gameReducer(frozen, actions.programRobot(1, WALK)), 1).program).toBe(WALK);
     expect(requireRobot(gameReducer(frozen, actions.setRobotMd(2, [RETURN])), 2).md).toEqual([RETURN]);
+  });
+
+  it('refuses a robot that is not on the bench, for programs and .MDs alike', () => {
+    const field = withRobots(BASE, [robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', tx: 4, tz: 10, power: 'standby', program: WALK, exec: freshExec(WALK) })]);
+    const programmed = gameReducer(field, actions.programRobot(1, WALK));
+    expect(programmed.robots).toBe(field.robots);
+    expect(last(programmed)).toMatchObject({ text: 'Put Sprocket on the workbench first.', tone: 'warn' });
+    const carded = gameReducer(field, actions.setRobotMd(2, [{ kind: 'dontGoIntoWater' }]));
+    expect(carded.robots).toBe(field.robots);
+    expect(last(carded)).toMatchObject({ text: 'Put Bolt on the workbench first.', tone: 'warn' });
+  });
+
+  it('checks the bench before the program, so a bad program off the bench gets the bench refusal', () => {
+    const field = withRobots(BASE, [robotOf({ id: 1 })]);
+    expect(last(gameReducer(field, actions.programRobot(1, { kind: 'blocks' } as never)))).toMatchObject({ text: 'Put Sprocket on the workbench first.' });
   });
 });

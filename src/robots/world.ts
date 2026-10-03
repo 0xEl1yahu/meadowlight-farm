@@ -44,9 +44,9 @@ export function withFarm(state: GameState, world: WorldState): GameState {
   return withMap(state, 'farm', world);
 }
 
-/** Robots standing on a farm tile (not carried, not away for repair), lowest id first. */
+/** Robots standing on a farm tile (not carried, not on the workbench, not away for repair), lowest id first. */
 export function robotsOnTile(state: GameState, tx: number, tz: number): readonly Robot[] {
-  return state.robots.list.filter((r) => !r.carried && r.power !== 'repairing' && r.tx === tx && r.tz === tz);
+  return state.robots.list.filter((r) => !r.carried && !r.onBench && r.power !== 'repairing' && r.tx === tx && r.tz === tz);
 }
 
 export type ContainerKind = 'chest' | 'bin';

@@ -67,6 +67,7 @@ export function objectLook(object: PlacedObject): ObjectLook {
     case 'woodFence':
     case 'woodPath':
     case 'stonePath':
+    case 'workbench':
       return { kind: object.kind, variant: '' };
   }
 }

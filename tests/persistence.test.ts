@@ -8,7 +8,7 @@
  * must migrate with the farm intact, the forest and the town generated and the gates carved.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { INVENTORY, PLAYER, TIME } from '../src/config';
+import { INVENTORY, PLAYER, TIME, WORKBENCH } from '../src/config';
 import {
   Blocker,
   Direction,
@@ -733,12 +733,17 @@ describe('loading the real legacy saves', () => {
       const old = must(save.world.chunks[ci]);
       const { tiles: _tiles, ...geometry } = chunk;
       const { tiles: _oldTiles, ...oldGeometry } = old;
-      // Chunk layout and revision survive unchanged.
-      expect(geometry).toEqual(oldGeometry);
+      // Chunk layout and revision survive unchanged, but for the chunk the workbench was added to.
+      const bench = locateTile(farm.grid, WORKBENCH.home.tx, WORKBENCH.home.tz);
+      expect(geometry).toEqual(ci === bench.chunkIndex ? { ...oldGeometry, revision: (old.revision as number) + 1 } : oldGeometry);
       chunk.tiles.forEach((tile, i) => {
         const oldTile = must(old.tiles[i]);
         const tx = chunk.x0 + (i % chunk.width);
         const tz = chunk.z0 + Math.floor(i / chunk.width);
+        if (tx === WORKBENCH.home.tx && tz === WORKBENCH.home.tz) {
+          expect(tile).toEqual({ ...EMPTY_TILE, object: { kind: 'workbench' } });
+          return;
+        }
         if (isReservedTile(MAPS.farm, tx, tz) && (oldTile.blocker === Blocker.Rock || oldTile.blocker === Blocker.Stump)) {
           carved.push(`${tx},${tz}`);
           expect(tile).toEqual(CARVED);

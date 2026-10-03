@@ -81,6 +81,7 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     tokens: batteryFor(spec.size),
     power: 'working',
     carried: false,
+    onBench: false,
     program: spec.program,
     pc: 0,
     exec: spec.program.kind === 'blocks' ? execAt(spec.program, state.time.minuteOfDay) : null,

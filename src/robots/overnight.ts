@@ -158,7 +158,8 @@ function morningStats(stats: RobotStats, weekStart: boolean): RobotStats {
  *
  * A block program (part 2 spec §7) gets the morning's exec: variables back to their initials,
  * triggers re-armed, its first `morning` stack started. It works if that stack started and waits
- * on standby otherwise; flat and broken robots stay so. Every robot is turned back on.
+ * on standby otherwise; flat and broken robots stay so. Every robot is turned back on, except one
+ * switched off at the bench; a robot on the workbench stays there.
  */
 function resetForMorning(state: GameState): GameState {
   let next = state;
@@ -168,7 +169,8 @@ function resetForMorning(state: GameState): GameState {
     if (robot.power === 'repairing') continue;
     const tile = getTile(farm, robot.tx, robot.tz);
     const inWater = tile !== null && tile.blocker === Blocker.Water;
-    const standable = tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater));
+    // A robot on the workbench stays on it (part 3 spec §2.2); the bench tile itself isn't walkable.
+    const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater)));
     const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestWalkable(farm, robot);
     const moved = at.tx !== robot.tx || at.tz !== robot.tz;
     const exec = morningExecOf(robot);
@@ -183,7 +185,8 @@ function resetForMorning(state: GameState): GameState {
       nextActMinute: TIME.dayStartMinute + periodFor(robot),
       power: resumed === 'working' && exec !== null && exec.running === null ? 'standby' : resumed,
       exec,
-      off: null,
+      // 'dizzy' and 'done' last until morning; the bench's switch lasts until it is switched on.
+      off: robot.off === 'player' ? 'player' : null,
     });
   }
   return next;

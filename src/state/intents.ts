@@ -25,6 +25,7 @@ import {
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
 import { carryEnergyFor, repairCost } from '../robots/stats';
+import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
 import { isReservedTile, mapSeed } from '../world/maps';
 import { getTile, isSoil, isWalkable } from '../world/tiles';
@@ -63,7 +64,12 @@ export type Intent =
   | { readonly kind: 'repairRobot'; readonly robotId: number; readonly name: string; readonly cost: number }
   /** Load wood from the selected stack into a wood burner. */
   | { readonly kind: 'fuel'; readonly quantity: number }
-  | { readonly kind: 'blocked'; readonly reason: string | null };
+  /** Put the carried robot on the empty workbench; its screen opens (farmclaws part 3 spec §2.2). */
+  | { readonly kind: 'benchRobot'; readonly robotId: number; readonly name: string }
+  /** Reopen the screen of the robot on the workbench. */
+  | { readonly kind: 'openBench'; readonly robotId: number; readonly name: string }
+  /** `hint`, when set, is the HUD hint of a plan that does nothing (the empty workbench). */
+  | { readonly kind: 'blocked'; readonly reason: string | null; readonly hint?: string };
 
 export type IntentKind = Intent['kind'];
 
@@ -243,6 +249,12 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
   }
 }
 
+/** The pickaxe's and the axe's answer at the workbench, which is built into the farm (part 3 spec §2.1). */
+const PART_OF_THE_FARM = "It's part of the farm.";
+
+/** The empty workbench's hint and toast (part 3 spec §2.2). */
+const EMPTY_BENCH = 'Bring a robot here to work on it';
+
 /** Which tool lifts each pick-up-able placed object: the axe for wooden things, else the pickaxe. */
 const PICKUP_TOOL: Readonly<Record<PlaceableItemId, 'pickaxe' | 'axe'>> = {
   chest: 'axe',
@@ -265,6 +277,7 @@ function isPlaceableKind(kind: PlacedObject['kind']): kind is PlaceableItemId {
 
 /** Picking a placed object up with the pickaxe or axe; free, but it must fit and a chest must be empty. */
 function planPickUp(state: GameState, target: TileCoord, object: PlacedObject, tool: 'pickaxe' | 'axe'): ActionPlan {
+  if (object.kind === 'workbench') return blocked(target, tool, PART_OF_THE_FARM);
   if (!isPlaceableKind(object.kind) || PICKUP_TOOL[object.kind] !== tool) return blocked(target, tool);
   if (object.kind === 'chest' && object.slots.some((slot) => slot !== null)) {
     return blocked(target, tool, 'Empty the chest first.');
@@ -347,13 +360,17 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
   return plan(target, { kind: 'scatter', cropId: item.cropId, tiles }, 'plant');
 }
 
-/** While carrying: the shipping bin sends a broken robot for repair; open ground puts it down. */
+/** While carrying: the empty workbench takes the robot, the shipping bin sends a broken robot for repair, open ground puts it down. */
 function planCarry(state: GameState, robotId: number): ActionPlan {
   const robot = requireRobot(state, robotId);
   const target = selectTargetTile(state);
   const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
   const openGround = `Put ${robot.name} down on open ground.`;
   if (target === null || tile === null) return blocked(target, 'place', openGround);
+  if (tile.object !== null && tile.object.kind === 'workbench') {
+    if (robotOnBench(state) !== null) return blocked(target, 'place', "There's already a robot on the bench.");
+    return plan(target, { kind: 'benchRobot', robotId, name: robot.name }, 'place');
+  }
   if (tile.blocker === Blocker.ShippingBin) {
     if (robot.power !== 'broken') return blocked(target, 'place', 'Only broken robots go for repair.');
     const cost = repairCost(robot);
@@ -377,6 +394,13 @@ function planPickUpRobot(state: GameState, target: TileCoord): ActionPlan | null
   return plan(target, { kind: 'pickUpRobot', robotId: robot.id, name: robot.name, fromWater }, 'harvest', energy);
 }
 
+/** E at the workbench while not carrying: reopen the screen of the robot on it, or say what the bench is for. */
+function planBench(state: GameState, target: TileCoord): ActionPlan {
+  const robot = robotOnBench(state);
+  if (robot === null) return { target, intent: { kind: 'blocked', reason: EMPTY_BENCH, hint: EMPTY_BENCH }, feedback: 'none', energyCost: 0 };
+  return plan(target, { kind: 'openBench', robotId: robot.id, name: robot.name }, 'none');
+}
+
 function planFuel(state: GameState, target: TileCoord, fuel: number): ActionPlan {
   const stack = selectedStack(state.inventory);
   const hopper = GENERATORS.woodBurner.hopper;
@@ -393,6 +417,9 @@ export function planInteraction(state: GameState): ActionPlan {
   if (target === null) return blocked(null, 'none');
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return blocked(null, 'none');
+
+  // The workbench comes before every robot rule, so the robot on it is never picked up (part 3 spec §2.2).
+  if (tile.object !== null && tile.object.kind === 'workbench') return planBench(state, target);
 
   const pickUp = planPickUpRobot(state, target);
   if (pickUp !== null) return pickUp;
@@ -501,7 +528,11 @@ export function describeIntent(intent: Intent): string | null {
       return `Send ${intent.name} for repair · ${intent.cost}g`;
     case 'fuel':
       return 'Load wood';
+    case 'benchRobot':
+      return `Put ${intent.name} on the bench`;
+    case 'openBench':
+      return `Work on ${intent.name}`;
     case 'blocked':
-      return null;
+      return intent.hint ?? null;
   }
 }

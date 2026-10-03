@@ -345,6 +345,14 @@ export const UNLOCKS = {
 } as const satisfies { readonly job1: RobotUnlocks };
 
 
+/** The workbench built into every farm (farmclaws part 3 spec §2.1). */
+export const WORKBENCH = {
+  /** In the farmhouse yard, east of the house and off the door, the spawn and the bin. */
+  home: { tx: 6, tz: 4 } satisfies TileCoord,
+  /** Height of the bench top above its tile's ground, where a robot on it stands (render only). */
+  topHeight: 0.55,
+} as const;
+
 export const GENERATORS = {
   woodBurner: { hopper: 10, tokensPerWood: 6 },
 } as const;

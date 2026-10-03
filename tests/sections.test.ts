@@ -3,7 +3,7 @@
  * their defaults, the hash salts, and how saves carry the sections (validation and migration).
  */
 import { describe, expect, it } from 'vitest';
-import { APPEARANCE, INVENTORY, LAYOUT, PROFILE, TOOLS, UNLOCKS } from '../src/config';
+import { APPEARANCE, INVENTORY, LAYOUT, PROFILE, TOOLS, UNLOCKS, WORKBENCH } from '../src/config';
 import { Salt, hash32 } from '../src/core/hash';
 import {
   Blocker,
@@ -423,8 +423,8 @@ describe('migrating older saves to the current version', () => {
   it('gives a version-2 save the section defaults and plain tiles', () => {
     const loaded = must(deserializeGame(JSON.stringify(legacySave(played(), 2))));
     for (const [key, value] of Object.entries(createDefaultSections())) expect(loaded[key as keyof GameSections], key).toEqual(value);
-    forEachTile(loaded.maps.farm, (tile) => {
-      expect(tile.object).toBeNull();
+    forEachTile(loaded.maps.farm, (tile, tx, tz) => {
+      expect(tile.object).toEqual(tx === WORKBENCH.home.tx && tz === WORKBENCH.home.tz ? { kind: 'workbench' } : null);
       expect(tile.fertilizer).toBeNull();
     });
   });

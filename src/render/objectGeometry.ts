@@ -18,6 +18,7 @@
  */
 import * as THREE from 'three';
 import type { DecorationId, FestivalId, ForageId, GiantCropId, PlacedObject, PlacedObjectKind } from '../core/types';
+import { WORKBENCH } from '../config';
 import { HEIGHTS } from './constants';
 import { createLeafBlade, produceGeometryFor, type LeafSpec } from './cropGeometry';
 import { at, box, convexPrismX, glassBox, mergeParts, paint, pose, shade, withTintMask, type Pose, type Vec2 } from './geometryParts';
@@ -62,6 +63,13 @@ export const OBJECT_COLORS = {
   archWood: 0xb98a5c,
   blossoms: [0xffb3c7, 0xfff1a8, 0xc9b6ff, 0xffffff] as const,
   archLeaf: 0x6fb86a,
+  benchTop: 0xc8955c,
+  benchTopEdge: 0xa87545,
+  benchLeg: 0x8c6440,
+  pegboard: 0xe0c493,
+  viceIron: 0x5e6670,
+  toolSteel: 0xb8c0c8,
+  toolHandle: 0xd9534a,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -253,6 +261,49 @@ export function createWoodBurnerGeometry(): THREE.BufferGeometry {
     ],
     'wood burner',
   );
+}
+
+// ---------------------------------------------------------------------------
+// Workbench
+// ---------------------------------------------------------------------------
+
+/** The bench's footprint and timber, in tiles; its top surface is at WORKBENCH.topHeight. */
+export const WORKBENCH_SHAPE = { width: 0.84, depth: 0.6, top: 0.06, leg: 0.06 } as const;
+
+/**
+ * A low-poly workbench (part 3 spec §2.1): a thick top on four legs with a shelf between them, a
+ * vice on the front right corner, and a pegboard along the back holding a hammer, a wrench and a
+ * screwdriver. A robot on the bench stands on the top (RobotRenderer, robotLayout.benchLift).
+ */
+export function createWorkbenchGeometry(): THREE.BufferGeometry {
+  const C = OBJECT_COLORS;
+  const S = WORKBENCH_SHAPE;
+  const top = WORKBENCH.topHeight;
+  const legHeight = top - S.top;
+  const back = -S.depth / 2;
+  const parts = [
+    box(S.width, S.top, S.depth, { y: top - S.top / 2 }, C.benchTop),
+    box(S.width + 0.01, 0.015, S.depth + 0.01, { y: top - S.top + 0.0075 }, C.benchTopEdge),
+    box(S.width - 2 * S.leg, 0.03, S.depth - 2 * S.leg, { y: 0.16 }, C.benchLeg),
+    // Vice: fixed jaw, moving jaw and its screw handle.
+    box(0.12, 0.08, 0.1, { x: 0.3, y: top + 0.04, z: 0.2 }, C.viceIron),
+    box(0.12, 0.06, 0.03, { x: 0.3, y: top + 0.03, z: 0.27 }, C.viceIron),
+    box(0.14, 0.015, 0.015, { x: 0.3, y: top + 0.03, z: 0.295 }, C.toolSteel),
+    // Pegboard, then a hammer, a wrench and a screwdriver hanging on it.
+    box(0.7, 0.34, 0.03, { y: top + 0.17, z: back + 0.015 }, C.pegboard),
+    box(0.02, 0.16, 0.015, { x: -0.2, y: top + 0.15, z: back + 0.04 }, C.benchLeg),
+    box(0.08, 0.03, 0.02, { x: -0.2, y: top + 0.24, z: back + 0.04 }, C.viceIron),
+    box(0.025, 0.18, 0.012, { x: 0, y: top + 0.16, z: back + 0.04 }, C.toolSteel),
+    box(0.06, 0.03, 0.012, { x: 0, y: top + 0.26, z: back + 0.04 }, C.toolSteel),
+    box(0.03, 0.07, 0.02, { x: 0.2, y: top + 0.23, z: back + 0.04 }, C.toolHandle),
+    box(0.01, 0.1, 0.01, { x: 0.2, y: top + 0.145, z: back + 0.04 }, C.toolSteel),
+  ];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push(box(S.leg, legHeight, S.leg, { x: sx * (S.width / 2 - S.leg), y: legHeight / 2, z: sz * (S.depth / 2 - S.leg) }, C.benchLeg));
+    }
+  }
+  return mergeParts(parts, 'workbench');
 }
 
 // ---------------------------------------------------------------------------
@@ -673,6 +724,7 @@ export const OBJECT_PART_IDS = [
   'stoneLantern',
   'stoneLanternGlass',
   'flowerArch',
+  'workbench',
 ] as const;
 export type ObjectPartId = (typeof OBJECT_PART_IDS)[number];
 
@@ -720,6 +772,7 @@ export const OBJECT_PARTS: Readonly<Record<ObjectPartId, ObjectPartSpec>> = {
   stoneLantern: part('decoration', 'painted', createStoneLanternGeometry),
   stoneLanternGlass: part('decoration', 'glass', createStoneLanternGlassGeometry),
   flowerArch: part('decoration', 'painted', createFlowerArchGeometry),
+  workbench: part('workbench', 'painted', createWorkbenchGeometry),
 };
 
 const FORAGE_PARTS: Readonly<Record<ForageForm, ObjectPartId>> = {
@@ -772,5 +825,7 @@ export function objectPartsFor(object: PlacedObject, stoneVariant: number): read
       return ['trophy', 'trophyRibbon'];
     case 'decoration':
       return DECORATION_PARTS[object.variant];
+    case 'workbench':
+      return ['workbench'];
   }
 }

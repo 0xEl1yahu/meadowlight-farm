@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { INVENTORY } from '../src/config';
+import { INVENTORY, WORKBENCH } from '../src/config';
 import {
   Direction,
   PLACED_OBJECT_KINDS,
@@ -91,6 +91,7 @@ const SAMPLES: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
   forage: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 },
   trophy: { kind: 'trophy', festival: 'harvestFair', year: 1 },
   decoration: { kind: 'decoration', variant: 'stoneLantern' },
+  workbench: { kind: 'workbench' },
 };
 
 /** A small world with `objects` placed at the given tiles. */
@@ -419,7 +420,9 @@ describe('object geometry tables', () => {
 // ---------------------------------------------------------------------------
 
 describe('ObjectRenderer', () => {
-  const FARM_GRID = selectActiveWorld(BASE).grid;
+  /** The new farm without its workbench, so each test counts only the objects it places. */
+  const FARM = withTile(BASE, WORKBENCH.home, EMPTY_TILE, 'farm');
+  const FARM_GRID = selectActiveWorld(FARM).grid;
   const scratch = new THREE.Matrix4();
   const position = new THREE.Vector3();
   const scale = new THREE.Vector3();
@@ -490,7 +493,7 @@ describe('ObjectRenderer', () => {
   ];
 
   it('draws every kind with one mesh per part in use, at rest, and hides the other parts', () => {
-    const state = placeAll(BASE, EVERY_KIND);
+    const state = placeAll(FARM, EVERY_KIND);
     const { scene } = setup(state);
     const expected: Partial<Record<ObjectPartId, number>> = {};
     for (const [tx, tz, object] of EVERY_KIND) {
@@ -508,7 +511,7 @@ describe('ObjectRenderer', () => {
   });
 
   it('removes a giant crop from all nine tiles at once', () => {
-    const state = placeAll(BASE, giantCropAt(GIANT_ANCHOR.tx, GIANT_ANCHOR.tz));
+    const state = placeAll(FARM, giantCropAt(GIANT_ANCHOR.tx, GIANT_ANCHOR.tz));
     const { scene, renderer } = setup(state);
     expect(counts(scene)).toEqual({ giantLeaves: 1, giantGourd: 1 });
     const footprint = giantCropAt(GIANT_ANCHOR.tx, GIANT_ANCHOR.tz);
@@ -522,9 +525,9 @@ describe('ObjectRenderer', () => {
   });
 
   it('pops a newly placed object in, then settles at full scale', () => {
-    const { scene, renderer } = setup(BASE);
-    const next = place(BASE, A, SAMPLES.sprinkler);
-    renderer.sync(next, BASE);
+    const { scene, renderer } = setup(FARM);
+    const next = place(FARM, A, SAMPLES.sprinkler);
+    renderer.sync(next, FARM);
     expect(pose(scene, 'sprinkler').s).toBeLessThan(0.01);
     renderer.update(frame(next, OBJECT_MOTION.popSeconds / 2));
     expect(pose(scene, 'sprinkler').s).toBeGreaterThan(0.5);
@@ -533,7 +536,7 @@ describe('ObjectRenderer', () => {
   });
 
   it('replaces an object of another kind with a pop, touching only the old kind', () => {
-    const chest = place(BASE, A, SAMPLES.chest);
+    const chest = place(FARM, A, SAMPLES.chest);
     const { scene, renderer } = setup(chest);
     const next = place(chest, A, SAMPLES.scarecrow);
     renderer.sync(next, chest);
@@ -542,7 +545,7 @@ describe('ObjectRenderer', () => {
   });
 
   it('never rewrites a chest when only its slots change, and keeps its lid open meanwhile', () => {
-    const closed = place(BASE, A, SAMPLES.chest);
+    const closed = place(FARM, A, SAMPLES.chest);
     const { scene, renderer } = setup(closed);
     const lid = mesh(scene, 'chestLid');
     const body = mesh(scene, 'chestBody');
@@ -580,7 +583,7 @@ describe('ObjectRenderer', () => {
   });
 
   it('ignores a forage spawn-day change and swaps a new forage in place without a pop', () => {
-    const leek = place(BASE, A, { kind: 'forage', itemId: 'wildLeek', spawnDay: 2 });
+    const leek = place(FARM, A, { kind: 'forage', itemId: 'wildLeek', spawnDay: 2 });
     const { scene, renderer } = setup(leek);
     expect(counts(scene)).toEqual({ foragePlant: 1, forageSprig: 1 });
     const version = mesh(scene, 'forageSprig').instanceMatrix.version;
@@ -604,7 +607,7 @@ describe('ObjectRenderer', () => {
       [10, 12, FENCE],
       [9, 13, FENCE],
     ];
-    const state = placeAll(BASE, fences);
+    const state = placeAll(FARM, fences);
     const { scene, renderer } = setup(state);
     expect(counts(scene)).toEqual({ fencePost: 4, fenceRail: 3 });
     const south = new THREE.Matrix4();
@@ -629,7 +632,7 @@ describe('ObjectRenderer', () => {
   });
 
   it('follows the ground when soil under an unchanged sprinkler turns back to grass', () => {
-    const onSoil = place(BASE, A, SAMPLES.sprinkler, soilTile(TileState.Plowed));
+    const onSoil = place(FARM, A, SAMPLES.sprinkler, soilTile(TileState.Plowed));
     const { scene, renderer } = setup(onSoil);
     expect(pose(scene, 'sprinkler').y).toBeCloseTo(HEIGHTS.soilTop, 6);
     const tile = must(selectActiveWorld(onSoil).chunks.flatMap((c) => c.tiles).find((t) => t.object === SAMPLES.sprinkler));
@@ -640,7 +643,7 @@ describe('ObjectRenderer', () => {
   });
 
   it('rebuilds on a map change and shows only the active map', () => {
-    const farm = place(BASE, A, SAMPLES.chest);
+    const farm = place(FARM, A, SAMPLES.chest);
     const forestObjects = withTile(farm, { tx: 10, tz: 10 }, objectTile(SAMPLES.trophy), 'forest');
     const inForest = withPlayer(forestObjects, { tx: 34, tz: 15 }, Direction.West, 'forest');
     const { scene, renderer } = setup(forestObjects);

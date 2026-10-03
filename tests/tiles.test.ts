@@ -324,6 +324,7 @@ const SAMPLE_OBJECTS: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
   forage: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 },
   trophy: { kind: 'trophy', festival: 'harvestFair', year: 1 },
   decoration: { kind: 'decoration', variant: 'stoneLantern' },
+  workbench: { kind: 'workbench' },
 };
 const PATHS: readonly PlacedObjectKind[] = ['woodPath', 'stonePath'];
 const objectTile = (kind: PlacedObjectKind, base: Tile = EMPTY_TILE): Tile => ({ ...base, object: SAMPLE_OBJECTS[kind] });

@@ -3,7 +3,7 @@
  * poses in each power state, its action clips, shared-tile offsets, movement timing and idle bob.
  * Part 2 spec §9 adds the dizzy spin and how bright a robot's eyes are while it is off.
  */
-import { TIME } from '../config';
+import { TIME, WORKBENCH } from '../config';
 import type { Robot, RobotActionEvent, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
 import { periodFor } from '../robots/stats';
 import { CAMERA } from './constants';
@@ -94,6 +94,11 @@ const IDLE_BOB_PHASE_STEP = 0.618034;
 export function idleBob(timeSeconds: number, robotId: number): number {
   const phase = (timeSeconds / IDLE_BOB_SECONDS + robotId * IDLE_BOB_PHASE_STEP) * Math.PI * 2;
   return IDLE_BOB_HEIGHT * (0.5 + 0.5 * Math.sin(phase));
+}
+
+/** How far above its tile's ground a robot stands: on the bench top while it is on the workbench (part 3 spec §2.1). */
+export function benchLift(robot: Pick<Robot, 'onBench'>): number {
+  return robot.onBench ? WORKBENCH.topHeight : 0;
 }
 
 // ---------------------------------------------------------------------------

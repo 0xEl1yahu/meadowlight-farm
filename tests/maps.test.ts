@@ -7,7 +7,8 @@
  * frozen into tests/fixtures/farmFingerprint.ts before the multi-map change.
  */
 import { describe, expect, it } from 'vitest';
-import { LAYOUT, PLAYER, SHADE, TOOLS, WORLD } from '../src/config';
+import { LAYOUT, PLAYER, SHADE, TOOLS, WORKBENCH, WORLD } from '../src/config';
+import { withWorkbenchAt } from '../src/robots/workbench';
 import { Salt, hash32, hashFloat } from '../src/core/hash';
 import {
   Blocker,
@@ -101,7 +102,7 @@ describe('the farm is bit-identical to the pre-maps generator', () => {
   });
 
   it('is what createInitialState puts in maps.farm, and the player starts there', () => {
-    expect(BASE.maps.farm).toEqual(generateMaps(WORLD.seed).farm);
+    expect(BASE.maps.farm).toEqual(withWorkbenchAt(generateMaps(WORLD.seed).farm, WORKBENCH.home));
     expect(BASE.player).toMatchObject({ mapId: 'farm', tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz, facing: PLAYER.spawnFacing });
   });
 });
@@ -855,7 +856,8 @@ describe('migrating the single farm world of an older save into maps', () => {
     const seed = 424242;
     const state = { ...BASE, seed, maps: generateMaps(seed) };
     const loaded = must(deserializeGame(JSON.stringify(legacySave(state, 2))));
-    expect(loaded.maps).toEqual(generateMaps(seed));
+    const maps = generateMaps(seed);
+    expect(loaded.maps).toEqual({ ...maps, farm: withWorkbenchAt(maps.farm, WORKBENCH.home) });
     expect(loaded.maps.forest).not.toEqual(BASE.maps.forest);
   });
 

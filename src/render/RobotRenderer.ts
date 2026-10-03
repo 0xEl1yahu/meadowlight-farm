@@ -11,6 +11,7 @@
  * - A carried robot is drawn above the player's visual position (the carryAnchor callback).
  * - A robot that just got dizzy spins once (robotLayout.dizzySpin; never on a rebuild). Eyes
  *   follow robotLayout.eyeLevel, so dizzy and done robots look like standby ones and don't bob.
+ * - A robot on the workbench stands on the bench top (robotLayout.benchLift); benching it bumps teleportSeq, so it snaps there.
  */
 import * as THREE from 'three';
 import { ROBOTS } from '../config';
@@ -36,6 +37,7 @@ import {
   SPARK_HEIGHT,
   SPARK_SECONDS,
   STILL,
+  benchLift,
   clipFor,
   clipOffsets,
   dizzySpin,
@@ -116,6 +118,8 @@ const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const color = new THREE.Color();
 
 function groundOf(state: GameState, robot: Robot): number {
+  // The workbench stands on plain grass; a robot on it stands on its top.
+  if (robot.onBench) return HEIGHTS.grassTop + benchLift(robot);
   const tile = getTile(state.maps.farm, robot.tx, robot.tz);
   if (tile === null) return HEIGHTS.grassTop;
   if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
@@ -324,8 +328,8 @@ export class RobotRenderer implements RenderSystem {
       x = v.x + shared.x + Math.sin(side) * clip.shake;
       z = v.z + shared.z + Math.cos(side) * clip.shake;
       const bob = robot.power === 'working' && robot.off === null ? idleBob(elapsed, robot.id) : 0;
-      // pose.sink is absolute (the broken sink is 0.25 tile at every size).
-      y = v.groundY - pose.sink + clip.dip + bob;
+      // pose.sink is absolute (the broken sink is 0.25 tile at every size); nothing sinks into the bench top.
+      y = v.groundY - (robot.onBench ? 0 : pose.sink) + clip.dip + bob;
     }
     euler.set(clip.pitch, v.yaw + dizzySpin(v.spinT), pose.tilt);
     quat.setFromEuler(euler);

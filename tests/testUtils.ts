@@ -9,7 +9,7 @@
  * BASE is deep-frozen: any reducer that mutates state instead of copying it throws a
  * TypeError the moment a test touches it.
  */
-import { INVENTORY, TIME, UNLOCKS } from '../src/config';
+import { INVENTORY, TIME, UNLOCKS, WORKBENCH } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import {
   Blocker,
@@ -327,6 +327,22 @@ export function v5Save(state: GameState): SaveJson {
   const robots = save.robots as SaveJson;
   if (!deepEqual(robots.unlocks, UNLOCKS.job1)) throw new Error("v5Save: a version-5 save starts from job 1's unlocks");
   delete robots.unlocks;
+  // The workbench: no v5 robot is on it or switched off at it, and the v5 farm has none. Its tile's
+  // chunk revision steps back one, as the migration's withWorkbenchAt steps it forward again.
+  for (const robot of robots.list as SaveJson[]) {
+    if (robot.onBench === true || robot.off === 'player') {
+      throw new Error(`v5Save: a version-5 save has no workbench and no on/off switch (robot ${String(robot.id)})`);
+    }
+    delete robot.onBench;
+  }
+  const farm = (save.maps as SaveJson).farm as { chunks: { tiles: SaveJson[]; revision: number }[] };
+  for (const chunk of farm.chunks) {
+    for (const tile of chunk.tiles) {
+      if ((tile.object as SaveJson | null)?.kind !== 'workbench') continue;
+      tile.object = null;
+      chunk.revision -= 1;
+    }
+  }
   return save;
 }
 
@@ -420,6 +436,7 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
     tokens: 80,
     power: 'working',
     carried: false,
+    onBench: false,
     program: { kind: 'script', steps: [{ kind: 'turn', side: 'right' }], loop: true },
     pc: 0,
     exec: null,
@@ -434,6 +451,11 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
     lastAction: null,
     ...overrides,
   };
+}
+
+/** robotOf standing on the workbench (farmclaws part 3): `onBench`, on WORKBENCH.home. */
+export function benchedRobotOf(overrides: Partial<Robot> = {}): Robot {
+  return robotOf({ onBench: true, tx: WORKBENCH.home.tx, tz: WORKBENCH.home.tz, ...overrides });
 }
 
 /** Replaces the robot list (ascending ids) and sets nextId past the highest id. */

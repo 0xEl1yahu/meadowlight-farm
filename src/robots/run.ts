@@ -36,12 +36,13 @@ function goFlat(state: GameState, robotId: number): GameState {
 
 /**
  * Whether `robot` takes a turn this minute: a working script robot (part 1), or a block-program
- * robot that is working or idle on standby and not off (part 2 spec §7, §8). Never while carried.
+ * robot that is working or idle on standby (part 2 spec §7, §8). Never while carried, on the
+ * workbench (part 3 spec §2.2) or off for any reason, scripts included (plan R2).
  */
 function isDue(robot: Robot, minute: number): boolean {
-  if (robot.carried || robot.nextActMinute > minute) return false;
+  if (robot.carried || robot.onBench || robot.off !== null || robot.nextActMinute > minute) return false;
   if (robot.program.kind === 'script') return robot.power === 'working';
-  return robot.off === null && (robot.power === 'working' || robot.power === 'standby');
+  return robot.power === 'working' || robot.power === 'standby';
 }
 
 /**

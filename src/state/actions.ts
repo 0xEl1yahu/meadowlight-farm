@@ -30,7 +30,11 @@ export type GameAction =
   /** Gives a robot a new program, through the checker (farmclaws part 3 spec §4.7). */
   | { readonly type: 'robot/program'; readonly robotId: number; readonly program: RobotProgram }
   /** Gives a robot a new .MD, through the checker. */
-  | { readonly type: 'robot/md'; readonly robotId: number; readonly md: readonly MdCard[] };
+  | { readonly type: 'robot/md'; readonly robotId: number; readonly md: readonly MdCard[] }
+  /** Lifts the robot on the workbench into the player's arms (farmclaws part 3 spec §2.2). */
+  | { readonly type: 'robot/liftOff'; readonly robotId: number }
+  /** The workbench's on/off switch (part 3 spec §2.4). */
+  | { readonly type: 'robot/switch'; readonly robotId: number; readonly on: boolean };
 
 export type GameActionType = GameAction['type'];
 
@@ -59,4 +63,6 @@ export const actions = {
   load: (state: GameState): GameAction => ({ type: 'game/load', state }),
   programRobot: (robotId: number, program: RobotProgram): GameAction => ({ type: 'robot/program', robotId, program }),
   setRobotMd: (robotId: number, md: readonly MdCard[]): GameAction => ({ type: 'robot/md', robotId, md }),
+  liftOffBench: (robotId: number): GameAction => ({ type: 'robot/liftOff', robotId }),
+  switchRobot: (robotId: number, on: boolean): GameAction => ({ type: 'robot/switch', robotId, on }),
 } as const;

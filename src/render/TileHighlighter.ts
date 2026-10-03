@@ -89,6 +89,7 @@ const BOX_HEIGHT = {
     forage: 0.4,
     trophy: 0.9,
     decoration: 1.0,
+    workbench: 1.1,
   } satisfies Readonly<Record<PlacedObjectKind, number>>,
   cropMin: 0.9,
   cropMax: 1.3,

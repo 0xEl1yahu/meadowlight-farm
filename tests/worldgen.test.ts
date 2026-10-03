@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { isShadedTile } from '../src/world/shade';
-import { LAYOUT, PLAYER, TOOLS, WORLD, type FarmLayout } from '../src/config';
+import { LAYOUT, PLAYER, TOOLS, WORKBENCH, WORLD, type FarmLayout } from '../src/config';
+import { withWorkbenchAt } from '../src/robots/workbench';
 import { Blocker, DIRECTIONS, TileState, type WorldState } from '../src/core/types';
 import { createInitialState } from '../src/state/initialState';
 import { createGridSpec, inBounds, rectContains, stepTile } from '../src/world/grid';
@@ -35,8 +36,8 @@ describe('generateWorld determinism', () => {
   });
 
   it('matches the farm of createInitialState(seed)', () => {
-    expect(createInitialState().maps.farm).toEqual(MAPS.farm.generate(WORLD.seed));
-    expect(createInitialState(7).maps.farm).toEqual(MAPS.farm.generate(7));
+    expect(createInitialState().maps.farm).toEqual(withWorkbenchAt(MAPS.farm.generate(WORLD.seed), WORKBENCH.home));
+    expect(createInitialState(7).maps.farm).toEqual(withWorkbenchAt(MAPS.farm.generate(7), WORKBENCH.home));
   });
 
   it('the farm map generates this farm, minus wild crops on its reserved (gate) tiles', () => {
