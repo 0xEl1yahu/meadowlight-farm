@@ -42,6 +42,7 @@
  *   HUD button, or while any panel is open, moves keyboard focus normally so the HUD stays
  *   keyboard-accessible.
  * - Key presses with Ctrl, Cmd or Alt are left to the browser (shortcuts keep working).
+ * - While a robot screen is open every key is left to it (part 3 spec §4.1).
  */
 import { INVENTORY, PLAYER, TIME } from '../config';
 import type { Store } from '../core/store';
@@ -262,6 +263,9 @@ export class InputController {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     this.setShiftHeld(event.shiftKey);
+    // The robot screen owns the keyboard (part 3 spec §4.1): Blockly, its fields and the screen
+    // get every key, so nothing is dispatched and no default is prevented.
+    if (this.store.getState().ui.panel.kind === 'robot') return;
     if (event.defaultPrevented || event.isComposing) return;
     if (isEditableTarget(event.target)) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;

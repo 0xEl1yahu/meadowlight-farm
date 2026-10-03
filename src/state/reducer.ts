@@ -120,6 +120,8 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return setPanelOpen(state, { kind: 'inventory' }, action.open);
     case 'ui/closePanel':
       return state.ui.panel.kind === 'none' ? state : { ...state, ui: { ...state.ui, panel: { kind: 'none' } } };
+    case 'ui/notify':
+      return pushMessage(state, action.text, action.tone);
     case 'shop/buy':
       return buySeeds(state, action.itemId, action.quantity);
     case 'crafting/craft':

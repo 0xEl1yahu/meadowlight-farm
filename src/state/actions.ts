@@ -2,7 +2,7 @@
  * Every way the game state can change. Actions are plain serialisable objects, so an action
  * log replayed from the same initial state reproduces the same game exactly.
  */
-import type { CraftingRecipeId, Direction, GameState, MdCard, RobotProgram, SeedItemId, SlotRef } from '../core/types';
+import type { CraftingRecipeId, Direction, GameState, MdCard, MessageTone, RobotProgram, SeedItemId, SlotRef } from '../core/types';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -23,6 +23,8 @@ export type GameAction =
   | { readonly type: 'ui/setInventoryOpen'; readonly open: boolean }
   /** Closes whichever panel is open. */
   | { readonly type: 'ui/closePanel' }
+  /** A toast from the UI itself, e.g. when the robot screen fails to load (part 3 spec §4.1). */
+  | { readonly type: 'ui/notify'; readonly text: string; readonly tone: MessageTone }
   | { readonly type: 'shop/buy'; readonly itemId: SeedItemId; readonly quantity: number }
   /** Crafts one batch of a known recipe from the player's inventory. */
   | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
@@ -67,6 +69,7 @@ export const actions = {
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),
+  notify: (text: string, tone: MessageTone): GameAction => ({ type: 'ui/notify', text, tone }),
   buy: (itemId: SeedItemId, quantity: number): GameAction => ({ type: 'shop/buy', itemId, quantity }),
   craft: (recipe: CraftingRecipeId): GameAction => ({ type: 'crafting/craft', recipe }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),

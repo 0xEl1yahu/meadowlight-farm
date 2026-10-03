@@ -6,6 +6,7 @@
  *                  (planShiftInteraction: E's meaning at the workbench, else a robot's screen)
  *   B              toggles the seed shop; does nothing while the inventory or a chest is open
  *   Escape         closes any open panel, otherwise drops a zone draft, otherwise toggles pause
+ *   (none)         while a robot screen is open: it owns the keyboard (part 3 spec §4.1)
  *
  * markerToolCommand decides the tool keys while the zone marker is selected.
  *
@@ -35,6 +36,8 @@ export function isInventoryScreenOpen(state: GameState): boolean {
  * or null when `code` is not a panel key. `shift` is whether Shift is held with the key.
  */
 export function panelKeyCommand(code: string, state: GameState, shift = false): PanelKeyCommand | null {
+  // The robot screen handles its own keys, Escape included; no key is a game key while it's open.
+  if (state.ui.panel.kind === 'robot') return null;
   const panel = state.ui.panel.kind;
   if (INTERACT_KEYS.has(code)) {
     if (isInventoryScreenOpen(state)) return actions.closePanel();

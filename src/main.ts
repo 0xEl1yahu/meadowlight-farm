@@ -39,6 +39,7 @@ import { createInitialState } from './state/initialState';
 import { clearSave, loadGame, saveGame } from './state/persistence';
 import { gameReducer } from './state/reducer';
 import { Hud } from './ui/Hud';
+import { RobotScreenHost } from './ui/RobotScreenHost';
 import { selectActiveWorld, selectIsFrozen } from './state/selectors';
 
 declare global {
@@ -106,6 +107,7 @@ function bootstrap(): () => void {
       triangles: ctx.renderer.info.render.triangles,
     }),
   });
+  const robotScreen = new RobotScreenHost({ root: hudRoot, store });
   const input = new InputController({
     target: window,
     canvas: ctx.renderer.domElement,
@@ -116,6 +118,7 @@ function bootstrap(): () => void {
 
   for (const system of systems) system.sync(initial, null);
   hud.sync(initial, null);
+  robotScreen.sync(initial, null);
   ctx.rig.snap(player.focus);
 
   const simClock = new FixedStepClock(TIME.realSecondsPerGameMinute, TIME.maxTickMinutes);
@@ -128,6 +131,7 @@ function bootstrap(): () => void {
     const systemsPrev = plan.systemsPrev === 'null' ? null : prev;
     for (const system of systems) system.sync(state, systemsPrev);
     hud.sync(state, plan.hudPrev === 'null' ? null : prev);
+    robotScreen.sync(state, prev);
     if (plan.snapCamera) ctx.rig.snap(player.focus);
     const newDay = state.time.absoluteDay !== prev.time.absoluteDay;
     if (action.type === 'game/load' || newDay) simClock.reset();
@@ -190,6 +194,7 @@ function bootstrap(): () => void {
     unsubscribe();
     input.dispose();
     hud.dispose();
+    robotScreen.dispose();
     for (const system of systems) system.dispose();
     ctx.dispose();
   };

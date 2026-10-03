@@ -136,3 +136,17 @@ describe('Escape with a zone draft (part 3 spec §8)', () => {
     expect(panelKeyCommand('Escape', paused)).toEqual(actions.setPaused(false));
   });
 });
+
+describe('the robot screen owns the keyboard (part 3 spec §4.1)', () => {
+  const withPanel = (panel: GameState['ui']['panel']): GameState => deepFreeze({ ...BASE, ui: { ...BASE.ui, panel } });
+  const BENCH = withPanel({ kind: 'robot', robotId: 1, mode: 'bench' });
+  const PEEK = withPanel({ kind: 'robot', robotId: 1, mode: 'peek' });
+  const CODES = ['KeyE', 'KeyK', 'Enter', 'NumpadEnter', 'KeyI', 'KeyB', 'Escape', 'KeyW', 'Space', 'KeyP'];
+
+  it.each(CODES)('%s is not a panel key while a robot panel is open', (code) => {
+    for (const state of [BENCH, PEEK]) {
+      expect(panelKeyCommand(code, state)).toBeNull();
+      expect(panelKeyCommand(code, state, true)).toBeNull();
+    }
+  });
+});
