@@ -571,7 +571,7 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!isOneOf(v.power, ROBOT_POWERS) || !isBool(v.carried)) return false;
   if (!isValidMind(v, { size: v.size, parts })) return false;
   if (!(v.off === null || v.off === 'dizzy' || v.off === 'done')) return false;
-  if (v.off !== null && v.power !== 'working' && v.power !== 'standby') return false;
+  if (v.off !== null && v.power !== 'working' && v.power !== 'standby' && v.power !== 'flat') return false;
   if (!isIntIn(v.nextActMinute, TIME.dayStartMinute, TIME.passOutMinute + ROBOTS.maxWaitMinutes)) return false;
   if (!isCount(v.moveSeq) || !isCount(v.teleportSeq) || !isCount(v.actionSeq)) return false;
   if (!isValidLastAction(v.lastAction, v.actionSeq)) return false;

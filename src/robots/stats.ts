@@ -36,6 +36,16 @@ export function resumedPower(robot: Pick<Robot, 'power' | 'tokens'>): RobotPower
   return robot.tokens > 0 ? 'working' : 'flat';
 }
 
+/**
+ * Power of a robot the player puts down (part 2 spec §7): resumedPower, except that a robot off
+ * for the day stays off and doesn't wake. It keeps its power (working or standby) while it has
+ * tokens, and is flat without them, so `off` only ever pairs with working, standby or flat.
+ */
+export function putDownPower(robot: Pick<Robot, 'power' | 'tokens' | 'off'>): RobotPower {
+  if (robot.off === null) return resumedPower(robot);
+  return robot.tokens > 0 ? robot.power : 'flat';
+}
+
 export function carryEnergyFor(robot: Pick<Robot, 'size'>): number {
   return ROBOTS.carryEnergy[robot.size];
 }

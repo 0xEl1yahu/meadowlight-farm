@@ -180,7 +180,8 @@ describe('save version 5', () => {
     ['a zone of width 0', (s) => void (robotsOf(s).zones.A = { x0: 3, z0: 9, w: 0, d: 3 })],
     ['an unknown zone id', (s) => void (robotsOf(s).zones.I = null)],
     ['a missing zone id', (s) => void delete robotsOf(s).zones.H],
-    ['an off flag on a flat robot', (s) => void Object.assign(robot(s, 2), { power: 'flat', tokens: 0 })],
+    ['an off flag on a broken robot', (s) => void (robot(s, 2).power = 'broken')],
+    ['an off flag on a repairing robot', (s) => void Object.assign(robot(s, 2), { power: 'repairing', repairReadyDay: 1 })],
     ['an unknown off reason', (s) => void (robot(s, 1).off = 'sleepy')],
     ['a program that fails the checker', (s) => void (((robot(s, 1).program.stacks as SaveJson[])[1]!.body as SaveJson[])[1] = { kind: 'do', action: { kind: 'say', text: { kind: 'text', value: '   ' } } })],
     ['a program with an unknown statement', (s) => void ((robot(s, 1).program.helpers as SaveJson[])[0]!.body = [{ kind: 'dance' }])],
@@ -190,6 +191,13 @@ describe('save version 5', () => {
     ['a block robot without an exec', (s) => void (robot(s, 1).exec = null as never)],
     ['a block robot with pc 1', (s) => void (robot(s, 1).pc = 1)],
   ];
+
+  it('loads an off robot that is working, on standby or flat', () => {
+    for (const power of ['working', 'standby', 'flat'] as const) {
+      const loaded = corrupt(lively(), (s) => void Object.assign(robot(s, 2), { power, tokens: power === 'flat' ? 0 : 5 }));
+      expect(loaded === null ? null : requireRobot(loaded, 2)).toMatchObject({ power, off: 'dizzy' });
+    }
+  });
 
   it.each(rejections)('rejects %s', (_label, edit) => {
     expect(corrupt(lively(), edit)).toBeNull();

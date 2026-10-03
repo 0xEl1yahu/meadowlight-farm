@@ -4,12 +4,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
-import { Blocker, Direction, type GameState } from '../src/core/types';
+import { Blocker, Direction, type GameState, type MdCard } from '../src/core/types';
+import { b } from '../src/robots/blocks';
+import { morningExec } from '../src/robots/exec';
 import { periodFor, resumedPower } from '../src/robots/stats';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
 import { placementProblem } from '../src/state/intents';
+import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { MAPS, isReservedTile } from '../src/world/maps';
 import { blockedTile, EMPTY_TILE } from '../src/world/tiles';
@@ -85,6 +88,46 @@ describe('putting robots down', () => {
   it('keeps a broken robot broken on land', () => {
     const state = withRobots({ ...scenario(EMPTY_TILE), player: { ...scenario(EMPTY_TILE).player, carrying: 1 } }, [robotOf({ carried: true, power: 'broken' })]);
     expect(requireRobot(interact(state), 1).power).toBe('broken');
+  });
+});
+
+describe('putting down a robot that is off for the day (part 2 spec §7)', () => {
+  const SPIN = b.program({ stacks: [b.when(b.morning(), b.forever(b.turn('right')))] });
+  const powerDownBelow = (n: number): MdCard => ({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n } });
+  const loadedFrom = (state: GameState): GameState => ({ ...state, ui: { ...state.ui, panel: { kind: 'none' }, paused: false } });
+
+  /**
+   * A spinning Mini on TARGET with `tokens` whose .MD powers it down below `n`, run through real
+   * minutes: one turn at 6:04 (1 token), then its DO power down at 6:08.
+   */
+  function poweredDown(tokens: number, n: number): GameState {
+    const robot = robotOf({ program: SPIN, exec: morningExec(SPIN), md: [powerDownBelow(n)], tokens });
+    return gameReducer(withRobots(emptyHanded(scenario(EMPTY_TILE)), [robot]), actions.tick(8));
+  }
+
+  /** Picks the robot up and puts it straight back down on TARGET. */
+  const carriedAndPutDown = (state: GameState): GameState => {
+    const held = interact(state);
+    expect(held.player.carrying).toBe(1);
+    const down = interact(held);
+    expect(down.player.carrying).toBeNull();
+    return down;
+  };
+
+  it('stays off and goes flat when its last token is spent, and the save round-trips', () => {
+    const off = poweredDown(1, 1);
+    expect(requireRobot(off, 1)).toMatchObject({ tokens: 0, power: 'standby', off: 'done' });
+    const down = carriedAndPutDown(off);
+    expect(requireRobot(down, 1)).toMatchObject({ carried: false, tokens: 0, power: 'flat', off: 'done' });
+    expect(deserializeGame(serializeGame(down))).toEqual(loadedFrom(down));
+  });
+
+  it('stays off with the power it had while it still has tokens', () => {
+    const off = poweredDown(3, 3);
+    expect(requireRobot(off, 1)).toMatchObject({ tokens: 2, power: 'standby', off: 'done' });
+    const down = carriedAndPutDown(off);
+    expect(requireRobot(down, 1)).toMatchObject({ carried: false, tokens: 2, power: 'standby', off: 'done' });
+    expect(deserializeGame(serializeGame(down))).toEqual(loadedFrom(down));
   });
 });
 

@@ -42,7 +42,7 @@ import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
-import { periodFor, resumedPower } from '../robots/stats';
+import { periodFor, putDownPower } from '../robots/stats';
 import { requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
@@ -408,7 +408,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
           tx: target.tx,
           tz: target.tz,
           facing: state.player.facing,
-          power: resumedPower(robot),
+          power: putDownPower(robot),
           nextActMinute: state.time.minuteOfDay + periodFor(robot),
           teleportSeq: robot.teleportSeq + 1,
         },

@@ -384,7 +384,7 @@ DON'T beats DO beats the program, and nothing else decides. A DO that can't be c
   - `exec` is rebuilt: variables back to their initials; `due` is the trigger minute for `atTime`, `dayStartMinute + n` for `every n` and null otherwise; `firedToday` all false; `doneCards` cleared; frames empty; `running: null`.
   - `off` is cleared.
   - Then the first `morning` stack starts.
-- **Off means off until morning.** A robot that is off (`'dizzy'` / `'done'`) and is carried and put down is shown `working` by part 1's put-down, but it stays off and never acts until the morning reset; it renders with dimmed eyes (section 9).
+- **Off means off until morning.** A robot that is off (`'dizzy'` / `'done'`) and is carried and put down stays off and never acts until the morning reset. Put-down doesn't wake it the way part 1's put-down (`resumedPower`) does: it keeps its power (`working` or `standby`) while it has tokens and is `flat` with none (`putDownPower` in `src/robots/stats.ts`). A robot that isn't off is put down exactly as in part 1. An off robot renders with dimmed eyes, or dark when flat (section 9).
 - **A trigger fires only when the robot is idle:** `standby`, not `off`, not carried, and not running a stack. A running stack is never interrupted; only DO cards take over a working robot.
 - **Idle robots still check on their schedule.** An idle robot with a block program is "due" at its `nextActMinute` like a working one. On its due minute it checks its stacks' triggers in order and starts the first that fires:
   - `atTime`: the minute has come and `due` isn't spent. It spends its `due`.
@@ -439,7 +439,7 @@ On top of part 1's rules:
   - The frame depth is at most `maxFrames`.
   - `doneCards` are DO card indices with no repeats.
 - **Zones:** rectangles lie inside the farm with w and d ≥ 1.
-- **Off robots:** `off` is non-null only for `working` or `standby` robots. (An off robot put down after being carried is `working` and still off.)
+- **Off robots:** `off` is non-null only for `working`, `standby` or `flat` robots, never `broken` or `repairing`. (An off robot put down with no tokens left is `flat` and still off; section 7.)
 
 Any state the game can produce must load. A corrupted field must be rejected.
 
