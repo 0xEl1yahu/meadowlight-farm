@@ -4,14 +4,35 @@
  * ui/notify toast). The DOM and Blockly glue are checked in the browser.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ROBOT_CARE, ROBOT_PAINTS, UNLOCKS } from '../src/config';
+import { ROBOTS, ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, TIME, UNLOCKS } from '../src/config';
 import { createStore, type Store } from '../src/core/store';
+import { mulberry32 } from '../src/core/hash';
 import type { GameState, RobotLogEntry, RobotLogEvent } from '../src/core/types';
 import { InputController } from '../src/input/InputController';
 import type { CameraRig } from '../src/render/CameraRig';
+import { b } from '../src/robots/blocks';
 import { ALL_UNLOCKS } from '../src/robots/unlocks';
 import { actions, type GameAction } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
+import { BLOCK_DEFINITIONS, type BlockDefinitionJson } from '../src/ui/robotScreen/blockly/blockDefs';
+import {
+  EDITOR_TEXT,
+  NEEDS_SENSOR_EYE_REASON,
+  NEEDS_SENSOR_EYE_TEXT,
+  blockCounter,
+  declarationState,
+  defaultLiteral,
+  dropdownOptions,
+  menuAccepts,
+  menuFieldType,
+  menuLabel,
+  nameOptions,
+  scriptNote,
+  toolboxFor,
+  variableCounter,
+  type MenuKind,
+} from '../src/ui/robotScreen/blockly/toolbox';
+import { BLOCK_TYPES, programToWorkspace, type BlocklyBlockJson } from '../src/ui/robotScreen/translate';
 import {
   EMPTY_TABS_TEXT,
   LOG_TEXT,
@@ -32,6 +53,7 @@ import {
   switchView,
   visibleTabs,
 } from '../src/ui/robotScreen/viewModel';
+import { randomProgram } from './programGen';
 import { BASE, atDay, robotOf, withRobots } from './testUtils';
 
 function withPanel(state: GameState, panel: GameState['ui']['panel']): GameState {
@@ -329,5 +351,258 @@ describe('InputController while a robot screen is open (spec §4.1)', () => {
     expect(press('KeyP', 'p').defaultPrevented).toBe(true);
     expect(dispatched).toEqual([actions.setPaused(true)]);
     dispose();
+  });
+});
+
+describe('toolboxFor', () => {
+  const types = (toolbox: ReturnType<typeof toolboxFor>) =>
+    toolbox.contents.map((category) => [category.name, category.contents.map((block) => block.type)] as const);
+
+  it("lists job 1's blocks by category, leaving empty categories out", () => {
+    const toolbox = toolboxFor(robotOf({ parts: ['wateringHead'] }), UNLOCKS.job1);
+    expect(toolbox.kind).toBe('categoryToolbox');
+    expect(types(toolbox)).toEqual([
+      ['Triggers', ['fc_morning', 'fc_atTime']],
+      ['Control', ['fc_repeatTimes', 'fc_repeatUntil', 'fc_repeatForever']],
+      ['Actions', ['fc_move', 'fc_turn', 'fc_goTo', 'fc_water', 'fc_refill', 'fc_powerDown', 'fc_wait', 'fc_say']],
+      ['Values', ['fc_num', 'fc_text', 'fc_yes', 'fc_item', 'fc_tile', 'fc_myTile', 'fc_tileAhead', 'fc_tokensLeft', 'fc_compare']],
+    ]);
+  });
+
+  it('puts both If shapes in Control, the variable getter in Values, and never a declaration', () => {
+    const toolbox = toolboxFor(robotOf({ parts: ['sensorEye'] }), ALL_UNLOCKS);
+    const byName = new Map(types(toolbox));
+    expect(byName.get('Control')).toEqual([
+      'fc_repeatTimes',
+      'fc_repeatUntil',
+      'fc_repeatForever',
+      'fc_if',
+      'fc_ifElse',
+      'fc_forEachTile',
+      'fc_set',
+      'fc_change',
+      'fc_helper',
+      'fc_runHelper',
+    ]);
+    expect(byName.get('Values')?.[0]).toBe('fc_var');
+    expect(toolbox.contents.flatMap((category) => category.contents.map((block) => block.type))).not.toContain('fc_varDecl');
+    expect(toolbox.contents.map((category) => category.name)).toEqual(['Triggers', 'Control', 'Actions', 'Sensors', 'Values']);
+  });
+
+  it('disables the sensor-eye sensors without a sensor eye, and only them', () => {
+    const disabled = (parts: Parameters<typeof robotOf>[0]) =>
+      toolboxFor(robotOf(parts), ALL_UNLOCKS)
+        .contents.flatMap((category) => category.contents)
+        .filter((block) => block.disabledReasons !== undefined)
+        .map((block) => [block.type, block.disabledReasons]);
+    expect(disabled({ parts: ['claw'] })).toEqual([
+      ['fc_tileAheadIs', [NEEDS_SENSOR_EYE_REASON]],
+      ['fc_itIsRaining', [NEEDS_SENSOR_EYE_REASON]],
+      ['fc_timeIsAfter', [NEEDS_SENSOR_EYE_REASON]],
+    ]);
+    expect(disabled({ parts: ['sensorEye'] })).toEqual([]);
+    expect(NEEDS_SENSOR_EYE_TEXT).toBe('Needs a sensor eye');
+  });
+
+  it('has no shadow blocks', () => {
+    const blocks = toolboxFor(robotOf(), ALL_UNLOCKS).contents.flatMap((category) => category.contents);
+    for (const block of blocks) expect(Object.keys(block).sort()).toEqual(block.disabledReasons === undefined ? ['kind', 'type'] : ['disabledReasons', 'kind', 'type']);
+  });
+});
+
+describe('dropdownOptions', () => {
+  it('offers times every ROBOT_SCREEN.timeStep minutes from 6:00 am to 1:50 am', () => {
+    const options = dropdownOptions('minute', null);
+    expect(options).toHaveLength((TIME.passOutMinute - TIME.dayStartMinute) / ROBOT_SCREEN.timeStep);
+    expect(options[0]).toEqual(['6:00 am', '360']);
+    expect(options.at(-1)).toEqual(['1:50 am', '1550']);
+  });
+
+  it('includes a time outside the usual steps, in order', () => {
+    const options = dropdownOptions('minute', 583);
+    expect(options).toHaveLength((TIME.passOutMinute - TIME.dayStartMinute) / ROBOT_SCREEN.timeStep + 1);
+    const at = options.findIndex(([, value]) => value === '583');
+    expect(options.slice(at - 1, at + 2)).toEqual([
+      ['9:40 am', '580'],
+      ['9:43 am', '583'],
+      ['9:50 am', '590'],
+    ]);
+    expect(dropdownOptions('minute', '583')).toEqual(options);
+    expect(dropdownOptions('minute', 600)).toHaveLength(options.length - 1);
+  });
+
+  it('includes an item the usual list leaves out', () => {
+    expect(dropdownOptions('item', null).map(([, value]) => value)).not.toContain('hoe');
+    expect(dropdownOptions('item', null)[0]).toEqual(['Parsnip Seeds', 'parsnip_seeds']);
+    expect(dropdownOptions('item', 'hoe').at(-1)).toEqual(['Hoe', 'hoe']);
+  });
+
+  it('lists crops, zones and Every choices with the current value kept', () => {
+    expect(dropdownOptions('crop', null)[0]).toEqual(['Parsnip', 'parsnip']);
+    expect(dropdownOptions('zone', 'C')).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((zone) => [`Zone ${zone}`, zone]));
+    expect(dropdownOptions('every', '15')).toEqual([['5', '5'], ['10', '10'], ['15', '15'], ['30', '30'], ['60', '60']]);
+    expect(dropdownOptions('every', 45).map(([, value]) => value)).toEqual(['5', '10', '15', '30', '45', '60']);
+  });
+});
+
+describe('menu fields', () => {
+  it('accepts any well-formed value of its kind, as a string', () => {
+    expect(menuAccepts('minute', 583)).toBe('583');
+    expect(menuAccepts('minute', '583')).toBe('583');
+    expect(menuAccepts('minute', '9:43')).toBeNull();
+    expect(menuAccepts('every', 15)).toBe('15');
+    expect(menuAccepts('item', 'hoe')).toBe('hoe');
+    expect(menuAccepts('item', 'dragon')).toBeNull();
+    expect(menuAccepts('crop', 'pumpkin')).toBe('pumpkin');
+    expect(menuAccepts('crop', 'hoe')).toBeNull();
+    expect(menuAccepts('zone', 'H')).toBe('H');
+    expect(menuAccepts('zone', 'Z')).toBeNull();
+    expect(menuAccepts('var', 'aVeryLongName123')).toBe('aVeryLongName123');
+    expect(menuAccepts('helper', '')).toBe('');
+    expect(menuAccepts('var', 3)).toBeNull();
+  });
+
+  it('labels values the way the dropdown shows them', () => {
+    expect(menuLabel('minute', '583')).toBe('9:43 am');
+    expect(menuLabel('every', '15')).toBe('15');
+    expect(menuLabel('item', 'hoe')).toBe('Hoe');
+    expect(menuLabel('crop', 'parsnip')).toBe('Parsnip');
+    expect(menuLabel('zone', 'A')).toBe('Zone A');
+    expect(menuLabel('var', 'count')).toBe('count');
+    expect(menuLabel('var', '')).toBe('—');
+    expect(menuLabel('helper', null)).toBe('—');
+  });
+
+  it("lists the workspace's names, keeps the current one and never comes back empty", () => {
+    expect(nameOptions(['n', 'total', 'n'], null)).toEqual([['n', 'n'], ['total', 'total']]);
+    expect(nameOptions(['n'], 'gone')).toEqual([['n', 'n'], ['gone', 'gone']]);
+    expect(nameOptions([], null)).toEqual([['—', '']]);
+    expect(nameOptions([], '')).toEqual([['—', '']]);
+  });
+
+  it('names one registered field per menu kind', () => {
+    const kinds: MenuKind[] = ['minute', 'every', 'item', 'crop', 'zone', 'var', 'helper'];
+    expect(kinds.map(menuFieldType)).toEqual(kinds.map((kind) => `field_fc_${kind}`));
+  });
+});
+
+describe('the editor helpers', () => {
+  it('counts blocks and variables against the size, red over the limit', () => {
+    expect(blockCounter(7, 'mini')).toEqual({ text: '7 / 12 blocks', over: false });
+    expect(blockCounter(13, 'mini')).toEqual({ text: '13 / 12 blocks', over: true });
+    expect(blockCounter(30, 'standard')).toEqual({ text: '30 / 30 blocks', over: false });
+    expect(variableCounter(2, 'mini')).toEqual({ text: '2 / 1 variables', over: true });
+    expect(variableCounter(ROBOTS.sizes.big.vars, 'big')).toEqual({ text: '6 / 6 variables', over: false });
+  });
+
+  it('gives each type its default literal', () => {
+    const robot = robotOf({ tx: 6, tz: 4 });
+    expect(defaultLiteral('number', robot)).toEqual({ type: 'fc_num', fields: { NUM: 0 } });
+    expect(defaultLiteral('text', robot)).toEqual({ type: 'fc_text', fields: { TEXT: '' } });
+    expect(defaultLiteral('yesNo', robot)).toEqual({ type: 'fc_yes', fields: { VALUE: 'FALSE' } });
+    expect(defaultLiteral('item', robot)).toEqual({ type: 'fc_item', fields: { ITEM: 'parsnip' } });
+    expect(defaultLiteral('tile', robot)).toEqual({ type: 'fc_tile', fields: { X: 6, Z: 4 } });
+  });
+
+  it('builds a declaration holding the default literal', () => {
+    expect(declarationState('n', 'tile', robotOf({ tx: 6, tz: 4 }), 10, 20)).toEqual({
+      type: 'fc_varDecl',
+      x: 10,
+      y: 20,
+      fields: { NAME: 'n', TYPE: 'tile' },
+      inputs: { INITIAL: { block: { type: 'fc_tile', fields: { X: 6, Z: 4 } } } },
+    });
+  });
+
+  it('has the spec sentences', () => {
+    expect(EDITOR_TEXT.opening).toBe('Opening the editor…');
+    expect(EDITOR_TEXT.failed).toBe("The editor couldn't load. Close and try again.");
+    expect(EDITOR_TEXT.loose).toBe('Every block must be inside a When … stack or a helper.');
+    expect(scriptNote('Bolt')).toBe('Bolt runs a fixed script. Saving here replaces it with a block program.');
+  });
+});
+
+describe('block definitions', () => {
+  interface Shape {
+    readonly fields: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+    readonly inputs: ReadonlySet<string>;
+    readonly next: boolean;
+    readonly previous: boolean;
+  }
+
+  function shapeOf(def: BlockDefinitionJson): Shape {
+    const fields = new Map<string, Readonly<Record<string, unknown>>>();
+    const inputs = new Set<string>();
+    for (const [key, value] of Object.entries(def)) {
+      if (!/^args\d+$/.test(key) || !Array.isArray(value)) continue;
+      for (const arg of value as readonly Readonly<Record<string, unknown>>[]) {
+        const type = String(arg.type);
+        if (typeof arg.name !== 'string') continue;
+        if (type.startsWith('field_')) fields.set(arg.name, arg);
+        else if (type === 'input_value' || type === 'input_statement') inputs.add(arg.name);
+      }
+    }
+    return { fields, inputs, next: 'nextStatement' in def, previous: 'previousStatement' in def };
+  }
+
+  const SHAPES = new Map(BLOCK_DEFINITIONS.map((def) => [def.type, shapeOf(def)] as const));
+  const MENU_BY_TYPE = new Map<string, MenuKind>(
+    (['minute', 'every', 'item', 'crop', 'zone', 'var', 'helper'] as const).map((kind) => [menuFieldType(kind), kind]),
+  );
+
+  /** Every way a translated block disagrees with its definition. */
+  function problems(block: BlocklyBlockJson, path: string): string[] {
+    const shape = SHAPES.get(block.type);
+    if (shape === undefined) return [`${path}: no definition for ${block.type}`];
+    const found: string[] = [];
+    for (const [name, value] of Object.entries(block.fields ?? {})) {
+      const field = shape.fields.get(name);
+      if (field === undefined) {
+        found.push(`${path}: ${block.type} has no field ${name}`);
+        continue;
+      }
+      const menu = MENU_BY_TYPE.get(String(field.type));
+      if (menu !== undefined && menuAccepts(menu, value) === null) found.push(`${path}: ${name} = ${String(value)} rejected`);
+      if (field.type === 'field_dropdown' && !(field.options as readonly (readonly [string, string])[]).some(([, v]) => v === value)) {
+        found.push(`${path}: ${name} = ${String(value)} not an option`);
+      }
+      if (field.type === 'field_number' && typeof value !== 'number') found.push(`${path}: ${name} is not a number`);
+    }
+    for (const [name, input] of Object.entries(block.inputs ?? {})) {
+      if (!shape.inputs.has(name)) found.push(`${path}: ${block.type} has no input ${name}`);
+      if (input.block !== undefined) found.push(...problems(input.block, `${path}.${name}`));
+    }
+    if (block.next?.block !== undefined) {
+      if (!shape.next) found.push(`${path}: ${block.type} has no next connection`);
+      found.push(...problems(block.next.block, `${path}.next`));
+    }
+    return found;
+  }
+
+  it('defines every block type of the language once', () => {
+    expect(BLOCK_DEFINITIONS.map((def) => def.type).sort()).toEqual([...BLOCK_TYPES].sort());
+    expect(new Set(BLOCK_DEFINITIONS.map((def) => def.type)).size).toBe(BLOCK_DEFINITIONS.length);
+  });
+
+  it('gives triggers, helpers and declarations no previous or next connection', () => {
+    for (const type of ['fc_morning', 'fc_atTime', 'fc_bagFull', 'fc_startsRaining', 'fc_every', 'fc_helper', 'fc_varDecl']) {
+      expect([type, SHAPES.get(type)?.previous, SHAPES.get(type)?.next]).toEqual([type, false, false]);
+    }
+  });
+
+  it('matches every field and input of 300 translated random programs, and the design fixtures', () => {
+    const rng = mulberry32(20261003);
+    const programs = [
+      ...Array.from({ length: 300 }, () => randomProgram(rng)),
+      b.program({
+        vars: [{ name: 'aVeryLongName123', type: 'number', initial: b.n(7) }],
+        stacks: [b.when(b.atTime(583), b.take('hoe'), b.change('aVeryLongName123', 1), b.wait(b.v('aVeryLongName123')))],
+      }),
+      b.program({ stacks: [b.when(b.morning(), b.repeatUntil(b.lt(b.tokensLeft(), 10), b.water(), b.move()))] }),
+    ];
+    const found = programs.flatMap((program, index) =>
+      (programToWorkspace(program).blocks?.blocks ?? []).flatMap((block, top) => problems(block, `program ${index} block ${top}`)),
+    );
+    expect(found.slice(0, 5)).toEqual([]);
   });
 });
