@@ -1,7 +1,7 @@
 # Farmclaws part 2 — the language playbook
 
 The browser check from the part 2 plan (Task 11 Step 4), as runnable snippets for the part 2
-spec §14.3. Start each numbered check from `?new` with the probe loaded (see SKILL.md). Each
+spec §14.3. Last run: 2026-10-03, all six pass (check 4 driven with `__qa.tick` because the pane was hidden). Start each numbered check from `?new` with the probe loaded (see SKILL.md). Each
 block is one `javascript_tool` call. Expected results come from the part 2 spec and
 `src/config.ts`.
 

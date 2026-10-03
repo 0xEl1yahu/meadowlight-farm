@@ -64,6 +64,7 @@ Drive the real game in the browser pane and judge it by its **state**, confirmed
 | Day jumped between calls | Time kept running at 16× while you worked — `__meadowlight.store.dispatch(__meadowlight.actions.setTimeScale(1))` |
 | "The farm already has 12 robots." | Start from `?new` |
 | `setProgram` worked but the robot never starts | It was after 6:04, so the `morning` stack waits for tomorrow. Load the clock to 6:00 in the same call first (`const s = __qa.state(); __qa.load({ ...s, time: { ...s.time, minuteOfDay: 360 } })`), or give the program an `every` / `atTime` trigger |
+| Clock frozen in real time (`T` speed does nothing) | The browser pane is hidden (`document.hidden` is true), so animation frames stop and the game clock with them. Drive time with `__qa.tick(n)`; screenshots still render on demand |
 | Navigation fails / blank tab | Server stopped — `preview_list`, `preview_start` |
 
 ## Report
