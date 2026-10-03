@@ -3,6 +3,7 @@
  */
 import { TIME } from '../config';
 import type { BlockProgram, RobotExec, Trigger } from '../core/types';
+import { startStack } from './interpret';
 import { literalValue } from './program';
 
 /** The first minute a trigger may fire in a fresh day: its time, the first `every` check, or null for the others. */
@@ -25,4 +26,14 @@ export function freshExec(program: BlockProgram): RobotExec {
     firedToday: program.stacks.map(() => false),
     doneCards: [],
   };
+}
+
+/**
+ * A block program's exec at the morning reset (spec §7): fresh, with the first `morning` stack
+ * started. Idle when the program has no `morning` stack.
+ */
+export function morningExec(program: BlockProgram): RobotExec {
+  const exec = freshExec(program);
+  const index = program.stacks.findIndex((stack) => stack.trigger.kind === 'morning');
+  return index === -1 ? exec : startStack(exec, index);
 }

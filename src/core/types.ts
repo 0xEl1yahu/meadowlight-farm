@@ -630,6 +630,13 @@ export const ROBOT_LOG_EVENT_KINDS = [
   'finished',
   'poweredDown',
   'repaired',
+  'skipped',
+  'dizzy',
+  'gaveUp',
+  'woke',
+  'doReturn',
+  'doPowerDown',
+  'conflict',
 ] as const;
 
 export type RobotLogEvent =
@@ -640,7 +647,15 @@ export type RobotLogEvent =
   | { readonly kind: 'flat' }
   | { readonly kind: 'finished' }
   | { readonly kind: 'poweredDown' }
-  | { readonly kind: 'repaired' };
+  | { readonly kind: 'repaired' }
+  // Farmclaws part 2 (spec §2.7). Events carry the card itself, so the log stays true after an .MD edit.
+  | { readonly kind: 'skipped'; readonly action: RobotActionKind; readonly card: MdCard }
+  | { readonly kind: 'dizzy' }
+  | { readonly kind: 'gaveUp'; readonly target: TileCoord; readonly why: 'goTo' | 'forEach' | 'doReturn' }
+  | { readonly kind: 'woke'; readonly trigger: Trigger }
+  | { readonly kind: 'doReturn'; readonly card: MdCard; readonly phase: 'started' | 'arrived' | 'failed' }
+  | { readonly kind: 'doPowerDown'; readonly card: MdCard }
+  | { readonly kind: 'conflict'; readonly doCard: MdCard; readonly dontCard: MdCard };
 
 export interface RobotLogEntry {
   readonly id: number;

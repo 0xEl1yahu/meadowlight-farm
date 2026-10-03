@@ -2,9 +2,11 @@
  * The two columns of a robot's log (farmclaws part 1 spec §8.3). "Robot says" is innocent and
  * always ends in ✓; "What happened" is the truth. Part 6 swaps in personality voices for the first.
  */
-import type { RobotActionKind, RobotBlockReason, RobotLogEntry, RobotLogEvent } from '../core/types';
+import type { MdCard, RobotActionKind, RobotBlockReason, RobotLogEntry, RobotLogEvent, Trigger } from '../core/types';
 import { joinWithAnd, qualityPrefix } from '../core/text';
 import { CROPS } from '../farming/crops';
+import { formatClock } from '../time/clock';
+import { mdCardText } from './md';
 
 const SAYS: Readonly<Record<RobotActionKind, string>> = {
   move: 'Moved forward',
@@ -95,6 +97,52 @@ export function robotSays(entry: RobotLogEntry): string {
       return 'Powering down ✓';
     case 'repaired':
       return 'Good as new ✓';
+    case 'skipped':
+    case 'conflict':
+      return 'Following my rules ✓';
+    case 'dizzy':
+      return 'Thinking very hard ✓';
+    case 'gaveUp':
+      return 'Took a scenic route ✓';
+    case 'woke':
+      return 'Up and at it ✓';
+    case 'doReturn':
+      return event.phase === 'started' ? 'Heading home ✓' : 'Home safe ✓';
+    case 'doPowerDown':
+      return 'Powering down ✓';
+  }
+}
+
+/**
+ * The trigger as the log names it (spec §11), e.g. "it's 2:00 pm", "my bag is full",
+ * "every 15 minutes": the words after "Woke up:".
+ */
+export function triggerText(trigger: Trigger): string {
+  switch (trigger.kind) {
+    case 'morning':
+      return 'morning came';
+    case 'atTime':
+      return `it's ${formatClock(trigger.minute, 1)}`;
+    case 'bagFull':
+      return 'my bag is full';
+    case 'startsRaining':
+      return 'it started raining';
+    case 'every':
+      return `every ${trigger.minutes} minutes`;
+  }
+}
+
+/** What happened at each phase of a DO return. A failure names the likeliest reason from the card. */
+function returnText(card: MdCard, phase: 'started' | 'arrived' | 'failed'): string {
+  switch (phase) {
+    case 'started':
+      return `My .MD says ${mdCardText(card)}, so I stopped my program and set off.`;
+    case 'arrived':
+      return 'Got there and powered down for the day.';
+    case 'failed': {
+      const reason = card.kind === 'doReturn' && card.to.kind === 'generator' ? 'no generator I could reach' : 'no way through';
+      return `Couldn't get there (${reason}), so powered down where I was.`;
+    }
   }
 }
 
@@ -134,5 +182,19 @@ export function whatHappened(entry: RobotLogEntry, names: ReadonlyMap<number, st
       return 'Powered down.';
     case 'repaired':
       return 'Came back from repairs.';
+    case 'skipped':
+      return `Skipped ${VERB[event.action]}: my .MD says don't ${mdCardText(event.card)}.`;
+    case 'dizzy':
+      return 'Looped without doing anything, and got dizzy. Off until morning.';
+    case 'gaveUp':
+      return `Couldn't find a way to (${event.target.tx}, ${event.target.tz}), so gave up going there.`;
+    case 'woke':
+      return `Woke up: ${triggerText(event.trigger)}.`;
+    case 'doReturn':
+      return returnText(event.card, event.phase);
+    case 'doPowerDown':
+      return `Powered down for the day: my .MD says ${mdCardText(event.card)}.`;
+    case 'conflict':
+      return `My .MD says ${mdCardText(event.doCard)}, but it also says don't ${mdCardText(event.dontCard)}. Don't wins.`;
   }
 }

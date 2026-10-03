@@ -441,6 +441,35 @@ function isValidDetail(v: unknown): boolean {
   }
 }
 
+const DONT_CARD_KINDS = ['dontLeave', 'dontGoIntoWater', 'dontHarvest', 'dontDeposit'] as const;
+const DO_CARD_KINDS = ['doReturn', 'doPowerDown'] as const;
+
+/** An .MD card carried by a log event, of one of `kinds`. */
+function isLoggedCard(v: unknown, kinds: readonly string[]): boolean {
+  return isObj(v) && isOneOf(v.kind, kinds) && isMdShape([v]);
+}
+
+function isLoggedTile(v: unknown): boolean {
+  return isObj(v) && hasExactKeys(v, ['tx', 'tz']) && isInt(v.tx) && isInt(v.tz) && farmContains(v.tx, v.tz);
+}
+
+/** A trigger carried by a `woke` event. */
+function isLoggedTrigger(v: unknown): boolean {
+  if (!isObj(v)) return false;
+  switch (v.kind) {
+    case 'morning':
+    case 'bagFull':
+    case 'startsRaining':
+      return hasExactKeys(v, ['kind']);
+    case 'atTime':
+      return hasExactKeys(v, ['kind', 'minute']) && isIntIn(v.minute, TIME.dayStartMinute, TIME.passOutMinute);
+    case 'every':
+      return hasExactKeys(v, ['kind', 'minutes']) && isOneOf(v.minutes, ROBOTS.everyChoices);
+    default:
+      return false;
+  }
+}
+
 function isValidLogEvent(v: unknown): boolean {
   if (!isObj(v) || !isOneOf(v.kind, ROBOT_LOG_EVENT_KINDS)) return false;
   switch (v.kind) {
@@ -456,6 +485,18 @@ function isValidLogEvent(v: unknown): boolean {
         v.withIds.length >= 1 &&
         v.withIds.every((id: unknown) => isIntIn(id, 1, MAX))
       );
+    case 'skipped':
+      return hasExactKeys(v, ['kind', 'action', 'card']) && isOneOf(v.action, ROBOT_ACTION_KINDS) && isLoggedCard(v.card, DONT_CARD_KINDS);
+    case 'gaveUp':
+      return hasExactKeys(v, ['kind', 'target', 'why']) && isLoggedTile(v.target) && isOneOf(v.why, ['goTo', 'forEach', 'doReturn']);
+    case 'woke':
+      return hasExactKeys(v, ['kind', 'trigger']) && isLoggedTrigger(v.trigger);
+    case 'doReturn':
+      return hasExactKeys(v, ['kind', 'card', 'phase']) && isLoggedCard(v.card, ['doReturn']) && isOneOf(v.phase, ['started', 'arrived', 'failed']);
+    case 'doPowerDown':
+      return hasExactKeys(v, ['kind', 'card']) && isLoggedCard(v.card, ['doPowerDown']);
+    case 'conflict':
+      return hasExactKeys(v, ['kind', 'doCard', 'dontCard']) && isLoggedCard(v.doCard, DO_CARD_KINDS) && isLoggedCard(v.dontCard, DONT_CARD_KINDS);
     default:
       return hasExactKeys(v, ['kind']);
   }
