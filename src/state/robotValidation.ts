@@ -662,7 +662,8 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
 /**
  * The robots section: ids unique, ascending and below nextId; at most maxRobots; every robot
  * valid on the farm; the carried robot (if any) matches `player.carrying` and the player is on
- * the farm; the pool, last night's fuel, the log and the zones valid.
+ * the farm; at most one robot is on the bench; exactly one workbench stands on the farm; the
+ * pool, last night's fuel, the log and the zones valid.
  */
 export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player: unknown): boolean {
   if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks']) || !isObj(player)) return false;

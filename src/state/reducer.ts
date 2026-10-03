@@ -669,8 +669,9 @@ function setTimeScale(state: GameState, timeScale: number): GameState {
 /**
  * Applies a program or .MD edit to robot `robotId`: the edited robot and a success toast, or the
  * edit's refusal as a warn toast with nothing else changed. The robot must be on the workbench
- * (part 3 spec §4.7); the dev hooks call the edits directly and aren't limited to it. An unknown id changes nothing. Edits
- * aren't frozen with the game: the robot screen that sends them is a panel.
+ * (part 3 spec §4.7); the dev hooks call the edits directly and aren't limited to it. An unknown
+ * id changes nothing. Edits aren't frozen with the game: the robot screen that sends them is a
+ * panel.
  */
 function editRobot(state: GameState, robotId: number, edit: (robot: Robot) => Robot | string, done: (name: string) => string): GameState {
   const robot = findRobot(state, robotId);
@@ -727,7 +728,6 @@ function switchRobot(state: GameState, robotId: number, on: boolean): GameState 
   if (!SWITCHABLE_POWERS.has(robot.power)) return pushMessage(state, `${robot.name} can't be switched off while it's broken.`, 'warn');
   return withRobot(state, { ...robot, off: 'player' });
 }
-
 
 /** Replaces the whole state (new game / loaded save): no panel open, unpaused, the player flagged as teleported. */
 function loadState(prev: GameState, loaded: GameState): GameState {
