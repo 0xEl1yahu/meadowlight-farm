@@ -9,6 +9,7 @@ import {
   SAVE_VERSION,
   TileState,
   Weather,
+  ZONE_IDS,
   type ActionEvent,
   type ActionKind,
   type GameState,
@@ -25,6 +26,7 @@ import { assertWorldObjectsConsistent, getTile, isWalkable } from '../world/tile
 import { createDefaultSections } from './initialState';
 import { isValidRobotsSection } from './robotValidation';
 import { isValidSections } from './sectionValidation';
+import { ZONE_MARKER_STACK, countZoneMarkers } from './zoneMarker';
 import {
   hasExactKeys,
   isBool,
@@ -52,6 +54,7 @@ const ACTION_KIND_TABLE = {
   pickaxe: true,
   axe: true,
   scythe: true,
+  zoneMarker: true,
   plant: true,
   harvest: true,
   ship: true,
@@ -193,9 +196,24 @@ function isValidShipping(shipping: unknown): boolean {
   );
 }
 
+/** A zone draft (farmclaws part 3 spec §8): null, or a zone letter and a farm tile, nothing more. */
+function isValidZoneDraft(v: unknown): boolean {
+  if (v === null) return true;
+  if (!isObj(v) || !hasExactKeys(v, ['zone', 'corner']) || !isOneOf(v.zone, ZONE_IDS)) return false;
+  const corner = v.corner;
+  return (
+    isObj(corner) &&
+    hasExactKeys(corner, ['tx', 'tz']) &&
+    isInt(corner.tx) &&
+    isInt(corner.tz) &&
+    inBounds(MAPS.farm.grid, corner.tx, corner.tz)
+  );
+}
+
 /**
  * The UI section. Only the panel's shape is checked (an object with a string `kind`): the loader
- * resets it anyway, and later panel kinds must not need a migration.
+ * resets it anyway, and later panel kinds must not need a migration. The zone draft and letter
+ * are reset on load too, but must still be well formed.
  */
 function isValidUi(ui: unknown): boolean {
   return (
@@ -204,8 +222,19 @@ function isValidUi(ui: unknown): boolean {
     typeof ui.panel.kind === 'string' &&
     isBool(ui.paused) &&
     typeof ui.timeScale === 'number' &&
-    (TIME.timeScales as readonly number[]).includes(ui.timeScale)
+    (TIME.timeScales as readonly number[]).includes(ui.timeScale) &&
+    isValidZoneDraft(ui.zoneDraft) &&
+    isOneOf(ui.zoneLetter, ZONE_IDS)
   );
+}
+
+/**
+ * At most one zone marker in the inventory and every chest together, and `pendingMarker` only
+ * while there is none (farmclaws part 3 spec §9.2). Called once every section is known valid.
+ */
+function isValidZoneMarker(state: GameState): boolean {
+  const held = countZoneMarkers(state.inventory, state.maps);
+  return held <= 1 && !(state.robots.pendingMarker && held > 0);
 }
 
 function isValidMessages(messages: unknown): boolean {
@@ -241,7 +270,8 @@ export function isValidGameState(v: unknown): v is GameState {
     isValidUi(v.ui) &&
     isValidMessages(v.messages) &&
     isValidSections(v) &&
-    isValidRobotsSection(v.robots, v.maps, v.player)
+    isValidRobotsSection(v.robots, v.maps, v.player) &&
+    isValidZoneMarker(v as unknown as GameState)
   );
 }
 
@@ -404,6 +434,46 @@ function placeWorkbenchV6(save: Obj): Obj {
   return { ...save, maps: { ...maps, farm: withWorkbenchAt(farm, freeSpotNear(farm, WORKBENCH.home, taken)) } };
 }
 
+/** Zone markers in a saved inventory and in every saved chest, read from the raw JSON. */
+function savedMarkerCount(save: Obj): number {
+  let count = 0;
+  const countIn = (slots: unknown): void => {
+    if (!Array.isArray(slots)) return;
+    for (const slot of slots as readonly unknown[]) if (isObj(slot) && slot.itemId === ZONE_MARKER_STACK.itemId) count++;
+  };
+  if (isObj(save.inventory)) countIn(save.inventory.slots);
+  if (!isObj(save.maps)) return count;
+  for (const world of Object.values(save.maps)) {
+    if (!isObj(world) || !Array.isArray(world.chunks)) continue;
+    for (const chunk of world.chunks as readonly unknown[]) {
+      if (!isObj(chunk) || !Array.isArray(chunk.tiles)) continue;
+      for (const tile of chunk.tiles as readonly unknown[]) {
+        if (isObj(tile) && isObj(tile.object) && tile.object.kind === 'chest') countIn(tile.object.slots);
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * Version 6's zone marker (farmclaws part 3 spec §8, §9.1), the last part of the v5 → v6 step:
+ * the marker goes into the first free unlocked inventory slot, or `robots.pendingMarker` is set
+ * when the backpack is full. A save that already holds a marker keeps just that one. The UI
+ * gains an empty draft and Zone A.
+ */
+function migrateZoneMarker(save: Obj): Obj {
+  const { inventory, robots } = save;
+  if (save.version !== 6 || !isObj(inventory) || !Array.isArray(inventory.slots) || !isObj(robots)) return save;
+  const ui = isObj(save.ui) ? { ...save.ui, zoneDraft: null, zoneLetter: 'A' } : save.ui;
+  if (savedMarkerCount(save) > 0) return { ...save, ui, robots: { ...robots, pendingMarker: false } };
+  const unlocked = isInt(inventory.unlockedSlots) ? inventory.unlockedSlots : 0;
+  const slots = (inventory.slots as readonly unknown[]).slice();
+  const free = slots.findIndex((slot, i) => slot === null && i < unlocked);
+  if (free === -1) return { ...save, ui, robots: { ...robots, pendingMarker: true } };
+  slots[free] = { ...ZONE_MARKER_STACK };
+  return { ...save, ui, inventory: { ...inventory, slots }, robots: { ...robots, pendingMarker: false } };
+}
+
 /**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
@@ -415,7 +485,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 2) v = migrateV2toV3(v);
   if (isObj(v) && v.version === 3) v = migrateV3toV4(v);
   if (isObj(v) && v.version === 4) v = migrateV4toV5(v);
-  if (isObj(v) && v.version === 5) v = migrateV5toV6(v);
+  if (isObj(v) && v.version === 5) v = migrateZoneMarker(migrateV5toV6(v));
   return v;
 }
 
@@ -423,7 +493,7 @@ export function deserializeGame(json: string): GameState | null {
   try {
     const parsed: unknown = migrateSave(JSON.parse(json));
     if (!isValidGameState(parsed)) return null;
-    return { ...parsed, ui: { ...parsed.ui, panel: { kind: 'none' }, paused: false } };
+    return { ...parsed, ui: { ...parsed.ui, panel: { kind: 'none' }, paused: false, zoneDraft: null, zoneLetter: 'A' } };
   } catch {
     return null;
   }

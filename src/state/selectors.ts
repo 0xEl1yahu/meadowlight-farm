@@ -82,6 +82,11 @@ export function selectSelectedItem(state: GameState): ItemDefinition | null {
   return stack === null ? null : getItem(stack.itemId);
 }
 
+/** True while the zone marker is the selected hotbar item (farmclaws part 3 spec §8). */
+export function isZoneMarkerSelected(state: GameState): boolean {
+  return selectedStack(state.inventory)?.itemId === 'zoneMarker';
+}
+
 /** True while a menu or pause freezes the clock and the player. */
 export function selectIsFrozen(state: GameState): boolean {
   return state.ui.paused || state.ui.panel.kind !== 'none';

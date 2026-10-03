@@ -732,6 +732,13 @@
   text-overflow: ellipsis;
 }
 
+/* The zone marker's chip (farmclaws part 3 spec §8), between the hint and the hotbar. */
+.hud-zone-chip {
+  padding: 4px 12px;
+  background: var(--hud-parchment);
+  color: var(--hud-ink);
+}
+
 .hud-hotbar {
   --cols: 12;
   --slot: clamp(

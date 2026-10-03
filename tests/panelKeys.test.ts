@@ -117,3 +117,23 @@ describe('panel keys with Shift (part 3 spec §2.3)', () => {
     expect(panelKeyCommand('KeyW', NONE, true)).toBeNull();
   });
 });
+
+
+describe('Escape with a zone draft (part 3 spec §8)', () => {
+  const DRAFT: GameState = deepFreeze({ ...BASE, ui: { ...BASE.ui, zoneDraft: { zone: 'A', corner: { tx: 5, tz: 10 } } } });
+
+  it('drops the draft instead of pausing', () => {
+    expect(panelKeyCommand('Escape', DRAFT)).toEqual(actions.clearZoneDraft());
+    const dropped = press('Escape', DRAFT);
+    expect(dropped.ui.zoneDraft).toBeNull();
+    expect(dropped.ui.paused).toBe(false);
+    expect(panelKeyCommand('Escape', dropped)).toEqual(actions.setPaused(true));
+  });
+
+  it('still closes an open panel first, and resumes a paused game', () => {
+    const open: GameState = { ...DRAFT, ui: { ...DRAFT.ui, panel: { kind: 'shop' } } };
+    expect(panelKeyCommand('Escape', open)).toEqual(actions.closePanel());
+    const paused: GameState = { ...DRAFT, ui: { ...DRAFT.ui, paused: true } };
+    expect(panelKeyCommand('Escape', paused)).toEqual(actions.setPaused(false));
+  });
+});

@@ -1205,6 +1205,7 @@ export class EffectsRenderer implements RenderSystem {
         return;
       case 'plant':
       case 'fertilize':
+      case 'zoneMarker':
         emitBurst(this.pool, EFFECTS.plantSparkles, rng, withPush(withHeight(ground, ground.y + 0.05), 0, 0));
         return;
       case 'ship':

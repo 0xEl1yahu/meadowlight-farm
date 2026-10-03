@@ -11,12 +11,13 @@ import { freshExec } from '../src/robots/exec';
 import { ALL_UNLOCKS, withUnlocks } from '../src/robots/unlocks';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
-import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
+import { countItem } from '../src/state/inventory';
+import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, benchedRobotOf, must, robotOf, v5Save, withPlayer, withRobots, withTile, withZones, type SaveJson } from './testUtils';
+import { BASE, TARGET, benchedRobotOf, must, robotOf, stack, v5Save, withPlayer, withRobots, withSlots, withTile, withZones, type SaveJson } from './testUtils';
 
 const WALK = b.program({ stacks: [b.when(b.morning(), b.move())] });
 
@@ -300,5 +301,78 @@ describe('save version 6: ruin and paint', () => {
 
   it.each(rejections)('rejects %s', (_label, edit) => {
     expect(edited(edit)).toBeNull();
+  });
+});
+
+describe('v6: the zone marker and the zone draft', () => {
+  /** Every unlocked slot full: no room for the marker. */
+  const FULL = withSlots(BASE, Array.from({ length: INVENTORY.startingUnlockedSlots }, (_, i) => stack(i % 2 === 0 ? 'stone' : 'wood', 5)));
+  const MARKER = stack('zoneMarker', 1);
+  const corrupt = (edit: (save: SaveJson) => void): SaveJson => {
+    const save = JSON.parse(serializeGame(BASE)) as SaveJson;
+    edit(save);
+    return save;
+  };
+
+  it('gives a migrated save the marker in its first free slot', () => {
+    const save = v5Save(BASE);
+    expect(JSON.stringify(save)).not.toContain('zoneMarker');
+    const loaded = must(deserializeGame(JSON.stringify(save)));
+    expect(loaded.inventory.slots[INVENTORY.starting.length]).toEqual(MARKER);
+    expect(loaded.robots.pendingMarker).toBe(false);
+    expect(loaded.ui.zoneDraft).toBeNull();
+    expect(loaded.ui.zoneLetter).toBe('A');
+    expect(loaded).toEqual(BASE);
+  });
+
+  it('owes the marker to a migrated save whose backpack is full', () => {
+    const save = v5Save(FULL);
+    expect((migrateSave(save) as { robots: SaveJson }).robots.pendingMarker).toBe(true);
+    const loaded = must(deserializeGame(JSON.stringify(save)));
+    expect(countItem(loaded.inventory, 'zoneMarker')).toBe(0);
+    expect(loaded).toEqual({ ...FULL, robots: { ...FULL.robots, pendingMarker: true } });
+  });
+
+  it('never hands out a second marker', () => {
+    const save = { ...v5Save(BASE), inventory: (JSON.parse(serializeGame(BASE)) as SaveJson).inventory };
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
+  });
+
+  it('round-trips a pending marker', () => {
+    const pending: GameState = { ...FULL, robots: { ...FULL.robots, pendingMarker: true } };
+    expect(deserializeGame(serializeGame(pending))).toEqual(loadedFrom(pending));
+  });
+
+  it('saves a zone draft and letter but loads with no draft and Zone A', () => {
+    const drafting: GameState = { ...BASE, ui: { ...BASE.ui, zoneDraft: { zone: 'C', corner: { tx: 5, tz: 10 } }, zoneLetter: 'C' } };
+    expect(isValidGameState(JSON.parse(serializeGame(drafting)))).toBe(true);
+    expect(must(deserializeGame(serializeGame(drafting))).ui).toEqual(BASE.ui);
+  });
+
+  it('accepts the marker in a chest, but never two markers', () => {
+    const chestWith = (state: GameState): GameState =>
+      withTile(state, TARGET, { ...EMPTY_TILE, object: { kind: 'chest', slots: Array.from({ length: INVENTORY.chestSlots }, (_, i) => (i === 0 ? MARKER : null)) } });
+    const moved = chestWith(withSlots(BASE, BASE.inventory.slots.map((slot) => (slot !== null && slot.itemId === 'zoneMarker' ? null : slot))));
+    expect(isValidGameState(JSON.parse(serializeGame(moved)))).toBe(true);
+    expect(isValidGameState(JSON.parse(serializeGame(chestWith(BASE))))).toBe(false);
+  });
+
+  const rejected: readonly [string, (save: SaveJson) => void][] = [
+    ['pendingMarker while a marker is held', (s) => void ((s.robots as SaveJson).pendingMarker = true)],
+    ['a pendingMarker that is not a boolean', (s) => void ((s.robots as SaveJson).pendingMarker = 1)],
+    ['a missing pendingMarker', (s) => void delete (s.robots as SaveJson).pendingMarker],
+    ['two markers in the inventory', (s) => void ((s.inventory as { slots: unknown[] }).slots[7] = { itemId: 'zoneMarker', quantity: 1, quality: 0 })],
+    ['a draft on an unknown zone', (s) => void ((s.ui as SaveJson).zoneDraft = { zone: 'Z', corner: { tx: 5, tz: 10 } })],
+    ['a draft corner off the farm', (s) => void ((s.ui as SaveJson).zoneDraft = { zone: 'A', corner: { tx: 999, tz: 0 } })],
+    ['a draft corner that is not a whole tile', (s) => void ((s.ui as SaveJson).zoneDraft = { zone: 'A', corner: { tx: 5.5, tz: 10 } })],
+    ['a draft with an extra key', (s) => void ((s.ui as SaveJson).zoneDraft = { zone: 'A', corner: { tx: 5, tz: 10 }, w: 3 })],
+    ['an unknown zone letter', (s) => void ((s.ui as SaveJson).zoneLetter = 'I')],
+    ['a missing zone letter', (s) => void delete (s.ui as SaveJson).zoneLetter],
+  ];
+
+  it.each(rejected)('rejects %s', (_label, edit) => {
+    const save = corrupt(edit);
+    expect(isValidGameState(save)).toBe(false);
+    expect(deserializeGame(JSON.stringify(save))).toBeNull();
   });
 });

@@ -28,6 +28,16 @@ export function snakeTiles(rect: ZoneRect): readonly TileCoord[] {
   return tiles;
 }
 
+/** The rectangle with corners `a` and `b`, both included, whichever is given first (part 3 spec §8). */
+export function zoneRectBetween(a: TileCoord, b: TileCoord): ZoneRect {
+  return {
+    x0: Math.min(a.tx, b.tx),
+    z0: Math.min(a.tz, b.tz),
+    w: Math.abs(a.tx - b.tx) + 1,
+    d: Math.abs(a.tz - b.tz) + 1,
+  };
+}
+
 /** The tile one step ahead of the robot (it may be off the farm). */
 export function tileAheadOf(robot: Pick<Robot, 'tx' | 'tz' | 'facing'>): TileCoord {
   return stepTile({ tx: robot.tx, tz: robot.tz }, robot.facing);

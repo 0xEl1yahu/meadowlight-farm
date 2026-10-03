@@ -17,6 +17,7 @@ import {
   type RobotStats,
   type TileCoord,
 } from '../core/types';
+import { withZoneMarker } from '../state/zoneMarker';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
 import { morningExec } from './exec';
@@ -219,12 +220,24 @@ function resetForMorning(state: GameState): GameState {
   return next;
 }
 
+/**
+ * A zone marker owed to a migrated save (part 3 spec §8) arrives the first morning the backpack
+ * has a free slot; until then it keeps waiting.
+ */
+function deliverPendingMarker(state: GameState, notes: RobotNote[]): GameState {
+  if (!state.robots.pendingMarker) return state;
+  const inventory = withZoneMarker(state.inventory);
+  if (inventory === null) return state;
+  notes.push({ text: 'Your zone marker is in your backpack.', tone: 'info' });
+  return { ...state, inventory, robots: { ...state.robots, pendingMarker: false } };
+}
+
 /** The whole night, in the spec's order. `notes` become morning toasts. */
 export function runRobotsOvernight(state: GameState): { readonly state: GameState; readonly notes: readonly RobotNote[] } {
   const notes: RobotNote[] = [];
   const burned = burnGenerators(state, notes);
   const repaired = returnRepaired(setDownCarried(burned.state), notes);
   let next = recharge(ruinSoaked(repaired.state, notes), burned.burners, repaired.returned, notes);
-  next = resetForMorning(next);
+  next = deliverPendingMarker(resetForMorning(next), notes);
   return { state: pruneRobotLog(next), notes };
 }

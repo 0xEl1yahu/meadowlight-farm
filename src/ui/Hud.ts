@@ -75,6 +75,7 @@ import {
 } from './icons';
 import { InventoryScreen } from './InventoryScreen';
 import { ItemIconCache, SLOT_KEYS, createSlotView, renderSlotView, type SlotView } from './slots';
+import { zoneChipText } from './zoneChip';
 
 // ---------------------------------------------------------------------------
 // Public contract
@@ -584,6 +585,28 @@ class ContextHint {
     if (held === this.shift) return;
     this.shift = held;
     if (state !== null) this.sync(state, null);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Zone chip
+// ---------------------------------------------------------------------------
+
+/** Above the hotbar while the zone marker is selected: "Zone A · 3×3", plus "corner set" during a draft. */
+class ZoneChip {
+  readonly element = h('div', 'hud-chip hud-zone-chip');
+
+  constructor() {
+    this.element.hidden = true;
+  }
+
+  sync(state: GameState, prev: GameState | null): void {
+    if (prev !== null && state.inventory === prev.inventory && state.ui === prev.ui && state.robots.zones === prev.robots.zones) {
+      return;
+    }
+    const text = zoneChipText(state);
+    setHidden(this.element, text === null);
+    if (text !== null) setText(this.element, text);
   }
 }
 
@@ -1144,6 +1167,7 @@ export class Hud {
   private readonly energy: EnergyBar;
   private readonly hotbar: Hotbar;
   private readonly hint: ContextHint;
+  private readonly zoneChip: ZoneChip;
   private readonly toasts: ToastStack;
   private readonly shop: ShopModal;
   private readonly inventory: InventoryScreen;
@@ -1172,6 +1196,7 @@ export class Hud {
     this.energy = new EnergyBar();
     this.hotbar = new Hotbar(context);
     this.hint = new ContextHint();
+    this.zoneChip = new ZoneChip();
     this.toasts = new ToastStack();
     this.shop = new ShopModal(context);
     this.inventory = new InventoryScreen(context);
@@ -1186,7 +1211,7 @@ export class Hud {
     const left = h('div', 'hud-left');
     left.append(this.help.element, this.perf.element);
     const center = h('div', 'hud-center');
-    center.append(this.hint.element, this.hotbar.element);
+    center.append(this.hint.element, this.zoneChip.element, this.hotbar.element);
     const right = h('div', 'hud-right');
     right.append(this.energy.element);
     const bottom = h('div', 'hud-bottom');
@@ -1212,6 +1237,7 @@ export class Hud {
     this.energy.sync(state, prev);
     this.hotbar.sync(state, prev);
     this.hint.sync(state, prev);
+    this.zoneChip.sync(state, prev);
     this.toasts.sync(state, prev);
     this.shop.sync(state, prev);
     this.inventory.sync(state, prev);

@@ -7,7 +7,9 @@
  * Bindings (KeyboardEvent.code, so they follow physical key positions on every layout)
  *   Move          W A S D / arrow keys. Shift + direction turns in place.
  *                 (Isometric camera: North appears up-right on screen.)
- *   Use tool      Space, J, left mouse button on the canvas. Hold to repeat.
+ *   Use tool      Space, J, left mouse button on the canvas. Hold to repeat. With the zone
+ *                 marker only fresh presses count, and Shift + any of them picks the next zone
+ *                 letter (part 3 spec §8; markerToolCommand in panelKeys.ts).
  *   Interact      E, K, Enter, right mouse button on the canvas (Ctrl + click on macOS).
  *                 While the backpack or a chest is open, E, K and Enter close it instead.
  *   Peek          Shift + any interact key or button (part 3 spec §2.3). Every change of the
@@ -46,8 +48,8 @@ import type { Store } from '../core/store';
 import { Direction, type GameState } from '../core/types';
 import type { CameraRig } from '../render/CameraRig';
 import { actions, type GameAction } from '../state/actions';
-import { selectIsFrozen } from '../state/selectors';
-import { IGNORED, panelKeyCommand } from './panelKeys';
+import { isZoneMarkerSelected, selectIsFrozen } from '../state/selectors';
+import { IGNORED, markerToolCommand, panelKeyCommand } from './panelKeys';
 
 export interface InputControllerOptions {
   readonly target: Window;
@@ -236,7 +238,8 @@ export class InputController {
   }
 
   private updateTool(dt: number): void {
-    if (this.toolSources.size === 0) {
+    // The zone marker never repeats, even for a key held down before the marker was selected.
+    if (this.toolSources.size === 0 || isZoneMarkerSelected(this.store.getState())) {
       this.toolElapsed = 0;
       return;
     }
@@ -286,7 +289,7 @@ export class InputController {
       return true;
     }
     if (TOOL_KEYS.has(code)) {
-      this.pressTool(code, event.repeat);
+      this.pressTool(code, event.repeat, event.shiftKey);
       return true;
     }
     // Zoom steps honour auto-repeat so holding Z / X zooms smoothly (the rig clamps).
@@ -346,7 +349,13 @@ export class InputController {
     if (this.directionKeys.length === 0) this.moveElapsed = 0;
   }
 
-  private pressTool(source: string, repeat: boolean): void {
+  private pressTool(source: string, repeat: boolean, shift: boolean): void {
+    const marker = markerToolCommand(this.store.getState(), shift, repeat);
+    if (marker !== null) {
+      // The zone marker is never held: no source is tracked, so nothing repeats.
+      if (marker !== IGNORED && !this.isFrozen()) this.store.dispatch(marker);
+      return;
+    }
     if (repeat) {
       // Held across a focus loss: resume repeating without an extra immediate use.
       this.toolSources.add(source);
@@ -379,7 +388,7 @@ export class InputController {
   private readonly onPointerDown = (event: PointerEvent): void => {
     if (event.button === 0 && !event.ctrlKey) {
       this.capturePointer(event.pointerId);
-      this.pressTool(pointerSource(event.pointerId), false);
+      this.pressTool(pointerSource(event.pointerId), false, event.shiftKey);
     } else if (event.button === 2 || (event.button === 0 && event.ctrlKey)) {
       this.store.dispatch(event.shiftKey ? actions.peek() : actions.interact());
     }

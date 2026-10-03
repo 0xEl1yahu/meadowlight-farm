@@ -351,6 +351,21 @@ export function v5Save(state: GameState): SaveJson {
       chunk.revision -= 1;
     }
   }
+  // The zone marker: version 5 has no marker item, no pending marker and no zone draft or letter.
+  const dropMarkers = (slots: (SaveJson | null)[]): void => {
+    slots.forEach((slot, i) => {
+      if (slot !== null && slot.itemId === 'zoneMarker') slots[i] = null;
+    });
+  };
+  dropMarkers((save.inventory as { slots: (SaveJson | null)[] }).slots);
+  for (const world of Object.values(save.maps as Record<string, { chunks: { tiles: { object: SaveJson | null }[] }[] }>)) {
+    for (const chunk of world.chunks) {
+      for (const tile of chunk.tiles) if (tile.object !== null && tile.object.kind === 'chest') dropMarkers(tile.object.slots as (SaveJson | null)[]);
+    }
+  }
+  delete (save.robots as SaveJson).pendingMarker;
+  delete (save.ui as SaveJson).zoneDraft;
+  delete (save.ui as SaveJson).zoneLetter;
   return save;
 }
 

@@ -296,6 +296,25 @@ function scytheParts(color: number): SVGElement[] {
   ];
 }
 
+/** A surveyor's stake: a post with a metal foot and a pennant in the item's colour (part 3 spec §8). */
+function zoneMarkerParts(color: number): SVGElement[] {
+  const handle = COLORS.handle;
+  const metal = COLORS.metal;
+  return [
+    tilt(
+      [
+        stick(15, 27, 15, 5, handle, 3),
+        faceted('13.4,26.4 16.6,26.4 15,30.6', hex(metal), [facet('15,26.4 16.6,26.4 15,30.6', dark(metal, 0.2))]),
+        faceted('16,5 28,9.4 16,13.8', hex(color), [
+          facet('16,5 28,9.4 16,9.4', light(color, 0.35)),
+          facet('16,9.4 28,9.4 16,13.8', dark(color, 0.12)),
+        ]),
+      ],
+      12,
+    ),
+  ];
+}
+
 function toolParts(tool: ToolType, color: number): SVGElement[] {
   switch (tool) {
     case 'hoe':
@@ -308,6 +327,8 @@ function toolParts(tool: ToolType, color: number): SVGElement[] {
       return axeParts(color);
     case 'scythe':
       return scytheParts(color);
+    case 'zoneMarker':
+      return zoneMarkerParts(color);
   }
 }
 

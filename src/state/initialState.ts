@@ -1,10 +1,12 @@
 import { INVENTORY, PLAYER, TOOLS, UNLOCKS, WORKBENCH, WORLD } from '../config';
-import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type NpcId, type NpcRelation } from '../core/types';
+import { invariant } from '../core/invariant';
+import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type InventoryState, type NpcId, type NpcRelation } from '../core/types';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { withWorkbenchAt } from '../robots/workbench';
 import { generateMaps } from '../world/maps';
 import { createInventory } from './inventory';
+import { withZoneMarker } from './zoneMarker';
 
 /**
  * Defaults for every section later workstreams fill in. A new game and the save migration both
@@ -45,9 +47,17 @@ export function createDefaultSections(): GameSections {
       log: { nextId: 0, entries: [] },
       lastNightFuel: { wood: 0, tokens: 0 },
       zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
+      pendingMarker: false,
       unlocks: UNLOCKS.job1,
     },
   };
+}
+
+/** The starter kit, with the zone marker in the first slot it leaves free (farmclaws part 3 spec §8). */
+function starterInventory(): InventoryState {
+  const inventory = withZoneMarker(createInventory(INVENTORY.starting, TOOLS.wateringCanCapacity));
+  invariant(inventory !== null, 'the starter kit leaves room for the zone marker');
+  return inventory;
 }
 
 export function createInitialState(seed: number = WORLD.seed): GameState {
@@ -77,9 +87,9 @@ export function createInitialState(seed: number = WORLD.seed): GameState {
       lastAction: null,
       carrying: null,
     },
-    inventory: createInventory(INVENTORY.starting, TOOLS.wateringCanCapacity),
+    inventory: starterInventory(),
     shipping: { pending: [], lastPayout: 0 },
-    ui: { panel: { kind: 'none' }, paused: false, timeScale: 1 },
+    ui: { panel: { kind: 'none' }, paused: false, timeScale: 1, zoneDraft: null, zoneLetter: 'A' },
     messages: {
       nextId: 2,
       entries: [

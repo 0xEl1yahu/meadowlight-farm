@@ -171,6 +171,7 @@ describe('createDefaultSections', () => {
       lastNightFuel: { wood: 0, tokens: 0 },
       zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
       unlocks: UNLOCKS.job1,
+      pendingMarker: false,
     },
   };
 

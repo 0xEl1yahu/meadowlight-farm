@@ -28,6 +28,10 @@ export type GameAction =
   | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
   | { readonly type: 'game/setTimeScale'; readonly timeScale: number }
+  /** Shift + use with the zone marker: the next zone letter, A → H → A; drops a draft (part 3 spec §8). */
+  | { readonly type: 'zone/cycle' }
+  /** Drops the zone marker's draft (Escape). */
+  | { readonly type: 'zone/clearDraft' }
   | { readonly type: 'game/load'; readonly state: GameState }
   /** Gives a robot a new program, through the checker (farmclaws part 3 spec §4.7). */
   | { readonly type: 'robot/program'; readonly robotId: number; readonly program: RobotProgram }
@@ -67,6 +71,8 @@ export const actions = {
   craft: (recipe: CraftingRecipeId): GameAction => ({ type: 'crafting/craft', recipe }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),
+  cycleZoneLetter: (): GameAction => ({ type: 'zone/cycle' }),
+  clearZoneDraft: (): GameAction => ({ type: 'zone/clearDraft' }),
   load: (state: GameState): GameAction => ({ type: 'game/load', state }),
   programRobot: (robotId: number, program: RobotProgram): GameAction => ({ type: 'robot/program', robotId, program }),
   setRobotMd: (robotId: number, md: readonly MdCard[]): GameAction => ({ type: 'robot/md', robotId, md }),

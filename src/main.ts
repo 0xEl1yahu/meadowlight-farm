@@ -33,6 +33,7 @@ import { TerrainRenderer } from './render/TerrainRenderer';
 import { TileHighlighter } from './render/TileHighlighter';
 import type { FrameContext, RenderSystem } from './render/types';
 import { WeatherRenderer } from './render/WeatherRenderer';
+import { ZoneRenderer } from './render/ZoneRenderer';
 import { actions, type GameAction } from './state/actions';
 import { createInitialState } from './state/initialState';
 import { clearSave, loadGame, saveGame } from './state/persistence';
@@ -85,6 +86,7 @@ function bootstrap(): () => void {
     new ObjectRenderer(ctx),
     new RobotRenderer(ctx, () => player.focus),
     new TileHighlighter(ctx),
+    new ZoneRenderer(ctx),
     new WeatherRenderer(ctx),
     new EffectsRenderer(ctx),
   ];

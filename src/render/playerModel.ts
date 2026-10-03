@@ -12,7 +12,7 @@
  *   calls; left and right limbs share their geometry.
  *
  * Held items
- * - Hoe, watering can, pickaxe, axe and scythe are merged vertex-coloured props. A seed pouch
+ * - Hoe, watering can, pickaxe, axe, scythe and zone marker are merged vertex-coloured props. A seed pouch
  *   and a gem-like "item" are tinted at runtime with the held item's colour.
  * - Every prop is authored with its grip at the origin, its handle along +Y and its working
  *   edge (blade, spout, pick) toward +Z, and is parented to the right wrist.
@@ -90,7 +90,11 @@ const TOOL_WRAP: Readonly<Record<Exclude<ToolType, 'wateringCan'>, number>> = {
   pickaxe: 0xb8a4e8,
   axe: 0xef8f80,
   scythe: 0xf2c46b,
+  zoneMarker: 0xf2c46b,
 };
+
+/** The zone marker's pennant (farmclaws part 3 spec §8). */
+const PENNANT = 0xe2563f;
 
 // ---------------------------------------------------------------------------
 // Geometry baking
@@ -390,6 +394,18 @@ function buildWateringCanGeometry(): THREE.BufferGeometry {
 }
 
 /** Seed pouch; white parts take the runtime tint, grey parts become a darker shade of it. */
+/** A surveyor's stake: a short pole with a metal foot and a pennant near the top (farmclaws part 3 spec §8). */
+function buildZoneMarkerGeometry(): THREE.BufferGeometry {
+  const topY = 0.3;
+  return bakeParts([
+    { geometry: cylinder(0.018, 0.02, 0.44, 6), color: WOOD, position: [0, 0.09, 0] },
+    { geometry: cylinder(0.026, 0.026, 0.07, 6), color: TOOL_WRAP.zoneMarker, position: [0, -0.085, 0] },
+    { geometry: cone(0.02, 0.06, 6), color: METAL, position: [0, -0.16, 0], rotation: [Math.PI, 0, 0] },
+    { geometry: box(0.012, 0.1, 0.14), color: PENNANT, position: [0, topY - 0.03, 0.075] },
+    { geometry: box(0.014, 0.03, 0.03), color: PENNANT, shade: 0.8, position: [0, topY + 0.04, 0.012] },
+  ]);
+}
+
 function buildPouchGeometry(): THREE.BufferGeometry {
   return bakeParts([
     { geometry: ico(0.068, 0), color: 0xffffff, position: [0, -0.01, 0.045], scale: [1, 0.9, 1] },
@@ -542,6 +558,7 @@ export const HELD_MODEL_KINDS: readonly HeldModelKind[] = [
   'pickaxe',
   'axe',
   'scythe',
+  'zoneMarker',
   'pouch',
   'gem',
 ];
@@ -580,6 +597,7 @@ export class HeldItemRack {
       pickaxe: prop(buildPickaxeGeometry(), this.propMaterial),
       axe: prop(buildAxeGeometry(), this.propMaterial),
       scythe: prop(buildScytheGeometry(), this.propMaterial),
+      zoneMarker: prop(buildZoneMarkerGeometry(), this.propMaterial),
       pouch: prop(buildPouchGeometry(), this.pouchMaterial),
       gem: prop(buildGemGeometry(), this.gemMaterial),
     };

@@ -670,7 +670,8 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
  * pool, last night's fuel, the log and the zones valid.
  */
 export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player: unknown): boolean {
-  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks']) || !isObj(player)) return false;
+  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks', 'pendingMarker']) || !isObj(player)) return false;
+  if (!isBool(v.pendingMarker)) return false;
   if (!isValidZones(v.zones) || !isValidUnlocks(v.unlocks)) return false;
   if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || v.list.length > ROBOTS.maxRobots) return false;
   let previous = 0;

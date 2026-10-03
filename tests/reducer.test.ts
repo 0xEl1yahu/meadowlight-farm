@@ -240,8 +240,8 @@ describe('axe', () => {
     expect(count(state, 'wood')).toBe(TOOLS.woodFromStump);
     expect(state.stats.debrisCleared).toBe(1);
     expect(state.player.energy).toBe(PLAYER.maxEnergy - TOOLS.stumpHits * TOOLS.energyCost.axe);
-    // Wood lands in the first empty slot.
-    expect(state.inventory.slots[6]).toEqual(stack('wood', TOOLS.woodFromStump));
+    // Wood lands in the first empty slot (the zone marker holds slot 6).
+    expect(state.inventory.slots[7]).toEqual(stack('wood', TOOLS.woodFromStump));
   });
 
   it('fells a tree into a fresh stump, then clears the stump: wood and cleared debris add up', () => {
@@ -860,7 +860,7 @@ describe('shop/buy', () => {
 
   it('puts a new seed type in the first empty slot', () => {
     const next = gameReducer(open, actions.buy('potato_seeds', 2));
-    expect(next.inventory.slots[6]).toEqual(stack('potato_seeds', 2));
+    expect(next.inventory.slots[7]).toEqual(stack('potato_seeds', 2));
     expect(next.player.gold).toBe(PLAYER.startingGold - 2 * CROPS.potato.seedPrice);
   });
 
@@ -942,14 +942,14 @@ describe('game/load', () => {
   it('replaces the state, closes menus and flags a teleport newer than either state', () => {
     const loaded: GameState = deepFreeze({
       ...createInitialState(7),
-      ui: { panel: { kind: 'inventory' }, paused: true, timeScale: 4 },
+      ui: { ...createInitialState(7).ui, panel: { kind: 'inventory' }, paused: true, timeScale: 4 },
       player: { ...createInitialState(7).player, teleportSeq: 3 },
     });
     const prev = { ...BASE, player: { ...BASE.player, teleportSeq: 9 } };
     const next = gameReducer(prev, actions.load(loaded));
     expect(next).toEqual({
       ...loaded,
-      ui: { panel: { kind: 'none' }, paused: false, timeScale: 4 },
+      ui: { ...loaded.ui, panel: { kind: 'none' }, paused: false, timeScale: 4 },
       player: { ...loaded.player, teleportSeq: 10 },
     });
     expect(next.maps).toBe(loaded.maps);
@@ -1022,9 +1022,9 @@ describe('initial state', () => {
       lastAction: null,
       carrying: null,
     });
-    expect(state.inventory.slots.filter((slot) => slot !== null)).toEqual(INVENTORY.starting);
+    expect(state.inventory.slots.filter((slot) => slot !== null)).toEqual([...INVENTORY.starting, stack('zoneMarker', 1)]);
     expect(state.weather).toBe(rollWeather(WORLD.seed, 0));
-    expect(state.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 1 });
+    expect(state.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 1, zoneDraft: null, zoneLetter: 'A' });
     expect(state.inventory.slots).toHaveLength(INVENTORY.slotCount);
     expect(state.inventory.unlockedSlots).toBe(INVENTORY.startingUnlockedSlots);
     expect(state.messages.entries).toHaveLength(2);

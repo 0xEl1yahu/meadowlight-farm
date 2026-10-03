@@ -105,7 +105,7 @@ export const CROP_IDS = [
 ] as const;
 export type CropId = (typeof CROP_IDS)[number];
 
-export const TOOL_TYPES = ['hoe', 'wateringCan', 'pickaxe', 'axe', 'scythe'] as const;
+export const TOOL_TYPES = ['hoe', 'wateringCan', 'pickaxe', 'axe', 'scythe', 'zoneMarker'] as const;
 export type ToolType = (typeof TOOL_TYPES)[number];
 
 export const MATERIAL_IDS = ['stone', 'wood', 'copperOre', 'sap', 'fiber'] as const;
@@ -475,6 +475,10 @@ export interface UiState {
   readonly paused: boolean;
   /** Real-time multiplier applied by the game loop. Presentation only; ticks carry minutes. */
   readonly timeScale: number;
+  /** The zone marker's first corner while a zone is being painted (farmclaws part 3 spec §8). Reset on load. */
+  readonly zoneDraft: null | { readonly zone: ZoneId; readonly corner: TileCoord };
+  /** The zone the marker paints next. Presentation only; reset to A on load. */
+  readonly zoneLetter: ZoneId;
 }
 
 export type MessageTone = 'info' | 'success' | 'warn';
@@ -721,6 +725,8 @@ export interface RobotsState {
   readonly lastNightFuel: { readonly wood: number; readonly tokens: number };
   /** Named farm rectangles for programs and .MDs; null is an empty zone. */
   readonly zones: Readonly<Record<ZoneId, ZoneRect | null>>;
+  /** True while the zone marker owed to a migrated save waits for a free backpack slot (part 3 spec §8). */
+  readonly pendingMarker: boolean;
   /** What the robot screen offers (farmclaws part 3 spec §7). Gates the editor only, never the simulation. */
   readonly unlocks: RobotUnlocks;
 }

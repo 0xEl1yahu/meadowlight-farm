@@ -616,8 +616,8 @@ describe('UI panels', () => {
   });
 
   it('game/load resets the panel and pause', () => {
-    const loaded = deepFreeze({ ...atChest([]), ui: { panel: { kind: 'chest' as const, mapId: 'farm' as const, tx: 5, tz: 10 }, paused: true, timeScale: 2 } });
+    const loaded = deepFreeze({ ...atChest([]), ui: { ...BASE.ui, panel: { kind: 'chest' as const, mapId: 'farm' as const, tx: 5, tz: 10 }, paused: true, timeScale: 2 } });
     const next = gameReducer(BASE, actions.load(loaded));
-    expect(next.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 2 });
+    expect(next.ui).toEqual({ ...BASE.ui, panel: { kind: 'none' }, paused: false, timeScale: 2 });
   });
 });

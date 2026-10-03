@@ -107,6 +107,7 @@ export const TOOLS = {
     pickaxe: 3,
     axe: 3,
     scythe: 0,
+    zoneMarker: 0,
   },
   wateringCanCapacity: 40,
   rockHits: 2,
@@ -117,6 +118,14 @@ export const TOOLS = {
   woodFromStump: 2,
   /** Wood dropped when a tree falls (the stump it leaves drops `woodFromStump` more). */
   woodFromTree: 4,
+} as const;
+
+/** The zone marker's overlay (farmclaws part 3 spec §8). */
+export const ZONE_MARKER = {
+  /** Outline and letter colour of zones A … H, in ZONE_IDS order. */
+  colors: [0xe2563f, 0xf2c14e, 0x5fa84a, 0x2f6fb0, 0x8e5ba8, 0xf28a3a, 0x3aa59c, 0xe87fa3],
+  /** Height of a zone outline above the ground of the tile it borders (world units). */
+  outlineHeight: 0.03,
 } as const;
 
 export const INVENTORY = {

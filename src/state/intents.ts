@@ -21,16 +21,19 @@ import {
   type PlacedObject,
   type Quality,
   type TileCoord,
+  type ZoneId,
+  type ZoneRect,
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
+import { zoneRectBetween } from '../robots/zones';
 import { isReservedTile, mapSeed } from '../world/maps';
 import { getTile, isSoil, isWalkable } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
-import { selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
+import { isZoneMarkerSelected, selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
 
 export type Intent =
   | { readonly kind: 'till' }
@@ -70,6 +73,12 @@ export type Intent =
   | { readonly kind: 'openBench'; readonly robotId: number; readonly name: string }
   /** Shift + E on a standing robot: its screen opens read-only, for free (part 3 spec §2.3). */
   | { readonly kind: 'peekRobot'; readonly robotId: number; readonly name: string }
+  /** The zone marker's first press: the draft's corner (part 3 spec §8). */
+  | { readonly kind: 'zoneCorner'; readonly corner: TileCoord }
+  /** The zone marker's second press: the rectangle from the draft's corner becomes the zone. */
+  | { readonly kind: 'markZone'; readonly zone: ZoneId; readonly rect: ZoneRect }
+  /** Shift + E with the zone marker: the current letter's zone is cleared. */
+  | { readonly kind: 'clearZone'; readonly zone: ZoneId }
   /** `hint`, when set, is the HUD hint of a plan that does nothing (the empty workbench). */
   | { readonly kind: 'blocked'; readonly reason: string | null; readonly hint?: string };
 
@@ -248,7 +257,38 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
       }
       if (tile.state === TileState.Blocked) return blocked(target, tool, blockerHint(tile.blocker));
       return blocked(target, tool);
+
+    case 'zoneMarker':
+      return planMarker(state, target);
   }
+}
+
+/** Why the zone marker does nothing off the farm (part 3 spec §8). */
+export const ZONES_FARM_ONLY = 'Zones are only on the farm.';
+
+/**
+ * The zone marker on the tile ahead (part 3 spec §8): with no draft the press sets the draft's
+ * corner; with one it paints the rectangle from that corner to this tile as the draft's zone.
+ * Free, on any farm tile, and only on the farm.
+ */
+function planMarker(state: GameState, target: TileCoord): ActionPlan {
+  if (state.player.mapId !== 'farm') return blocked(target, 'zoneMarker', ZONES_FARM_ONLY);
+  const draft = state.ui.zoneDraft;
+  if (draft === null) return plan(target, { kind: 'zoneCorner', corner: target }, 'zoneMarker');
+  return plan(target, { kind: 'markZone', zone: draft.zone, rect: zoneRectBetween(draft.corner, target) }, 'zoneMarker');
+}
+
+/**
+ * Shift + E with the zone marker (part 3 spec §8): clears the current letter's zone. An empty
+ * zone has nothing to clear (silent); off the farm it is refused like painting. Facing the edge
+ * of the world, the player's own tile stands in for the target.
+ */
+function planClearZone(state: GameState, target: TileCoord | null): ActionPlan {
+  const at = target ?? { tx: state.player.tx, tz: state.player.tz };
+  if (state.player.mapId !== 'farm') return blocked(at, 'zoneMarker', ZONES_FARM_ONLY);
+  const zone = state.ui.zoneLetter;
+  if (state.robots.zones[zone] === null) return blocked(at, 'none');
+  return plan(at, { kind: 'clearZone', zone }, 'zoneMarker');
 }
 
 /** The pickaxe's and the axe's answer at the workbench, which is built into the farm (part 3 spec §2.1). */
@@ -495,7 +535,8 @@ export function planPrimaryAction(state: GameState): ActionPlan {
  *   1. the workbench ahead: exactly what E does there;
  *   2. a standing robot ahead (on the farm, not carried, at repairs or on the bench): peek at
  *      it, which costs nothing and changes nothing but the open panel;
- *   3. otherwise nothing, silently.
+ *   3. the zone marker selected: clear the current letter's zone (spec §8);
+ *   4. otherwise nothing, silently.
  */
 export function planShiftInteraction(state: GameState): ActionPlan {
   const target = selectTargetTile(state);
@@ -505,6 +546,7 @@ export function planShiftInteraction(state: GameState): ActionPlan {
     const robot = robotsOnTile(state, target.tx, target.tz)[0];
     if (robot !== undefined) return plan(target, { kind: 'peekRobot', robotId: robot.id, name: robot.name }, 'none');
   }
+  if (isZoneMarkerSelected(state)) return planClearZone(state, target);
   return blocked(target, 'none');
 }
 
@@ -557,6 +599,12 @@ export function describeIntent(intent: Intent): string | null {
       return `Work on ${intent.name}`;
     case 'peekRobot':
       return `Look at ${intent.name}`;
+    case 'zoneCorner':
+      return 'Mark corner';
+    case 'markZone':
+      return `Mark Zone ${intent.zone}`;
+    case 'clearZone':
+      return `Clear Zone ${intent.zone}`;
     case 'blocked':
       return intent.hint ?? null;
   }

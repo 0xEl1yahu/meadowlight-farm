@@ -101,7 +101,7 @@ function richState(): GameState {
   ];
   state = script.reduce(gameReducer, state);
   state = gameReducer(holding(withPlayer(state, { tx: 9, tz: 6 }, Direction.North), 'parsnip_seeds', 4), actions.interact());
-  return { ...state, ui: { panel: { kind: 'shop' }, paused: true, timeScale: 4 } };
+  return { ...state, ui: { ...state.ui, panel: { kind: 'shop' }, paused: true, timeScale: 4 } };
 }
 
 function withMenusClosed(state: GameState): GameState {
@@ -534,6 +534,7 @@ describe('ACTION_KINDS', () => {
       pickaxe: true,
       axe: true,
       scythe: true,
+      zoneMarker: true,
       plant: true,
       harvest: true,
       ship: true,
@@ -561,7 +562,8 @@ describe('ACTION_KINDS', () => {
 describe('migrating inventory, shipping and UI to version 3', () => {
   /** A state an old save can express: a full hotbar, an empty backpack, a mixed shipment, fast time. */
   function stocked(): GameState {
-    const hotbar = [stack('hoe', 1), stack('parsnip', 7), null, stack('stone', 40), stack('wood', INVENTORY.maxStack)];
+    // The zone marker sits in the first free slot, where the version 6 migration puts it back.
+    const hotbar = [stack('hoe', 1), stack('parsnip', 7), stack('zoneMarker', 1), stack('stone', 40), stack('wood', INVENTORY.maxStack)];
     const state = withSlots(BASE, hotbar, 3);
     return {
       ...state,
@@ -587,15 +589,15 @@ describe('migrating inventory, shipping and UI to version 3', () => {
   it('replaces shopOpen with a closed panel and keeps a valid time scale', () => {
     const old = legacySave(stocked(), 2);
     old.ui = { shopOpen: true, paused: true, timeScale: 8 };
-    expect((migrateSave(old) as SaveJson).ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 8 });
-    expect(must(deserializeGame(JSON.stringify(old))).ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 8 });
+    expect((migrateSave(old) as SaveJson).ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 8, zoneDraft: null, zoneLetter: 'A' });
+    expect(must(deserializeGame(JSON.stringify(old))).ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 8, zoneDraft: null, zoneLetter: 'A' });
   });
 
   it('falls back to time scale 1 when the old one is invalid or missing', () => {
     const old = legacySave(stocked(), 2);
     for (const ui of [{ shopOpen: false, paused: false, timeScale: 3 }, { shopOpen: false, paused: false }, undefined, 'ui']) {
       const save = { ...old, ui };
-      expect((migrateSave(save) as SaveJson).ui, JSON.stringify(ui)).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 1 });
+      expect((migrateSave(save) as SaveJson).ui, JSON.stringify(ui)).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 1, zoneDraft: null, zoneLetter: 'A' });
       expect(must(deserializeGame(JSON.stringify(save))).ui.timeScale).toBe(1);
     }
   });
@@ -781,6 +783,8 @@ describe('loading the real legacy saves', () => {
     expect(loaded.inventory).toEqual({
       slots: Array.from({ length: INVENTORY.slotCount }, (_, i) => {
         const held = save.inventory.slots[i];
+        // Version 6 hands out the zone marker in the first free slot: slot 6 in both fixtures.
+        if (i === 6) return { itemId: 'zoneMarker', quantity: 1, quality: 0 };
         return held === undefined || held === null ? null : { ...held, quality: 0 };
       }),
       unlockedSlots: INVENTORY.startingUnlockedSlots,
@@ -790,7 +794,7 @@ describe('loading the real legacy saves', () => {
     });
     expect(loaded.shipping).toEqual({ pending: save.shipping.pending.map((held) => ({ ...held, quality: 0 })), lastPayout: save.shipping.lastPayout });
     // The open shop and the pause are dropped; the time scale is kept.
-    expect(loaded.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 2 });
+    expect(loaded.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 2, zoneDraft: null, zoneLetter: 'A' });
     const sections = createDefaultSections();
     for (const key of Object.keys(sections) as (keyof typeof sections)[]) expect(loaded[key], key).toEqual(sections[key]);
   });
@@ -938,7 +942,7 @@ function everything(): GameState {
     ...state,
     inventory: { ...state.inventory, unlockedSlots: 36 },
     shipping: { pending: [stack('parsnip', 4), stack('parsnip', 1, 2), stack('pumpkin', 2, 1)], lastPayout: 777 },
-    ui: { panel: { kind: 'inventory' }, paused: true, timeScale: 16 },
+    ui: { ...state.ui, panel: { kind: 'inventory' }, paused: true, timeScale: 16 },
   };
 }
 

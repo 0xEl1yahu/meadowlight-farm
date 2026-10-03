@@ -187,6 +187,8 @@ function carryStyleFor(kind: HeldModelKind | null): CarryStyle {
       return 'tool';
     case 'scythe':
       return 'scythe';
+    case 'zoneMarker':
+      return 'small';
     case 'wateringCan':
       return 'can';
     case 'pouch':
@@ -725,6 +727,8 @@ const ACTION_CLIPS: Readonly<Record<AnimatedAction, ActionClip>> = {
   axe: AXE_CHOP,
   wateringCan: CAN_POUR,
   scythe: SCYTHE_SWEEP,
+  /** Marking a corner crouches to the ground like planting. */
+  zoneMarker: PLANT,
   plant: PLANT,
   harvest: HARVEST,
   ship: SHIP_TOSS,

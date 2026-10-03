@@ -86,6 +86,11 @@ const TOOL_INFO: Readonly<Record<ToolType, { name: string; description: string; 
   pickaxe: { name: 'Pickaxe', description: 'Breaks rocks. Turns empty soil back into grass.', color: 0x9aa0b5 },
   axe: { name: 'Axe', description: 'Chops stumps into wood.', color: 0xc07a4f },
   scythe: { name: 'Scythe', description: 'Harvests ripe crops and clears withered ones.', color: 0xd9d4c7 },
+  zoneMarker: {
+    name: 'Zone Marker',
+    description: 'Paints zones A to H for your robots. Use it to mark corners; Shift + use picks the zone.',
+    color: 0xe2563f,
+  },
 };
 
 const MATERIAL_INFO: Readonly<Record<MaterialItemId, { name: string; description: string; sellPrice: number; color: number }>> = {

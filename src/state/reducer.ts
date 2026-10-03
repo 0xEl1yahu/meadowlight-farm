@@ -17,6 +17,7 @@ import {
   SEASON_NAMES,
   TileState,
   Weather,
+  ZONE_IDS,
   type ActionKind,
   type Direction,
   type GameState,
@@ -41,7 +42,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
-import { programmedRobot, withMd } from '../robots/edits';
+import { programmedRobot, withMd, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
 import { carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
@@ -75,6 +76,23 @@ import {
 } from './selectors';
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
+  return dropStaleDraft(state, reduceAction(state, action));
+}
+
+/**
+ * A zone draft (farmclaws part 3 spec §8) lasts only while its corner still means something: it
+ * drops when the selected hotbar slot changes, the player changes map or any panel opens.
+ */
+function dropStaleDraft(prev: GameState, next: GameState): GameState {
+  if (next.ui.zoneDraft === null) return next;
+  const stale =
+    next.ui.panel.kind !== 'none' ||
+    next.inventory.selected !== prev.inventory.selected ||
+    next.player.mapId !== prev.player.mapId;
+  return stale ? { ...next, ui: { ...next.ui, zoneDraft: null } } : next;
+}
+
+function reduceAction(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'time/tick':
       return tick(state, action.minutes);
@@ -110,6 +128,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return state.ui.paused === action.paused ? state : { ...state, ui: { ...state.ui, paused: action.paused } };
     case 'game/setTimeScale':
       return setTimeScale(state, action.timeScale);
+    case 'zone/cycle':
+      return nextZoneLetter(state);
+    case 'zone/clearDraft':
+      return state.ui.zoneDraft === null ? state : { ...state, ui: { ...state.ui, zoneDraft: null } };
     case 'game/load':
       return loadState(state, action.state);
     case 'robot/program':
@@ -455,6 +477,22 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
     case 'peekRobot':
       return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'peek' } } };
 
+    case 'zoneCorner':
+      return { ...state, ui: { ...state.ui, zoneDraft: { zone: state.ui.zoneLetter, corner: intent.corner } } };
+
+    case 'markZone': {
+      const done: GameState = { ...state, ui: { ...state.ui, zoneDraft: null } };
+      const painted = withZone(done, intent.zone, intent.rect);
+      if (typeof painted === 'string') return pushMessage(done, painted, 'warn');
+      return pushMessage(painted, `Zone ${intent.zone} · ${intent.rect.w}×${intent.rect.d}.`, 'success');
+    }
+
+    case 'clearZone': {
+      const cleared = withZone(state, intent.zone, null);
+      if (typeof cleared === 'string') return pushMessage(state, cleared, 'warn');
+      return pushMessage(cleared, `Cleared Zone ${intent.zone}.`, 'info');
+    }
+
     case 'fuel': {
       const object = tile.object;
       invariant(object !== null && object.kind === 'woodBurner', 'fuel plan without a wood burner');
@@ -666,6 +704,13 @@ function craft(state: GameState, id: CraftingRecipeId): GameState {
   return pushMessage({ ...state, inventory, stats }, `Crafted ${name}${recipe.quantity > 1 ? ` ×${recipe.quantity}` : ''}.`, 'success');
 }
 
+/** Shift + use with the zone marker: the next letter, A → H → A, dropping any draft (part 3 spec §8). */
+function nextZoneLetter(state: GameState): GameState {
+  if (selectIsFrozen(state)) return state;
+  const next = ZONE_IDS[(ZONE_IDS.indexOf(state.ui.zoneLetter) + 1) % ZONE_IDS.length] ?? 'A';
+  return { ...state, ui: { ...state.ui, zoneLetter: next, zoneDraft: null } };
+}
+
 function setTimeScale(state: GameState, timeScale: number): GameState {
   if (!(TIME.timeScales as readonly number[]).includes(timeScale) || state.ui.timeScale === timeScale) return state;
   return { ...state, ui: { ...state.ui, timeScale } };
@@ -791,11 +836,11 @@ function paintRobot(state: GameState, robotId: number, paint: number): GameState
   return pushMessage(painted, `Painted ${robot.name} ${colour}.`, 'success');
 }
 
-/** Replaces the whole state (new game / loaded save): no panel open, unpaused, the player flagged as teleported. */
+/** Replaces the whole state (new game / loaded save): no panel open, unpaused, no zone draft, the player flagged as teleported. */
 function loadState(prev: GameState, loaded: GameState): GameState {
   return {
     ...loaded,
-    ui: { ...loaded.ui, panel: { kind: 'none' }, paused: false },
+    ui: { ...loaded.ui, panel: { kind: 'none' }, paused: false, zoneDraft: null },
     player: { ...loaded.player, teleportSeq: Math.max(prev.player.teleportSeq, loaded.player.teleportSeq) + 1 },
   };
 }
