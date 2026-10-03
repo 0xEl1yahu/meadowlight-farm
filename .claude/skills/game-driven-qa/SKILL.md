@@ -33,6 +33,11 @@ Drive the real game in the browser pane and judge it by its **state**, confirmed
 | Find a robot | `__qa.robot('Drizzle')` |
 | Build a scenario | `const F = await __qa.fixtures()` → `F.withTile`, `F.soilTile(F.T.TileState.Plowed, F.matureCrop('parsnip'))`, `F.withPlayer`, `F.stack`; then `__qa.load(state)` |
 | Add robots | `__meadowlight.addRobot(preset, {tx, tz, facing})` (spinner, waterer, harvester, swimmer, pair); `__meadowlight.addScriptedRobot({ steps, parts, name?, size?, loop?, place? })` for any script — `loop` defaults to **true**, so pass `loop: false` for a one-shot |
+| Program a robot with blocks (part 2) | `const b = __meadowlight.blocks; __meadowlight.setProgram('Drizzle', b.program({ stacks: [b.when(b.morning(), b.forEach('A', b.if(b.soilIsDry(), [b.water()])))] }))` → "Programmed Drizzle." or the checker's sentence. A `morning` stack starts only up to 6:04 (6:03 with a quick core); later the robot idles until a trigger fires |
+| A robot's .MD | `__meadowlight.setMd('Drizzle', [{ kind: 'dontLeave', zone: 'A' }, { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 }])` → "Set Drizzle's .MD." |
+| Zones A–H | `__meadowlight.setZone('A', { x0: 6, z0: 12, w: 3, d: 3 })` → "Set Zone A."; `setZone('A', null)` clears it |
+| Block builder | `__meadowlight.blocks` is the tests' `b`: `b.repeat(3, b.move())`, `b.goTo(b.tileAt(5, 10))`, `b.set('n', b.add(b.v('n'), b.n(1)))`. Playbook: `scenarios/farmclaws-part2.md` |
+| What a block robot is doing | `__qa.robot(name).exec` (`running` stack, `frames`, `vars`), `.off` (`'dizzy'` or `'done'` until morning), `.md` |
 | Enum values (tile state, blocker, direction) | `(await __qa.fixtures()).T` → `TileState` {Unplowed 0, Plowed 1, Watered 2, Blocked 3}, `Blocker` {Water 3, ShippingBin 5, …}, `Direction` {North 0 … West 3} |
 | Teleport / give items (setup only) | `__qa.patch(s => { s.player.tx = 5; })` |
 | Any game module | `await __qa.mod('/src/robots/logText.ts')` — Vite serves source in dev |
@@ -58,6 +63,7 @@ Drive the real game in the browser pane and judge it by its **state**, confirmed
 | Pick-up / interaction misses a robot | It moved (every period). Wait for `actionSeq` to change, then approach at once — see `scenarios/farmclaws-part1.md` |
 | Day jumped between calls | Time kept running at 16× while you worked — `__meadowlight.store.dispatch(__meadowlight.actions.setTimeScale(1))` |
 | "The farm already has 12 robots." | Start from `?new` |
+| `setProgram` worked but the robot never starts | It was after 6:04, so the `morning` stack waits for tomorrow. Load the clock to 6:00 in the same call first (`const s = __qa.state(); __qa.load({ ...s, time: { ...s.time, minuteOfDay: 360 } })`), or give the program an `every` / `atTime` trigger |
 | Navigation fails / blank tab | Server stopped — `preview_list`, `preview_start` |
 
 ## Report
