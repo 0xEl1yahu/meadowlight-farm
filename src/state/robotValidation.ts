@@ -243,16 +243,36 @@ function isBlockProgramShape(v: Obj): boolean {
 }
 
 /**
+ * The deepest nesting of statements and expressions isProgramShape lets through (each level is
+ * an object, and a statement level also a list, so the raw limit is twice this). checkProgram
+ * accepts far less (ROBOTS.maxFrames statement levels, and a block budget that bounds the
+ * expressions), so this only has to stop input deep enough to overflow the checker's recursion.
+ */
+const MAX_SHAPE_DEPTH = 64;
+
+/** Whether any chain of nested nodes (objects and arrays) in `v` is deeper than `limit`. Iterative, so it can't overflow. */
+function nestsDeeperThan(v: unknown, limit: number): boolean {
+  const pending: Array<[unknown, number]> = [[v, 0]];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const [node, depth] = next;
+    if (typeof node !== 'object' || node === null) continue;
+    if (depth > limit) return true;
+    for (const child of Object.values(node)) pending.push([child, depth + 1]);
+  }
+  return false;
+}
+
+/**
  * Whether `v` is shaped like a program, so checkProgram can read it: a script (its steps an
  * array; checkProgram checks each step) or a block program whose every node has a known kind
- * and exactly its fields. Never throws: input nested too deeply (or cyclic, from the console)
- * is rejected.
+ * and exactly its fields, nested no deeper than MAX_SHAPE_DEPTH. Never throws: input nested too
+ * deeply (or cyclic, from the console) is rejected.
  */
 export function isProgramShape(v: unknown): v is RobotProgram {
   try {
     if (!isObj(v)) return false;
     if (v.kind === 'script') return hasExactKeys(v, ['kind', 'steps', 'loop']) && isList(v.steps) && isBool(v.loop);
-    return v.kind === 'blocks' && isBlockProgramShape(v);
+    return v.kind === 'blocks' && !nestsDeeperThan(v, MAX_SHAPE_DEPTH * 2) && isBlockProgramShape(v);
   } catch {
     return false;
   }
