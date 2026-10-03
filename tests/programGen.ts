@@ -31,7 +31,7 @@ import {
   type ValueType,
   type VarDecl,
 } from '../src/core/types';
-import { programmedRobot, withMd } from '../src/dev/robotDev';
+import { programmedRobot, withMd } from '../src/robots/edits';
 import { addRobot } from '../src/robots/create';
 import { blockCount, statementDepth } from '../src/robots/program';
 import { requireRobot, withRobot } from '../src/robots/world';

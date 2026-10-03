@@ -26,6 +26,7 @@ import {
   type PlaceableItemId,
   type PlacedObject,
   type Quality,
+  type Robot,
   type SeedItemId,
   type ShippingState,
   type SlotRef,
@@ -40,10 +41,11 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
+import { programmedRobot, withMd } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
 import { periodFor, putDownPower } from '../robots/stats';
-import { requireRobot, withRobot } from '../robots/world';
+import { findRobot, requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
 import { inBounds, stepTile } from '../world/grid';
@@ -108,6 +110,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return setTimeScale(state, action.timeScale);
     case 'game/load':
       return loadState(state, action.state);
+    case 'robot/program':
+      return editRobot(state, action.robotId, (robot) => programmedRobot(robot, action.program, state.time.minuteOfDay), (name) => `Programmed ${name}.`);
+    case 'robot/md':
+      return editRobot(state, action.robotId, (robot) => withMd(robot, action.md), (name) => `Set ${name}'s .MD.`);
     default: {
       const unknown: never = action;
       void unknown;
@@ -638,6 +644,23 @@ function craft(state: GameState, id: CraftingRecipeId): GameState {
 function setTimeScale(state: GameState, timeScale: number): GameState {
   if (!(TIME.timeScales as readonly number[]).includes(timeScale) || state.ui.timeScale === timeScale) return state;
   return { ...state, ui: { ...state.ui, timeScale } };
+}
+
+// ---------------------------------------------------------------------------
+// Robot edits (farmclaws part 3 spec §4.7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies a program or .MD edit to robot `robotId`: the edited robot and a success toast, or the
+ * edit's refusal as a warn toast with nothing else changed. An unknown id changes nothing. Edits
+ * aren't frozen with the game: the robot screen that sends them is a panel.
+ */
+function editRobot(state: GameState, robotId: number, edit: (robot: Robot) => Robot | string, done: (name: string) => string): GameState {
+  const robot = findRobot(state, robotId);
+  if (robot === null) return state;
+  const edited = edit(robot);
+  if (typeof edited === 'string') return pushMessage(state, edited, 'warn');
+  return pushMessage(withRobot(state, edited), done(robot.name), 'success');
 }
 
 /** Replaces the whole state (new game / loaded save): no panel open, unpaused, the player flagged as teleported. */

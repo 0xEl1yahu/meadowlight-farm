@@ -20,6 +20,7 @@ import { isCanonicalSubset, isInt } from '../state/validation';
 import { MAPS, isReservedTile } from '../world/maps';
 import { getTile, isWalkable } from '../world/tiles';
 import { checkMd, checkProgram } from './check';
+import { MD_SHAPE, PROGRAM_SHAPE } from './edits';
 import { execAt } from './exec';
 import { batteryFor, hasPart, periodFor } from './stats';
 
@@ -42,11 +43,11 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
   if (!(ROBOT_SIZES as readonly unknown[]).includes(spec.size)) return `A robot's size is one of ${ROBOT_SIZES.join(', ')}.`;
   if (!isCanonicalSubset(spec.parts, ROBOT_PART_IDS)) return 'Parts must be listed once each, in catalogue order.';
   if (spec.parts.length > ROBOTS.sizes[spec.size].partSlots) return `A ${spec.size} robot has room for ${ROBOTS.sizes[spec.size].partSlots} parts.`;
-  if (!isProgramShape(spec.program)) return 'That program is not a script or a block program.';
+  if (!isProgramShape(spec.program)) return PROGRAM_SHAPE;
   const programProblem = checkProgram(spec.program, spec);
   if (programProblem !== null) return programProblem;
   const md: unknown = spec.md ?? [];
-  if (!isMdShape(md)) return 'That .MD is not a list of cards.';
+  if (!isMdShape(md)) return MD_SHAPE;
   const mdProblem = checkMd(md, spec);
   if (mdProblem !== null) return mdProblem;
   const place: unknown = spec.place;

@@ -2,11 +2,9 @@
  * Development-only robot hooks (farmclaws part 1 spec §8.4, part 2 spec §12). main.ts imports
  * this only when import.meta.env.DEV is true, so production builds contain none of it.
  */
-import { TIME } from '../config';
 import type { Store } from '../core/store';
 import {
   CRAFTING_RECIPE_IDS,
-  ZONE_IDS,
   type GameState,
   type MdCard,
   type Robot,
@@ -19,16 +17,12 @@ import {
   type ZoneRect,
 } from '../core/types';
 import { b } from '../robots/blocks';
-import { checkMd, checkProgram, isValidZoneRect } from '../robots/check';
 import { addRobot, type RobotSpec } from '../robots/create';
-import { execAt, morningExec } from '../robots/exec';
+import { MD_SHAPE, PROGRAM_SHAPE, ZONE_SHAPE, programmedRobot, withMd, withZone } from '../robots/edits';
 import { robotSays, whatHappened } from '../robots/logText';
-import { periodFor } from '../robots/stats';
 import { withRobot } from '../robots/world';
 import { actions, type GameAction } from '../state/actions';
-import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { selectTargetTile } from '../state/selectors';
-import { isInt, isObj, isOneOf } from '../state/validation';
 
 export type RobotPresetId = 'spinner' | 'waterer' | 'harvester' | 'swimmer' | 'pair';
 
@@ -85,77 +79,24 @@ function isScriptedInput(v: unknown): v is ScriptedRobotInput {
 }
 
 // ---------------------------------------------------------------------------
-// Programs, .MDs and zones (part 2 spec §12). Pure, so the tests need no window. The workbench
-// (part 3) will call the same checker and the same exec rebuild.
+// Programs, .MDs and zones (part 2 spec §12). The edits themselves live in src/robots/edits.ts,
+// shared with the workbench's reducer actions (part 3 spec §4.7); the hooks add their usage lines.
 // ---------------------------------------------------------------------------
 
 const PROGRAM_USAGE = 'Usage: setProgram(name, blocks.program({ stacks: [blocks.when(blocks.morning(), blocks.move())] }))';
 const MD_USAGE = "Usage: setMd(name, [{ kind: 'dontGoIntoWater' }, { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 }])";
 const ZONE_USAGE = "Usage: setZone('A', { x0, z0, w, d }) sets a zone and setZone('A', null) clears it. Zones are A to H.";
-const ZONE_OFF_FARM = 'A zone is at least 1 × 1 tile and lies wholly inside the farm.';
-const MD_SCRIPT = '.MD cards only apply to block programs.';
 
-/** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first. */
-const KEPT_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['flat', 'broken', 'repairing']);
+/** Each malformed-input refusal of the edits, and the usage line its hook prints instead. */
+const USAGE_FOR: ReadonlyMap<string, string> = new Map([
+  [PROGRAM_SHAPE, PROGRAM_USAGE],
+  [MD_SHAPE, MD_USAGE],
+  [ZONE_SHAPE, ZONE_USAGE],
+]);
 
-/**
- * `robot` with a new program, set up the way the morning reset would (spec §12). A block
- * program starts its `morning` stack only if `minuteOfDay` is no later than the robot's first
- * act of the day (TIME.dayStartMinute + its period); later it idles until a trigger fires, with
- * the atTime triggers already past today spent (execAt). A script runs from step 0. Either way
- * the robot turns back on and acts one period from now; a flat, broken or repairing robot keeps
- * its power. Returns the checker's sentence instead when the program fails, or the usage when it
- * isn't a program at all.
- */
-export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay: number): Robot | string {
-  if (!isProgramShape(program)) return PROGRAM_USAGE;
-  const problem = checkProgram(program, robot);
-  if (problem !== null) return problem;
-  const early = minuteOfDay <= TIME.dayStartMinute + periodFor(robot);
-  const exec = program.kind === 'blocks' ? (early ? morningExec(program) : execAt(program, minuteOfDay)) : null;
-  const runs = exec === null || exec.running !== null;
-  return {
-    ...robot,
-    program,
-    pc: 0,
-    exec,
-    off: null,
-    power: KEPT_POWERS.has(robot.power) ? robot.power : runs ? 'working' : 'standby',
-    nextActMinute: minuteOfDay + periodFor(robot),
-  };
-}
-
-/**
- * `robot` with a new .MD. The cards apply at once: today's carried-out DO cards are forgotten
- * (their indices may name other cards now), and a DO return under way stops, because its card
- * may be gone; a working robot then stands by until a trigger or a DO card moves it. A robot
- * running a script is refused: .MD cards only apply to block programs.
- */
-export function withMd(robot: Robot, md: readonly MdCard[]): Robot | string {
-  if (!isMdShape(md)) return MD_USAGE;
-  const exec = robot.exec;
-  if (exec === null) return MD_SCRIPT;
-  const problem = checkMd(md, robot);
-  if (problem !== null) return problem;
-  const returning = exec.running === null && exec.frames.length > 0;
-  return {
-    ...robot,
-    md,
-    exec: { ...exec, frames: returning ? [] : exec.frames, doneCards: [] },
-    power: returning && robot.power === 'working' ? 'standby' : robot.power,
-  };
-}
-
-function isZoneRectShape(v: unknown): v is ZoneRect {
-  return isObj(v) && isInt(v.x0) && isInt(v.z0) && isInt(v.w) && isInt(v.d);
-}
-
-/** `state` with zone `id` set to `rect` (only its four fields) or cleared with null. */
-export function withZone(state: GameState, id: ZoneId, rect: ZoneRect | null): GameState | string {
-  if (!isOneOf(id, ZONE_IDS) || (rect !== null && !isZoneRectShape(rect))) return ZONE_USAGE;
-  if (rect !== null && !isValidZoneRect(rect)) return ZONE_OFF_FARM;
-  const zone: ZoneRect | null = rect === null ? null : { x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d };
-  return { ...state, robots: { ...state.robots, zones: { ...state.robots.zones, [id]: zone } } };
+/** What a hook prints for an edit's refusal: its usage line when the input wasn't shaped right, else the refusal itself. */
+export function consoleText(refusal: string): string {
+  return USAGE_FOR.get(refusal) ?? refusal;
 }
 
 /** The robot called `name` (the most recently added one if several share it). */
@@ -212,7 +153,7 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
     const robot = robotNamed(state, name);
     if (robot === null) return `No robot is called ${String(name)}.`;
     const next = change(robot, state);
-    if (typeof next === 'string') return next;
+    if (typeof next === 'string') return consoleText(next);
     store.dispatch(actions.load(withRobot(state, next)));
     return done;
   };
@@ -224,7 +165,7 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
 
   const setZone = (id: ZoneId, rect: ZoneRect | null): string => {
     const next = withZone(store.getState(), id, rect);
-    if (typeof next === 'string') return next;
+    if (typeof next === 'string') return consoleText(next);
     store.dispatch(actions.load(next));
     return rect === null ? `Cleared Zone ${id}.` : `Set Zone ${id}.`;
   };

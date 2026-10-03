@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { Weather, type BlockProgram, type GameState, type Robot } from '../src/core/types';
-import { programmedRobot } from '../src/dev/robotDev';
+import { programmedRobot } from '../src/robots/edits';
 import { b } from '../src/robots/blocks';
 import { addRobot } from '../src/robots/create';
 import { execAt, freshExec, morningExec } from '../src/robots/exec';

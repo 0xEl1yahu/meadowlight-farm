@@ -2,7 +2,7 @@
  * Every way the game state can change. Actions are plain serialisable objects, so an action
  * log replayed from the same initial state reproduces the same game exactly.
  */
-import type { CraftingRecipeId, Direction, GameState, SeedItemId, SlotRef } from '../core/types';
+import type { CraftingRecipeId, Direction, GameState, MdCard, RobotProgram, SeedItemId, SlotRef } from '../core/types';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -26,7 +26,11 @@ export type GameAction =
   | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
   | { readonly type: 'game/setTimeScale'; readonly timeScale: number }
-  | { readonly type: 'game/load'; readonly state: GameState };
+  | { readonly type: 'game/load'; readonly state: GameState }
+  /** Gives a robot a new program, through the checker (farmclaws part 3 spec §4.7). */
+  | { readonly type: 'robot/program'; readonly robotId: number; readonly program: RobotProgram }
+  /** Gives a robot a new .MD, through the checker. */
+  | { readonly type: 'robot/md'; readonly robotId: number; readonly md: readonly MdCard[] };
 
 export type GameActionType = GameAction['type'];
 
@@ -53,4 +57,6 @@ export const actions = {
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),
   load: (state: GameState): GameAction => ({ type: 'game/load', state }),
+  programRobot: (robotId: number, program: RobotProgram): GameAction => ({ type: 'robot/program', robotId, program }),
+  setRobotMd: (robotId: number, md: readonly MdCard[]): GameAction => ({ type: 'robot/md', robotId, md }),
 } as const;
