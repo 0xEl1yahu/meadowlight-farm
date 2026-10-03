@@ -72,6 +72,7 @@
   bottom: var(--hud-gutter);
   z-index: 31;
   width: min(380px, calc(100vw - 2 * var(--hud-gutter)));
+  align-items: center;
   transform: translateX(-50%);
 }
 

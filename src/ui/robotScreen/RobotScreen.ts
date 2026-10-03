@@ -7,7 +7,8 @@
  * - Tabs: Program, .MD, Looks, Stats and Log in that order, each shown only when its unlock is in
  *   `robots.unlocks` and the mode allows it (viewModel.visibleTabs), and only when this build has
  *   a view for it (TAB_FACTORIES). A view is built the first time its tab is shown and kept until
- *   the screen closes, so switching tabs keeps edits.
+ *   the screen closes, so switching tabs keeps edits. Arrow keys, Home and End move between
+ *   tabs in the strip (viewModel.nextTab).
  * - Keys: InputController ignores every key while a robot panel is open. The screen listens on
  *   the window in the capture phase, so it hears Escape before Blockly's own handlers (Blockly's
  *   widget container stops propagation). The active tab gets the first chance to use it (an open
@@ -39,6 +40,7 @@ import {
   discardPrompt,
   headerView,
   isEditTab,
+  nextTab,
   phoneQuery,
   ruinedNote,
   scrapPrompt,
@@ -183,6 +185,7 @@ export class RobotScreen {
       },
       { signal },
     );
+    this.tabStrip.addEventListener('keydown', (event) => this.onTabKey(event), { signal });
     this.dialogYes.addEventListener(
       'click',
       () => {
@@ -333,6 +336,19 @@ export class RobotScreen {
     const session = this.session;
     if (session === null || session.active === null) return null;
     return session.views.get(session.active) ?? null;
+  }
+
+  /** Arrow keys, Home and End move between the visible tabs, activating and focusing the new one. */
+  private onTabKey(event: KeyboardEvent): void {
+    const session = this.session;
+    if (session === null || session.active === null) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const state = this.store.getState();
+    const tab = nextTab(this.shownTabs(state), session.active, event.key);
+    if (tab === null) return;
+    event.preventDefault();
+    this.activate(tab, state);
+    this.tabButtons.get(tab)?.focus();
   }
 
   private shownTabs(state: GameState): readonly RobotTab[] {

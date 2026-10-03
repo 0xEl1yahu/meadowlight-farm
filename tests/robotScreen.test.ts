@@ -21,6 +21,7 @@ import {
   headerView,
   isEditTab,
   logRows,
+  nextTab,
   paintButtonText,
   paintHex,
   paintName,
@@ -107,6 +108,34 @@ describe('visibleTabs', () => {
 
   it('marks Program, .MD and Looks as the editing tabs', () => {
     expect((['program', 'md', 'looks', 'stats', 'log'] as const).filter(isEditTab)).toEqual(['program', 'md', 'looks']);
+  });
+});
+
+describe('nextTab', () => {
+  const TABS = ['looks', 'stats', 'log'] as const;
+
+  it('moves right and left through the visible tabs, wrapping around', () => {
+    expect(nextTab(TABS, 'looks', 'ArrowRight')).toBe('stats');
+    expect(nextTab(TABS, 'log', 'ArrowRight')).toBe('looks');
+    expect(nextTab(TABS, 'stats', 'ArrowLeft')).toBe('looks');
+    expect(nextTab(TABS, 'looks', 'ArrowLeft')).toBe('log');
+  });
+
+  it('jumps to the first and last tab with Home and End', () => {
+    expect(nextTab(TABS, 'stats', 'Home')).toBe('looks');
+    expect(nextTab(TABS, 'stats', 'End')).toBe('log');
+  });
+
+  it('is null for any other key, with no visible tabs, or for a tab that is not shown', () => {
+    expect(nextTab(TABS, 'stats', 'ArrowDown')).toBeNull();
+    expect(nextTab(TABS, 'stats', 'Enter')).toBeNull();
+    expect(nextTab([], 'stats', 'ArrowRight')).toBeNull();
+    expect(nextTab(TABS, 'program', 'ArrowRight')).toBeNull();
+  });
+
+  it('stays put with a single tab', () => {
+    expect(nextTab(['log'], 'log', 'ArrowRight')).toBe('log');
+    expect(nextTab(['log'], 'log', 'End')).toBe('log');
   });
 });
 

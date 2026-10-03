@@ -130,6 +130,29 @@ export function visibleTabs(mode: RobotScreenMode, unlocks: RobotUnlocks): reado
   return ROBOT_TABS.filter((tab) => unlocks.tabs.includes(tab) && (mode === 'bench' || PEEK_TABS.has(tab)));
 }
 
+/**
+ * The tab a key moves to in the tab strip (the ARIA tabs pattern): ArrowRight / ArrowLeft step
+ * through `visible`, wrapping around; Home / End go to the first / last. Null for any other key,
+ * or when `current` isn't among `visible`.
+ */
+export function nextTab(visible: readonly RobotTab[], current: RobotTab, key: string): RobotTab | null {
+  const index = visible.indexOf(current);
+  if (index < 0) return null;
+  const count = visible.length;
+  switch (key) {
+    case 'ArrowRight':
+      return visible[(index + 1) % count] ?? null;
+    case 'ArrowLeft':
+      return visible[(index - 1 + count) % count] ?? null;
+    case 'Home':
+      return visible[0] ?? null;
+    case 'End':
+      return visible[count - 1] ?? null;
+    default:
+      return null;
+  }
+}
+
 export function isEditTab(tab: RobotTab): boolean {
   return EDIT_TABS.has(tab);
 }
