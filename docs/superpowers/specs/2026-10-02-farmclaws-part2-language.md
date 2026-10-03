@@ -144,7 +144,7 @@ export type Trigger =
   | { readonly kind: 'atTime'; readonly minute: number }
   | { readonly kind: 'bagFull' }
   | { readonly kind: 'startsRaining' }
-  | { readonly kind: 'every'; readonly minutes: (typeof ROBOTS.everyChoices)[number] };
+  | { readonly kind: 'every'; readonly minutes: (typeof EVERY_CHOICES)[number] };
 
 export interface VarDecl { readonly name: string; readonly type: ValueType; readonly initial: Expr }   // a literal of `type`
 export interface TriggerStack { readonly trigger: Trigger; readonly body: readonly Statement[] }
@@ -160,7 +160,7 @@ export interface BlockProgram {
 export type RobotProgram = RobotScript | BlockProgram;
 ```
 
-Names (variables and helpers) are 1 … `ROBOTS.maxIdentifierLength` characters, trimmed, unique within their kind.
+Names (variables and helpers) are 1 … `ROBOTS.maxIdentifierLength` characters, trimmed, unique within their kind. The `Every [n] minutes` options are declared in `types.ts` as `EVERY_CHOICES` and re-exported as `ROBOTS.everyChoices`, so types don't import config.
 
 ### 2.4 Interpreter state
 
@@ -187,9 +187,9 @@ export type Frame =
   | { readonly kind: 'route'; readonly target: TileCoord; readonly path: readonly TileCoord[]; readonly why: 'goTo' | 'forEach' | 'doReturn' };
 
 export interface RobotExec {
-  /** The trigger stack running, or null while idle. */
+  /** The trigger stack running, or null while idle or walking home on a DO return. */
   readonly running: number | null;
-  /** Innermost last. Empty while idle. At most ROBOTS.maxFrames. */
+  /** Innermost last. Empty while idle; exactly one `doReturn` route frame during a DO return. At most ROBOTS.maxFrames. */
   readonly frames: readonly Frame[];
   /** One per program.vars, same order and type. */
   readonly vars: readonly Value[];
@@ -271,12 +271,12 @@ All are base numbers for a Mini; `wakeCost` scales by size and the efficient cor
 
 `checkProgram(program: RobotProgram, robot: Pick<Robot, 'size' | 'parts'>): string | null` returns null or the first problem as a short sentence a player can read ("Repeat needs a number.", "Mini robots hold 12 blocks; this program has 14."). Scripts are checked as in part 1. For block programs, in this order:
 
-1. **Shape:** 1 … `maxStacks` stacks; names valid and unique; every `var` and `set`/`change` names a declared variable; every `runHelper` names a helper; helper calls form no cycle; `forEachTile`/`atEdgeOf` zones are zone ids; literal ranges hold (tiles on the farm, `atTime`/`timeIsAfter` minutes within the day, `num` within ±`maxNumber`, text within `maxTextLength`, `say` literals 1 … 60 chars once trimmed).
+1. **Shape:** 1 … `maxStacks` stacks; names valid and unique; every `var` and `set`/`change` names a declared variable; every `runHelper` names a helper; helper calls form no cycle; `forEachTile`/`atEdgeOf` zones are zone ids; literal ranges hold (tiles on the farm, `atTime`/`timeIsAfter` minutes within the day (`dayStartMinute` … `passOutMinute − 1`, here and in `checkMd`), `num` within ±`maxNumber`, text within `maxTextLength`, `say` literals within `maxTextLength` as written (raw) and 1 … `sayMaxLength` characters once trimmed, so a padded literal longer than 60 raw characters is refused).
 2. **Types:** every expression has the type its socket needs. `compare` with `<` / `>` needs two Numbers; `=` / `≠` need two of the same type. `and`/`or`/`not` take Yes/No. `arith` takes Numbers. `set` takes the variable's type; `change` needs a Number variable. A `VarDecl.initial` is a literal of the declared type. Conditions, `repeatUntil` and `tokensBelow` take Yes/No and Number as the design says.
 3. **Parts:** `tileAheadIs`, `itIsRaining` and `timeIsAfter` need a sensor eye. (Action blocks don't: an action whose part is missing is part 1's runtime `noPart` mistake, kept on purpose.)
-4. **Limits:** block count ≤ `sizes[size].blocks`; variables ≤ `sizes[size].vars`; frame depth (deepest nesting plus helper chain) ≤ `maxFrames`.
+4. **Limits:** block count ≤ `sizes[size].blocks`; variables ≤ `sizes[size].vars`; frame depth (deepest nesting plus helper chain, where a `Go to` or `For each tile` counts one more frame for the route it pushes) ≤ `maxFrames`.
 
-**Counting blocks:** every trigger, statement, helper definition and non-literal expression node is 1. Literals (`num`, `text`, `yes`, `item`, `tile`) and fields inside a block (a `turn` side, a `plant` crop) are 0. `blockCount(program)` is exported; part 3's counter uses it.
+**Counting blocks:** every trigger, statement, helper definition and non-literal expression node is 1. Literals (`num`, `text`, `yes`, `item`, `tile`) and fields inside a block (a `turn` side, a `plant` crop) are 0, and so are variable declarations. `blockCount(program)` is exported; part 3's counter uses it.
 
 `checkMd(md, robot)` returns null or the first problem: card count ≤ `sizes[size].mdCards`; tiles on the farm; minutes within the day; `tokensBelow` n in 1 … battery; no two identical cards.
 
@@ -289,15 +289,22 @@ All are base numbers for a Mini; `wakeCost` scales by size and the efficient cor
 ### 5.1 Stepping
 
 ```ts
+/** A route the interpreter gave up on this turn; the turn layer logs it as `gaveUp`. */
+export interface GaveUp { readonly target: TileCoord; readonly why: 'goTo' | 'forEach' | 'doReturn' }
+
 export type Step =
-  | { readonly kind: 'act'; readonly action: RobotAction; readonly exec: RobotExec; readonly from: 'program' | 'doReturn' }
-  | { readonly kind: 'idle'; readonly exec: RobotExec }   // the running stack ended
+  | { readonly kind: 'act'; readonly action: RobotAction; readonly exec: RobotExec; readonly gaveUp: readonly GaveUp[] }
+  | { readonly kind: 'idle'; readonly exec: RobotExec; readonly gaveUp: readonly GaveUp[] }   // the running stack ended
   | { readonly kind: 'dizzy' };
 
 export function stepProgram(state: GameState, robot: Robot): Step;
+/** Starts trigger stack `index`: running = index, frames = [a list frame on the stack body]. */
+export function startStack(exec: RobotExec, index: number): RobotExec;
 ```
 
-`stepProgram` reads `robot.exec` and walks the top frame until it reaches an action, without changing `state`. Each statement it passes that isn't an action, and each loop iteration it starts, costs one step. Expressions inside a statement are free. When steps reach `ROBOTS.stepBudget` without an action, the result is `dizzy`.
+(A DO return's route is walked by the turn layer, `src/robots/turn.ts`, so `Step` no longer says who asked.)
+
+`stepProgram` reads `robot.exec` and walks the top frame until it reaches an action, without changing `state`. Each statement it passes that isn't an action costs one step, and so does each further iteration a loop starts: passing the loop statement pays for its first iteration, and a loop that ends without going round again costs nothing. Expressions inside a statement are free. When steps reach `ROBOTS.stepBudget` without an action, the result is `dizzy`.
 
 **Statements:**
 - `do`: evaluate its expressions into a part 1 `RobotAction` (`wait` minutes clamped to 1 … `maxWaitMinutes`; `say` text trimmed and cut to `sayMaxLength`, and an empty text says "…"; `take` uses the item value). Result: `act`, with `exec` advanced past the block.
@@ -305,9 +312,9 @@ export function stepProgram(state: GameState, robot: Robot): Step;
 - `repeatUntil`: test `until` before each iteration, including the first; Yes skips or ends it.
 - `repeatForever`: push a body frame that never ends.
 - `if`: evaluate `cond`; push `then`, or `else` when it exists.
-- `forEachTile`: compute the zone's tiles in **snake order** (rows by ascending z; even rows ascending x, odd rows descending, counting rows from the zone's z0), keep those a robot can stand on (`isWalkable`), and push a body frame with `loop: forEach` at i = 0. Before each iteration, push a `route` frame to `tiles[i]`. An empty zone does nothing.
+- `forEachTile`: compute the zone's tiles in **snake order** (rows by ascending z; even rows ascending x, odd rows descending, counting rows from the zone's z0), keep those a robot can stand on (`isWalkable`), and push a body frame with `loop: forEach` at i = 0. Before each iteration, push a `route` frame to `tiles[i]`. When the loop advances, tiles that can't be reached are skipped without costing steps, each logged as a `gaveUp` (`why: 'forEach'`); reachability comes from one flood fill from the robot (`reachableFrom` in `route.ts`, the same entry rule as routes). An empty zone does nothing.
 - `goTo`: evaluate the tile; push a `route` frame.
-- `set` / `change`: update `exec.vars` (numbers clamp to ±`maxNumber`).
+- `set` / `change`: update `exec.vars` (numbers clamp to ±`maxNumber`; `clampNumber` never returns negative zero, so saved numbers round-trip exactly).
 - `runHelper`: push a frame on the helper's body.
 - When a list frame runs out: a loop frame decides whether to go round again; a plain frame pops. When the running stack's last frame pops, the result is `idle`.
 
@@ -317,7 +324,7 @@ export function stepProgram(state: GameState, robot: Robot): Step;
 - Facing the next path tile: emit `move`. Otherwise emit `turn`, choosing `left` or `right` by the shorter turn (`right` when both are equal).
 - No route: pop and record a `gaveUp` event for the caller. `goTo` moves on to the next statement; `forEachTile` skips that tile.
 
-**Expressions** are evaluated against `state` and the robot as they are at the start of the minute (part 1 §5.3 choose phase). Sensors read the robot's own tile unless they say "ahead". `bagIsFull` means the bag holds `bagStacks(robot)` stacks. `soilIsDry` means the tile is Plowed (not Watered). `tileIsTilled` means Plowed or Watered. `cropIsReady` means a living, mature crop. `atEdgeOf` means the robot's tile is in the zone and a 4-neighbour isn't. `tileAheadIs`: `water` is a water blocker, `clear` is a walkable farm tile, and `blocked` is anything else.
+**Expressions** are evaluated against `state` and the robot as they are at the start of the minute (part 1 §5.3 choose phase). Sensors read the robot's own tile unless they say "ahead". `bagIsFull` means the bag holds `bagStacks(robot)` stacks. `soilIsDry` means the tile is Plowed (not Watered). `tileIsTilled` means Plowed or Watered. `cropIsReady` means a living, mature crop. `atEdgeOf` means the robot's tile is in the zone and a 4-neighbour isn't. `tileAheadIs`: `water` is a water blocker, `clear` is a walkable farm tile, and `blocked` is anything else. A robot on the farm edge facing out reads its own tile as `tile ahead`, so a Tile value is always a farm tile.
 
 ### 5.2 Committing
 
@@ -325,7 +332,7 @@ The interpreter's `exec` is **kept only when the turn resolves**: the action is 
 
 ### 5.3 Routes (`src/robots/route.ts`, pure)
 
-`planRoute(state, robot, target): TileCoord[] | null` is a breadth-first search over farm tiles in `DIRECTIONS` order. A tile may be entered when it is walkable (`isWalkable`), it is not water, and the robot's DON'T cards allow the step (section 6.2). The result excludes the start and includes the target. If the target can't be stood on, the result is null. Other robots never block a route (robots don't collide, design §3.1).
+`planRoute(state, robot, target): readonly TileCoord[] | null` (`[]` when the robot already stands on the target) is a breadth-first search over farm tiles in `DIRECTIONS` order. A tile may be entered when it is walkable (`isWalkable`), it is not water, and the robot's DON'T cards allow the step (section 6.2). The result excludes the start and includes the target. If the target can't be stood on, the result is null. Other robots never block a route (robots don't collide, design §3.1). The single-step rule is `canEnter(state, robot, from, to)`, shared by `planRoute` and the route frame's re-plan check.
 
 ---
 
@@ -336,9 +343,9 @@ The interpreter's `exec` is **kept only when the turn resolves**: the action is 
 For a due, non-`off`, uncarried robot with a block program, working or idle (section 7), each due minute goes:
 
 1. **DO power down.** Cards in order. The first whose condition holds powers the robot down: `standby`, `off: 'done'`, a `doPowerDown` event naming the card. Free. The minute ends.
-2. **DO return.** The first card whose `minute` has come and that isn't in `doneCards` takes over:
+2. **DO return.** The due card (its `minute` has come and it isn't in `doneCards`) with the earliest `minute`, ties broken by .MD order, takes over. The same rule picks the card both when a return starts and while one is under way:
    - It replaces the frames with one `route` frame (`why: 'doReturn'`) and logs `doReturn started`.
-   - For `generator`, the target is the nearest wood burner by route length, ties broken by tile order. The route stops at the first tile within `ROBOTS.chargeRadius` of it. With no generator on the farm, the card fails.
+   - For `generator`, the target is the nearest wood burner by route length, ties broken by tile order, found with the same search as routes (`reachableInOrder`). The route stops at the first tile within `ROBOTS.chargeRadius` of it. With no generator on the farm, the card fails.
    - On arrival: `standby`, `off: 'done'`, the card is added to `doneCards`, and it logs `arrived`.
    - With no allowed route: it powers down where it stands, `off: 'done'`, and logs `failed`. When the reason is a DON'T card, it also logs a `conflict` naming both cards.
    - While a return is under way, the program doesn't run.
@@ -350,7 +357,7 @@ For a due, non-`off`, uncarried robot with a block program, working or idle (sec
    - `lastAction` records it as unsuccessful
    - a `skipped` event names the first card that forbade it
 
-   Skips of a route's moves can't happen, because routes are planned over allowed tiles. If a DON'T would forbid a route move anyway, the route re-plans next minute.
+   Skips of a route's moves can't happen: routes are planned over allowed tiles, and a route frame re-plans in the same turn whenever its next step can no longer be entered (`canEnter`).
 
 Then part 1 takes over: pay, bicker check, apply, settle. `settle` for block programs advances nothing of its own; the committed `exec` already holds the position.
 
@@ -363,7 +370,7 @@ Then part 1 takes over: pay, bicker check, apply, settle. `settle` for block pro
 | `dontHarvest crop` | `harvest` when the robot's tile has that crop |
 | `dontDeposit item` | Depositing that item. The executor's deposit leaves those stacks in the bag. If every stack in the bag is kept, the deposit is skipped. |
 
-`planRobotAction` and `applyRobotPlan` take an optional `keep: ReadonlySet<ItemId>` for deposits, which the .MD layer fills from `dontDeposit` cards. Scripts pass nothing, so part 1 behaviour is unchanged.
+`planRobotAction` and `applyRobotPlan` take an optional `keep: ReadonlySet<ItemId>` for deposits, which the .MD layer fills from `dontDeposit` cards. `RobotPlan` carries the set, so the apply phase deposits with the same kept set the choose phase planned with. Scripts pass nothing, so part 1 behaviour is unchanged.
 
 ### 6.3 Precedence
 
@@ -377,6 +384,7 @@ DON'T beats DO beats the program, and nothing else decides. A DO that can't be c
   - `exec` is rebuilt: variables back to their initials; `due` is the trigger minute for `atTime`, `dayStartMinute + n` for `every n` and null otherwise; `firedToday` all false; `doneCards` cleared; frames empty; `running: null`.
   - `off` is cleared.
   - Then the first `morning` stack starts.
+- **Off means off until morning.** A robot that is off (`'dizzy'` / `'done'`) and is carried and put down is shown `working` by part 1's put-down, but it stays off and never acts until the morning reset; it renders with dimmed eyes (section 9).
 - **A trigger fires only when the robot is idle:** `standby`, not `off`, not carried, and not running a stack. A running stack is never interrupted; only DO cards take over a working robot.
 - **Idle robots still check on their schedule.** An idle robot with a block program is "due" at its `nextActMinute` like a working one. On its due minute it checks its stacks' triggers in order and starts the first that fires:
   - `atTime`: the minute has come and `due` isn't spent. It spends its `due`.
@@ -384,9 +392,9 @@ DON'T beats DO beats the program, and nothing else decides. A DO that can't be c
   - `bagFull`: the bag is full and it hasn't fired today.
   - `startsRaining`: today's weather is rain or storm, and it hasn't fired today.
   - `morning`: never fires from idle; it only starts at the reset.
-- **Waking costs `wakeCost`** (scaled like actions) and logs `woke`. A robot that can't pay goes flat. Waking also takes the robot's first action that same minute. An idle check that fires nothing is free, and the robot's next check is one period later.
+- **Waking costs `wakeCost`** (scaled like actions) and logs `woke`. Waking also takes the robot's first action that same minute, and the turn charges the wake on top of that action. A robot that can't pay both goes flat: nothing is committed, and the trigger's `due` / `firedToday` stay unspent, so it never wakes for free. Starting or walking a DO return from standby costs no wake; the wake is charged only when a trigger fires. An idle check that fires nothing is free, and the robot's next check is one period later.
 - **Ending:** when the running stack ends (`idle` step), the robot goes to `standby` and logs `finished`, as part 1 does. A `powerDown` block in the program goes to `standby` too, and triggers can wake it.
-- **Dizzy:** `off: 'dizzy'`, power unchanged, a `dizzy` event, and the warn toast "{name} got dizzy going round in circles." The renderer plays a spin clip (section 9).
+- **Dizzy:** `off: 'dizzy'`, power unchanged (a robot woken from standby that gets dizzy in the same turn stays `working`: the wake happened), a `dizzy` event, and the warn toast "{name} got dizzy going round in circles." The renderer plays a spin clip (section 9).
 
 ---
 
@@ -403,7 +411,7 @@ DON'T beats DO beats the program, and nothing else decides. A DO that can't be c
 
 ## 9. Rendering
 
-One addition: a **dizzy** robot plays a spin clip once (a full yaw turn over 1 s) and then sits with dimmed eyes like `standby`. `off: 'done'` looks like `standby`. No other render changes. The robot screen is part 3.
+One addition: a **dizzy** robot plays a spin clip once (a full yaw turn over 1 s) and then sits with dimmed eyes like `standby`. `off: 'done'` looks like `standby`. Eye brightness is `eyeLevel(power, off)`: 1 working, ½ standby or off, 0 flat, broken or repairing; robots that are off don't bob. The spin starts only when `off` becomes `'dizzy'` between two syncs, never on a load. No other render changes. The robot screen is part 3.
 
 ---
 
@@ -419,19 +427,19 @@ One addition: a **dizzy** robot plays a spin clip once (a full yaw turn over 1 s
 ### 10.2 Validation
 
 On top of part 1's rules:
-- **Programs:** `checkProgram` passes for the robot's size and parts, and `checkMd` passes.
+- **Programs:** the program passes `isProgramShape` (which refuses programs nested deeper than `MAX_SHAPE_DEPTH`, 64 levels of statements and expressions) and then `checkProgram` for the robot's size and parts, and `checkMd` passes.
 - **Scripts:** `exec` is null and `pc` is in range.
 - **Block programs:** `pc` is 0 and `exec` is valid:
   - `vars` match the declarations in number and type.
   - `due` and `firedToday` have one entry per stack.
-  - `running` is null or a stack index, and `frames` is empty exactly when `running` is null.
+  - `running` is null or a stack index, and `frames` is empty exactly when `running` is null, except during a DO return, when `running` is null and `frames` is exactly one `route` frame with `why: 'doReturn'`.
   - Every `ListRef` resolves to a statement list, with `next` in 0 … its length.
   - Loop states match the statement kind: `times.left` is 0 … `maxRepeatTimes`, `forEach` tiles are farm tiles with `i` in range.
   - Route paths are farm tiles.
   - The frame depth is at most `maxFrames`.
   - `doneCards` are DO card indices with no repeats.
 - **Zones:** rectangles lie inside the farm with w and d ≥ 1.
-- **Off robots:** `off` is non-null only for `working` or `standby` robots.
+- **Off robots:** `off` is non-null only for `working` or `standby` robots. (An off robot put down after being carried is `working` and still off.)
 
 Any state the game can produce must load. A corrupted field must be rejected.
 
@@ -461,12 +469,14 @@ Every new event has both lines. "Robot says" always ends in " ✓".
 
 All of these follow part 1's `deliver` pattern: they validate, dispatch `game/load` once, and return a string, never throwing. They bypass the workbench on purpose: from part 3 on, the workbench is the only way a player changes a program or .MD, and it calls the same `checkProgram` / `checkMd` and the same exec rebuild.
 
-- `setProgram(name, program)`: runs `checkProgram` against that robot. On success it replaces the program, rebuilds `exec` as the morning reset would, and starts the `morning` stack only if the current minute is at or before `dayStartMinute + period`; otherwise the robot is idle until a trigger fires. Returns "Programmed {name}." or the checker's sentence.
-- `setMd(name, cards)`: runs `checkMd`. Returns "Set {name}'s .MD." or the problem.
-- `setZone(id, rect | null)`: validates the rect against the farm.
+- `setProgram(name, program)`: runs `checkProgram` against that robot. On success it replaces the program, rebuilds `exec` as the morning reset would, and starts the `morning` stack only if the current minute is at or before `dayStartMinute + period`; otherwise the robot is idle until a trigger fires. A script runs from step 0. The robot turns back on and acts one period later (as `addRobot` does); a flat, broken or repairing robot keeps its power. Returns "Programmed {name}." or the checker's sentence. The pure core is `programmedRobot(robot, program, minuteOfDay)`.
+- `setMd(name, cards)`: runs `checkMd`. The cards apply at once: today's carried-out DO cards are forgotten and a DO return under way stops, leaving the robot idle. Returns "Set {name}'s .MD." or the problem. The pure core is `withMd(robot, cards)`.
+- `setZone(id, rect | null)`: validates the rect against the farm and keeps only its four fields. Returns "Set Zone {id}." or "Cleared Zone {id}.", or the problem. The pure core is `withZone(state, id, rect)`.
+- Input that isn't a program, a card list or a zone gets a usage line; a name that matches no robot gets "No robot is called {name}."
+- Programs from the console go through `isProgramShape` before `checkProgram`: it refuses programs nested deeper than `MAX_SHAPE_DEPTH` (64 levels of statements and expressions), so console input can never overflow the checker, and the dev hooks and `addRobot` return a message instead of throwing. Part 3's workbench must call `isProgramShape` before `checkProgram` too.
 - `blocks`: the builder (section 13), so console programs read like the tests.
 
-The dist check gains `setProgram`, `setMd` and `setZone`.
+The dist check gains `addScriptedRobot`, `setMd` and `setZone`. It leaves out `setProgram`, which three.js's `WebGLRenderer` uses internally, so it always appears in the bundle's source map.
 
 ---
 
@@ -496,12 +506,15 @@ It only builds data. Validity is still `checkProgram`'s job.
 | `tests/robotMd.test.ts` | Every DON'T forbidding and allowing. Skips cost nothing and take the turn. Routes avoid forbidden tiles. Both DO cards, `doneCards`, generator targeting, failed returns with a conflict. The precedence table. |
 | `tests/robotFaithful.test.ts` | Each row of design §3.9 that part 2 can express (all except job-specific chests and prices are expressible), asserting the faithful outcome. |
 | `tests/robotSaveV5.test.ts` | v4 → v5 migration; round trip mid-loop, mid-route, mid-helper, dizzy, done and idle with pending triggers; one corrupted field per rule in section 10.2. |
+| `tests/robotEval.test.ts` | Every expression and sensor, zones and snake order. |
+| `tests/robotRoute.test.ts` | `planRoute`, `nextRouteAction` and the DON'T checks on single steps. |
+| `tests/robotTurn.test.ts` | Every branch of `decideTurn`: .MD precedence, both DO cards, triggers and the wake cost. |
 
 ### 14.2 Property and integration tests
 
 - **Determinism:** `tests/robotDeterminism.test.ts` gains a session with block programs, .MDs and zones. It plays the same twice and replays from the action log, and no unchanged robot is copied.
 - **Tick batching:** `tests/robotTickBatching.test.ts` gains block-program robots: `tick(N)` must equal N × `tick(1)`, including across pass-out.
-- **Interpreter safety:** random well-typed programs from a seeded generator never throw. They always reach an action or `dizzy` within the budget, and their `exec` always validates.
+- **Interpreter safety:** random well-typed programs from a seeded generator never throw. They always reach an action or `dizzy` within the budget, and their `exec` always validates. `tests/robotInterpretSafety.test.ts` runs 300 programs from `tests/programGen.ts` for 30 turns each, and every tenth farm also goes through a save and a load.
 
 ### 14.3 Browser playbook
 
@@ -550,3 +563,5 @@ It only builds data. Validity is still `checkProgram`'s job.
 - **DO cards that power down end the day.** A program's own `Power down` block only goes to standby.
 - **The checker refuses a sensor-eye sensor without a sensor eye.** Part 3's workbench must refuse to remove a part the program's sensors need.
 - **Variables declare an initial value**, and it is restored each morning.
+- **§3.9, "DON'T go into water; DO keep the watering head full".** `Refill` works from the shore, and a route never ends in water, so a DON'T card never stops a refill on its own. Part 2 reproduces the row with a refill trip that goes to the pond tile itself: the `Go to` gives up, the tank runs dry, and the robot trundles over the dry tiles (`tests/robotFaithful.test.ts`).
+- **§3.9, "DO power down when the bag is full".** Full means every bag stack is in use, so a one-stack Mini powers down after its very first harvest, not after the first of a second crop type, and again every morning until someone empties its bag.
