@@ -118,7 +118,6 @@ describe('panel keys with Shift (part 3 spec §2.3)', () => {
   });
 });
 
-
 describe('Escape with a zone draft (part 3 spec §8)', () => {
   const DRAFT: GameState = deepFreeze({ ...BASE, ui: { ...BASE.ui, zoneDraft: { zone: 'A', corner: { tx: 5, tz: 10 } } } });
 

@@ -8,6 +8,8 @@ import { INVENTORY, TOOLS, WORKBENCH, ZONE_MARKER } from '../src/config';
 import { Blocker, Direction, TOOL_TYPES, UPGRADABLE_TOOLS, ZONE_IDS, type GameState, type TileCoord } from '../src/core/types';
 import { IGNORED, markerToolCommand, panelKeyCommand } from '../src/input/panelKeys';
 import { getItem } from '../src/items/items';
+import { applyRobotPlan, planRobotAction } from '../src/robots/execute';
+import { chestSlots, requireRobot } from '../src/robots/world';
 import { zoneRectBetween } from '../src/robots/zones';
 import { actions } from '../src/state/actions';
 import { ZONES_FARM_ONLY, describeIntent, planInteraction, planPrimaryAction, planShiftInteraction } from '../src/state/intents';
@@ -270,5 +272,18 @@ describe('a marker owed to a migrated save', () => {
     expect(next.robots.pendingMarker).toBe(false);
     expect(lastText(next)).toBe('Your zone marker is in your backpack.');
     expect(countItem(startNextDay(next, false).inventory, 'zoneMarker')).toBe(1);
+  });
+});
+
+describe('robots and the marker', () => {
+  it('never take a tool out of a chest, so the marker cannot end up in a bag', () => {
+    const ahead = { tx: TARGET.tx, tz: TARGET.tz + 1 };
+    const slots = Array.from({ length: 36 }, (_, i) => (i === 0 ? stack('zoneMarker', 1) : null));
+    const state = withRobots(withTile(BASE, ahead, { ...EMPTY_TILE, object: { kind: 'chest', slots } }, 'farm'), [robotOf()]);
+    const robot = requireRobot(state, 1);
+    const next = applyRobotPlan(state, 1, planRobotAction(state, robot, { kind: 'take', itemId: 'zoneMarker' }));
+    expect(chestSlots(must(next.maps.farm.chunks.flatMap((c) => c.tiles).find((t) => t.object?.kind === 'chest')))[0]).toEqual(stack('zoneMarker', 1));
+    expect(requireRobot(next, 1).bag).toEqual([]);
+    expect(next.robots.log.entries.at(-1)?.event).toMatchObject({ kind: 'blocked', action: 'take', reason: 'itemNotFound' });
   });
 });

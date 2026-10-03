@@ -19,7 +19,7 @@
  *   Backpack      I toggles the inventory screen; with a chest open, I closes the chest.
  *   Zoom          Z (in) / X (out), Ctrl + mouse wheel or trackpad pinch.
  *   Shop          B toggles. It does nothing while the backpack or a chest is open.
- *   Pause         P toggles. Escape closes any open panel, otherwise toggles pause.
+ *   Pause         P toggles. Escape closes any open panel, otherwise drops a zone draft, otherwise toggles pause.
  *   Sleep         N.
  *   Time scale    T cycles through TIME.timeScales.
  * The panel keys (I, E / K / Enter, B, Escape) are decided by panelKeyCommand in panelKeys.ts.

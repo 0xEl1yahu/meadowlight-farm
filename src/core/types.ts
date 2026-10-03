@@ -525,7 +525,8 @@ export type RobotPower = (typeof ROBOT_POWERS)[number];
 
 /**
  * One robot action. `water`, `harvest`, `till` and `plant` work the robot's own tile;
- * `move`, `refill`, `deposit` and `take` work the tile ahead.
+ * `move`, `refill`, `deposit` and `take` work the tile ahead. `take` never takes a tool (the zone
+ * marker included): a tool reads as not found.
  */
 export type RobotAction =
   | { readonly kind: 'move' }

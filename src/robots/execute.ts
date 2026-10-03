@@ -122,6 +122,8 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
     }
     case 'take': {
       if (containerOf(tile) !== 'chest') return no('nothingAhead');
+      // Tools are never taken: a robot's bag can't hold the zone marker, so scrapping can't lose it.
+      if (getItem(action.itemId).kind === 'tool') return no('itemNotFound');
       const slots = chestSlots(tile);
       if (!slots.some((s) => s !== null && s.itemId === action.itemId)) return no('itemNotFound');
       return takeIntoBag(slots, robot.bag, bagStacks(robot), action.itemId).moved > 0 ? ok : no('bagFull');
