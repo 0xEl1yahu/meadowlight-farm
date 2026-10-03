@@ -186,7 +186,7 @@ export function decideTurn(state: GameState, robot: Robot): Turn {
   const due = dueReturnCard(state, robot);
   if (due !== null) return startReturn(state, robot, exec, due);
   if (returnFrameOf(exec) !== null) {
-    // The card under way is the first due one not yet done; it is missing only if the .MD was edited mid-return.
+    // The card under way is the due, not-done one with the earliest minute (ties by .MD order); it is missing only if the .MD was edited mid-return.
     const card = dueReturnCard(state, { ...robot, exec: stopped(exec) });
     if (card === null) return { kind: 'finish', exec: stopped(exec), wakeCost: 0, events: [] };
     return walkReturn(state, robot, exec, card, []);
