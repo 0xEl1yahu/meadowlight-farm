@@ -1,6 +1,7 @@
 /**
  * Pure render rules for robots (farmclaws part 1 spec §7): which meshes a robot shows, how it
  * poses in each power state, its action clips, shared-tile offsets, movement timing and idle bob.
+ * Part 2 spec §9 adds the dizzy spin and how bright a robot's eyes are while it is off.
  */
 import { TIME } from '../config';
 import type { Robot, RobotActionEvent, RobotActionKind, RobotPartId, RobotPower, RobotSize } from '../core/types';
@@ -213,4 +214,40 @@ export function clipOffsets(clip: RobotClip, t: number): ClipOffsets {
   if (clip.kind === 'say') return { ...STILL, headYaw: Math.sin(t * SAY_WOBBLE_RATE) * SAY_WOBBLE * s };
   const peak = CLIP_PEAKS[clip.kind];
   return peak === undefined ? STILL : { ...STILL, dip: peak.dip * s, pitch: peak.pitch * s };
+}
+
+// ---------------------------------------------------------------------------
+// Turned off (farmclaws part 2 spec §9)
+// ---------------------------------------------------------------------------
+
+/** A robot that gets dizzy spins once, a full yaw turn, over this many real seconds. */
+export const DIZZY_SPIN_SECONDS = 1;
+
+/** Yaw added `t` seconds into the dizzy spin: eases from 0 up to a full turn, and is 0 before and after. */
+export function dizzySpin(t: number): number {
+  if (t <= 0 || t >= DIZZY_SPIN_SECONDS) return 0;
+  const s = t / DIZZY_SPIN_SECONDS;
+  return s * s * (3 - 2 * s) * Math.PI * 2;
+}
+
+/** Eye brightness for each look: lit, dimmed, out. */
+const EYE_LIT = 1;
+const EYE_DIM = 0.5;
+const EYE_OUT = 0;
+
+/**
+ * How bright a robot's eyes are: lit while working, dimmed on standby or while turned off (a
+ * dizzy or done robot sits like a standby one), out when flat, broken or away for repair.
+ */
+export function eyeLevel(power: RobotPower, off: Robot['off']): number {
+  if (power === 'flat' || power === 'broken' || power === 'repairing') return EYE_OUT;
+  return power === 'working' && off === null ? EYE_LIT : EYE_DIM;
+}
+
+/**
+ * True when `next` got dizzy since the last sync. With no earlier robot (a load, a rebuild, a
+ * new robot) there was no transition, so nothing spins.
+ */
+export function startsDizzySpin(prev: Robot | undefined, next: Robot): boolean {
+  return prev !== undefined && prev.off !== 'dizzy' && next.off === 'dizzy';
 }

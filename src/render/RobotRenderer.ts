@@ -9,6 +9,8 @@
  * - A new actionSeq plays a clip (robotLayout.clipFor); water and till clips spray particles,
  *   bickers show a red badge; broken robots spark; working robots bob gently.
  * - A carried robot is drawn above the player's visual position (the carryAnchor callback).
+ * - A robot that just got dizzy spins once (robotLayout.dizzySpin; never on a rebuild). Eyes
+ *   follow robotLayout.eyeLevel, so dizzy and done robots look like standby ones and don't bob.
  */
 import * as THREE from 'three';
 import { ROBOTS } from '../config';
@@ -26,6 +28,7 @@ import {
   CARRY_HEIGHT,
   CARRY_SCALE,
   CLIP_SECONDS,
+  DIZZY_SPIN_SECONDS,
   EYE_COLORS,
   MAX_MOVE_SECONDS,
   ROBOT_MESH_IDS,
@@ -35,12 +38,16 @@ import {
   STILL,
   clipFor,
   clipOffsets,
+  dizzySpin,
+  eyeLevel,
   idleBob,
   moveSeconds,
   robotMeshes,
   robotPose,
   sharedOffsetXZ,
   sharedTileOffsets,
+  startsDizzySpin,
+  type EyeState,
   type RobotClip,
   type RobotMeshId,
 } from './robotLayout';
@@ -80,6 +87,8 @@ interface Visual {
   clipT: number;
   badgeT: number;
   sparkT: number;
+  /** Seconds into the dizzy spin; DIZZY_SPIN_SECONDS or more when not spinning. */
+  spinT: number;
   moveSeq: number;
   teleportSeq: number;
   actionSeq: number;
@@ -111,6 +120,12 @@ function groundOf(state: GameState, robot: Robot): number {
   if (tile === null) return HEIGHTS.grassTop;
   if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
   return isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
+}
+
+/** The eye colour for a robotLayout.eyeLevel: full is lit, anything between is dim, 0 is out. */
+function eyeState(level: number): EyeState {
+  if (level >= 1) return 'lit';
+  return level > 0 ? 'dim' : 'off';
 }
 
 export class RobotRenderer implements RenderSystem {
@@ -172,7 +187,7 @@ export class RobotRenderer implements RenderSystem {
       const snap = prev === null || existing === undefined || robot.teleportSeq !== existing.teleportSeq;
       const visual: Visual = existing ?? {
         robot, x: toX, z: toZ, fromX: toX, fromZ: toZ, toX, toZ, moveT: 1, moveDur: MAX_MOVE_SECONDS, yaw: directionYaw(robot.facing),
-        groundY, offset: 0, clip: null, clipT: CLIP_SECONDS, badgeT: BADGE_SECONDS, sparkT: 0,
+        groundY, offset: 0, clip: null, clipT: CLIP_SECONDS, badgeT: BADGE_SECONDS, sparkT: 0, spinT: DIZZY_SPIN_SECONDS,
         moveSeq: robot.moveSeq, teleportSeq: robot.teleportSeq, actionSeq: robot.actionSeq,
       };
       if (snap) {
@@ -188,6 +203,8 @@ export class RobotRenderer implements RenderSystem {
         if (action.success && action.kind === 'water') this.spray(toX, groundY + BURST_HEIGHT, toZ, DROPLETS.color, DROPLETS.count);
         if (action.success && action.kind === 'till') this.spray(toX, groundY + BURST_HEIGHT, toZ, SOIL_PUFF.color, SOIL_PUFF.count);
       }
+      // visual.robot is still the robot as it was at the last sync.
+      if (!snap && startsDizzySpin(visual.robot, robot)) visual.spinT = 0;
       Object.assign(visual, {
         robot,
         groundY,
@@ -236,6 +253,7 @@ export class RobotRenderer implements RenderSystem {
       visual.clip = null;
       visual.clipT = CLIP_SECONDS;
       visual.badgeT = BADGE_SECONDS;
+      visual.spinT = DIZZY_SPIN_SECONDS;
     }
     this.particles.clear();
     this.particles.commit();
@@ -285,6 +303,7 @@ export class RobotRenderer implements RenderSystem {
     v.yaw += delta * (1 - Math.exp(-YAW_RATE * dt));
     v.clipT += dt;
     v.badgeT += dt;
+    v.spinT += dt;
     const clip = v.clip === null ? STILL : clipOffsets(v.clip, v.clipT);
     const size = SIZE_SCALE[robot.size];
 
@@ -304,11 +323,11 @@ export class RobotRenderer implements RenderSystem {
       const side = v.yaw + Math.PI / 2;
       x = v.x + shared.x + Math.sin(side) * clip.shake;
       z = v.z + shared.z + Math.cos(side) * clip.shake;
-      const bob = robot.power === 'working' ? idleBob(elapsed, robot.id) : 0;
+      const bob = robot.power === 'working' && robot.off === null ? idleBob(elapsed, robot.id) : 0;
       // pose.sink is absolute (the broken sink is 0.25 tile at every size).
       y = v.groundY - pose.sink + clip.dip + bob;
     }
-    euler.set(clip.pitch, v.yaw, pose.tilt);
+    euler.set(clip.pitch, v.yaw + dizzySpin(v.spinT), pose.tilt);
     quat.setFromEuler(euler);
     pos.set(x, y, z);
     scl.set(size.width * s, size.height * s, size.width * s);
@@ -323,7 +342,7 @@ export class RobotRenderer implements RenderSystem {
     for (const id of robotMeshes(robot)) {
       this.meshes[id].setMatrix(robot.id, HEAD_MESHES.has(id) ? headM : m);
     }
-    this.meshes.eyes.setColor(robot.id, color.setHex(EYE_COLORS[pose.eyes]));
+    this.meshes.eyes.setColor(robot.id, color.setHex(EYE_COLORS[eyeState(eyeLevel(robot.power, robot.off))]));
 
     if (v.badgeT < BADGE_SECONDS) {
       pos.set(x, y + BADGE_HEIGHT * size.height * s, z);
