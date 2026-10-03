@@ -363,6 +363,11 @@ function migrateV4toV5(save: Obj): Obj {
   return { ...save, version: 5, robots: { ...robots, list, zones: createDefaultSections().robots.zones } };
 }
 
+/** Version 5 predates the robot screen (farmclaws part 3 spec §9.1). */
+function migrateV5toV6(save: Obj): Obj {
+  return { ...save, version: 6 };
+}
+
 /**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
@@ -374,6 +379,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 2) v = migrateV2toV3(v);
   if (isObj(v) && v.version === 3) v = migrateV3toV4(v);
   if (isObj(v) && v.version === 4) v = migrateV4toV5(v);
+  if (isObj(v) && v.version === 5) v = migrateV5toV6(v);
   return v;
 }
 

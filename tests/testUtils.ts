@@ -267,7 +267,7 @@ function legacyStack(saved: SaveJson, version: 1 | 2): SaveJson {
  */
 export function legacySave(state: GameState, version: 1 | 2): SaveJson {
   if (state.player.mapId !== 'farm') throw new Error(`legacySave: a version-${version} save has only the farm`);
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const save = v5Save(state);
   for (const key of Object.keys(createDefaultSections())) delete save[key];
   save.version = version;
   const inventory = save.inventory as SaveJson;
@@ -300,6 +300,18 @@ export function legacySave(state: GameState, version: 1 | 2): SaveJson {
       }
     }
   }
+  return save;
+}
+
+/**
+ * Hand-transforms a current (version 6) state back into the JSON of a version-5 save (farmclaws
+ * part 3 spec §9.1): every field version 6 added is taken out again. The state must not hold
+ * anything a version-5 save cannot express. legacySave starts from this, so older saves never
+ * carry part 3 fields either.
+ */
+export function v5Save(state: GameState): SaveJson {
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 5;
   return save;
 }
 

@@ -13,7 +13,7 @@ import { requireRobot } from '../src/robots/world';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { isValidExec } from '../src/state/robotValidation';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, must, robotOf, withRobots, withZones, type SaveJson } from './testUtils';
+import { BASE, must, robotOf, v5Save, withRobots, withZones, type SaveJson } from './testUtils';
 
 /** A Standard waterer and harvester: four stacks, a helper, two variables. 21 blocks. */
 const PROGRAM: BlockProgram = b.program({
@@ -121,7 +121,7 @@ describe('save version 5', () => {
 
   it('migrates a version-4 save: robots gain exec, md and off, and every zone is empty', () => {
     const state = withRobots(BASE, [robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', power: 'standby', tx: 4, tz: 10 })]);
-    const save = JSON.parse(serializeGame(state)) as SaveJson;
+    const save = v5Save(state);
     for (const r of robotsOf(save).list as SaveJson[]) {
       delete r.exec;
       delete r.md;
@@ -130,7 +130,7 @@ describe('save version 5', () => {
     delete (save.robots as SaveJson).zones;
     save.version = 4;
     const migrated = migrateSave(save) as SaveJson;
-    expect(migrated.version).toBe(5);
+    expect(migrated.version).toBe(6);
     expect(robotsOf(migrated).list.map((r) => [r.exec, r.md, r.off])).toEqual([
       [null, [], null],
       [null, [], null],
@@ -139,9 +139,9 @@ describe('save version 5', () => {
     expect(must(deserializeGame(JSON.stringify(save)))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through three steps to 5', () => {
+  it('migrates the version-2 fixture through four steps to 6', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(5);
+    expect(loaded.version).toBe(6);
     expect(loaded.robots.list).toEqual([]);
     expect(loaded.robots.zones).toEqual(BASE.robots.zones);
   });

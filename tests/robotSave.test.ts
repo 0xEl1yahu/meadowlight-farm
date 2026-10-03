@@ -8,7 +8,7 @@ import { isValidRobotsSection } from '../src/state/robotValidation';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { blockedTile } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, TARGET, must, robotOf, withRobots, withTile, type SaveJson } from './testUtils';
+import { BASE, TARGET, must, robotOf, v5Save, withRobots, withTile, type SaveJson } from './testUtils';
 
 const WATER = { tx: 6, tz: 10 };
 
@@ -69,18 +69,18 @@ describe('save version 4', () => {
   });
 
   it('migrates a version-3 save to an empty robots section', () => {
-    const save = JSON.parse(serializeGame(BASE)) as SaveJson;
+    const save = v5Save(BASE);
     delete save.robots;
     delete (save.player as SaveJson).carrying;
     save.version = 3;
     const migrated = migrateSave(save) as SaveJson;
-    expect(migrated.version).toBe(5);
+    expect(migrated.version).toBe(6);
     expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
   });
 
-  it('migrates the version-2 fixture all the way to 5', () => {
+  it('migrates the version-2 fixture all the way to 6', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(5);
+    expect(loaded.version).toBe(6);
     expect(loaded.robots.list).toEqual([]);
     expect(loaded.player.carrying).toBeNull();
   });

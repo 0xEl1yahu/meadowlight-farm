@@ -10,7 +10,7 @@
  *   code erasable (no TypeScript runtime enums) and JSON-serialisable.
  */
 
-export const SAVE_VERSION = 5 as const;
+export const SAVE_VERSION = 6 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
