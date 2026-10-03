@@ -27,6 +27,7 @@ import { getTile, isSoil, isWalkable, requireTile } from '../world/tiles';
 import { bagCount } from './bag';
 import { farmContains, literalValue } from './program';
 import { bagStacks } from './stats';
+import { robotsOnTile } from './world';
 import { inZone, tileAheadOf, zoneOf } from './zones';
 
 export interface EvalContext {
@@ -145,9 +146,11 @@ export function evaluate(expr: Expr, ctx: EvalContext): Value {
       const tile = getTile(state.maps.farm, ahead.tx, ahead.tz);
       const water = tile !== null && tile.blocker === Blocker.Water;
       const clear = tile !== null && isWalkable(tile);
+      // A standing robot ahead blocks the tile (part 3 spec §3.1), so a program can look before it moves.
+      const robotAhead = robotsOnTile(state, ahead.tx, ahead.tz).length > 0;
       if (expr.what === 'water') return yesNo(water);
-      if (expr.what === 'clear') return yesNo(clear);
-      return yesNo(!water && !clear);
+      if (expr.what === 'clear') return yesNo(clear && !robotAhead);
+      return yesNo(robotAhead || (!water && !clear));
     }
     case 'itIsRaining':
       return yesNo(state.weather === Weather.Rain || state.weather === Weather.Storm);

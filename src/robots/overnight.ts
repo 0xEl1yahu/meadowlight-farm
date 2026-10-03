@@ -21,7 +21,7 @@ import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../wo
 import { morningExec } from './exec';
 import { logRobotEvent, pruneRobotLog } from './log';
 import { ZERO_ROBOT_STATS, batteryFor, isWeekStart, periodFor, resumedPower } from './stats';
-import { nearestWalkable, withFarm, withRobot } from './world';
+import { nearestFreeWalkable, withFarm, withRobot } from './world';
 
 /** A morning toast the night produced. */
 export interface RobotNote {
@@ -67,13 +67,16 @@ function setDownCarried(state: GameState): GameState {
   return withRobot({ ...state, player: { ...state.player, carrying: null } }, down);
 }
 
-/** Repairs due today come back fully charged in front of the shipping bin. Returns their ids. */
+/**
+ * Repairs due today come back fully charged in front of the shipping bin, on the nearest
+ * walkable tile with no robot on it (part 3 spec §3.1). Returns their ids.
+ */
 function returnRepaired(state: GameState, notes: RobotNote[]): { readonly state: GameState; readonly returned: ReadonlySet<number> } {
   let next = state;
   const returned = new Set<number>();
   for (const robot of state.robots.list) {
     if (robot.power !== 'repairing' || robot.repairReadyDay === null || robot.repairReadyDay > state.time.absoluteDay) continue;
-    const at = nearestWalkable(next.maps.farm, ROBOTS.repairDropOff);
+    const at = nearestFreeWalkable(next, ROBOTS.repairDropOff, robot.id);
     next = withRobot(next, {
       ...robot,
       tx: at.tx,
@@ -171,7 +174,8 @@ function resetForMorning(state: GameState): GameState {
     const inWater = tile !== null && tile.blocker === Blocker.Water;
     // A robot on the workbench stays on it (part 3 spec §2.2); the bench tile itself isn't walkable.
     const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (robot.power === 'broken' && inWater)));
-    const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestWalkable(farm, robot);
+    // Off an unwalkable tile, onto the nearest walkable one with no robot on it (part 3 spec §3.1).
+    const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestFreeWalkable(next, robot, robot.id);
     const moved = at.tx !== robot.tx || at.tz !== robot.tz;
     const exec = morningExecOf(robot);
     const resumed = resumedPower(robot);

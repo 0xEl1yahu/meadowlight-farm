@@ -530,7 +530,7 @@ function isLoggedTile(v: unknown): boolean {
   return isObj(v) && hasExactKeys(v, ['tx', 'tz']) && isInt(v.tx) && isInt(v.tz) && farmContains(v.tx, v.tz);
 }
 
-/** A trigger carried by a `woke` event. */
+/** A trigger carried by a `woke` or `crashed` event. */
 function isLoggedTrigger(v: unknown): boolean {
   if (!isObj(v)) return false;
   switch (v.kind) {
@@ -574,6 +574,8 @@ function isValidLogEvent(v: unknown): boolean {
       return hasExactKeys(v, ['kind', 'card']) && isLoggedCard(v.card, ['doPowerDown']);
     case 'conflict':
       return hasExactKeys(v, ['kind', 'doCard', 'dontCard']) && isLoggedCard(v.doCard, DO_CARD_KINDS) && isLoggedCard(v.dontCard, DONT_CARD_KINDS);
+    case 'crashed':
+      return hasExactKeys(v, ['kind', 'withId', 'forgot']) && isIntIn(v.withId, 1, MAX) && (v.forgot === null || isLoggedTrigger(v.forgot));
     default:
       return hasExactKeys(v, ['kind']);
   }

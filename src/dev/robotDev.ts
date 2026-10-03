@@ -29,7 +29,8 @@ export type RobotPresetId = 'spinner' | 'waterer' | 'harvester' | 'swimmer' | 'p
 
 const repeat = <T>(n: number, steps: readonly T[]): T[] => Array.from({ length: n }, () => steps).flat();
 
-function presetSpecs(id: RobotPresetId, place: RobotPlace): RobotSpec[] {
+/** The robots each preset delivers at `place` (exported for tests). */
+export function presetSpecs(id: RobotPresetId, place: RobotPlace): RobotSpec[] {
   const spec = (name: string, size: RobotSpec['size'], parts: RobotSpec['parts'], steps: RobotAction[], loop: boolean): RobotSpec => ({
     name,
     size,
@@ -47,7 +48,8 @@ function presetSpecs(id: RobotPresetId, place: RobotPlace): RobotSpec[] {
     case 'swimmer':
       return [spec('Splash', 'mini', ['claw'], repeat(30, [{ kind: 'move' }] as RobotAction[]), false)];
     case 'pair': {
-      const steps: RobotAction[] = [{ kind: 'harvest' }, { kind: 'move' }, { kind: 'harvest' }, { kind: 'move' }, { kind: 'turn', side: 'right' }, { kind: 'turn', side: 'right' }];
+      // Both share the delivery tile and never move: they bicker over its crop and never bump.
+      const steps: RobotAction[] = [{ kind: 'harvest' }, { kind: 'turn', side: 'right' }];
       return [spec('Tweedle', 'mini', ['claw'], steps, true), spec('Dee', 'mini', ['claw'], steps, true)];
     }
   }

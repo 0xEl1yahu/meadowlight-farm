@@ -17,6 +17,8 @@ function everyEvent(): RobotLogEvent[] {
     { kind: 'poweredDown' },
     { kind: 'repaired' },
     { kind: 'bickered', action: 'harvest', withIds: [2, 3] },
+    { kind: 'crashed', withId: 2, forgot: null },
+    { kind: 'crashed', withId: 2, forgot: { kind: 'every', minutes: 15 } },
     { kind: 'did', action: 'harvest', detail: { kind: 'crop', cropId: 'parsnip', quantity: 2, quality: 1 } },
     { kind: 'did', action: 'plant', detail: { kind: 'planted', cropId: 'potato' } },
     { kind: 'did', action: 'deposit', detail: { kind: 'items', into: 'bin', stacks: 2, quantity: 7 } },

@@ -4,7 +4,8 @@
 import { invariant } from '../core/invariant';
 import type { GameState, Robot, RobotActionKind, RobotExec, RobotLogEvent } from '../core/types';
 import { pushMessage } from '../state/messages';
-import { applyBickerPlan, applyRobotPlan, applyTurn, chargeWake, planRobotAction, type RobotPlan } from './execute';
+import { findBumps, type MoveIntent } from './bumps';
+import { applyBickerPlan, applyBumpPlan, applyRobotPlan, applyTurn, chargeWake, planRobotAction, type RobotPlan } from './execute';
 import { logRobotEvent } from './log';
 import { decideTurn, type Turn } from './turn';
 import { requireRobot, withRobot } from './world';
@@ -71,8 +72,10 @@ function choose(state: GameState, robot: Robot): Choice | null {
 /**
  * One minute (state.time.minuteOfDay is the minute being processed): every due robot chooses
  * against the state at the start of the minute; robots that can't pay go flat; successful
- * tile actions on a shared tile bicker; the rest are re-planned (with the same kept items) and
- * applied in id order, block-program turns with no tile action among them.
+ * tile actions on a shared tile bicker; successful moves that bump (findBumps, from the
+ * start-of-minute positions, part 3 spec §3.1) are applied as bumps; the rest are re-planned
+ * (with the same kept items) and applied in id order, block-program turns with no tile action
+ * among them. Re-planning never turns a move into a bump or out of one.
  */
 export function runRobotsMinute(state: GameState): GameState {
   const minute = state.time.minuteOfDay;
@@ -99,6 +102,14 @@ export function runRobotsMinute(state: GameState): GameState {
     for (const id of ids) rivals.set(id, ids.filter((other) => other !== id));
   }
 
+  const moves: MoveIntent[] = [];
+  for (const choice of chosen) {
+    if (choice.kind !== 'act' || !choice.plan.ok || choice.plan.action.kind !== 'move') continue;
+    const robot = requireRobot(state, choice.id);
+    moves.push({ id: choice.id, from: { tx: robot.tx, tz: robot.tz }, to: choice.plan.target });
+  }
+  const bumps = findBumps(state, moves);
+
   for (const choice of chosen) {
     const id = choice.id;
     if (choice.kind === 'turn') {
@@ -109,6 +120,11 @@ export function runRobotsMinute(state: GameState): GameState {
     for (const event of events) next = logRobotEvent(next, id, event);
     // A block-program robot is awake for its action; a woken one pays the wake first.
     if (exec !== null) next = chargeWake(next, id, wakeCost);
+    const bumpedInto = bumps.get(id);
+    if (bumpedInto !== undefined) {
+      next = applyBumpPlan(next, id, plan, bumpedInto, exec);
+      continue;
+    }
     const others = rivals.get(id);
     if (others !== undefined) {
       next = applyBickerPlan(next, id, plan, others, exec);

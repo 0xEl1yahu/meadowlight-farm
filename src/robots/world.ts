@@ -61,8 +61,11 @@ export function chestSlots(tile: Tile | null): Slots {
   return tile !== null && tile.object !== null && tile.object.kind === 'chest' ? tile.object.slots : [];
 }
 
-/** `from` when it's walkable, else the nearest walkable tile by breadth-first search in DIRECTIONS order. */
-export function nearestWalkable(world: WorldState, from: TileCoord): TileCoord {
+/**
+ * `from` when it `fits`, else the nearest tile that does, by breadth-first search over in-bounds
+ * tiles in DIRECTIONS order (passing through any tile). Throws `failure` when none fits.
+ */
+function nearestFitting(world: WorldState, from: TileCoord, fits: (tile: Tile, at: TileCoord) => boolean, failure: string): TileCoord {
   const key = (c: TileCoord): number => c.tz * world.grid.width + c.tx;
   const seen = new Set<number>([key(from)]);
   const queue: TileCoord[] = [from];
@@ -70,7 +73,7 @@ export function nearestWalkable(world: WorldState, from: TileCoord): TileCoord {
     const current = queue[head];
     if (current === undefined) break;
     const tile = getTile(world, current.tx, current.tz);
-    if (tile !== null && isWalkable(tile)) return current;
+    if (tile !== null && fits(tile, current)) return current;
     for (const direction of DIRECTIONS) {
       const next = stepTile(current, direction);
       if (!inBounds(world.grid, next.tx, next.tz) || seen.has(key(next))) continue;
@@ -78,5 +81,20 @@ export function nearestWalkable(world: WorldState, from: TileCoord): TileCoord {
       queue.push(next);
     }
   }
-  throw new Error('nearestWalkable: the map has no walkable tile');
+  throw new Error(failure);
+}
+
+/** `from` when it's walkable, else the nearest walkable tile by breadth-first search in DIRECTIONS order. */
+export function nearestWalkable(world: WorldState, from: TileCoord): TileCoord {
+  return nearestFitting(world, from, isWalkable, 'nearestWalkable: the map has no walkable tile');
+}
+
+/**
+ * The nearest walkable farm tile to `from` with no standing robot on it but `selfId` (part 3
+ * spec §3.1): where a repaired robot is dropped off, and where the morning reset moves a robot
+ * whose tile stopped being walkable.
+ */
+export function nearestFreeWalkable(state: GameState, from: TileCoord, selfId: number): TileCoord {
+  const free = (tile: Tile, at: TileCoord): boolean => isWalkable(tile) && robotsOnTile(state, at.tx, at.tz).every((r) => r.id === selfId);
+  return nearestFitting(state.maps.farm, from, free, 'nearestFreeWalkable: the farm has no free walkable tile');
 }

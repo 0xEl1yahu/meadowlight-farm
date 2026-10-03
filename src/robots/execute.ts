@@ -32,7 +32,9 @@ import { pushMessage } from '../state/messages';
 import { stepTile } from '../world/grid';
 import { getTile, isSoil, isWalkable, requireTile, setTile } from '../world/tiles';
 import { addToBag, addToSlots, bagCount, bagRoom, removeFromBag, slotsRoom, takeIntoBag } from './bag';
+import { forgetRunningStack } from './bumps';
 import { logRobotEvent } from './log';
+import { triggerText } from './logText';
 import { canDo } from './parts';
 import { actionCost, addRobotStats, bagStacks, periodFor } from './stats';
 import type { Turn } from './turn';
@@ -198,6 +200,26 @@ export function applyBickerPlan(state: GameState, robotId: number, plan: RobotPl
   const paid = pay(state, robotId, plan.cost, actionCounts(plan.action, false));
   const logged = logRobotEvent(paid.state, robotId, { kind: 'bickered', action: plan.action.kind, withIds });
   return settle(logged, robotId, plan.action, false, true, exec);
+}
+
+/**
+ * A bump (part 3 spec §3.1): the robot pays for its move (one action) and stays where it is. It
+ * forgets the trigger stack its committed `exec` was running, logs `crashed`, settles as a failed
+ * action, its exec stops, and it is dizzy until morning. The robot it bumped into is untouched.
+ */
+export function applyBumpPlan(state: GameState, robotId: number, plan: RobotPlan, withId: number, exec: RobotExec | null = null): GameState {
+  const paid = pay(state, robotId, plan.cost, { actions: 1 });
+  const { robot, forgot } = forgetRunningStack({ ...paid.robot, exec: exec ?? paid.robot.exec });
+  const stopped: RobotExec | null = robot.exec === null ? null : { ...robot.exec, running: null, frames: [] };
+  const logged = logRobotEvent(withRobot(paid.state, robot), robotId, { kind: 'crashed', withId, forgot });
+  const settled = settle(logged, robotId, plan.action, false, false, stopped);
+  const dizzy = withRobot(settled, { ...requireRobot(settled, robotId), off: 'dizzy' });
+  const other = requireRobot(state, withId).name;
+  const text =
+    forgot === null
+      ? `${robot.name} bumped into ${other} and got dizzy.`
+      : `${robot.name} bumped into ${other} and forgot what to do when ${triggerText(forgot)}.`;
+  return pushMessage(dizzy, text, 'warn');
 }
 
 /**

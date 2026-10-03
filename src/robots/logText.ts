@@ -110,6 +110,8 @@ export function robotSays(entry: RobotLogEntry): string {
       return event.phase === 'started' ? 'Heading home ✓' : 'Home safe ✓';
     case 'doPowerDown':
       return 'Powering down ✓';
+    case 'crashed':
+      return 'Made a new friend ✓';
   }
 }
 
@@ -196,5 +198,9 @@ export function whatHappened(entry: RobotLogEntry, names: ReadonlyMap<number, st
       return `Powered down for the day: my .MD says ${mdCardText(event.card)}.`;
     case 'conflict':
       return `My .MD says ${mdCardText(event.doCard)}, but it also says don't ${mdCardText(event.dontCard)}. Don't wins.`;
+    case 'crashed': {
+      const bumped = `Bumped into ${listNames([event.withId], names)} and got dizzy.`;
+      return event.forgot === null ? bumped : `${bumped} Forgot everything under "When ${triggerText(event.forgot)}".`;
+    }
   }
 }

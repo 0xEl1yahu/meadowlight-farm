@@ -666,6 +666,7 @@ export const ROBOT_LOG_EVENT_KINDS = [
   'doReturn',
   'doPowerDown',
   'conflict',
+  'crashed',
 ] as const;
 
 export type RobotLogEvent =
@@ -684,7 +685,9 @@ export type RobotLogEvent =
   | { readonly kind: 'woke'; readonly trigger: Trigger }
   | { readonly kind: 'doReturn'; readonly card: MdCard; readonly phase: 'started' | 'arrived' | 'failed' }
   | { readonly kind: 'doPowerDown'; readonly card: MdCard }
-  | { readonly kind: 'conflict'; readonly doCard: MdCard; readonly dontCard: MdCard };
+  | { readonly kind: 'conflict'; readonly doCard: MdCard; readonly dontCard: MdCard }
+  // Farmclaws part 3 (spec §3.1): a bump into robot `withId`; `forgot` is the trigger of the stack it forgot.
+  | { readonly kind: 'crashed'; readonly withId: number; readonly forgot: Trigger | null };
 
 export interface RobotLogEntry {
   readonly id: number;

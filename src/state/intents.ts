@@ -378,6 +378,8 @@ function planCarry(state: GameState, robotId: number): ActionPlan {
     return plan(target, { kind: 'repairRobot', robotId, name: robot.name, cost }, 'place');
   }
   if (isWalkable(tile) && !isReservedTile(selectActiveMap(state), target.tx, target.tz)) {
+    // No new shared tiles (part 3 spec §3.1).
+    if (state.player.mapId === 'farm' && robotsOnTile(state, target.tx, target.tz).length > 0) return blocked(target, 'place', "There's a robot there.");
     return plan(target, { kind: 'putDownRobot', robotId, name: robot.name }, 'place');
   }
   return blocked(target, 'place', openGround);
