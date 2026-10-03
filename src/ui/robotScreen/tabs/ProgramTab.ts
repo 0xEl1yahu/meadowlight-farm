@@ -268,7 +268,8 @@ export class ProgramTab implements RobotTabView {
         defineBlocks(api);
         this.build(api);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.error(error);
         if (this.disposed) return;
         setHidden(this.editor, true);
         setHidden(this.status, false);
@@ -335,6 +336,8 @@ export class ProgramTab implements RobotTabView {
     } finally {
       api.Events.enable();
     }
+    // Undo starts at the loaded program: discarded edits must not replay onto it.
+    workspace.clearUndo();
     workspace.highlightBlock(null);
     workspace.scrollCenter();
     this.refreshCounters();
