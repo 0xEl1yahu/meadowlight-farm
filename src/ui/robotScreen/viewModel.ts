@@ -16,7 +16,7 @@ import {
   type RobotUnlocks,
 } from '../../core/types';
 import { robotSays, whatHappened } from '../../robots/logText';
-import { batteryFor, scrapValue } from '../../robots/stats';
+import { SWITCHABLE_POWERS, batteryFor, scrapValue } from '../../robots/stats';
 import { formatClock } from '../../time/clock';
 
 /** Bench mode edits the robot; peek mode only reads its Stats and Log (spec §2.3). */
@@ -111,9 +111,6 @@ export interface SwitchView {
   readonly on: boolean;
 }
 
-/** Powers the reducer lets the player switch off (a broken, repairing or ruined robot is refused). */
-const SWITCHABLE: ReadonlySet<RobotPower> = new Set<RobotPower>(['working', 'standby', 'flat']);
-
 /**
  * The bench's on/off switch (spec §2.4): "On" when the player switched the robot off, otherwise
  * "Off" whatever `off` is, but only for a power the reducer can switch off (working, standby or
@@ -122,7 +119,7 @@ const SWITCHABLE: ReadonlySet<RobotPower> = new Set<RobotPower>(['working', 'sta
 export function switchView(robot: Robot, mode: RobotScreenMode): SwitchView | null {
   if (mode !== 'bench') return null;
   if (robot.off === 'player') return { label: 'On', on: true };
-  return SWITCHABLE.has(robot.power) ? { label: 'Off', on: false } : null;
+  return SWITCHABLE_POWERS.has(robot.power) ? { label: 'Off', on: false } : null;
 }
 
 /** The tabs a mode shows, in ROBOT_TABS order: each needs its unlock; peek shows only Stats and Log. */

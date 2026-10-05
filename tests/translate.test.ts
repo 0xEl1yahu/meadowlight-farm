@@ -19,6 +19,7 @@ import {
   blockTypeFor,
   countWorkspaceBlocks,
   programToWorkspace,
+  workspaceMatchesProgram,
   workspaceToProgram,
   type BlocklyBlockJson,
   type BlocklyInputJson,
@@ -547,5 +548,31 @@ describe('the module', () => {
     expect(translateSource).toContain('export function workspaceToProgram');
     expect(translateSource).not.toMatch(/from\s+['"]blockly/);
     expect(translateSource).not.toMatch(/import\(\s*['"]blockly/);
+  });
+});
+
+describe('workspaceMatchesProgram', () => {
+  const program = on(b.if(b.bagHas('parsnip_seeds'), [b.move()]), b.say('hi'));
+
+  it('is true for the workspace the program loads as', () => {
+    expect(workspaceMatchesProgram(programToWorkspace(program), program)).toBe(true);
+  });
+
+  it('is true when blocks were only moved about', () => {
+    const json = programToWorkspace(program);
+    const moved: BlocklyWorkspaceJson = {
+      ...json,
+      blocks: { ...json.blocks, blocks: (json.blocks?.blocks ?? []).map((block) => ({ ...block, x: 400, y: 250 })) },
+    };
+    expect(workspaceMatchesProgram(moved, program)).toBe(true);
+  });
+
+  it('is false once the program differs, a block is loose, or the workspace does not translate', () => {
+    expect(workspaceMatchesProgram(programToWorkspace(on(b.move())), program)).toBe(false);
+    const json = programToWorkspace(program);
+    const loose: BlocklyWorkspaceJson = { ...json, blocks: { ...json.blocks, blocks: [...(json.blocks?.blocks ?? []), { type: 'fc_move', id: 'stray' }] } };
+    expect(workspaceMatchesProgram(loose, program)).toBe(false);
+    const broken: BlocklyWorkspaceJson = { blocks: { blocks: [{ type: 'not_a_block', id: 'x' }] } };
+    expect(workspaceMatchesProgram(broken, program)).toBe(false);
   });
 });

@@ -21,6 +21,7 @@ import {
   ZONE_IDS,
   type ActionBlock,
   type BlockProgram,
+  type RobotProgram,
   type Expr,
   type HelperDef,
   type ItemId,
@@ -555,6 +556,27 @@ export function workspaceToProgram(json: BlocklyWorkspaceJson): TranslationResul
     if (thrown instanceof Untranslatable) return { error: thrown.error, blockId: thrown.blockId };
     return { error: NOT_A_BLOCK, blockId: null };
   }
+}
+
+/**
+ * True when the workspace translates, with no loose block, to exactly `program` (deep equal), so
+ * moving blocks about, which changes no program, isn't an edit. A workspace that doesn't
+ * translate, or holds a loose block, or a saved script, counts as different. Never throws.
+ */
+export function workspaceMatchesProgram(json: BlocklyWorkspaceJson, program: RobotProgram): boolean {
+  const result = workspaceToProgram(json);
+  return 'program' in result && result.loose.length === 0 && sameValue(result.program, program);
+}
+
+function sameValue(a: unknown, c: unknown): boolean {
+  if (a === c) return true;
+  if (typeof a !== 'object' || typeof c !== 'object' || a === null || c === null) return false;
+  if (Array.isArray(a) !== Array.isArray(c)) return false;
+  const left = a as Record<string, unknown>;
+  const right = c as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]));
 }
 
 /**

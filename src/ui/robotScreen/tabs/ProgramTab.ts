@@ -42,7 +42,7 @@ import {
   type CounterView,
   type ToolboxJson,
 } from '../blockly/toolbox';
-import { countWorkspaceBlocks, programToWorkspace, workspaceToProgram, type BlocklyWorkspaceJson } from '../translate';
+import { countWorkspaceBlocks, programToWorkspace, workspaceMatchesProgram, workspaceToProgram, type BlocklyWorkspaceJson } from '../translate';
 import { phoneQuery } from '../viewModel';
 import type { RobotTabContext, RobotTabView } from './tabView';
 
@@ -200,8 +200,23 @@ export class ProgramTab implements RobotTabView {
     if (api !== null && workspace !== null) api.svgResize(workspace);
   }
 
+  /**
+   * True when the workspace holds an edit that changes the program. The dirty flag is the cheap
+   * pre-check; pure rearranging sets it but leaves the translated program as saved, so it is
+   * settled by comparing against the baseline. A workspace that doesn't translate is dirty.
+   */
   isDirty(): boolean {
-    return this.dirty && !this.readOnly;
+    if (!this.dirty || this.readOnly) return false;
+    const api = this.api;
+    const workspace = this.workspace;
+    const baseline = this.baseline;
+    if (api === null || workspace === null || baseline === null) return true;
+    return !workspaceMatchesProgram(this.savedJson(api, workspace), baseline);
+  }
+
+  /** Save is for edits: it is disabled while the tab is clean. */
+  private syncSaveButton(): void {
+    this.saveButton.disabled = !this.isDirty();
   }
 
   handleEscape(): boolean {
@@ -313,6 +328,7 @@ export class ProgramTab implements RobotTabView {
   private loadProgram(program: RobotProgram): void {
     this.baseline = program;
     this.dirty = false;
+    this.syncSaveButton();
     setText(this.message, '');
     const robot = this.robot();
     if (robot !== null) this.syncNote(robot, program);
@@ -369,8 +385,11 @@ export class ProgramTab implements RobotTabView {
     if (event instanceof api.Events.BlockChange) this.followFieldChange(api, workspace, event);
     this.refreshChecks(workspace);
     workspace.highlightBlock(null);
+    // A loose-block or translation message is about the workspace as it was; any edit retires it.
+    setText(this.message, '');
     this.refreshCounters();
     if (!this.readOnly) this.dirty = true;
+    this.syncSaveButton();
   };
 
   private followFieldChange(api: BlocklyApi, workspace: Blockly.WorkspaceSvg, event: Blockly.Events.BlockChange): void {
@@ -449,6 +468,8 @@ export class ProgramTab implements RobotTabView {
     const workspace = this.workspace;
     const robot = this.robot();
     if (api === null || workspace === null || robot === null || this.readOnly) return;
+    // An unedited Save would rebuild the robot's exec (a robot benched mid-stack would idle), so it does nothing.
+    if (!this.isDirty()) return;
     workspace.highlightBlock(null);
     const result = workspaceToProgram(this.savedJson(api, workspace));
     if ('error' in result) {
@@ -483,6 +504,7 @@ export class ProgramTab implements RobotTabView {
     if (after !== null && after.program !== before) {
       this.baseline = after.program;
       this.dirty = false;
+      this.syncSaveButton();
       this.syncNote(after, after.program);
     }
   }
@@ -616,7 +638,9 @@ export class ProgramTab implements RobotTabView {
 
   private syncNote(robot: Robot, program: RobotProgram): void {
     const script = program.kind === 'script';
-    setHidden(this.note, !script);
-    setText(this.note, script ? scriptNote(robot.name) : '');
+    // A ruined robot's read-only tab can't be saved over, so the note about saving would mislead.
+    const show = script && !this.readOnly;
+    setHidden(this.note, !show);
+    setText(this.note, show ? scriptNote(robot.name) : '');
   }
 }
