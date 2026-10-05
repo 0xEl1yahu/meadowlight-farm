@@ -7,7 +7,10 @@
  * - While the module loads, a card says "Opening…".
  * - When the import fails, the panel closes with a warning toast and the robot is untouched.
  *   The failed attempt is forgotten, so the next robot panel tries again.
- * - It dispatches only from the import's promise callbacks, never from sync.
+ * - While the card shows, Escape closes the panel, so a stalled import can't trap the player (the
+ *   input controller leaves every key alone while a robot panel is open). The listener lives only
+ *   while the card shows.
+ * - It dispatches only from the import's promise callbacks and that key listener, never from sync.
  */
 import type { Store } from '../core/store';
 import type { GameState } from '../core/types';
@@ -34,6 +37,8 @@ export class RobotScreenHost {
   /** True while the screen shows a robot panel. */
   private showing = false;
   private disposed = false;
+  /** Aborts the loading card's Escape listener; non-null only while the card shows. */
+  private escapeListener: AbortController | null = null;
 
   constructor(options: RobotScreenHostOptions) {
     this.root = options.root;
@@ -47,7 +52,7 @@ export class RobotScreenHost {
   sync(state: GameState, prev: GameState | null): void {
     if (this.disposed) return;
     if (state.ui.panel.kind !== 'robot') {
-      setHidden(this.loading, true);
+      this.hideLoading();
       if (this.showing) {
         this.showing = false;
         this.screen?.close();
@@ -56,7 +61,7 @@ export class RobotScreenHost {
     }
     const screen = this.screen;
     if (screen === null) {
-      setHidden(this.loading, false);
+      this.showLoading();
       this.load();
       return;
     }
@@ -70,10 +75,37 @@ export class RobotScreenHost {
 
   dispose(): void {
     this.disposed = true;
+    this.stopEscape();
     this.screen?.dispose();
     this.screen = null;
     this.loading.remove();
   }
+
+  private showLoading(): void {
+    setHidden(this.loading, false);
+    if (this.escapeListener !== null) return;
+    const abort = new AbortController();
+    this.escapeListener = abort;
+    window.addEventListener('keydown', this.onLoadingKey, { capture: true, signal: abort.signal });
+  }
+
+  private hideLoading(): void {
+    setHidden(this.loading, true);
+    this.stopEscape();
+  }
+
+  private stopEscape(): void {
+    this.escapeListener?.abort();
+    this.escapeListener = null;
+  }
+
+  private readonly onLoadingKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || event.isComposing || this.disposed) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.stopEscape();
+    this.store.dispatch(actions.closePanel());
+  };
 
   private load(): void {
     if (this.importing) return;
@@ -84,7 +116,7 @@ export class RobotScreenHost {
         if (this.disposed) return;
         const screen = new Screen({ root: this.root, store: this.store });
         this.screen = screen;
-        setHidden(this.loading, true);
+        this.hideLoading();
         const state = this.store.getState();
         if (state.ui.panel.kind === 'robot') {
           this.showing = true;
@@ -94,7 +126,7 @@ export class RobotScreenHost {
       () => {
         this.importing = false;
         if (this.disposed) return;
-        setHidden(this.loading, true);
+        this.hideLoading();
         if (this.store.getState().ui.panel.kind !== 'robot') return;
         this.store.dispatch(actions.closePanel());
         this.store.dispatch(actions.notify(LOAD_FAILED_TEXT, 'warn'));
