@@ -36,7 +36,7 @@ The v2 ground rules (`docs/PLAN-v2.md` section 1) all carry over: pure determini
 
 - **Good instructions give reliable, productive robots.** A robot with a sound program and a short, sensible .MD does its job every day without surprises.
 - **Robots must clearly beat hand-farming at scale.** Otherwise Hollis is simply right. The balance target: a well-set-up farm of four Minis handles a field the player couldn't manage alone, earns more per day than the player working by hand, and frees the player's day for other things. Part 4's tuning pass checks this.
-- **Nothing wears out.** Robots don't degrade, break down on their own or get worse over time. Every failure comes from the player's instructions, apart from rare rage events.
+- **Nothing wears out.** Robots don't degrade, break down on their own or get worse over time. Every failure comes from the player's instructions, apart from rare rage events. Two breakdowns are the exceptions, both caused by the player's setup and neither random: a robot that bumps into another forgets the stack it was running, and a robot left in water overnight is ruined and can only be scrapped (part 3).
 - **Mistakes are loud and fixable, never a trap with no way out.** The farm log always says what happened and which rule decided it, so a player who looks can always fix it.
 - **The failures live mostly in the jobs.** The jobs deliberately set up broken programs, conflicting rules and bad setups to teach from. On the player's own farm, good habits make robots dependable: return to the generator, fence the zone, check the crop.
 - **Good defaults help.** Ready-made programs from the workshop, and later from Sol's program library, work well out of the box. A player can succeed first and learn why afterwards.
@@ -66,7 +66,7 @@ Robots work on the farm map only, and they keep working while the player is in t
 
 `Water`, `Harvest`, `Till` and `Plant` work the tile the robot stands on. `Refill`, `Deposit into` and `Take from` work the tile ahead.
 
-Robots don't collide with each other or with the player. Two robots can stand on one tile, and the player walks through robots.
+Robots don't collide with the player, who walks through them. Robots do bump into each other (part 3): two robots moving into one tile, two swapping tiles, or one moving into a robot that stays put all stay where they are, dizzy until morning, and a robot running a block program forgets the stack it was running.
 
 ### 3.2 Built-in rules
 
@@ -149,7 +149,7 @@ Robots can make any mistake their program allows:
 Mistakes cost the player real work: **carrying costs energy and repairs cost gold.**
 
 - **Carrying:** the player can pick up any robot, which costs energy (more for bigger robots). Picking a robot up also stops it, and putting it down resumes it. It's the emergency stop.
-- **Broken:** the player fishes the robot out of the water, which is a pick-up and costs the same energy. They carry it to the shipping bin and send it for repair for 20% of its price. It's back, charged, in front of the bin the next morning; once the mechanic is hired (job 5), the same day. Robots are never lost for good.
+- **Broken:** the player fishes the robot out of the water, which is a pick-up and costs the same energy. They carry it to the shipping bin and send it for a new core for 20% of its price. It's back, charged, in front of the bin the next morning; once the mechanic is hired (job 5), the same day. A robot still in the water at the end of the day is ruined and can only be scrapped at the workbench (part 3).
 - **Flat:** the robot stops where it is. It only recharges overnight if it's near a generator (section 4.2), so a robot stranded far away has to be carried back.
 - **Blocked actions** (bag full, nothing to harvest, no water in the tank) still cost their tokens.
 
@@ -160,7 +160,7 @@ Every robot has two channels:
 - **Speech** (a bubble above the robot, and the "Robot says" column in its Log tab): always cheerful and always ✓, flavoured by personality. For example, "Harvested spectraherb ✓ You're welcome."
 - **Farm log** (the "What happened" column): the true outcome, from the reducer. For example, "Harvested the spectraherb you planted from seed."
 
-The Log tab shows both side by side, newest first, for the current and previous day. Identical consecutive entries collapse into one with a count (×7).
+The Log tab shows both side by side, newest first, for the current and previous day. Identical consecutive entries from the same day collapse into one with a count (×7): the farm log merges repeats only within a day.
 
 ### 3.6 Sizes
 
@@ -279,7 +279,7 @@ The farm log records fuel burned each night. Job 8 is measured on it.
 
 ### 5.1 How it looks
 
-Programs are built from blocks in a Blockly-style editor: blocks snap together, and the fields inside them are dropdowns. Labels are plain English in sentence case. The editor's toolbox shows only unlocked blocks, and a counter shows blocks used against the robot's limit (for example, 7 / 12).
+Programs are built from blocks in the editor, Blockly on its Zelos (rounded) renderer: blocks snap together, and the fields inside them are dropdowns. Labels are plain English in sentence case. The editor's toolbox shows only unlocked blocks, and a counter shows blocks used against the robot's limit (for example, 7 / 12). Unlocks gate the editor only: a saved program may use any block. The editor is loaded lazily, with a budget of ≤ 250 KB gzipped for its chunk, ≤ 40 KB for the robot screen chunk, and ≤ 16 KB growth of the main bundle.
 
 ### 5.2 Blocks
 
@@ -325,7 +325,7 @@ Programs are built from blocks in a Blockly-style editor: blocks snap together, 
 | `tokens below [n]` | built in | Job 3 |
 | `tile ahead is [water ▾ / blocked ▾ / clear ▾]`, `it is raining`, `time is after [time]` | Sensor eye | Job 2 |
 
-**Values:** number and text literals, `my tile`, `tile ahead`, `tokens left`, `count of [item ▾] in bag`, `message`, variables, `+ − ×` and comparisons.
+**Values:** number and text literals, `my tile`, `tile ahead`, `tokens left`, `count of [item ▾] in bag`, `message`, variables, `+ − ×` and comparisons. Job 1 also unlocks `tokens left` and comparisons, so `Repeat until` has a condition ("Repeat until tokens left < 10"). `tile ahead is blocked` is Yes when a robot stands on the tile ahead (part 3).
 
 ### 5.3 Types and messages
 
@@ -344,7 +344,7 @@ There are five types: **Number**, **Text**, **Yes/No**, **Item** and **Tile**.
 - **Power:**
   - `working` runs the program.
   - `standby` waits for a trigger at no cost, and waking costs 1.
-  - `off` ignores triggers until the player switches the robot on. This is a separate on/off switch, not a power state.
+  - `off` ignores triggers. It's a field of its own, not a power state. The player's on/off switch at the workbench sets `off: 'player'`, which lasts through every morning until the player switches the robot on; a robot that got dizzy or carried out a DO power-down card is off only until morning.
   - `flat` means 0 tokens.
   - `broken` means shorted out.
 - When a program reaches its end, the robot goes to `standby`.
@@ -354,7 +354,7 @@ There are five types: **Number**, **Text**, **Yes/No**, **Item** and **Tile**.
 
 ## 6. The robot screen
 
-Robots are modded at a **workbench**, a placed object on the farm. The player carries a robot to a workbench and sets it down on it to open its screen; that is the only way to change a robot's program, .MD, parts or looks. Pressing E on a robot in the field only picks it up or puts it down. A robot on the bench is out of work until it's carried off, so reprogramming is a deliberate trip, like taking a machine into the workshop. (Decided 2026-10-02. Part 3 settles where the first workbench comes from, its recipe or price, and whether the Log and Stats tabs can also be read in the field.)
+Robots are modded at a **workbench**, a placed object on the farm. The player carries a robot to a workbench and sets it down on it to open its screen; that is the only way to change a robot's program, .MD, parts or looks. Pressing E on a robot in the field only picks it up or puts it down; Shift + E peeks at its Stats and Log anywhere, read-only. A robot on the bench is out of work until it's carried off, so reprogramming is a deliberate trip, like taking a machine into the workshop. The first workbench is built into every farm beside the farmhouse; crafting more arrives in release 5. The bench also scraps robots for a quarter of their size's price and paints them. (Decided 2026-10-02 and settled in part 3.)
 
 The screen has five tabs:
 
@@ -362,11 +362,11 @@ The screen has five tabs:
 | --- | --- |
 | Program | The block editor with the unlocked toolbox and the block counter. **Test run** (after job 5) runs the program on a copy of the farm for one in-game hour and shows the result without changing anything. |
 | .MD | The Managing Directive: DO and DON'T cards (section 3.3) |
-| Looks | Paint, voice, personality and quirk (section 7) |
+| Looks | Paint, from part 3; voice, personality and quirk arrive in part 6 (section 7) |
 | Stats | Tokens used, actions, crops handled and tokens per crop, today and this week. Unlocked by job 3. |
 | Log | Speech and farm log side by side (section 3.5) |
 
-The zone tool (a new hotbar tool Sol gives you in job 1) paints named rectangular zones on the farm, A to H.
+The zone marker (a hotbar tool in every backpack from part 3, which Sol explains in job 1) paints named rectangular zones on the farm, A to H.
 
 ---
 
@@ -376,7 +376,7 @@ Everything in this section is presentation only (section 2).
 
 ### 7.1 Paint
 
-There are 16 base colours, 4 patterns (plain, stripes, spots, two-tone) and 8 decals. Limited editions add special finishes such as chrome, glow-in-the-dark trim and hand-painted flowers.
+There are 16 base colours, 4 patterns (plain, stripes, spots, two-tone) and 8 decals. Limited editions add special finishes such as chrome, glow-in-the-dark trim and hand-painted flowers. The 16 base colours are available at the bench from release 1, for 50g a coat; patterns, decals and finishes stay in release 3.
 
 ### 7.2 Voices
 
@@ -455,7 +455,7 @@ Jobs replace the v2 quests and notice board. The first three run in a fixed orde
 
 ### Fixed path
 
-**Job 1: The spinning robot.** Given by Sol at the parts exchange, who gives you your first Mini (with a Watering head) and the zone tool.
+**Job 1: The spinning robot.** Given by Sol at the parts exchange, who gives you your first Mini (with a Watering head) and explains the zone marker, which is already in every backpack (part 3).
 - **Setup:** its preloaded program is `When morning → Repeat forever → Turn right`. It spins on the spot and burns its whole battery.
 - **Goal:** rewrite it to water a 3×3 bed and power down, with tokens left over.
 - **Teaches:** sequence, repeat, stop conditions.

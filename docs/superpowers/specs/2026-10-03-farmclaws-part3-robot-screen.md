@@ -90,7 +90,7 @@ Global rules (unchanged from parts 1–2):
   - It costs `carryEnergyFor(robot)` like a pick-up, and refuses with part 1's too-tired text when energy is short.
   - Effects: `onBench: false`, `carried: true`, `player.carrying: id`. The panel closes. With unsaved Program or .MD edits, it first asks the discard question (section 4.1).
   - Putting the robot down afterwards is part 1's put-down, with part 2's off-robot power rule.
-- **Day end:** part 1 §5.7.2 (a carried robot is set down at spawn) applies only to carried robots; a robot on the bench is not carried.
+- **Day end:** part 1 §5.7.2 (a carried robot is set down on the nearest walkable tile to spawn with no standing robot, R25) applies only to carried robots; a robot on the bench is not carried.
 
 ### 2.3 Peek
 
@@ -109,7 +109,7 @@ Global rules (unchanged from parts 1–2):
 
 - `Robot.off` gains `'player'`: `null | 'dizzy' | 'done' | 'player'`.
 - **Switch:** in bench mode, the header has a switch, "On" / "Off".
-  - "Off" dispatches `switchRobot { robotId, on: false }` and sets `off: 'player'`, whatever `off` was.
+  - "Off" dispatches `switchRobot { robotId, on: false }` and sets `off: 'player'`, whatever `off` was. It's shown, and allowed, only for a robot that is working, on standby or flat; the reducer refuses any other with "{name} can't be switched off while it's broken." (R19).
   - "On" is shown only when `off` is `'player'`. It dispatches `switchRobot { robotId, on: true }` and sets `off: null`.
   - It's free.
 - **An off robot** ignores triggers and DO cards like a dizzy or done robot (part 2 §7), but the morning reset doesn't clear `'player'`: it stays off until switched on.
@@ -156,7 +156,8 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
 - **No new shared tiles.** These now avoid tiles with a standing robot:
   - part 1's put-down: refused with "There's a robot there.";
   - the repair drop-off: the nearest walkable tile with no standing robot;
-  - the morning reset's move off an unwalkable tile.
+  - the morning reset's move off an unwalkable tile;
+  - the day-end set-down of a robot still carried: the nearest walkable tile to spawn with no standing robot, which is spawn itself when it's free (R25).
 
   Robots already sharing a tile in a v5 save may stay; moving out is never a bump.
 - **Stats:** a bump adds its tokens and 1 action (section 6.1).
@@ -171,7 +172,7 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
 - **Ruin:**
   - `ROBOT_POWERS` gains `'ruined'`.
   - At the morning reset, before the recharge step, every `broken` robot that stands on a water tile (not carried, not on the bench) becomes `ruined`. It logs `{ kind: 'ruined' }` and pushes the warn toast "{name} spent the night in the water and is ruined. Scrap it at the workbench."
-  - So a robot fished out and put down on land, or carried at day end (set down at spawn), the day it fell in is safe. It stays `broken` until it's sent for a new core.
+  - So a robot fished out and put down on land, or carried at day end (set down by spawn), the day it fell in is safe. It stays `broken` until it's sent for a new core.
   - A robot loaded from a v5 save is never ruined by migration; the first morning after loading applies the rule.
 - **A ruined robot:**
   - It never acts, never recharges, and is never named in the "away from a generator" toast.
@@ -251,15 +252,17 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
   - its power, and the off text from section 2.4;
   - in bench mode: the on/off switch (section 2.4), **Lift off** and **Scrap**.
 - **Tabs:** Program, .MD, Looks, Stats and Log, in that order. A tab whose unlock (section 7) is missing is hidden. Peek shows only Stats and Log; Looks is bench-only.
+  - The tab strip follows the ARIA tabs pattern: ArrowRight and ArrowLeft step through the visible tabs, wrapping around, and Home and End go to the first and last, each activating and focusing its tab (R28).
 - **Phone width** (< `ROBOT_SCREEN.phoneMaxWidth`, 700 px):
   - The tabs become a strip under the header, and the active tab fills the rest of the screen.
-  - The Blockly toolbox becomes a flyout opened from a button.
+  - The Blockly toolbox's category column hides behind a **Blocks** button, which opens a menu of the categories; picking one opens its flyout (R31).
 
 ### 4.2 Program tab
 
 - **Loading:** Blockly (`blockly/core` + `blockly/msg/en`, the current major of the `blockly` package, added to `dependencies` by the step that first uses it) is imported with a dynamic `import()` the first time a Program tab opens.
   - While it loads, the tab shows "Opening the editor…".
-  - A load failure shows "The editor couldn't load. Close and try again." and leaves the robot untouched.
+  - A load failure logs the error to the console, then shows "The editor couldn't load. Close and try again." and leaves the robot untouched (R33).
+- **Loading is never an edit:** the saved program loads with Blockly's events disabled, whether on open, on Revert or after a change from outside, and loading clears Blockly's undo stack, so Ctrl+Z can't replay discarded edits. A field edit counts once it's committed: Blockly's `BlockFieldIntermediateChange` (keystrokes in an open field) is skipped, so a cancelled field edit isn't an edit (R32).
 - **Blocks:** one Blockly block type per entry of section 5's table. Labels are sentence case, as in design §5.2.
 - **Colours by category:** Triggers gold, Control orange, Actions green, Sensors teal, Values purple.
 - **Socket checks:** value sockets are typed `Number`, `Text`, `YesNo`, `Item` or `Tile`; statement connections are untyped. `fc_var`'s output check follows its declaration's type, and is updated when the declaration's type changes.
@@ -268,12 +271,12 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
   - Five categories (Triggers, Control, Actions, Sensors, Values).
   - It shows only blocks whose kind is in `unlocks.blocks`. Sizes with no sensor eye see sensor-eye sensors disabled, with the tooltip "Needs a sensor eye".
   - The toolbox has no shadow blocks.
-- **Dropdowns never drop a value.** Every dropdown is a menu generator whose options include the field's current value. So a loaded value outside the usual options (9:43, an item not otherwise listed) is shown and kept.
+- **Dropdowns never drop a value.** Every data dropdown is a registered `field_fc_*` subclass of Blockly's `FieldDropdown` whose options include the field's current value and which accepts and shows any well-formed value, because Blockly's own dropdown rejects a value outside its cached options (R29). So a loaded value outside the usual options (9:43, an item not otherwise listed) is shown and kept.
   - **Times** (`atTime`, `timeIsAfter`): `ROBOT_SCREEN.timeStep` (10-minute) steps from 6:00 am to 1:50 am, plus the current value.
   - **Tile literals** (`fc_tile`) are two integer number fields, X and Z, limited to the farm's size.
-- **Variables:** a "Make a variable" button asks for a name and a type (Number, Text, Yes/No, Item, Tile).
+- **Variables:** a "Make a variable" button asks for a name and a type (Number, Text, Yes/No, Item, Tile), in a form inside the screen.
   - It adds an `fc_varDecl` block to the workspace: "Variable [name] is a [type] starting at [literal]", holding that type's default literal (0, "", No, parsnip, the robot's tile).
-  - The player edits the literal in place.
+  - The player edits the literal in place. Changing a declaration's type swaps in that type's default literal and retypes its `INITIAL` socket; renaming a declaration or a helper renames its uses (R30).
   - The button shows only when `var` is unlocked.
   - Variable dropdowns in `fc_var`, `fc_set` and `fc_change` list the workspace's declarations. The editor doesn't use Blockly's variable model.
 - **Helpers:** "Define helper [name]" (`fc_helper`) and "Run helper [name]" (`fc_runHelper`) blocks.
@@ -297,7 +300,8 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
   - tiles as two number fields (X, Z);
   - times as a dropdown in `ROBOT_SCREEN.timeStep` steps from 6:00 am to 1:50 am, plus the card's current value.
 - **Editing:**
-  - **Add a card** lists the unlocked card kinds. Cards can be removed and reordered.
+  - **Add a card** lists the unlocked card kinds. Cards can be removed and reordered within their section.
+  - A new card starts at its kind's defaults: the first zone, crop or item; a DO return to the nearest generator at `ROBOT_SCREEN.cardDefaults.returnMinute` (6:00 pm); a DO power-down when the bag is full, whose tokens-below option starts at `cardDefaults.tokensBelow` (10). A number field that isn't a whole number leaves the card as it was (R34).
   - A counter shows "{n} / {limit} cards".
   - **Save** runs `isMdShape` and `checkMd`, then dispatches `setRobotMd { robotId, md }`. The reducer applies `withMd` (section 4.7): it runs the same checks, clears `exec.doneCards` and stops a DO return under way.
 - **Scripts:** a script robot shows ".MD cards only apply to block programs." and no editor.
@@ -367,7 +371,9 @@ export function countWorkspaceBlocks(json: BlocklyWorkspaceJson): number;
 - **Top level:** variable declarations, then trigger stacks, then helpers, each in program order, laid out top to bottom `ROBOT_SCREEN.stackGap` (40) px apart. `workspaceToProgram` reads each kind in its order in `blocks.blocks[]`.
 - **Round trip:** `workspaceToProgram(programToWorkspace(p))` deep-equals `{ program: p, loose: [] }` for every program the checker accepts.
 - **Invalid workspace JSON:** `workspaceToProgram` never throws. Unknown block types, missing fields or missing inputs return `{ error, blockId }` naming the block.
-- **`loose`:** the ids of top-level blocks that are not a trigger, `fc_helper` or `fc_varDecl`.
+- **`loose`:** the ids of top-level blocks that are not a trigger, `fc_helper` or `fc_varDecl`, and of any block chained by `next` under a trigger, helper or declaration (nothing goes below one).
+- **Field values and ids:** `programToWorkspace` saves dropdown fields (times, `Every`, yes or no, ids, operators) as strings and number fields as numbers, and `workspaceToProgram` reads either as a number. Block ids are `b1`, `b2`, … depth first.
+- **Unreadable workspaces:** a malformed workspace, a block met twice and nesting too deep to read are "This block isn't part of the robot language.", with `blockId` null when there's no id (R27).
 - **`countWorkspaceBlocks`:** equals `blockCount(program)` whenever the workspace translates (a test checks it on every round-trip fixture). It counts the same way while there are empty slots or loose blocks: literal and declaration blocks count 0, every other block 1.
 
 ---
@@ -431,6 +437,7 @@ export interface RobotUnlocks {
   - `TOOL_TYPES` gains `'zoneMarker'`, with the name "Zone Marker" and the description "Paints zones A to H for your robots. Use it to mark corners; Shift + use picks the zone.".
   - Every per-tool table gains an entry: energy cost 0, the hotbar icon, the held-tool mesh. It isn't upgradable; the upgrade list skips it.
   - Like the other tools, it can't be shipped, sold or trashed.
+  - Robots never take tools: a `Take` of a tool item (the marker or any other tool) is blocked with `itemNotFound`, so no tool enters a robot's bag and scrapping a robot can't lose the marker (R26).
 - **Delivery:**
   - New farms get one in the first free inventory slot.
   - Migrated saves get one there too. When the backpack is full, `robots.pendingMarker` is set instead, and the first morning with a free slot adds the marker and shows the toast "Your zone marker is in your backpack.".
@@ -494,17 +501,18 @@ Any state the game can produce must load; a corrupted field is rejected.
 
 `package.json` gains `"build:check": "npm run build && node scripts/check-bundle.mjs"`. Sizes are gzipped with Node's `zlib.gzipSync` at its default level (6).
 
-- **The editor chunk** (the lazy chunk containing Blockly, found through its source map's `sources`) must be ≤ **250 KB gzipped**.
+- **The editor chunk** (every lazy chunk containing Blockly, found through its source map's `sources`, added up: `blockly/core` and `blockly/msg/en` load as two chunks) must be ≤ **250 KB gzipped**.
 - **The robot screen chunk** must be ≤ **40 KB gzipped**.
-- **The main entry chunk** must be ≤ the part 2 baseline + **10 KB gzipped**. The baseline is recorded in `scripts/bundle-baseline.json` as 274,312 bytes (`index-*.js` at gzip level 6, part 2 head).
+- **The main entry chunk** must be ≤ the part 2 baseline + **16 KB gzipped** (R35). The baseline is recorded in `scripts/bundle-baseline.json` as 275,539 bytes (part 2's `index-CUmkGRNG.js` at commit `2a92771` through `zlib.gzipSync` at level 6; the `gzip -6` command line gives 274,312 for the same file).
 - **Blockly placement:** no Blockly module may appear in the main chunk or the screen chunk (checked by name in each source map's `sources`).
+- **Chunks without a source map:** one of at most 1 KB gzipped (a bundler runtime helper, such as Rolldown's runtime chunk) counts as other, with no budget, and is still scanned by the dist check (section 10.3); a larger one fails the check (R36).
 
 ### 10.2 The single-file build
 
 `build-single.mjs` inlines only the entry script, so a lazy chunk would be fetched from `/assets/` and fail in `dist-single`.
 
-- `build:single` builds with Vite's `inlineDynamicImports` (a `single` mode in `vite.config.ts`). That puts the screen and the editor inside the one page.
-- `build-single.mjs` also fails when the inlined code still contains an `import(` of an `assets/` path.
+- `build:single` builds in a `single` mode (`vite.config.ts`) with Rolldown's `codeSplitting: false`, Vite 8's name for `inlineDynamicImports`. That puts the screen and the editor inside the one page.
+- `build-single.mjs` also fails when the inlined code still contains an `import(` of a built chunk, whether relative (``import(`./RobotScreen-….js`)``, as Vite writes it) or under `assets/`.
 - The budget in section 10.1 applies only to the normal build.
 
 ### 10.3 Dev hooks out of `dist/`
@@ -517,7 +525,7 @@ Any state the game can produce must load; a corrupted field is rejected.
 
 | File | Covers |
 | --- | --- |
-| `tests/robotBench.test.ts` | Bench placement on new farms and in migration, including the nearest-free fallback. Benching, refusing an occupied bench, reopening, E at the bench never picking up the benched robot, lifting off (energy and the too-tired refusal). Benched robots never act, recharge in range, stay through the morning, and a carried robot at day end still goes to spawn. The on/off switch, `'player'` surviving the morning. |
+| `tests/robotBench.test.ts` | Bench placement on new farms and in migration, including the nearest-free fallback. Benching, refusing an occupied bench, reopening, E at the bench never picking up the benched robot, lifting off (energy and the too-tired refusal). Benched robots never act, recharge in range, stay through the morning, and a carried robot at day end still goes to spawn, or the nearest free walkable tile to it. The on/off switch, `'player'` surviving the morning. |
 | `tests/robotPeek.test.ts` | The peek intent and hint; the Shift + E precedence; no cost; the robot unchanged. |
 | `tests/robotBump.test.ts` | Same-target, swap and into-a-standing-robot bumps; a line of robots moving the same way never bumps, in either id order; the forgotten stack's body emptied, its `When` kept, helpers and other stacks kept; scripts and idle robots forget nothing; cost, `off: 'dizzy'`, the log event, toast and texts; `tile ahead is blocked` seeing robots; put-down, drop-off and morning moves avoiding robot tiles. |
 | `tests/robotRuin.test.ts` | A broken robot still in water at the morning reset is ruined; fished out or carried at day end, it isn't; a migrated broken robot is ruined only at the next morning; ruined robots never act or recharge; the bin's new core and its refusal for ruined robots. |
@@ -531,6 +539,7 @@ Any state the game can produce must load; a corrupted field is rejected.
 | `tests/robotSaveV6.test.ts` | v5 → v6 migration (the v2 fixture migrates through all versions), including `tokensToday` → stats. Round trip with a benched robot, a ruined robot, a switched-off robot, paint, stats, unlocks, the marker and a zone draft (reset on load). One corrupted field per §9.2 rule. |
 | `tests/panelKeys.test.ts` (extend) | The robot panel's `null`, `peek` with Shift, Escape dropping a zone draft. |
 | `tests/robotScreen.test.ts` | Pure view-model helpers: header text (off reasons, ruined), counters, tab visibility by mode and unlocks, the toolbox contents for a size and unlock set, dropdown options that include the current value, .MD card fields. |
+| `tests/checkBundle.test.ts` | The rules behind `scripts/check-bundle.mjs` and `scripts/build-single.mjs`: the entry read from `dist/index.html`, chunks sorted by their source maps, the three budgets at and over their limits, Blockly's placement, the dev-hook grep, and the single-file build's lazy-import guard. |
 
 Existing robot tests that move robots onto each other's tiles, and the `pair` dev preset, are updated to the bump rule in the bump step. `pair` keeps demonstrating a bicker.
 
@@ -593,7 +602,7 @@ Each step that adds a saved field adds it to the type, `createInitialState`, `mi
   - Neither is random.
 - **§3.5:** the farm log merges repeats only within a day.
 - **§5.1:**
-  - The editor is Blockly (Zelos renderer), lazily loaded, with a budget of ≤ 250 KB gzipped for its chunk, ≤ 40 KB for the robot screen chunk, and ≤ 10 KB growth of the main bundle.
+  - The editor is Blockly (Zelos renderer), lazily loaded, with a budget of ≤ 250 KB gzipped for its chunk, ≤ 40 KB for the robot screen chunk, and ≤ 16 KB growth of the main bundle (R35).
   - Unlocks gate the editor only; saved programs may use any block.
 - **§5.2:**
   - Job 1 also unlocks `tokens left` and comparisons, so `Repeat until` has a condition.
@@ -623,3 +632,46 @@ Each step that adds a saved field adds it to the type, `createInitialState`, `mi
 - §5.3: a route step into a robot bumps.
 - §2.2 (sensors): `tile ahead is blocked` sees robots.
 - §2.6 and §7: `off: 'player'` joins the off reasons, and isn't cleared in the morning ("off means off until morning" covers only `'dizzy'` and `'done'`).
+
+---
+
+## 15. Plan refinements
+
+Decided by the part 3 implementation plan and its execution. Each one keeps the intent of the rule it refines.
+
+- **R1.** The spec's `withProgram` is part 2's `programmedRobot(robot, program, minuteOfDay)`, moved unchanged into `src/robots/edits.ts` (section 4.7).
+- **R2.** `isDue` treats every robot whose `off` isn't null as not due, scripts included, so a bumped or switched-off script robot really stops. Part 1 scripts never set `off`, so part 1 behaviour is unchanged.
+- **R3.** Action type strings avoid the dist check's names (section 10.3): the .MD edit is `robot/md`, not `robot/setMd`.
+- **R4.** `UNLOCKS` and the "Make a variable" gate use one kind, `var`, for the variable getter, `Set`, `Change` and declarations; `set` and `change` keep their own kinds for the toolbox (section 7).
+- **R5.** The robot screen's load-failure toast needs an action, so the reducer gains `ui/notify` (`actions.notify(text, tone)`), which pushes a toast (section 4.1).
+- **R6.** `ROBOTS.weekLength` (7) carries the weekly stats rollover (section 6.1): `week` resets when `(dayOfSeason − 1) % ROBOTS.weekLength` is 0, since no week constant existed.
+- **R7.** Until step 11, an open robot panel shows nothing, and Escape still closes it through `panelKeyCommand`; step 11 hands the keyboard to the screen.
+- **R8.** `src/robots/edits.ts` returns neutral refusals (`PROGRAM_SHAPE`, `MD_SHAPE`, `ZONE_SHAPE`) for input that isn't a program, a card list or a zone, and the dev hooks map them back to their usage lines with `consoleText`, so the usage lines naming `setMd(` and `setZone(` stay in `src/dev/robotDev.ts` and out of `dist/` (section 10.3).
+- **R9.** The translator only orders top-level blocks (section 5); the Program tab re-spaces them `ROBOT_SCREEN.stackGap` apart after loading.
+- **R10.** The long-variable-name case for "values outside the editor's usual options" uses 16 characters, `ROBOTS.maxIdentifierLength`, the longest name the checker accepts.
+- **R11.** The dev preset `pair` now harvests in place and turns: both robots stay on the tile they're delivered to and loop `Harvest`, `Turn right`, because two robots can no longer walk onto one tile (section 3.1). It still demonstrates a bicker and never bumps.
+- **R12.** The main-chunk baseline is 275,539 bytes: part 2's `index-CUmkGRNG.js` through `zlib.gzipSync` at level 6, the measure `check-bundle.mjs` uses. The 274,312 first written here was the `gzip -6` command line's figure for the same file. The budgets in section 10.1 read 1 KB as 1,024 bytes, the unit `check-bundle.mjs` prints (section 10.1).
+- **R13.** The `single` build mode sets Rolldown's `codeSplitting: false`; Vite 8 still accepts `inlineDynamicImports` but warns that it is deprecated (section 10.2).
+- **R14.** The editor budget adds up every lazy chunk whose source map lists `node_modules/blockly/`, since `blockly/core` and `blockly/msg/en` load as two chunks. Vite writes lazy imports relative to the importing chunk, so `build-single.mjs` refuses any `import(` of a built `.js` file that is relative or under `assets/` (sections 10.1 and 10.2).
+- **R15.** A new program clears `off: 'dizzy'` and `'done'` but keeps `'player'`: only the bench's switch turns a robot the player switched off back on (sections 2.4 and 4.7).
+- **R16.** Blockly's media (sprites, cursors, field icons) are copied from the package into `public/blockly-media/` and passed to Blockly as `media: 'blockly-media/'`, because the package exports no media path to bundle; the editor never fetches from Blockly's host. The media are served from a relative `blockly-media/` folder, so the dev server, `dist/` and `dist-single/` opened from disk all find it. `build-single.mjs` copies the folder beside `dist-single/index.html` (sections 4.2 and 10.2).
+- **R17.** Escape while the game is paused keeps a zone draft: `panelKeyCommand` drops the draft only when the game isn't paused, so Escape resumes first (section 8).
+- **R18.** `game/load` keeps `ui.zoneLetter` (it resets only the draft); `deserializeGame` is what resets the letter to A (section 8).
+- **R19.** Switching a robot off is refused unless it is working, on standby or flat: "{name} can't be switched off while it's broken." The save allows `off: 'player'` only in those powers (sections 2.4 and 9.2).
+- **R20.** The axe, like the pickaxe, is refused on the workbench ("It's part of the farm."), so the bench can't be chopped or broken (section 2.2).
+- **R21.** `freeSpotNear` skips fertilised soil, because a placed object on fertilised soil is invalid (section 2.1).
+- **R22.** The `blocked` intent has an optional `hint`, set only by the empty workbench so the HUD shows "Bring a robot here to work on it" (section 2.2).
+- **R23.** Gold in the scrap toast and prompt is a plain number ("1000g"), where section 3.3 writes "1,000g" (section 3.3).
+- **R24.** The UI labels the spec doesn't give, which the plan invents: "No parts", "Nothing to show yet.", "No cards yet.", "Yesterday", the power labels "Standing by", "Shorted out", "Getting a new core" and "Ruined", and "This program is too big or too deeply nested to save." (sections 4 to 6).
+- **R25.** A robot still carried at day end is set down on the nearest walkable tile to spawn with no standing robot, not on spawn itself when a robot stands there, so the set-down never makes a shared tile (sections 2.2, 3.1 and 3.2; part 1 §5.7.2). `5a84fd9`.
+- **R26.** Robots never take tools: `planRobotAction` blocks a `Take` of any tool item with `itemNotFound`, so a tool never enters a robot's bag and scrapping a robot can't lose the zone marker (section 8). `b6463ac`.
+- **R27.** Translation: dropdown fields are saved as strings and number fields as numbers, and the reader takes either for a number; block ids are `b1`, `b2`, … depth first; a block chained under a trigger, helper or declaration is loose; a malformed workspace, a block met twice and nesting too deep to read are "This block isn't part of the robot language." with `blockId` null when there's no id (section 5). `3a16cd5`.
+- **R28.** The robot screen's tab strip follows the ARIA tabs pattern: ArrowRight and ArrowLeft step through the visible tabs, wrapping around, and Home and End go to the first and last (section 4.1). `3b0746f`.
+- **R29.** Blockly's `FieldDropdown` rejects values outside its cached options, so every data dropdown is a registered `field_fc_*` subclass that accepts and shows any well-formed value (section 4.2). `df75f6b`.
+- **R30.** "Make a variable" is a form inside the screen. Changing a declaration's type swaps in that type's default literal and retypes its `INITIAL` socket (which has no fixed check); renaming a declaration or a helper renames its uses (section 4.2). `df75f6b`.
+- **R31.** At phone width the toolbox's category column hides behind a **Blocks** button that opens a menu of the categories (section 4.1). `df75f6b`.
+- **R32.** Loading a program into the editor is never an edit: it loads with events disabled (on open, Revert or an outside change) and clears Blockly's undo stack, so Ctrl+Z can't replay discarded edits; `onChange` skips Blockly's `BlockFieldIntermediateChange`, so a cancelled field edit isn't an edit (section 4.2). `df75f6b`, `c29756a`.
+- **R33.** The Program tab logs an editor load failure to the console before showing its message, since the failure can come from setting the locale, defining blocks, injecting or the first load as well as the import (section 4.2). `c29756a`.
+- **R34.** **Add a card** takes only the kind: a DO return starts at the nearest generator at `ROBOT_SCREEN.cardDefaults.returnMinute`, and tokens below starts at `cardDefaults.tokensBelow`. A number that isn't whole leaves the card as it was. Cards reorder within their section (section 4.3). `4ca10ab`.
+- **R35.** The main-chunk allowance is the baseline + 16 KB, not + 10 KB: part 3's simulation, rendering and HUD code grew main by 12.8 KB, and no screen or Blockly module is in main, so the screen and editor stay lazy (sections 10.1 and 14). `012e815`.
+- **R36.** A chunk with no source map counts as other, with no budget, when it is at most 1 KB gzipped, as bundler runtime helpers are (Rolldown's runtime chunk); it is still scanned by the dist check, and a larger chunk without a map stays a problem (section 10.1). `012e815`.

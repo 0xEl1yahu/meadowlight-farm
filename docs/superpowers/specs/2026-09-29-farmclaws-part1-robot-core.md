@@ -371,7 +371,7 @@ A blocked plan carries `target` too: the tile the action would have worked.
 | `plant` | own | a seed of `cropId` is in the bag, the tile is soil with no crop and no object, the crop is a field crop and in season | no seed: `noSeed`; wrong season: `outOfSeason`; anything else: `cannotPlant` |
 | `refill` | ahead | the tile ahead is `Blocker.Water` and `tank < tankCapacity` | not water: `noWaterAhead`; full: `tankFull` |
 | `deposit` | ahead | ahead is a chest or the shipping bin, the bag isn't empty, and at least one unit moves | nothing there: `nothingAhead`; empty bag: `bagEmpty`; nothing fits the chest, or nothing in the bag is sellable at the shipping bin: `containerFull` |
-| `take` | ahead | ahead is a chest holding `itemId`, and at least one unit fits the bag | not a chest: `nothingAhead`; none held: `itemNotFound`; no room: `bagFull` |
+| `take` | ahead | ahead is a chest holding `itemId`, `itemId` isn't a tool, and at least one unit fits the bag | not a chest: `nothingAhead`; a tool (part 3) or none held: `itemNotFound`; no room: `bagFull` |
 | `say`, `wait`, `powerDown` | own | always | — |
 
 **Harvest size and quality** use the player's functions, called on the farm. `harvestQuantity` and `harvestQuality` in `src/state/intents.ts` gain a trailing `mapId: MapId = state.player.mapId` parameter, and robots pass `'farm'`. Both read the tile from `state.maps[mapId]`. The player's results don't change. A robot and the player harvesting the same crop on the same day get the same size and quality.
@@ -432,7 +432,7 @@ Called with `state.time.minuteOfDay` already set to the minute being processed:
 3. **Bicker check:** among the chosen plans, successful `harvest`, `water`, `till` and `plant` plans that target the **same tile** bicker. Each of those robots pays its cost, the world doesn't change, `pc` advances, `lastAction` is a failure with `bickered: true`, and each logs `bickered` with the other robots' ids.
 4. **Apply:** the remaining plans apply in id order with `applyRobotPlan`. Every remaining plan is **re-planned** just before it applies, against the state as earlier robots this minute left it, at the same cost. So a plan whose target an earlier robot changed sees the change: for example, two robots take from one chest and the second finds it empty. The re-planned result applies, success or blocked.
 
-Only these tile actions bicker. Moves never do: robots can share a tile. Deposits and takes on one container happen in id order.
+Only these tile actions bicker. Moves never bicker; since part 3 they bump instead (part 3 spec §3.1): two or more moves into one tile, two robots swapping tiles, or a move into a standing robot that stays put. A bumped robot pays for the move, stays where it is and is dizzy until morning. Robots already sharing a tile in an older save may stay; moving out is never a bump. Deposits and takes on one container happen in id order.
 
 ### 5.4 Mistakes
 
@@ -458,7 +458,7 @@ Robots run only inside `time/tick`. Sleeping (`day/sleep`, or the bed's sleep in
 ### 5.6 The farm log
 
 `logRobotEvent(state, robotId, event)` (`src/robots/log.ts`) appends an entry with the current day, minute and the robot's tile.
-- If the **most recent entry for that robot** has an equal event (deep equality), its `count` goes up by one instead. The day, minute and tile stay those of the first entry.
+- If the **most recent entry for that robot** has an equal event (deep equality) and was logged today (its `day` is the current day), its `count` goes up by one instead. The day, minute and tile stay those of the first entry. A repeat on a new day starts a new entry (part 3).
 - The list keeps the newest `ROBOTS.logCapacity` entries.
 - At the start of each day, entries older than yesterday are dropped.
 
@@ -467,17 +467,18 @@ Robots run only inside `time/tick`. Sleeping (`day/sleep`, or the bed's sleep in
 After the existing map pipeline, and before the morning messages. The toasts these steps raise are pushed in step order after the existing morning messages ("Good morning", then pass-out, shipment, crows, season and weather):
 
 1. **Generators:** every wood burner on the farm, in tile order, burns all its fuel. The pool gains `fuel × tokensPerWood` and fuel becomes 0. `lastNightFuel` records the totals, and if any wood burned, the morning brings the toast "Your wood burners turned {w} wood into {t} tokens." (info).
-2. **Set down:** a robot the player was still carrying is set down on the player's spawn tile (`PLAYER.spawn`), exactly as a put-down (5.8), and `player.carrying` becomes null.
-3. **Repairs:** every `repairing` robot whose `repairReadyDay <= absoluteDay` comes back fully charged. It stands on the nearest walkable tile to `ROBOTS.repairDropOff` (the tile in front of the shipping bin), facing South. It becomes `working`, logs `repaired`, and gets the toast "{name} is back from repairs." (success).
-4. **Recharge:** robots only recharge **near a generator**. In id order, every robot that isn't `broken` or `repairing`, and stands within `ROBOTS.chargeRadius` tiles (Chebyshev distance) of a wood burner, takes `min(battery − tokens, pool)` from the pool.
+2. **Set down:** a robot the player was still carrying is set down on the player's spawn tile (`PLAYER.spawn`), or, when a standing robot is there, on the nearest walkable tile to it with no standing robot (part 3), exactly as a put-down (5.8), and `player.carrying` becomes null.
+3. **Repairs:** every `repairing` robot whose `repairReadyDay <= absoluteDay` comes back fully charged. It stands on the nearest walkable tile with no standing robot to `ROBOTS.repairDropOff` (the tile in front of the shipping bin), facing South. It becomes `working`, logs `repaired`, and gets the toast "{name} is back from repairs." (success).
+4. **Ruin (part 3):** every `broken` robot standing on a water tile (not carried, not on the bench) becomes `ruined`. It logs `ruined` and pushes the warn toast "{name} spent the night in the water and is ruined. Scrap it at the workbench." A robot fished out the same day, or still carried at day end (step 2), is safe.
+5. **Recharge:** robots only recharge **near a generator**. In id order, every robot that isn't `broken`, `ruined` or `repairing`, and stands within `ROBOTS.chargeRadius` tiles (Chebyshev distance) of a wood burner, takes `min(battery − tokens, pool)` from the pool.
    - If any robot in range ends below full, the toast "Not enough tokens to fully charge {names}." (warn) appears.
-   - If any robot that isn't broken or repairing was out of range (even a fully charged one), the toast "{names} ended the day away from a generator and didn't recharge." (warn) appears. A robot that came back from repairs this night (step 3) is already charged, so it takes no part in the recharge and is never named.
+   - If any robot that isn't broken, ruined or repairing was out of range (even a fully charged one), the toast "{names} ended the day away from a generator and didn't recharge." (warn) appears. A robot that came back from repairs this night (step 3) is already charged, so it takes no part in the recharge and is never named.
    - Names are listed in id order.
-5. **Reset:** robots **stay where they are**. Nothing moves them home, because they have no home. Every robot that isn't `repairing`, broken ones included:
-   - stays on its tile. If that tile isn't walkable any more (weeds or a giant crop grew there overnight), it moves to the nearest walkable farm tile by breadth-first search in `DIRECTIONS` order, with `teleportSeq + 1`. A broken robot standing in water stays there. Broken robots are reset too so that a broken robot on land never ends up on an unwalkable tile, which the save validator (6.2) rejects.
-   - `pc = 0`, `tokensToday = 0`, `nextActMinute` as in 5.1. Its program starts again from wherever it stands.
+6. **Reset:** robots **stay where they are**. Nothing moves them home, because they have no home. Every robot that isn't `repairing`, broken ones included:
+   - stays on its tile. If that tile isn't walkable any more (weeds or a giant crop grew there overnight), it moves to the nearest walkable farm tile with no standing robot by breadth-first search in `DIRECTIONS` order, with `teleportSeq + 1`. A robot on the workbench stays there (part 3). A broken robot standing in water stays there. Broken robots are reset too so that a broken robot on land never ends up on an unwalkable tile, which the save validator (6.2) rejects.
+   - `pc = 0`, `stats.today` zeroed (and `stats.week` when the new day starts a week), `nextActMinute` as in 5.1. Its program starts again from wherever it stands. Part 3 replaced `tokensToday` with `stats.today.tokens` (part 3 spec §6.1).
    - `power = resumedPower(robot)` (3.3): `tokens > 0 ? 'working' : 'flat'`
-   - a broken robot stays broken where it is (in the water, or on land if it was carried out) until it's sent for repair
+   - a broken robot on land stays broken where it is until it's sent for a new core; one still in the water was ruined in step 4
 
 ### 5.8 Player interactions (`src/state/intents.ts`)
 
@@ -501,9 +502,11 @@ Mistakes cost the player real work. **Carrying** a robot costs energy, and **rep
 
 | Target tile | Intent | Result |
 | --- | --- | --- |
-| The shipping bin, carrying a **broken** robot | `{ kind: 'repairRobot' }` | Costs `repairCost` gold. The robot becomes `repairing` with `repairReadyDay = absoluteDay + 1`, is no longer carried, and `player.carrying = null`. Toast: "{name} is off to be repaired. Back tomorrow." Hint: "Send {name} for repair · {cost}g". Not enough gold: blocked with "Repairs cost {cost}g." |
+| The shipping bin, carrying a **broken** robot | `{ kind: 'repairRobot' }` | A new core (part 3). Costs `repairCost` gold. The robot becomes `repairing` with `repairReadyDay = absoluteDay + 1`, is no longer carried, and `player.carrying = null`. Toast: "{name} is off for a new core. Back tomorrow." Hint: "Send {name} for a new core · {cost}g". Not enough gold: blocked with "Repairs cost {cost}g." |
+| The shipping bin, carrying a **ruined** robot | — | Blocked with "{name} is beyond repair. Scrap it at the workbench." (part 3) |
 | The shipping bin, carrying a robot that isn't broken | — | Blocked with "Only broken robots go for repair." |
-| A walkable in-bounds tile that isn't reserved | `{ kind: 'putDownRobot' }` | The robot stands there facing the player's facing, `carried = false`, `player.carrying = null`, `teleportSeq + 1`. A broken robot stays broken. Any other robot becomes `working` if it has tokens (else `flat`), keeps its `pc`, and acts next at `minuteOfDay + periodFor(robot)`. Hint: "Put down {name}". |
+| A walkable in-bounds tile that isn't reserved and has no standing robot (part 3) | `{ kind: 'putDownRobot' }` | The robot stands there facing the player's facing, `carried = false`, `player.carrying = null`, `teleportSeq + 1`. A broken robot stays broken. Any other robot becomes `working` if it has tokens (else `flat`), keeps its `pc`, and acts next at `minuteOfDay + periodFor(robot)`. Hint: "Put down {name}". |
+| A tile with a standing robot | — | Blocked with "There's a robot there." (part 3) |
 | Anything else | — | Blocked with "Put {name} down on open ground." |
 
 - While carrying, a step off the farm (a warp) is refused with the toast "Put {name} down before you leave the farm."

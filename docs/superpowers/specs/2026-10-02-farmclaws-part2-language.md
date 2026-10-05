@@ -221,11 +221,11 @@ export type MdCard =
 ```ts
   readonly exec: RobotExec | null;      // null for scripts
   readonly md: readonly MdCard[];       // 0 … ROBOTS.sizes[size].mdCards
-  /** Why the robot ignores everything until morning. Separate from `power` (design §5.4). Part 3 adds 'player'. */
-  readonly off: null | 'dizzy' | 'done';
+  /** Why the robot ignores everything: until morning for 'dizzy' and 'done', until switched on for 'player'. Separate from `power` (design §5.4). */
+  readonly off: null | 'dizzy' | 'done' | 'player';
 ```
 
-An `off` robot never acts and never fires triggers. The morning reset clears `'dizzy'` and `'done'`.
+An `off` robot never acts and never fires triggers. The morning reset clears `'dizzy'` and `'done'`, but not `'player'`: a robot switched off at the workbench stays off until the player switches it on (part 3 spec §2.4).
 
 ### 2.7 Log events
 
@@ -324,7 +324,7 @@ export function startStack(exec: RobotExec, index: number): RobotExec;
 - Facing the next path tile: emit `move`. Otherwise emit `turn`, choosing `left` or `right` by the shorter turn (`right` when both are equal).
 - No route: pop and record a `gaveUp` event for the caller. `goTo` moves on to the next statement; `forEachTile` skips that tile.
 
-**Expressions** are evaluated against `state` and the robot as they are at the start of the minute (part 1 §5.3 choose phase). Sensors read the robot's own tile unless they say "ahead". `bagIsFull` means the bag holds `bagStacks(robot)` stacks. `soilIsDry` means the tile is Plowed (not Watered). `tileIsTilled` means Plowed or Watered. `cropIsReady` means a living, mature crop. `atEdgeOf` means the robot's tile is in the zone and a 4-neighbour isn't. `tileAheadIs`: `water` is a water blocker, `clear` is a walkable farm tile, and `blocked` is anything else. A robot on the farm edge facing out reads its own tile as `tile ahead`, so a Tile value is always a farm tile.
+**Expressions** are evaluated against `state` and the robot as they are at the start of the minute (part 1 §5.3 choose phase). Sensors read the robot's own tile unless they say "ahead". `bagIsFull` means the bag holds `bagStacks(robot)` stacks. `soilIsDry` means the tile is Plowed (not Watered). `tileIsTilled` means Plowed or Watered. `cropIsReady` means a living, mature crop. `atEdgeOf` means the robot's tile is in the zone and a 4-neighbour isn't. `tileAheadIs`: `water` is a water blocker, `clear` is a walkable farm tile with no standing robot on it, and `blocked` is anything else, including a tile with a standing robot (part 3 spec §3.1). A robot on the farm edge facing out reads its own tile as `tile ahead`, so a Tile value is always a farm tile.
 
 ### 5.2 Committing
 
@@ -332,7 +332,7 @@ The interpreter's `exec` is **kept only when the turn resolves**: the action is 
 
 ### 5.3 Routes (`src/robots/route.ts`, pure)
 
-`planRoute(state, robot, target): readonly TileCoord[] | null` (`[]` when the robot already stands on the target) is a breadth-first search over farm tiles in `DIRECTIONS` order. A tile may be entered when it is walkable (`isWalkable`), it is not water, and the robot's DON'T cards allow the step (section 6.2). The result excludes the start and includes the target. If the target can't be stood on, the result is null. Other robots never block a route (robots don't collide, design §3.1). The single-step rule is `canEnter(state, robot, from, to)`, shared by `planRoute` and the route frame's re-plan check.
+`planRoute(state, robot, target): readonly TileCoord[] | null` (`[]` when the robot already stands on the target) is a breadth-first search over farm tiles in `DIRECTIONS` order. A tile may be entered when it is walkable (`isWalkable`), it is not water, and the robot's DON'T cards allow the step (section 6.2). The result excludes the start and includes the target. If the target can't be stood on, the result is null. Other robots never block a route, because robots move; a route step into a standing robot bumps like any move (part 3 spec §3.1). The single-step rule is `canEnter(state, robot, from, to)`, shared by `planRoute` and the route frame's re-plan check.
 
 ---
 
@@ -382,9 +382,9 @@ DON'T beats DO beats the program, and nothing else decides. A DO that can't be c
 
 - **Morning reset** (`startNextDay`, after part 1's reset), for block programs:
   - `exec` is rebuilt: variables back to their initials; `due` is the trigger minute for `atTime`, `dayStartMinute + n` for `every n` and null otherwise; `firedToday` all false; `doneCards` cleared; frames empty; `running: null`.
-  - `off` is cleared.
+  - `off` is cleared when it's `'dizzy'` or `'done'`; `'player'` stays (part 3 spec §2.4).
   - Then the first `morning` stack starts.
-- **Off means off until morning.** A robot that is off (`'dizzy'` / `'done'`) and is carried and put down stays off and never acts until the morning reset. Put-down doesn't wake it the way part 1's put-down (`resumedPower`) does: it keeps its power (`working` or `standby`) while it has tokens and is `flat` with none (`putDownPower` in `src/robots/stats.ts`). A robot that isn't off is put down exactly as in part 1. An off robot renders with dimmed eyes, or dark when flat (section 9).
+- **Off means off until morning** for `'dizzy'` and `'done'`, and until the player switches it on for `'player'` (part 3). A robot that is off for any reason and is carried and put down stays off and never acts until then. Put-down doesn't wake it the way part 1's put-down (`resumedPower`) does: it keeps its power (`working` or `standby`) while it has tokens and is `flat` with none (`putDownPower` in `src/robots/stats.ts`). A robot that isn't off is put down exactly as in part 1. An off robot renders with dimmed eyes, or dark when flat (section 9).
 - **A trigger fires only when the robot is idle:** `standby`, not `off`, not carried, and not running a stack. A running stack is never interrupted; only DO cards take over a working robot.
 - **Idle robots still check on their schedule.** An idle robot with a block program is "due" at its `nextActMinute` like a working one. On its due minute it checks its stacks' triggers in order and starts the first that fires:
   - `atTime`: the minute has come and `due` isn't spent. It spends its `due`.
@@ -559,7 +559,7 @@ It only builds data. Validity is still `checkProgram`'s job.
 
 - `Deposit into [chest ▾ / shipping bin]` and `Take [item] from [chest ▾]` act on **the tile ahead**, as in part 1. The editor (part 3) labels them "Deposit into what's ahead" and "Take [item] from the chest ahead". A program reaches a chest with `Go to` and `Turn`.
 - **Triggers fire only while the robot is idle**; a running stack is never interrupted.
-- **Turning off.** `off` is a field separate from `power`. Dizzy and DO power-downs turn the robot off until morning; part 3 adds the player's switch.
+- **Turning off.** `off` is a field separate from `power`. Dizzy and DO power-downs turn the robot off until morning; part 3 adds the player's switch, `off: 'player'`, which survives the morning.
 - **DO cards that power down end the day.** A program's own `Power down` block only goes to standby.
 - **The checker refuses a sensor-eye sensor without a sensor eye.** Part 3's workbench must refuse to remove a part the program's sensors need.
 - **Variables declare an initial value**, and it is restored each morning.
