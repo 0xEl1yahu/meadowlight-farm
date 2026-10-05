@@ -112,7 +112,7 @@ Global rules (unchanged from parts 1–2):
   - "Off" dispatches `switchRobot { robotId, on: false }` and sets `off: 'player'`, whatever `off` was. It's shown, and allowed, only for a robot that is working, on standby or flat; the reducer refuses any other with "{name} can't be switched off while it's broken." (R19).
   - "On" is shown only when `off` is `'player'`. It dispatches `switchRobot { robotId, on: true }` and sets `off: null`.
   - It's free.
-- **An off robot** ignores triggers and DO cards like a dizzy or done robot (part 2 §7), but the morning reset doesn't clear `'player'`: it stays off until switched on.
+- **An off robot** ignores triggers and DO cards like a dizzy or done robot (part 2 §7), but the morning reset doesn't clear `'player'`, and a new program doesn't clear it either: only the switch turns the robot on.
 - **Header text:** "Switched off" for `'player'`; "Off until morning" for `'dizzy'` and `'done'`.
 - **Putting down:** `putDownPower` treats `'player'` like the other off reasons.
 
