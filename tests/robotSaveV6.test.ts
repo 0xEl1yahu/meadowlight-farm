@@ -4,10 +4,11 @@
  * adds its cases here.
  */
 import { describe, expect, it } from 'vitest';
-import { INVENTORY, UNLOCKS, WORKBENCH } from '../src/config';
+import { INVENTORY, PLAYER, UNLOCKS, WORKBENCH } from '../src/config';
 import { Blocker, Direction, SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
+import { freeSpotNear } from '../src/robots/workbench';
 import { ALL_UNLOCKS, withUnlocks } from '../src/robots/unlocks';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
@@ -194,6 +195,23 @@ describe('the workbench in save version 6', () => {
     expect(farmTile(v5, AT_BENCH.tx, AT_BENCH.tz).object).toBeNull();
     expect(farmTile(migrateSave(v5) as SaveJson, AT_BENCH.tx, AT_BENCH.tz).object).toEqual({ kind: 'workbench' });
     expect(load(v5)).toEqual(state);
+  });
+
+  it('never puts the migrated workbench on the spawn tile, even when it is the nearest free tile', () => {
+    // The player stands off the spawn tile, so only the migration's own rule keeps the bench off it.
+    const away = { tx: PLAYER.spawn.tx + 1, tz: PLAYER.spawn.tz };
+    // Home is built on too (a chest replaces the bench, as in a v5 farm, which has none).
+    let state = withPlayer(withTile(BASE, HOME, { ...EMPTY_TILE, object: chest }, 'farm'), away, Direction.South);
+    // Build a chest on each nearest free tile in turn until the spawn tile is the nearest free one left.
+    for (let built = 0; built < 100; built++) {
+      const spot = freeSpotNear(state.maps.farm, HOME, [away]);
+      if (spot.tx === PLAYER.spawn.tx && spot.tz === PLAYER.spawn.tz) break;
+      state = withTile(state, spot, { ...EMPTY_TILE, object: chest }, 'farm');
+    }
+    expect(freeSpotNear(state.maps.farm, HOME, [away])).toEqual(PLAYER.spawn);
+    const migrated = migrateSave(v5Save(state)) as SaveJson;
+    expect(farmTile(migrated, PLAYER.spawn.tx, PLAYER.spawn.tz).object).toBeNull();
+    expect(load(v5Save(state))).not.toBeNull();
   });
 
   it('counts a robot standing on home as built on, but not a carried robot that left from it', () => {

@@ -2,7 +2,7 @@
  * Save / load. GameState is plain JSON-compatible data, so persistence is serialisation plus a
  * strict structural validator — a corrupted or outdated save is rejected, never half-loaded.
  */
-import { INVENTORY, TIME, UNLOCKS, WORKBENCH } from '../config';
+import { INVENTORY, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
   MAP_IDS,
@@ -416,7 +416,7 @@ function migrateV5toV6(save: Obj): Obj {
 /**
  * The workbench for a migrated farm (part 3 spec §2.1): WORKBENCH.home, or the nearest free farm
  * tile when the player built something there. Standing robots (not carried, not away for repairs)
- * and the player, when on the farm, take their tiles. A malformed farm passes through without one,
+ * and the player, when on the farm, take their tiles, and so does the spawn tile. A malformed farm passes through without one,
  * so the validator rejects the save.
  */
 function placeWorkbenchV6(save: Obj): Obj {
@@ -425,7 +425,8 @@ function placeWorkbenchV6(save: Obj): Obj {
   if (!isObj(maps) || !isObj(robots) || !Array.isArray(robots.list)) return save;
   const farm: unknown = maps.farm;
   if (!isValidWorld(farm, 'farm')) return save;
-  const taken: TileCoord[] = [];
+  // The spawn tile is where a carried robot lands at day end, and where a new game starts the player.
+  const taken: TileCoord[] = [PLAYER.spawn];
   for (const robot of robots.list as readonly unknown[]) {
     if (isObj(robot) && robot.carried !== true && robot.power !== 'repairing' && isInt(robot.tx) && isInt(robot.tz)) taken.push({ tx: robot.tx, tz: robot.tz });
   }
