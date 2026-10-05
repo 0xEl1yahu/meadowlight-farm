@@ -404,4 +404,6 @@ export const ROBOT_SCREEN = {
   stackGap: 40,
   /** Minutes between the options of the editor's time dropdowns. */
   timeStep: 10,
+  /** What new .MD card values start at: a DO return at 6:00 pm; "tokens are below" 10. */
+  cardDefaults: { returnMinute: 18 * 60, tokensBelow: 10 },
 } as const;

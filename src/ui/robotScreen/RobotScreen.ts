@@ -31,6 +31,7 @@ import { createBoltIcon, createCloseIcon } from '../icons';
 import { createPartIcon } from './partIcons';
 import { LogTab } from './tabs/LogTab';
 import { LooksTab } from './tabs/LooksTab';
+import { MdTab } from './tabs/MdTab';
 import { ProgramTab } from './tabs/ProgramTab';
 import { StatsTab } from './tabs/StatsTab';
 import type { RobotTabContext, RobotTabView } from './tabs/tabView';
@@ -57,9 +58,10 @@ export interface RobotScreenOptions {
 
 type TabFactory = (context: RobotTabContext) => RobotTabView;
 
-/** The tab views this screen can show; a tab without one never shows. */
-const TAB_FACTORIES: Partial<Record<RobotTab, TabFactory>> = {
+/** The view of each tab. */
+const TAB_FACTORIES: Readonly<Record<RobotTab, TabFactory>> = {
   program: (context) => new ProgramTab(context),
+  md: (context) => new MdTab(context),
   looks: (context) => new LooksTab(context),
   stats: (context) => new StatsTab(context),
   log: (context) => new LogTab(context),

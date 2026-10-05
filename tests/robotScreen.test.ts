@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROBOTS, ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, TIME, UNLOCKS } from '../src/config';
 import { createStore, type Store } from '../src/core/store';
 import { mulberry32 } from '../src/core/hash';
-import type { GameState, RobotLogEntry, RobotLogEvent } from '../src/core/types';
+import { MD_CARD_KINDS, type GameState, type MdCard, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';
 import { InputController } from '../src/input/InputController';
 import type { CameraRig } from '../src/render/CameraRig';
 import { b } from '../src/robots/blocks';
+import { checkMd } from '../src/robots/check';
+import { batteryFor } from '../src/robots/stats';
 import { ALL_UNLOCKS } from '../src/robots/unlocks';
 import { actions, type GameAction } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
@@ -54,6 +56,21 @@ import {
   visibleTabs,
 } from '../src/ui/robotScreen/viewModel';
 import { randomProgram } from './programGen';
+import {
+  CARD_LABELS,
+  MD_TEXT,
+  addCardOptions,
+  cardFields,
+  cardSection,
+  isMdFieldKey,
+  mdCountText,
+  mdOverLimit,
+  mdTitle,
+  moveCard,
+  newCard,
+  removeCard,
+  setCardValue,
+} from '../src/ui/robotScreen/mdFields';
 import { BASE, atDay, robotOf, withRobots } from './testUtils';
 
 function withPanel(state: GameState, panel: GameState['ui']['panel']): GameState {
@@ -604,5 +621,137 @@ describe('block definitions', () => {
       (programToWorkspace(program).blocks?.blocks ?? []).flatMap((block, top) => problems(block, `program ${index} block ${top}`)),
     );
     expect(found.slice(0, 5)).toEqual([]);
+  });
+});
+
+describe('.MD card fields', () => {
+  const ZONES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((zone) => [`Zone ${zone}`, zone]);
+
+  it('gives each card its words and fields', () => {
+    expect(cardFields({ kind: 'dontLeave', zone: 'B' }, 'mini')).toEqual([
+      { kind: 'text', text: 'Leave' },
+      { kind: 'select', key: 'zone', label: 'Zone', value: 'B', options: ZONES },
+    ]);
+    expect(cardFields({ kind: 'dontGoIntoWater' }, 'mini')).toEqual([{ kind: 'text', text: 'Go into water' }]);
+    expect(cardFields({ kind: 'dontHarvest', cropId: 'pumpkin' }, 'mini')[1]).toMatchObject({ kind: 'select', key: 'cropId', value: 'pumpkin' });
+    expect(cardFields({ kind: 'dontDeposit', itemId: 'hoe' }, 'mini')[1]).toMatchObject({ kind: 'select', key: 'itemId', value: 'hoe' });
+  });
+
+  it('shows a DO return to a tile as two number fields and a time', () => {
+    expect(cardFields({ kind: 'doReturn', to: { kind: 'tile', tx: 4, tz: 9 }, minute: 1080 }, 'mini')).toEqual([
+      { kind: 'text', text: 'Return to' },
+      { kind: 'select', key: 'to', label: 'Where', value: 'tile', options: [['a tile', 'tile'], ['the nearest generator', 'generator']] },
+      { kind: 'number', key: 'tx', label: 'X', value: 4, min: 0, max: 47 },
+      { kind: 'number', key: 'tz', label: 'Z', value: 9, min: 0, max: 39 },
+      { kind: 'text', text: 'at' },
+      { kind: 'select', key: 'minute', label: 'Time', value: '1080', options: dropdownOptions('minute', 1080) },
+    ]);
+  });
+
+  it("keeps a card's unusual time in its dropdown", () => {
+    const fields = cardFields({ kind: 'doReturn', to: { kind: 'generator' }, minute: 583 }, 'mini');
+    expect(fields).toHaveLength(4);
+    const time = fields[3];
+    expect(time?.kind === 'select' && time.options.some(([label, value]) => label === '9:43 am' && value === '583')).toBe(true);
+  });
+
+  it('shows the token count only for "tokens are below"', () => {
+    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 10 } }, 'mini')).toEqual([
+      { kind: 'text', text: 'Power down when' },
+      {
+        kind: 'select',
+        key: 'when',
+        label: 'When',
+        value: 'tokensBelow',
+        options: [['my bag is full', 'bagFull'], ['tokens are below', 'tokensBelow'], ['it rains', 'raining']],
+      },
+      { kind: 'number', key: 'n', label: 'Tokens', value: 10, min: 1, max: batteryFor('mini') },
+    ]);
+    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 10 } }, 'big')[2]).toMatchObject({ max: batteryFor('big') });
+    expect(cardFields({ kind: 'doPowerDown', when: { kind: 'raining' } }, 'mini')).toHaveLength(2);
+  });
+});
+
+describe('.MD editing', () => {
+  const robot = robotOf({ tx: 6, tz: 4 });
+
+  it('makes a valid card of every kind', () => {
+    expect(MD_CARD_KINDS.map((kind) => newCard(kind))).toEqual([
+      { kind: 'dontLeave', zone: 'A' },
+      { kind: 'dontGoIntoWater' },
+      { kind: 'dontHarvest', cropId: 'parsnip' },
+      { kind: 'dontDeposit', itemId: 'parsnip' },
+      { kind: 'doReturn', to: { kind: 'generator' }, minute: ROBOT_SCREEN.cardDefaults.returnMinute },
+      { kind: 'doPowerDown', when: { kind: 'bagFull' } },
+    ]);
+    for (const kind of MD_CARD_KINDS) expect([kind, checkMd([newCard(kind)], robotOf())]).toEqual([kind, null]);
+  });
+
+  it('changes one field at a time, ignoring values that are not of its kind', () => {
+    expect(setCardValue({ kind: 'dontLeave', zone: 'A' }, 'zone', 'C', robot)).toEqual({ kind: 'dontLeave', zone: 'C' });
+    expect(setCardValue({ kind: 'dontLeave', zone: 'A' }, 'zone', 'Q', robot)).toEqual({ kind: 'dontLeave', zone: 'A' });
+    expect(setCardValue({ kind: 'dontHarvest', cropId: 'parsnip' }, 'cropId', 'corn', robot)).toEqual({ kind: 'dontHarvest', cropId: 'corn' });
+    expect(setCardValue({ kind: 'dontDeposit', itemId: 'parsnip' }, 'itemId', 'wood', robot)).toEqual({ kind: 'dontDeposit', itemId: 'wood' });
+    expect(setCardValue({ kind: 'dontDeposit', itemId: 'parsnip' }, 'zone', 'A', robot)).toEqual({ kind: 'dontDeposit', itemId: 'parsnip' });
+  });
+
+  it('switches a DO return between a tile and the nearest generator', () => {
+    const toGenerator: MdCard = { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 };
+    const toTile = setCardValue(toGenerator, 'to', 'tile', robot);
+    expect(toTile).toEqual({ kind: 'doReturn', to: { kind: 'tile', tx: 6, tz: 4 }, minute: 1080 });
+    expect(setCardValue(toTile, 'tx', '12', robot)).toEqual({ kind: 'doReturn', to: { kind: 'tile', tx: 12, tz: 4 }, minute: 1080 });
+    expect(setCardValue(toTile, 'tz', ' 7 ', robot)).toEqual({ kind: 'doReturn', to: { kind: 'tile', tx: 6, tz: 7 }, minute: 1080 });
+    expect(setCardValue(toTile, 'tx', '1.5', robot)).toBe(toTile);
+    expect(setCardValue(toTile, 'minute', '583', robot)).toEqual({ kind: 'doReturn', to: { kind: 'tile', tx: 6, tz: 4 }, minute: 583 });
+    expect(setCardValue(toTile, 'to', 'generator', robot)).toEqual(toGenerator);
+    expect(setCardValue(toGenerator, 'tx', '3', robot)).toBe(toGenerator);
+  });
+
+  it('switches a power-down condition, starting the token count from config', () => {
+    const bagFull: MdCard = { kind: 'doPowerDown', when: { kind: 'bagFull' } };
+    const below = setCardValue(bagFull, 'when', 'tokensBelow', robot);
+    expect(below).toEqual({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: ROBOT_SCREEN.cardDefaults.tokensBelow } });
+    expect(setCardValue(below, 'n', '25', robot)).toEqual({ kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 25 } });
+    expect(setCardValue(below, 'when', 'raining', robot)).toEqual({ kind: 'doPowerDown', when: { kind: 'raining' } });
+    expect(setCardValue(bagFull, 'n', '25', robot)).toBe(bagFull);
+  });
+
+  it('sorts cards into DO and DON\'T and reorders within a section', () => {
+    const cards: MdCard[] = [
+      { kind: 'dontLeave', zone: 'A' },
+      { kind: 'doPowerDown', when: { kind: 'bagFull' } },
+      { kind: 'dontGoIntoWater' },
+      { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 },
+    ];
+    expect(cards.map(cardSection)).toEqual(['dont', 'do', 'dont', 'do']);
+    expect(moveCard(cards, 2, -1)).toEqual([cards[2], cards[1], cards[0], cards[3]]);
+    expect(moveCard(cards, 1, 1)).toEqual([cards[0], cards[3], cards[2], cards[1]]);
+    expect(moveCard(cards, 0, -1)).toBe(cards);
+    expect(moveCard(cards, 3, 1)).toBe(cards);
+    expect(removeCard(cards, 1)).toEqual([cards[0], cards[2], cards[3]]);
+  });
+
+  it('offers only the unlocked card kinds', () => {
+    expect(addCardOptions(UNLOCKS.job1)).toEqual([
+      { kind: 'dontLeave', label: CARD_LABELS.dontLeave },
+      { kind: 'dontGoIntoWater', label: CARD_LABELS.dontGoIntoWater },
+    ]);
+    expect(addCardOptions(ALL_UNLOCKS).map((option) => option.kind)).toEqual([...MD_CARD_KINDS]);
+    expect(CARD_LABELS.dontLeave).toBe("DON'T leave a zone");
+  });
+
+  it('titles the card and counts it against the size', () => {
+    expect(mdTitle('Bolt')).toBe('# BOLT.MD');
+    expect(mdCountText([newCard('dontGoIntoWater'), newCard('dontLeave')], 'mini')).toBe('2 / 3 cards');
+    expect(mdCountText([], 'big')).toBe('0 / 10 cards');
+    const four = [newCard('dontGoIntoWater'), newCard('dontLeave'), newCard('dontHarvest'), newCard('dontDeposit')];
+    expect(mdOverLimit(four, 'mini')).toBe(true);
+    expect(mdOverLimit(four, 'standard')).toBe(false);
+  });
+
+  it('knows its field keys and sentences', () => {
+    expect(['zone', 'cropId', 'itemId', 'to', 'tx', 'tz', 'minute', 'when', 'n'].every(isMdFieldKey)).toBe(true);
+    expect(isMdFieldKey('kind')).toBe(false);
+    expect(MD_TEXT.scriptOnly).toBe('.MD cards only apply to block programs.');
   });
 });
