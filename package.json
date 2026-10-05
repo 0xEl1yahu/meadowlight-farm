@@ -5,10 +5,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:check": "npm run build && node scripts/check-bundle.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview",
-    "build:single": "npm run build && node scripts/build-single.mjs"
+    "build:single": "vite build --mode single && node scripts/build-single.mjs"
   },
   "type": "module",
   "dependencies": {

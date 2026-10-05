@@ -77,7 +77,8 @@ npm install
 npm run dev          # http://localhost:5173  (add ?new to start a fresh farm)
 npm test             # 534 Vitest tests
 npm run build        # typecheck + production bundle in dist/
-npm run build:single # the whole game as one self-contained HTML file in dist-single/
+npm run build:check  # the production build, then its size budgets and the dev-hook check
+npm run build:single # the whole game as one HTML page in dist-single/, with Blockly's icon folder blockly-media/ beside it
 ```
 
 ### How it works
