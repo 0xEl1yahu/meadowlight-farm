@@ -39,7 +39,7 @@ import { BLOCK_KINDS } from '../robots/blockKinds';
 import { checkMd, checkProgram, isValidZoneRect } from '../robots/check';
 import { ROBOT_ACTION_KINDS } from '../robots/parts';
 import { farmContains, resolveList } from '../robots/program';
-import { bagStacks, batteryFor } from '../robots/stats';
+import { SWITCHABLE_POWERS, bagStacks, batteryFor } from '../robots/stats';
 import { inBounds } from '../world/grid';
 import { forEachTile, getTile, isWalkable } from '../world/tiles';
 import { isValidName } from './sectionValidation';
@@ -644,7 +644,7 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (!isIntIn(v.paint, 0, ROBOT_PAINTS.length - 1)) return false;
   if (!isValidMind(v, { size: v.size, parts })) return false;
   if (!isOneOf(v.off, [null, 'dizzy', 'done', 'player'])) return false;
-  if (v.off !== null && v.power !== 'working' && v.power !== 'standby' && v.power !== 'flat') return false;
+  if (v.off !== null && !SWITCHABLE_POWERS.has(v.power)) return false;
   if (!isIntIn(v.nextActMinute, TIME.dayStartMinute, TIME.passOutMinute + ROBOTS.maxWaitMinutes)) return false;
   if (!isCount(v.moveSeq) || !isCount(v.teleportSeq) || !isCount(v.actionSeq)) return false;
   if (!isValidLastAction(v.lastAction, v.actionSeq)) return false;

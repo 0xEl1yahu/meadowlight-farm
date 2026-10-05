@@ -45,7 +45,7 @@ import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { programmedRobot, withMd, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
-import { carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
+import { SWITCHABLE_POWERS, carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
 import { findRobot, requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
 import { rollWeather, weatherWaters } from '../time/weather';
@@ -773,9 +773,6 @@ function liftOffBench(state: GameState, robotId: number): GameState {
   const panel = lifted.ui.panel;
   return panel.kind === 'robot' && panel.robotId === robot.id ? { ...lifted, ui: { ...lifted.ui, panel: { kind: 'none' } } } : lifted;
 }
-
-/** Powers a robot may be switched off in: the save allows `off` only with these (part 2 spec §10.2, part 3 §9.2). */
-const SWITCHABLE_POWERS: ReadonlySet<Robot['power']> = new Set<Robot['power']>(['working', 'standby', 'flat']);
 
 /**
  * `robot/switch` (part 3 spec §2.4), free: off sets `off: 'player'` whatever it was; on clears

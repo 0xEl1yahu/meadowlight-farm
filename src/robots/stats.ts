@@ -5,6 +5,9 @@ import { ROBOT_CARE, ROBOT_PAINTS, ROBOTS } from '../config';
 import { invariant } from '../core/invariant';
 import type { Robot, RobotActionKind, RobotPartId, RobotPower, RobotSize, RobotStatCounts, RobotStats } from '../core/types';
 
+/** Powers a robot may be switched off in (a broken, repairing or ruined robot is refused): the reducer's switch, the screen's button and the save's `off` rule (part 2 spec §10.2, part 3 §9.2). */
+export const SWITCHABLE_POWERS: ReadonlySet<RobotPower> = new Set<RobotPower>(['working', 'standby', 'flat']);
+
 export type RobotBody = Pick<Robot, 'size' | 'parts'>;
 
 export function hasPart(robot: Pick<Robot, 'parts'>, part: RobotPartId): boolean {
