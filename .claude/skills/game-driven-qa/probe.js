@@ -110,10 +110,42 @@
       const p = S().player;
       return { arrived: p.tx === tx && p.tz === tz, at: [p.tx, p.tz], taps: maxTaps };
     },
-    /** Turn in place (Shift + direction), the real-keyboard way. 0 N, 1 E, 2 S, 3 W. */
+    /**
+     * Turn in place (Shift + direction), the real-keyboard way. 0 N, 1 E, 2 S, 3 W. Shift is
+     * released at the end, so the HUD hint stops showing Shift's intent (e.g. "Look at {name}").
+     */
     async turn(direction) {
       const code = ['KeyW', 'KeyD', 'KeyS', 'KeyA'][direction];
-      return qa.key(code, 60, { shiftKey: true });
+      return qa.shift(code);
+    },
+    /**
+     * Shift + a key, the real-keyboard way: Shift goes down first and up last, so both the
+     * InputController's shiftHeld and the key's event.shiftKey see it. Shift + E peeks at a robot
+     * (or clears the marker's zone); Shift + Space cycles the zone marker's letter.
+     */
+    async shift(code, holdMs = 60) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft', key: 'Shift', shiftKey: true, bubbles: true }));
+      await qa.key(code, holdMs, { shiftKey: true });
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ShiftLeft', key: 'Shift', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 50));
+      return qa.snap(2);
+    },
+    /** Deep equality that ignores key order, e.g. a saved program against the one that was loaded. */
+    same(a, b) {
+      const canon = (v) => (Array.isArray(v) ? v.map(canon) : v !== null && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+      return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+    },
+    /**
+     * Setup only: puts the robot called `name` on the workbench (6,4) and stands the player on
+     * (6,5) facing it, so qa.key('KeyE') ("Work on {name}") opens its screen. Use it when carrying
+     * the robot there isn't what's being checked.
+     */
+    bench(name) {
+      return qa.patch((s) => {
+        const r = [...s.robots.list].reverse().find((x) => x.name === name);
+        Object.assign(r, { onBench: true, carried: false, tx: 6, tz: 4 });
+        Object.assign(s.player, { tx: 6, tz: 5, facing: 0, carrying: s.player.carrying === r.id ? null : s.player.carrying });
+      });
     },
     /** Frames per second over a short window, from requestAnimationFrame. */
     async fps(ms = 2000) {

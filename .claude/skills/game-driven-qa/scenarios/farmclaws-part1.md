@@ -23,7 +23,7 @@ __qa.patch(s => { s.player.tx = 39; s.player.tz = 24; s.player.facing = 2; });
 __qa.tick(8);                                  // → broken at (39,27), "[warn] Splash drove into the water and shorted out."
 await __qa.walkTo(39, 26);                     // hint "Fish out Splash"
 await __qa.key('KeyE');                        // energy −4, player.carrying = robot id
-await __qa.walkTo(10, 6); await __qa.turn(0);  // hint "Send Splash for repair · 300g"
+await __qa.walkTo(10, 6); await __qa.turn(0);  // hint "Send Splash for a new core · 300g"
 await __qa.key('KeyE');                        // gold −300, power 'repairing'
 await __qa.key('KeyN');                        // next day: at (9,6), working, 80 tokens, toast after "Good morning"
 ```
@@ -33,11 +33,11 @@ Screenshot while carrying: the robot is drawn above the player.
 
 ```js
 const F = await __qa.fixtures(); let s = __qa.state();
-for (const tx of [5, 6, 7, 8]) s = F.withTile(s, { tx, tz: 11 }, F.soilTile(F.T.TileState.Plowed, F.matureCrop('parsnip')), 'farm');
+s = F.withTile(s, { tx: 5, tz: 10 }, F.soilTile(F.T.TileState.Plowed, F.matureCrop('parsnip')), 'farm');
 __qa.load(F.withPlayer(s, { tx: 5, tz: 9 }, 2, 'farm'));
 __meadowlight.addRobot('pair', { tx: 5, tz: 10, facing: 2 });
 ```
-Robots act on their own tile, so they bicker after moving onto (5,11). Poll until `snap().robots` shows `last: 'harvest bicker'`, then screenshot the red "!" badges (1.5 s). `await __qa.logText(6)` shows "says: Waiting my turn ✓ | happened: Fought Dee over the same tile. Nobody got it." The crop at (5,11) stays at stage 4.
+Both robots stand on (5,10), on the crop, and act on their own tile, so their first act (a harvest) is a bicker, and so is every second act after it (harvest, turn right, harvest …). Since part 3, two robots can't move onto one tile without bumping, so the pair harvests in place instead of moving. Poll until `snap().robots` shows `last: 'harvest bicker'`, then screenshot the red "!" badges (1.5 s). `await __qa.logText(6)` shows "says: Waiting my turn ✓ | happened: Fought Dee over the same tile. Nobody got it." The crop at (5,10) stays at stage 4, and neither robot ever leaves (5,10).
 
 ## 4–5. Wood burner, token pool, recharge in and out of range
 

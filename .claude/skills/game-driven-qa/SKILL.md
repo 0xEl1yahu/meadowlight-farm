@@ -38,6 +38,13 @@ Drive the real game in the browser pane and judge it by its **state**, confirmed
 | Zones A–H | `__meadowlight.setZone('A', { x0: 6, z0: 12, w: 3, d: 3 })` → "Set Zone A."; `setZone('A', null)` clears it |
 | Block builder | `__meadowlight.blocks` is the tests' `b`: `b.repeat(3, b.move())`, `b.goTo(b.tileAt(5, 10))`, `b.set('n', b.add(b.v('n'), b.n(1)))`. Playbook: `scenarios/farmclaws-part2.md` |
 | What a block robot is doing | `__qa.robot(name).exec` (`running` stack, `frames`, `vars`), `.off` (`'dizzy'` or `'done'` until morning), `.md` |
+| Put a robot on the bench (part 3) | Carry it (E), stand on (6,5) facing north (the workbench is (6,4)), E: "Put {name} on the bench". Setup shortcut: `__qa.bench('Atlas')`, then `await __qa.key('KeyE')` ("Work on Atlas") |
+| The robot screen | `__qa.state().ui.panel` → `{ kind: 'robot', robotId, mode: 'bench' }` or `'peek'`. While it's open the game is frozen and the screen owns the keyboard: drive it with `find` + `computer` clicks, drags and keys, not `__qa.key`. Blockly: click a toolbox category, then `left_click_drag` from the flyout. Playbook: `scenarios/farmclaws-part3.md` |
+| Peek at a robot | Face a standing robot, `await __qa.shift('KeyE')` ("Look at {name}" while Shift is held): Stats and Log only, read-only, free |
+| Zone marker | Its slot: `__qa.state().inventory.slots.findIndex((s) => s?.itemId === 'zoneMarker')` (6 on a fresh farm, `Digit7`). `Space` marks a corner on the tile ahead, the second press paints `ui.zoneLetter`'s zone; `await __qa.shift('Space')` cycles A → H; `await __qa.shift('KeyE')` clears the letter's zone; Escape drops a draft (`ui.zoneDraft`) |
+| Unlock everything | `__meadowlight.unlockAll()` → "Unlocked every block, card and tab." New farms have job 1's set, without the Stats tab, `If`, `For each tile` or variables |
+| Compare programs | `__qa.same(a, b)`: deep equality ignoring key order, e.g. `__qa.same(__qa.robot('Atlas').program, program)` |
+| The single-file build | `npm run build:single`, then `preview_start {name: "meadowlight-single"}` → `http://localhost:4174/`. It has no dev hooks; check 12 of `scenarios/farmclaws-part3.md` brings a robot in through the save |
 | Enum values (tile state, blocker, direction) | `(await __qa.fixtures()).T` → `TileState` {Unplowed 0, Plowed 1, Watered 2, Blocked 3}, `Blocker` {Water 3, ShippingBin 5, …}, `Direction` {North 0 … West 3} |
 | Teleport / give items (setup only) | `__qa.patch(s => { s.player.tx = 5; })` |
 | Any game module | `await __qa.mod('/src/robots/logText.ts')` — Vite serves source in dev |
@@ -64,6 +71,8 @@ Drive the real game in the browser pane and judge it by its **state**, confirmed
 | Day jumped between calls | Time kept running at 16× while you worked — `__meadowlight.store.dispatch(__meadowlight.actions.setTimeScale(1))` |
 | "The farm already has 12 robots." | Start from `?new` |
 | `setProgram` worked but the robot never starts | It was after 6:04, so the `morning` stack waits for tomorrow. Load the clock to 6:00 in the same call first (`const s = __qa.state(); __qa.load({ ...s, time: { ...s.time, minuteOfDay: 360 } })`), or give the program an `every` / `atTime` trigger |
+| Keys do nothing while a robot screen is open | By design: the screen owns the keyboard and the game is frozen. `__qa.key` events go to `window` and never reach Blockly's fields; use `computer` keys. `computer key "Escape"` closes a dropdown or flyout first, then the screen (with the discard prompt if there are unsaved edits) |
+| A saved `When morning comes` program sits idle | The save happened after 6:04. Load the clock to 6:00 just before opening the bench (the open screen holds the clock), or `__qa.sleep()` and watch from 6:04 |
 | Clock frozen in real time (`T` speed does nothing) | The browser pane is hidden (`document.hidden` is true), so animation frames stop and the game clock with them. Drive time with `__qa.tick(n)`; screenshots still render on demand |
 | Navigation fails / blank tab | Server stopped — `preview_list`, `preview_start` |
 
