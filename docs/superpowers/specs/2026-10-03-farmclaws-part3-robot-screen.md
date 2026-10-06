@@ -192,6 +192,7 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
 - **Scrap** dispatches `scrapRobot { robotId }`. The robot must be on the bench.
 - **Effects:**
   - The robot leaves `robots.list` and its log entries are dropped.
+  - Its bag goes into the player's backpack, qualities kept. When the backpack can't take the whole bag, scrapping is refused with "Make room in your backpack for {name}'s bag first." and nothing changes.
   - Gold grows by `scrapValue(robot) = Math.round(ROBOTS.sizes[size].price × ROBOT_CARE.scrapShare)`, with `scrapShare` 0.25: Mini 375g, Standard 1,000g, Big 2,500g. It's the same for every power, ruined included.
   - The panel closes. Toast (success): "Scrapped {name} for {gold}g."
   - Ids are never reused (part 1).
@@ -529,7 +530,7 @@ Any state the game can produce must load; a corrupted field is rejected.
 | `tests/robotPeek.test.ts` | The peek intent and hint; the Shift + E precedence; no cost; the robot unchanged. |
 | `tests/robotBump.test.ts` | Same-target, swap and into-a-standing-robot bumps; a line of robots moving the same way never bumps, in either id order; the forgotten stack's body emptied, its `When` kept, helpers and other stacks kept; scripts and idle robots forget nothing; cost, `off: 'dizzy'`, the log event, toast and texts; `tile ahead is blocked` seeing robots; put-down, drop-off and morning moves avoiding robot tiles. |
 | `tests/robotRuin.test.ts` | A broken robot still in water at the morning reset is ruined; fished out or carried at day end, it isn't; a migrated broken robot is ruined only at the next morning; ruined robots never act or recharge; the bin's new core and its refusal for ruined robots. |
-| `tests/robotScrapPaint.test.ts` | Scrapping: gold per size, the robot and its log gone, "a scrapped robot" in other entries, the bench-only rule. Paint: cost, the same-colour and short-gold refusals, the toast. |
+| `tests/robotScrapPaint.test.ts` | Scrapping: gold per size, the robot and its log gone, its bag moved into the backpack (refused when it can't fit), "a scrapped robot" in other entries, the bench-only rule. Paint: cost, the same-colour and short-gold refusals, the toast. |
 | `tests/robotEdits.test.ts` | `withProgram`, `withMd` and `withZone` moved from the dev hooks, and the `programRobot` / `setRobotMd` actions with their bench-only rule. |
 | `tests/robotStats.test.ts` (extend) | Each counter, wake tokens, bumps, skips adding nothing, daily and weekly rollover. |
 | `tests/robotLog.test.ts` | Merging within a day; a new entry on a new day. |

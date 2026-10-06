@@ -13,7 +13,7 @@ import { scrapValue } from '../src/robots/stats';
 import { findRobot, requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
-import { BASE, benchedRobotOf, robotOf, withGold, withRobots } from './testUtils';
+import { BASE, benchedRobotOf, count, robotOf, stack, withGold, withRobots, withSlots } from './testUtils';
 
 const bolt = robotOf({ id: 2, name: 'Bolt', tx: 5, tz: 12 });
 const lastMessage = (state: GameState) => state.messages.entries.at(-1);
@@ -66,6 +66,27 @@ describe('scrapping', () => {
     const added = addRobot(next, { name: 'Nova', size: 'mini', parts: [], place: { tx: 5, tz: 12, facing: Direction.South }, program: { kind: 'script', steps: [{ kind: 'move' }], loop: true } });
     if ('error' in added) throw new Error(added.error);
     expect(added.id).toBe(2);
+  });
+
+  it("moves the robot's bag into the backpack, qualities kept", () => {
+    const bag = [stack('parsnip', 5, 1), stack('wood', 3)];
+    const state = atBench([benchedRobotOf({ bag, parts: ['claw', 'basket'], size: 'standard' })]);
+    const next = gameReducer(state, actions.scrapRobot(1));
+    expect(next.robots.list).toEqual([]);
+    expect(count(next, 'parsnip')).toBe(count(state, 'parsnip') + 5);
+    expect(count(next, 'wood')).toBe(count(state, 'wood') + 3);
+    expect(next.inventory.slots.some((s) => s !== null && s.itemId === 'parsnip' && s.quality === 1 && s.quantity === 5)).toBe(true);
+    expect(lastMessage(next)).toMatchObject({ text: 'Scrapped Sprocket for 1000g.', tone: 'success' });
+  });
+
+  it("refuses when the backpack can't take the whole bag, and changes nothing", () => {
+    const full = Array.from({ length: BASE.inventory.unlockedSlots }, () => stack('stone', 999));
+    const state = withSlots(atBench([benchedRobotOf({ bag: [stack('wood', 3)] })]), full);
+    const next = gameReducer(state, actions.scrapRobot(1));
+    expect(next.robots).toBe(state.robots);
+    expect(next.inventory).toBe(state.inventory);
+    expect(next.player.gold).toBe(state.player.gold);
+    expect(lastMessage(next)).toMatchObject({ text: "Make room in your backpack for Sprocket's bag first.", tone: 'warn' });
   });
 
   it('scraps only a robot on the bench', () => {

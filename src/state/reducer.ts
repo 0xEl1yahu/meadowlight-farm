@@ -23,6 +23,7 @@ import {
   type GameState,
   type CraftingRecipeId,
   type CropId,
+  type InventoryState,
   type ItemStack,
   type PlaceableItemId,
   type PlacedObject,
@@ -795,19 +796,34 @@ function switchRobot(state: GameState, robotId: number, on: boolean): GameState 
 // The workbench's other jobs (farmclaws part 3 spec §3.3–3.4)
 // ---------------------------------------------------------------------------
 
+/** `inventory` with every stack of `bag` added, qualities kept; null when it can't all fit. */
+function withBagUnpacked(inventory: InventoryState, bag: readonly ItemStack[]): InventoryState | null {
+  let next = inventory;
+  for (const stack of bag) {
+    const result = addItem(next, stack.itemId, stack.quantity, stack.quality);
+    if (result.added < stack.quantity) return null;
+    next = result.inventory;
+  }
+  return next;
+}
+
 /**
- * `robot/scrap`: the robot on the bench leaves the farm with its own log entries, the player gets
- * scrapValue in gold, and the open panel closes. Ids (and log ids) are never reused.
+ * `robot/scrap`: the robot on the bench leaves the farm with its own log entries, its bag goes
+ * into the backpack (refused when it can't all fit), the player gets scrapValue in gold, and the
+ * open panel closes. Ids (and log ids) are never reused.
  */
 function scrapRobot(state: GameState, robotId: number): GameState {
   const robot = findRobot(state, robotId);
   if (robot === null) return state;
   const away = offBenchRefusal(robot);
   if (away !== null) return pushMessage(state, away, 'warn');
+  const inventory = withBagUnpacked(state.inventory, robot.bag);
+  if (inventory === null) return pushMessage(state, `Make room in your backpack for ${robot.name}'s bag first.`, 'warn');
   const gold = scrapValue(robot);
   const { log } = state.robots;
   const next: GameState = {
     ...state,
+    inventory,
     player: { ...state.player, gold: state.player.gold + gold },
     robots: {
       ...state.robots,
