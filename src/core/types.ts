@@ -476,7 +476,13 @@ export type UiPanel =
   | { readonly kind: 'inventory' }
   | { readonly kind: 'chest'; readonly mapId: MapId; readonly tx: number; readonly tz: number }
   /** The robot screen (farmclaws part 3 spec §4): editable at the workbench, read-only when peeking. */
-  | { readonly kind: 'robot'; readonly robotId: number; readonly mode: 'bench' | 'peek' };
+  | { readonly kind: 'robot'; readonly robotId: number; readonly mode: 'bench' | 'peek' }
+  /**
+   * A character's chat box (farmclaws part 4a spec §3.2). `line` is picked as the chat opens,
+   * before the chat is recorded, so the first chat shows the introduction and the line never
+   * changes while the box is open.
+   */
+  | { readonly kind: 'talk'; readonly npc: NpcId; readonly line: string };
 
 export interface UiState {
   readonly panel: UiPanel;

@@ -16,6 +16,7 @@ import {
   type FertilizerKind,
   type GameState,
   type MapId,
+  type NpcId,
   PLACEABLE_ITEM_IDS,
   type PlaceableItemId,
   type PlacedObject,
@@ -26,7 +27,7 @@ import {
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
-import { npcAt } from '../people/cast';
+import { CAST, npcAt } from '../people/cast';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
@@ -75,6 +76,8 @@ export type Intent =
   | { readonly kind: 'openBench'; readonly robotId: number; readonly name: string }
   /** Shift + E on a standing robot: its screen opens read-only, for free (part 3 spec §2.3). */
   | { readonly kind: 'peekRobot'; readonly robotId: number; readonly name: string }
+  /** Talk to the character ahead: their chat box opens with today's line, for free (part 4a spec §3.1). */
+  | { readonly kind: 'talkTo'; readonly npc: NpcId }
   /** The zone marker's first press: the draft's corner (part 3 spec §8). */
   | { readonly kind: 'zoneCorner'; readonly corner: TileCoord }
   /** The zone marker's second press: the rectangle from the draft's corner becomes the zone. */
@@ -409,8 +412,24 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
   return plan(target, { kind: 'scatter', cropId: item.cropId, tiles }, 'plant');
 }
 
-/** While carrying: the empty workbench takes the robot, the shipping bin sends a broken robot for repair, open ground puts it down. */
+/**
+ * The character standing on the target tile, talked to for free (part 4a spec §3.1), or null
+ * when no one stands there. Characters only stand off the farm, so no robot shares their tile.
+ */
+function planTalk(state: GameState): ActionPlan | null {
+  const target = selectTargetTile(state);
+  if (target === null) return null;
+  const npc = npcAt(state.player.mapId, target.tx, target.tz);
+  return npc === null ? null : plan(target, { kind: 'talkTo', npc }, 'none');
+}
+
+/**
+ * While carrying: a character ahead is talked to first (part 4a spec §3.1); otherwise the empty
+ * workbench takes the robot, the shipping bin sends a broken robot for repair, open ground puts it down.
+ */
 function planCarry(state: GameState, robotId: number): ActionPlan {
+  const talk = planTalk(state);
+  if (talk !== null) return talk;
   const robot = requireRobot(state, robotId);
   const target = selectTargetTile(state);
   const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
@@ -462,9 +481,12 @@ function planFuel(state: GameState, target: TileCoord, fuel: number): ActionPlan
   return plan(target, { kind: 'fuel', quantity }, 'place');
 }
 
-/** Plan for the context action (E): open a chest, harvest, clear, ship, sleep, refill. */
+/** Plan for the context action (E): talk, open a chest, harvest, clear, ship, sleep, refill. */
 export function planInteraction(state: GameState): ActionPlan {
   if (state.player.carrying !== null) return planCarry(state, state.player.carrying);
+  // A character comes before anything else on their tile (part 4a spec §3.1).
+  const talk = planTalk(state);
+  if (talk !== null) return talk;
   const target = selectTargetTile(state);
   if (target === null) return blocked(null, 'none');
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
@@ -539,13 +561,16 @@ export function planPrimaryAction(state: GameState): ActionPlan {
 
 /**
  * Plan for Shift + an interact key (part 3 spec §2.3), decided in this order:
- *   1. the workbench ahead: exactly what E does there;
- *   2. a standing robot ahead (on the farm, not carried, at repairs or on the bench): peek at
+ *   1. a character ahead: talk, as E does (part 4a spec §3.1);
+ *   2. the workbench ahead: exactly what E does there;
+ *   3. a standing robot ahead (on the farm, not carried, at repairs or on the bench): peek at
  *      it, which costs nothing and changes nothing but the open panel;
- *   3. the zone marker selected: clear the current letter's zone (spec §8);
- *   4. otherwise nothing, silently.
+ *   4. the zone marker selected: clear the current letter's zone (spec §8);
+ *   5. otherwise nothing, silently.
  */
 export function planShiftInteraction(state: GameState): ActionPlan {
+  const talk = planTalk(state);
+  if (talk !== null) return talk;
   const target = selectTargetTile(state);
   const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile?.object?.kind === 'workbench') return planInteraction(state);
@@ -606,6 +631,8 @@ export function describeIntent(intent: Intent): string | null {
       return `Work on ${intent.name}`;
     case 'peekRobot':
       return `Look at ${intent.name}`;
+    case 'talkTo':
+      return `Talk to ${CAST[intent.npc].name}`;
     case 'zoneCorner':
       return 'Mark corner';
     case 'markZone':

@@ -14,6 +14,7 @@ import {
   Blocker,
   DIRECTIONS,
   MAP_IDS,
+  NPC_IDS,
   SEASON_NAMES,
   TileState,
   Weather,
@@ -44,6 +45,7 @@ import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
 import { npcAt } from '../people/cast';
+import { lineFor } from '../people/lines';
 import { programmedRobot, withMd, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
@@ -201,11 +203,24 @@ function shippedStats(state: GameState, payout: number): GameState['stats'] {
 }
 
 /**
+ * Every character's `talkedToday` back to false for the new day (part 4a spec §3.4). An entry
+ * nobody talked to keeps its reference, and so does the section when no one was talked to.
+ */
+function morningNpcs(npcs: GameState['npcs']): GameState['npcs'] {
+  let next = npcs;
+  for (const id of NPC_IDS) {
+    const talk = npcs[id];
+    if (talk.talkedToday) next = { ...next, [id]: { ...talk, talkedToday: false } };
+  }
+  return next;
+}
+
+/**
  * Day transition: pay out the shipping bin (each stack at its quality's price, counted into the
  * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
- * pipeline on every map with that map's seed, restore energy and put the player back at the
- * house on the farm. Then the robots' night runs (farmclaws part 1 §5.7); its toasts follow the
- * morning's own messages.
+ * pipeline on every map with that map's seed, restore energy, clear yesterday's chats
+ * (`talkedToday`) and put the player back at the house on the farm. Then the robots' night runs
+ * (farmclaws part 1 §5.7); its toasts follow the morning's own messages.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -247,6 +262,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     },
     shipping: { pending: [], lastPayout: payout },
     stats: shippedStats(state, payout),
+    npcs: morningNpcs(state.npcs),
   };
   const night = runRobotsOvernight(next);
   next = night.state;
@@ -481,6 +497,17 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
 
     case 'peekRobot':
       return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'peek' } } };
+
+    case 'talkTo': {
+      // The line is picked before the chat is recorded, so the first chat shows the introduction (part 4a spec §3.4).
+      const line = lineFor(state, intent.npc);
+      const talk = state.npcs[intent.npc];
+      return {
+        ...state,
+        npcs: { ...state.npcs, [intent.npc]: { talks: talk.talks + 1, talkedToday: true } },
+        ui: { ...state.ui, panel: { kind: 'talk', npc: intent.npc, line } },
+      };
+    }
 
     case 'zoneCorner':
       return { ...state, ui: { ...state.ui, zoneDraft: { zone: state.ui.zoneLetter, corner: intent.corner } } };
