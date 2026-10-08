@@ -3,7 +3,10 @@
  * parts exchange, the well, the lamp posts and the trimmed hedges of the back band. Every builder
  * works in world space and pushes parts into a {@link PartSet}: painted opaque parts into `body`
  * (StructureRenderer merges them into the map's one painted mesh) and window and lamp glass into
- * `glass` (the shared glow-glass mesh). Nothing here touches the scene or game state.
+ * `glass` (the shared glow-glass mesh). Nothing here touches the scene or game state. The same
+ * dispatch builds the Neighbours map's back band: Cosmo's and Barnaby's houses (the farm's
+ * cottage under each farmer's roof colour) and Cosmo's chicken coop, which with the hedges fill
+ * that band (z 0–4), so they too can hide only more back band.
  *
  * Occlusion: the camera looks from +X/+Z, so a point at height h hides the ground h units further
  * along −X and −Z. Everything stays inside its structure rect: the shops, the parts exchange and
@@ -11,7 +14,9 @@
  * stand; the well stays ≤ 0.9 tall and the lamp posts ≤ 0.15 wide, as the town layout allows.
  */
 import * as THREE from 'three';
+import { NEIGHBOUR_ROOFS } from '../config';
 import { Salt, hashFloat } from '../core/hash';
+import { assertNever } from '../core/invariant';
 import type { GridSpec, StructureKind, TileCoord, TileRect } from '../core/types';
 import { tileCenterX, tileMinX, tileMinZ } from '../world/grid';
 import type { MapDefinition, StructurePlacement } from '../world/maps';
@@ -38,6 +43,7 @@ import {
   type WindowStyle,
 } from './geometryParts';
 import { PALETTE } from './palette';
+import { createFarmhouseGeometry, farmhousePlacement } from './structureGeometry';
 
 /** Integer offset added to cosmetic hash coordinates (a map's `cosmeticOffset`). */
 interface Offset {
@@ -736,6 +742,180 @@ function hedgeParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: 
 }
 
 // ---------------------------------------------------------------------------
+// The Neighbours: two farmhouses and a chicken coop
+// ---------------------------------------------------------------------------
+
+type NeighbourHouseKind = Extract<StructureKind, 'cosmoHouse' | 'barnabyHouse'>;
+
+/**
+ * A neighbour's farmhouse: the farm's cottage, placed in its rect exactly as the farmhouse is in
+ * the farm's (same insets, so the same scale), door on the door tile, under the farmer's roof
+ * colour. Its chimney stays smokeless; the smoke belongs to the farm's farmstead.
+ */
+function neighbourHouseParts(grid: GridSpec, kind: NeighbourHouseKind, s: StructurePlacement, out: PartSet): void {
+  const { spec, origin } = farmhousePlacement(grid, s.rect, s.door);
+  const house = createFarmhouseGeometry({ ...spec, roofColor: NEIGHBOUR_ROOFS[kind] });
+  out.body.push(house.body.translate(origin.x, origin.y, origin.z));
+  out.glass.push(house.glass.translate(origin.x, origin.y, origin.z));
+}
+
+/** Proportions of the chicken coop, a plank shed on legs (world units, radians). */
+export const COOP_SHAPE = {
+  legHeight: 0.34,
+  legWidth: 0.14,
+  floorThickness: 0.1,
+  wallHeight: 1.3,
+  pitch: 0.62,
+  roofThickness: 0.12,
+  /** Keep eaveOverhang ≤ COOP_INSET.back and gableOverhang + 0.06 ≤ COOP_INSET.side: the roof stays inside the rect. */
+  eaveOverhang: 0.26,
+  gableOverhang: 0.2,
+  cornerPost: 0.12,
+  /** Gap between the vertical boards on the walls the camera sees. */
+  boardSpacing: 0.3,
+  /** The hens' door: centre along X from the footprint centre, size, at floor level. */
+  henDoorX: 0.6,
+  henDoorWidth: 0.36,
+  henDoorHeight: 0.42,
+  /** How far the hens' ramp reaches in front of the wall; it stays inside COOP_INSET.front. */
+  rampRun: 0.6,
+  rampWidth: 0.32,
+  /** A small square window on the front, left of the hens' door; its centre is above the floor top. */
+  windowX: -0.6,
+  windowSize: 0.42,
+  windowCenterHeight: 0.85,
+  /** The nest box on the +X wall: length along Z, height, how far it stands out, centre above the floor top. */
+  nestLength: 1.1,
+  nestHeight: 0.5,
+  nestDepth: 0.26,
+  nestCenterHeight: 0.45,
+  /** Downward tilt of the nest box's lid (radians). */
+  nestLidTilt: 0.3,
+} as const;
+
+/** How far the coop's walls sit inside its rect. The front inset holds the ramp; the others the roof overhang and the nest box. */
+export const COOP_INSET = { side: 0.35, back: 0.35, front: 0.75 } as const;
+
+const COOP_COLORS = {
+  wall: 0xd8b07e,
+  boards: 0xc49a68,
+  trim: 0x8a5f3e,
+  legs: 0x7a5236,
+  floor: 0x9c6b45,
+  roof: { roof: 0x9b6a4e, shingle: 0x8a5c42, ridge: 0x7a5038, barge: 0x8a5f3e } satisfies RoofColors,
+  opening: 0x4a3426,
+  ramp: 0xb88a5a,
+} as const;
+
+const COOP_WINDOW: WindowStyle = {
+  ...WINDOW_FRAME,
+  trim: COOP_COLORS.trim,
+  shutter: COOP_COLORS.trim,
+  shutterDark: COOP_COLORS.trim,
+};
+
+/** The coop in its own space: origin on the ground at the centre of the wall footprint, front on +Z. */
+export interface CoopSpec {
+  readonly width: number;
+  readonly depth: number;
+}
+
+/**
+ * A plain wooden coop: a plank shed raised on four legs under a gabled roof, with vertical boards
+ * on the two walls the camera sees, a small window, the hens' door with a cleated ramp down to the
+ * ground, a nest box with a sloped lid on the +X wall and a vent in the +X gable.
+ */
+export function createCoopParts(spec: CoopSpec, out: PartSet): void {
+  const C = COOP_SHAPE;
+  const halfW = spec.width / 2;
+  const halfD = spec.depth / 2;
+  const floorTop = C.legHeight + C.floorThickness;
+  const wallTop = floorTop + C.wallHeight;
+  const wallMid = floorTop + C.wallHeight / 2;
+  const roof: GableRoofSpec = {
+    halfW,
+    halfD,
+    wallTop,
+    pitch: C.pitch,
+    thickness: C.roofThickness,
+    eaveOverhang: C.eaveOverhang,
+    gableOverhang: C.gableOverhang,
+  };
+
+  // Legs and the floor the shed stands on.
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const leg = { x: sx * (halfW - C.legWidth / 2), y: C.legHeight / 2, z: sz * (halfD - C.legWidth / 2) };
+      out.body.push(box(C.legWidth, C.legHeight, C.legWidth, leg, COOP_COLORS.legs));
+    }
+  }
+  const floor = { y: C.legHeight + C.floorThickness / 2 };
+  out.body.push(box(spec.width + 0.06, C.floorThickness, spec.depth + 0.06, floor, COOP_COLORS.floor));
+
+  // Walls, gables, boards, corner posts and the roof.
+  out.body.push(box(spec.width, C.wallHeight, spec.depth, { y: wallMid }, COOP_COLORS.wall));
+  out.body.push(gableWallPart(roof, COOP_COLORS.wall));
+  for (let x = -halfW + C.boardSpacing; x < halfW - C.boardSpacing / 2; x += C.boardSpacing) {
+    out.body.push(box(0.035, C.wallHeight - 0.1, 0.02, { x, y: wallMid, z: halfD + 0.01 }, COOP_COLORS.boards));
+  }
+  for (let z = -halfD + C.boardSpacing; z < halfD - C.boardSpacing / 2; z += C.boardSpacing) {
+    out.body.push(box(0.02, C.wallHeight - 0.1, 0.035, { x: halfW + 0.01, y: wallMid, z }, COOP_COLORS.boards));
+  }
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      out.body.push(box(C.cornerPost, C.wallHeight, C.cornerPost, { x: sx * halfW, y: wallMid, z: sz * halfD }, COOP_COLORS.trim));
+    }
+  }
+  gableRoofParts(roof, COOP_COLORS.roof, out);
+
+  // The hens' door: a dark opening in a plank frame at floor level.
+  const henY = floorTop + C.henDoorHeight / 2;
+  const henFrame = { x: C.henDoorX, y: henY + 0.03, z: halfD + 0.025 };
+  out.body.push(box(C.henDoorWidth + 0.12, C.henDoorHeight + 0.06, 0.05, henFrame, COOP_COLORS.trim));
+  out.body.push(box(C.henDoorWidth, C.henDoorHeight, 0.05, { x: C.henDoorX, y: henY, z: halfD + 0.035 }, COOP_COLORS.opening));
+
+  // The ramp runs from the door's sill down to the ground, with cleats for little feet.
+  const angle = Math.atan2(floorTop, C.rampRun);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const ramp = { x: C.henDoorX, y: floorTop / 2, z: halfD + C.rampRun / 2, rx: angle };
+  out.body.push(box(C.rampWidth, 0.04, Math.hypot(floorTop, C.rampRun), ramp, COOP_COLORS.ramp));
+  for (const t of [0.25, 0.5, 0.75]) {
+    const cleat = { x: C.henDoorX, y: floorTop * (1 - t) + 0.035 * cos, z: halfD + C.rampRun * t + 0.035 * sin, rx: angle };
+    out.body.push(box(C.rampWidth - 0.04, 0.03, 0.04, cleat, COOP_COLORS.trim));
+  }
+
+  const windowAt = new THREE.Matrix4().makeTranslation(C.windowX, floorTop + C.windowCenterHeight, halfD);
+  windowParts({ width: C.windowSize, height: C.windowSize, shutters: false, planter: false }, COOP_WINDOW, windowAt, out);
+
+  // Nest box on the +X wall under a lid that slopes away from the wall.
+  const nestX = halfW + C.nestDepth / 2;
+  const nestY = floorTop + C.nestCenterHeight;
+  out.body.push(box(C.nestDepth, C.nestHeight, C.nestLength, { x: nestX, y: nestY, z: 0 }, COOP_COLORS.wall));
+  out.body.push(box(C.nestDepth, 0.06, C.nestLength + 0.04, { x: nestX, y: nestY - C.nestHeight / 2 + 0.03, z: 0 }, COOP_COLORS.trim));
+  const lid = { x: nestX + 0.01, y: nestY + C.nestHeight / 2 + 0.04, z: 0, rz: -C.nestLidTilt };
+  out.body.push(box(C.nestDepth + 0.04, 0.05, C.nestLength + 0.08, lid, COOP_COLORS.roof.roof));
+
+  // A diamond vent high in the +X gable.
+  const vent = { x: halfW + 0.02, y: wallTop + gableRoofFrame(roof).rise * 0.4, rx: Math.PI / 4 };
+  out.body.push(box(0.04, 0.22, 0.22, vent, COOP_COLORS.opening));
+}
+
+/** The coop's wall footprint inside its rect; it has no door tile (the hens' door is part of the shed). */
+function coopParts(grid: GridSpec, s: StructurePlacement, out: PartSet): void {
+  const b = rectBounds(grid, s.rect);
+  const minX = b.minX + COOP_INSET.side;
+  const maxX = b.maxX - COOP_INSET.side;
+  const minZ = b.minZ + COOP_INSET.back;
+  const maxZ = b.maxZ - COOP_INSET.front;
+  const local = createPartSet();
+  createCoopParts({ width: maxX - minX, depth: maxZ - minZ }, local);
+  const move = new THREE.Matrix4().makeTranslation((minX + maxX) / 2, HEIGHTS.grassTop, (minZ + maxZ) / 2);
+  transformParts(local.body, move, out.body);
+  transformParts(local.glass, move, out.glass);
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
 
@@ -759,10 +939,19 @@ export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlace
     case 'hedge':
       hedgeParts(grid, offset, s, out);
       return;
+    case 'cosmoHouse':
+    case 'barnabyHouse':
+      neighbourHouseParts(grid, kind, s, out);
+      return;
+    case 'chickenCoop':
+      coopParts(grid, s, out);
+      return;
+    default:
+      assertNever(kind, 'structureParts');
   }
 }
 
-/** Every structure of a map (the town's shops, parts exchange, well, lamp posts and hedges), in world space. */
+/** Every structure of a map (the town's shops, parts exchange, well, lamp posts and hedges; the Neighbours' houses, coop and hedges), in world space. */
 export function mapStructureParts(def: MapDefinition, out: PartSet): void {
   for (const s of def.structures) structureParts(def.grid, def.cosmeticOffset, s, out);
 }

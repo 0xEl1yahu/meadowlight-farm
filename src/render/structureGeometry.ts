@@ -28,7 +28,9 @@
  */
 import * as THREE from 'three';
 import { Salt, hashFloat } from '../core/hash';
-import type { WorldRect } from '../world/grid';
+import type { GridSpec, TileCoord, TileRect } from '../core/types';
+import { tileCenterX, tileMinX, tileMinZ, type WorldRect } from '../world/grid';
+import { HEIGHTS } from './constants';
 import {
   STRUCTURE_COLORS,
   at,
@@ -122,6 +124,8 @@ export interface FarmhouseSpec {
   readonly doorOffsetX: number;
   /** Depth of the porch step in front of the +Z wall. */
   readonly stepDepth: number;
+  /** Roof colour (sRGB hex); the shingle rows and the ridge are shades of it. Absent: the farm's roof. */
+  readonly roofColor?: number;
 }
 
 export interface FarmhouseGeometry {
@@ -143,8 +147,8 @@ export const FARMHOUSE_SHAPE = {
   roofPitch: 0.65,
   roofThickness: 0.14,
   /**
-   * Roof overhangs. Keep eaveOverhang ≤ the back inset and gableOverhang + 0.06 (barge boards)
-   * ≤ the side inset the renderer uses, so the roof never reaches over neighbouring tiles.
+   * Roof overhangs. Keep eaveOverhang ≤ FARMHOUSE_INSET.back and gableOverhang + 0.06 (barge
+   * boards) ≤ FARMHOUSE_INSET.side, so the roof never reaches over neighbouring tiles.
    */
   eaveOverhang: 0.28,
   gableOverhang: 0.22,
@@ -198,6 +202,25 @@ const HOUSE_DOOR_COLORS: DoorColors = {
   doorDark: STRUCTURE_COLORS.doorDark,
   awning: PALETTE.houseRoof,
 };
+
+/** A recoloured roof's shingle rows and ridge cap, as fractions of its colour (linear RGB), close to the farm's own shades. */
+const ROOF_TONES = { shingle: 0.78, ridge: 0.6 } as const;
+
+/** The farm's roof colours, or the same roof in `spec.roofColor`. */
+function houseRoofColors(spec: FarmhouseSpec): RoofColors {
+  if (spec.roofColor === undefined) return HOUSE_ROOF_COLORS;
+  return {
+    roof: spec.roofColor,
+    shingle: new THREE.Color(spec.roofColor).multiplyScalar(ROOF_TONES.shingle),
+    ridge: new THREE.Color(spec.roofColor).multiplyScalar(ROOF_TONES.ridge),
+    barge: HOUSE_ROOF_COLORS.barge,
+  };
+}
+
+/** The farm's door colours, with the awning in `spec.roofColor` when there is one. */
+function houseDoorColors(spec: FarmhouseSpec): DoorColors {
+  return spec.roofColor === undefined ? HOUSE_DOOR_COLORS : { ...HOUSE_DOOR_COLORS, awning: spec.roofColor };
+}
 
 function houseFrame(spec: FarmhouseSpec): HouseFrame {
   const S = FARMHOUSE_SHAPE;
@@ -286,7 +309,8 @@ function chimneyParts(f: HouseFrame, out: PartSet): THREE.Vector3 {
  * Cosy gabled cottage in house-local space: origin on the ground at the centre of the wall
  * footprint, front door on the +Z face. The ridge runs along X, so the camera sees the front
  * slope and the +X gable (with an attic window). The porch step reaches `stepDepth` past the
- * front wall; everything else stays within the wall footprint plus the roof overhang.
+ * front wall; everything else stays within the wall footprint plus the roof overhang. With
+ * `spec.roofColor` the roof and the door's awning take that colour; nothing else changes.
  */
 export function createFarmhouseGeometry(spec: FarmhouseSpec): FarmhouseGeometry {
   const S = FARMHOUSE_SHAPE;
@@ -294,11 +318,11 @@ export function createFarmhouseGeometry(spec: FarmhouseSpec): FarmhouseGeometry 
   const parts = createPartSet();
 
   shellParts(f, parts);
-  gableRoofParts(f.roof, HOUSE_ROOF_COLORS, parts);
+  gableRoofParts(f.roof, houseRoofColors(spec), parts);
   const chimneyTop = chimneyParts(f, parts);
   doorParts(
     { x: f.doorX, front: f.halfD, base: f.foundationTop, width: S.doorWidth, height: S.doorHeight, stepDepth: f.stepDepth },
-    HOUSE_DOOR_COLORS,
+    houseDoorColors(spec),
     parts,
   );
 
@@ -335,6 +359,38 @@ export function createFarmhouseGeometry(spec: FarmhouseSpec): FarmhouseGeometry 
     glass: mergeParts(parts.glass, 'farmhouse glass'),
     chimneyTop,
     height: chimneyTop.y,
+  };
+}
+
+/** How far a farmhouse's walls sit inside its rect. The front inset holds the porch step and the awning. */
+export const FARMHOUSE_INSET = { side: 0.3, back: 0.3, front: 0.6 } as const;
+
+/** Porch step depth; it stays inside the house rect so it never overlaps walkable tiles. */
+export const FARMHOUSE_STEP_DEPTH = 0.52;
+
+/**
+ * Wall footprint inside a house rect, with the door centred on the door tile's column (on the
+ * footprint's centre without a door), and the world position of the model's origin. The farm's
+ * farmhouse and the neighbours' houses share it, so they are built at the same scale.
+ */
+export function farmhousePlacement(
+  grid: GridSpec,
+  rect: TileRect,
+  door: TileCoord | null,
+): { readonly spec: FarmhouseSpec; readonly origin: THREE.Vector3 } {
+  const minX = tileMinX(grid, rect.x0) + FARMHOUSE_INSET.side;
+  const maxX = tileMinX(grid, rect.x0 + rect.width) - FARMHOUSE_INSET.side;
+  const minZ = tileMinZ(grid, rect.z0) + FARMHOUSE_INSET.back;
+  const maxZ = tileMinZ(grid, rect.z0 + rect.depth) - FARMHOUSE_INSET.front;
+  const centerX = (minX + maxX) / 2;
+  return {
+    spec: {
+      width: maxX - minX,
+      depth: maxZ - minZ,
+      doorOffsetX: door === null ? 0 : tileCenterX(grid, door.tx) - centerX,
+      stepDepth: FARMHOUSE_STEP_DEPTH,
+    },
+    origin: new THREE.Vector3(centerX, HEIGHTS.grassTop, (minZ + maxZ) / 2),
   };
 }
 

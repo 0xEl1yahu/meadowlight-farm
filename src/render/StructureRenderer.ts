@@ -2,7 +2,8 @@
  * Structures & scenery renderer: everything built from a map's static definition — the meadow
  * ring around the grid, border woodland, bushes and flower clumps, the farm's fence, the town's
  * stone wall, trails leading off the grid at every warp, the farmstead (farmhouse and shipping
- * bin) and the town's structures (shops, the parts exchange, well, lamp posts and hedges).
+ * bin), the Neighbours map's two houses and coop, and the town's structures (shops, the parts
+ * exchange, well, lamp posts and hedges).
  *
  * Lifecycle
  * - One {@link StaticScenery} per map, built lazily on the first full rebuild (`sync(state, null)`)
@@ -26,9 +27,9 @@
  */
 import * as THREE from 'three';
 import { TIME, type FarmLayout } from '../config';
-import { Weather, type GameState, type GridSpec, type MapId, type TileCoord, type TileRect } from '../core/types';
+import { Weather, type GameState, type GridSpec, type MapId, type TileRect } from '../core/types';
 import { selectActiveMap } from '../state/selectors';
-import { tileCenterX, tileMinX, tileMinZ } from '../world/grid';
+import { tileMinX, tileMinZ } from '../world/grid';
 import type { MapDefinition } from '../world/maps';
 import { HEIGHTS } from './constants';
 import { STRUCTURE_COLORS, createPartSet, mergeParts, type PartSet } from './geometryParts';
@@ -58,12 +59,12 @@ import {
   createShippingBinGeometry,
   createSmokePuffGeometry,
   createTreeTrunkGeometry,
+  farmhousePlacement,
   layoutFence,
   placeBorderTrees,
   placeBushes,
   placeFlowers,
   smoothstep,
-  type FarmhouseSpec,
   type FenceLayout,
   type FlowerPlacement,
   type PropPlacement,
@@ -77,10 +78,6 @@ import type { FrameContext, RenderSystem } from './types';
 // Tuning
 // ---------------------------------------------------------------------------
 
-/** How far the farmhouse walls sit inside the house rect. The front inset holds the porch step. */
-const HOUSE_INSET = { side: 0.3, back: 0.3, front: 0.6 } as const;
-/** Porch step depth; it stays inside the house rect so it never overlaps walkable tiles. */
-const PORCH_STEP_DEPTH = 0.52;
 /** Crate inset inside the shipping-bin rect (the lid overhangs a little of it). */
 const BIN_INSET = { x: 0.15, z: 0.11 } as const;
 
@@ -307,24 +304,6 @@ interface StaticScenery {
   readonly farmstead: FarmsteadHandles | null;
 }
 
-/** Wall footprint inside the house rect, with the door centred on the door tile's column. */
-function housePlacement(grid: GridSpec, rect: TileRect, door: TileCoord): Placement<FarmhouseSpec> {
-  const minX = tileMinX(grid, rect.x0) + HOUSE_INSET.side;
-  const maxX = tileMinX(grid, rect.x0 + rect.width) - HOUSE_INSET.side;
-  const minZ = tileMinZ(grid, rect.z0) + HOUSE_INSET.back;
-  const maxZ = tileMinZ(grid, rect.z0 + rect.depth) - HOUSE_INSET.front;
-  const centerX = (minX + maxX) / 2;
-  return {
-    spec: {
-      width: maxX - minX,
-      depth: maxZ - minZ,
-      doorOffsetX: tileCenterX(grid, door.tx) - centerX,
-      stepDepth: PORCH_STEP_DEPTH,
-    },
-    origin: new THREE.Vector3(centerX, HEIGHTS.grassTop, (minZ + maxZ) / 2),
-  };
-}
-
 function binPlacement(grid: GridSpec, rect: TileRect): Placement<ShippingBinSpec> {
   const minX = tileMinX(grid, rect.x0);
   const maxX = tileMinX(grid, rect.x0 + rect.width);
@@ -349,7 +328,7 @@ function buildFarmstead(
   group: THREE.Group,
   parts: PartSet,
 ): FarmsteadHandles {
-  const house = housePlacement(grid, layout.house, layout.houseDoor);
+  const house = farmhousePlacement(grid, layout.house, layout.houseDoor);
   const houseGeometry = createFarmhouseGeometry(house.spec);
   houseGeometry.body.translate(house.origin.x, house.origin.y, house.origin.z);
   houseGeometry.glass.translate(house.origin.x, house.origin.y, house.origin.z);

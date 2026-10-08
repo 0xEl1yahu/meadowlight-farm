@@ -424,6 +424,15 @@ export const ROBOT_SCREEN = {
   cardDefaults: { returnMinute: 18 * 60, tokensBelow: 10 },
 } as const;
 
+/**
+ * Roof colours (sRGB hex) of the neighbours' farmhouses (farmclaws part 4a spec §5.2): the farm's
+ * cottage under each farmer's own roof. Cosmo's is sunflower yellow, Barnaby's a bright blue.
+ */
+export const NEIGHBOUR_ROOFS = {
+  cosmoHouse: 0xe9b949,
+  barnabyHouse: 0x5b84c4,
+} as const satisfies Readonly<Record<'cosmoHouse' | 'barnabyHouse', number>>;
+
 /** What the characters say (farmclaws part 4a spec §3.3, §3.5). */
 export const PEOPLE = {
   /** Barnaby's "4 or more robots" line holds from this many robots. */
