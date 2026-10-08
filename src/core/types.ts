@@ -228,7 +228,7 @@ export const STRUCTURE_KINDS = [
   'blacksmith',
   'carpenter',
   'ranch',
-  'noticeBoard',
+  'partsExchange',
   'well',
   'lampPost',
   'hedge',

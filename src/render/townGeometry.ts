@@ -1,14 +1,14 @@
 /**
- * Painted geometry for Brookhollow's structures (`MapDefinition.structures`): the four shops, the
- * notice board, the well, the lamp posts and the trimmed hedges of the back band. Every builder
+ * Painted geometry for Brookhollow's structures (`MapDefinition.structures`): the four shops, Sol's
+ * parts exchange, the well, the lamp posts and the trimmed hedges of the back band. Every builder
  * works in world space and pushes parts into a {@link PartSet}: painted opaque parts into `body`
  * (StructureRenderer merges them into the map's one painted mesh) and window and lamp glass into
  * `glass` (the shared glow-glass mesh). Nothing here touches the scene or game state.
  *
  * Occlusion: the camera looks from +X/+Z, so a point at height h hides the ground h units further
- * along −X and −Z. Everything stays inside its structure rect: the shops and hedges fill the back
- * band (z 0–6), so all they can hide is more back band; the notice board stands on the band's
- * front row; the well stays ≤ 0.9 tall and the lamp posts ≤ 0.15 wide, as the town layout allows.
+ * along −X and −Z. Everything stays inside its structure rect: the shops, the parts exchange and
+ * the hedges fill the back band (z 0–6), so all they can hide is more back band, however tall they
+ * stand; the well stays ≤ 0.9 tall and the lamp posts ≤ 0.15 wide, as the town layout allows.
  */
 import * as THREE from 'three';
 import { Salt, hashFloat } from '../core/hash';
@@ -46,7 +46,7 @@ interface Offset {
 }
 
 /** Per-feature salts, combined with Salt.Cosmetic (structureGeometry uses 11–61, sceneryGeometry 71–81). */
-const FEATURE = { hedge: 91, notice: 101 } as const;
+const FEATURE = { hedge: 91, crate: 101 } as const;
 
 function cosmetic(offset: Offset, feature: number, a: number, b: number, k: number): number {
   return hashFloat(Salt.Cosmetic, feature, a + offset.x, b + offset.z, k);
@@ -81,8 +81,8 @@ export function isShopKind(kind: StructureKind): kind is ShopKind {
   return (SHOP_KINDS as readonly StructureKind[]).includes(kind);
 }
 
-/** What a shop's sign shows. */
-export type ShopEmblem = 'sack' | 'anvil' | 'saw' | 'horseshoe';
+/** What a shop's sign shows (the parts exchange's sign shows the cog and claw). */
+export type ShopEmblem = 'sack' | 'anvil' | 'saw' | 'horseshoe' | 'cogClaw';
 
 /** One shop's palette and silhouette (sRGB hex, world units, radians). */
 export interface ShopStyle {
@@ -280,6 +280,25 @@ function shopChimneyParts(f: ShopFrame, out: PartSet): void {
   out.body.push(box(w + 0.12, 0.1, w + 0.12, { x: cx, y: top + 0.05, z: cz }, STRUCTURE_COLORS.brickDark));
 }
 
+/** The parts exchange's emblem: an eight-toothed cog beside a three-fingered claw (world units, radians). */
+const COG_CLAW_SHAPE = {
+  /** Centres of the cog and the claw along X, either side of the emblem's centre. */
+  cogX: -0.09,
+  clawX: 0.1,
+  thickness: 0.035,
+  cogRadius: 0.07,
+  cogTeeth: 8,
+  toothSize: 0.04,
+  hubRadius: 0.025,
+  hubSides: 6,
+  clawStemWidth: 0.035,
+  clawStemHeight: 0.12,
+  clawFingerWidth: 0.03,
+  clawFingerLength: 0.1,
+  /** How far the outer fingers lean from upright. */
+  clawSpread: 0.45,
+} as const;
+
 /** The emblem on a shop sign, centred at (x, y) on a face at z, facing +Z. */
 function emblemParts(emblem: ShopEmblem, x: number, y: number, z: number, color: number, accent: number, out: PartSet): void {
   switch (emblem) {
@@ -304,6 +323,34 @@ function emblemParts(emblem: ShopEmblem, x: number, y: number, z: number, color:
     case 'horseshoe':
       out.body.push(paint(pose(new THREE.TorusGeometry(0.1, 0.03, 4, 10, Math.PI * 1.5), { x, y, z, rz: -Math.PI / 4 }), color));
       return;
+    case 'cogClaw': {
+      const C = COG_CLAW_SHAPE;
+      const cogX = x + C.cogX;
+      const disc = new THREE.CylinderGeometry(C.cogRadius, C.cogRadius, C.thickness, C.cogTeeth * 2);
+      out.body.push(paint(pose(disc, { x: cogX, y, z, rx: Math.PI / 2 }), color));
+      for (let i = 0; i < C.cogTeeth; i++) {
+        const angle = (i / C.cogTeeth) * Math.PI * 2;
+        const tooth = { x: cogX + Math.cos(angle) * C.cogRadius, y: y + Math.sin(angle) * C.cogRadius, z, rz: angle };
+        out.body.push(box(C.toothSize, C.toothSize, C.thickness, tooth, color));
+      }
+      const hub = new THREE.CylinderGeometry(C.hubRadius, C.hubRadius, C.thickness, C.hubSides);
+      out.body.push(paint(pose(hub, { x: cogX, y, z: z + C.thickness / 2, rx: Math.PI / 2 }), accent));
+      const clawX = x + C.clawX;
+      const stemY = y - C.clawFingerLength / 2;
+      const knuckle = stemY + C.clawStemHeight / 2;
+      out.body.push(box(C.clawStemWidth, C.clawStemHeight, C.thickness, { x: clawX, y: stemY, z }, color));
+      for (const side of [-1, 0, 1]) {
+        const lean = side * C.clawSpread;
+        const finger = {
+          x: clawX + (Math.sin(lean) * C.clawFingerLength) / 2,
+          y: knuckle + (Math.cos(lean) * C.clawFingerLength) / 2,
+          z,
+          rz: -lean,
+        };
+        out.body.push(box(C.clawFingerWidth, C.clawFingerLength, C.thickness, finger, color));
+      }
+      return;
+    }
   }
 }
 
@@ -420,46 +467,185 @@ function shopParts(grid: GridSpec, kind: ShopKind, s: StructurePlacement, out: P
 }
 
 // ---------------------------------------------------------------------------
-// Notice board
+// Parts exchange
 // ---------------------------------------------------------------------------
 
-const NOTICE_COLORS = {
-  post: 0x8a6a4e,
-  board: 0xc99a68,
-  frame: 0x7a5a40,
-  roof: { roof: 0x8f6a4f, shingle: 0x7f5d44, ridge: 0x6f503a, barge: 0x7a5a40 } satisfies RoofColors,
-  papers: [0xfffbef, 0xfff1a8, 0xffd3de, 0xd4e8ff] as const,
-  pin: 0xe25a4f,
+/** Sol's parts exchange: steel-blue walls, slate trim and a mustard roof, distinct from the four shops. */
+export const PARTS_EXCHANGE_STYLE: ShopStyle = {
+  wall: 0xaebfcc,
+  foundation: 0xa9a29a,
+  trim: 0x46505e,
+  roof: { roof: 0xd6ad48, shingle: 0xc59c3c, ridge: 0xb08a32, barge: 0x46505e },
+  door: { trim: 0x46505e, door: 0x5f7f99, doorDark: 0x4a6680, awning: 0xd6ad48 },
+  window: { ...WINDOW_FRAME, trim: 0x46505e, shutter: 0xd6ad48, shutterDark: 0xc0983c },
+  sign: { board: 0xf2ead8, frame: 0x46505e, emblem: 0x6f7a86 },
+  emblem: 'cogClaw',
+  wallHeight: 4,
+  pitch: 0.44,
+  planters: false,
+  boards: null,
+  chimney: false,
+};
+
+/**
+ * The parts exchange's own proportions (world units), on top of SHOP_SHAPE. Its walls stand
+ * PARTS_EXCHANGE_STYLE.wallHeight tall: two storeys of `storeyHeight`, split by a trim band.
+ */
+export const PARTS_EXCHANGE_SHAPE = {
+  storeyHeight: 2,
+  floorBandHeight: 0.12,
+  floorBandDepth: 0.06,
+  /** The door frame's width either side of the door (doorParts). */
+  doorFrame: 0.1,
+  /** The big display window on the door's −X side: wider and taller than a shop window, no shutters. */
+  displayWidth: 1,
+  displayHeight: 0.96,
+  displayCenterHeight: 1,
+  lanternHeight: 1.36,
+  upperWindowWidth: 0.56,
+  upperWindowHeight: 0.62,
+  upperWindowCenterHeight: 2.95,
+  /** The two upper front windows sit this far either side of the footprint centre. */
+  upperWindowSpacing: 0.8,
+  /** The +X wall has a window on each storey this far either side of its middle. */
+  sideWindowSpacing: 1.4,
+  gableWindowWidth: 0.46,
+  gableWindowHeight: 0.42,
+  /** The gable window's centre above the wall tops, as a share of the gable's rise. */
+  gableWindowRise: 0.36,
+  /** Half the door step's width past the door: doorParts makes the step doorWidth + 0.52 wide. */
+  stepOverhang: 0.26,
+  /** The crate stands this far east of the door step and this far out from the wall. */
+  crateGap: 0.04,
+  crateWallGap: 0.12,
+  crateWidth: 0.36,
+  crateDepth: 0.34,
+  crateHeight: 0.28,
+  crateSlat: 0.035,
+  /** How far the slats stand proud of the planks; also the thickness of the dark inside. */
+  crateSlatProud: 0.008,
+  /** The plank rim round the crate's dark inside. */
+  crateRim: 0.03,
+  /** Spare parts in the crate, laid out two by two: cogs and bolts in turn. */
+  crateParts: 4,
+  partSize: 0.09,
+  partThickness: 0.025,
+  /** How far the parts rise above the crate's rim. */
+  partHeight: 0.06,
+  partJitter: 0.04,
+  partTilt: 0.5,
+  cogSides: 8,
 } as const;
 
-/** Two posts carrying a framed cork board under a little gabled cap, pinned with notes. Faces +Z. */
-function noticeBoardParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
-  const b = rectBounds(grid, s.rect);
-  const cx = (b.minX + b.maxX) / 2;
-  const z = b.minZ + 0.42;
-  const halfSpan = (b.maxX - b.minX) / 2 - 0.3;
-  const boardY = 1.06;
-  const boardW = halfSpan * 2 - 0.05;
-  const boardH = 0.92;
-  for (const sx of [-1, 1]) out.body.push(box(0.12, 1.72, 0.12, { x: cx + sx * halfSpan, y: 0.86, z }, NOTICE_COLORS.post));
-  out.body.push(box(boardW, boardH, 0.08, { x: cx, y: boardY, z: z + 0.08 }, NOTICE_COLORS.board));
-  for (const sy of [-1, 1]) out.body.push(box(boardW + 0.08, 0.06, 0.11, { x: cx, y: boardY + sy * (boardH / 2 + 0.03), z: z + 0.08 }, NOTICE_COLORS.frame));
+const PARTS_EXCHANGE_COLORS = {
+  crate: STRUCTURE_COLORS.binPlank,
+  crateSlat: PALETTE.binLid,
+  crateInside: 0x4a3a30,
+  metals: [0xa7b0ba, 0xc98b5a, 0x7d8794] as const,
+} as const;
 
-  const cap = createPartSet();
-  const roof: GableRoofSpec = { halfW: halfSpan + 0.06, halfD: 0.2, wallTop: 0, pitch: 0.5, thickness: 0.06, eaveOverhang: 0.1, gableOverhang: 0.08 };
-  gableRoofParts(roof, NOTICE_COLORS.roof, cap);
-  transformParts(cap.body, new THREE.Matrix4().makeTranslation(cx, boardY + boardH / 2 + 0.08, z + 0.04), out.body);
-
-  const papers = 5;
-  for (let i = 0; i < papers; i++) {
-    const u = cosmetic(offset, FEATURE.notice, s.rect.x0, i, 0);
-    const v = cosmetic(offset, FEATURE.notice, s.rect.x0, i, 1);
-    const x = cx - boardW / 2 + 0.22 + ((i + 0.5 * u) / papers) * (boardW - 0.4);
-    const y = boardY + (i % 2 === 0 ? 0.16 : -0.14) + (v - 0.5) * 0.12;
-    const tilt = (cosmetic(offset, FEATURE.notice, s.rect.x0, i, 2) - 0.5) * 0.3;
-    out.body.push(box(0.26, 0.32, 0.01, { x, y, z: z + 0.126, rz: tilt }, pick(NOTICE_COLORS.papers, cosmetic(offset, FEATURE.notice, s.rect.x0, i, 3))));
-    out.body.push(box(0.04, 0.04, 0.02, { x, y: y + 0.13, z: z + 0.135 }, NOTICE_COLORS.pin));
+/**
+ * A crate of spare parts centred on `x` in front of the wall face at `front`: planks with two
+ * slats, a dark inside and cogs and bolts poking out of it. `unit(i, k)` is a cosmetic [0, 1)
+ * value for part i.
+ */
+function partsCrateParts(x: number, front: number, unit: (i: number, k: number) => number, out: PartSet): void {
+  const P = PARTS_EXCHANGE_SHAPE;
+  const C = PARTS_EXCHANGE_COLORS;
+  const z = front + P.crateWallGap + P.crateDepth / 2;
+  out.body.push(box(P.crateWidth, P.crateHeight, P.crateDepth, { x, y: P.crateHeight / 2, z }, C.crate));
+  for (const third of [1, 2]) {
+    const slat = { x, y: (third * P.crateHeight) / 3, z };
+    out.body.push(box(P.crateWidth + 2 * P.crateSlatProud, P.crateSlat, P.crateDepth + 2 * P.crateSlatProud, slat, C.crateSlat));
   }
+  const insideW = P.crateWidth - 2 * P.crateRim;
+  const insideD = P.crateDepth - 2 * P.crateRim;
+  out.body.push(box(insideW, P.crateSlatProud, insideD, { x, y: P.crateHeight + P.crateSlatProud / 2, z }, C.crateInside));
+  for (let i = 0; i < P.crateParts; i++) {
+    const px = x + ((i % 2) - 0.5) * (insideW / 2) + (unit(i, 0) - 0.5) * P.partJitter;
+    const pz = z + (Math.floor(i / 2) - 0.5) * (insideD / 2) + (unit(i, 1) - 0.5) * P.partJitter;
+    const tilt = (unit(i, 2) - 0.5) * P.partTilt;
+    const color = pick(C.metals, unit(i, 3));
+    if (i % 2 === 0) {
+      // A cog standing on edge, half sunk in the pile.
+      const r = P.partSize / 2;
+      const cog = new THREE.CylinderGeometry(r, r, P.partThickness, P.cogSides);
+      out.body.push(paint(pose(cog, { x: px, y: P.crateHeight + P.partHeight - r, z: pz, rx: Math.PI / 2, ry: tilt }), color));
+    } else {
+      out.body.push(box(P.partThickness, 2 * P.partHeight, P.partThickness, { x: px, y: P.crateHeight, z: pz, rz: tilt }, color));
+    }
+  }
+}
+
+/**
+ * The parts exchange in its own space (see {@link ShopSpec}): a shop's shell and roof two storeys
+ * tall with a trim band between them, the door with its awning and step, the cog-and-claw sign
+ * above it, a big display window on the door's −X side, a wall lantern and a crate of parts on its
+ * +X side, two shuttered windows upstairs, a window on each storey of the +X wall either side of
+ * its middle, and one in the +X gable.
+ */
+function createPartsExchangeParts(spec: ShopSpec, unit: (i: number, k: number) => number, out: PartSet): void {
+  const S = SHOP_SHAPE;
+  const P = PARTS_EXCHANGE_SHAPE;
+  const style = PARTS_EXCHANGE_STYLE;
+  const f = shopFrame(spec, style);
+  shopShellParts(f, style, out);
+  gableRoofParts(f.roof, style.roof, out);
+  doorParts(
+    { x: f.doorX, front: f.halfD, base: f.base, width: S.doorWidth, height: S.doorHeight, stepDepth: S.stepDepth },
+    style.door,
+    out,
+  );
+  signParts(f, style, out);
+
+  // The trim band between the storeys, on the two walls the camera sees.
+  const bandY = f.base + P.storeyHeight;
+  const band = P.floorBandDepth;
+  out.body.push(box(f.halfW * 2 + 2 * band, P.floorBandHeight, band, { y: bandY, z: f.halfD + band / 2 }, style.trim));
+  out.body.push(box(band, P.floorBandHeight, f.halfD * 2 + 2 * band, { x: f.halfW + band / 2, y: bandY }, style.trim));
+
+  // Ground floor: the display window fills the wall between the −X corner post and the door;
+  // the lantern and the crate stand on the door's other side.
+  const frameHalf = S.doorWidth / 2 + P.doorFrame;
+  const postInner = f.halfW - S.cornerPost / 2;
+  const placement = new THREE.Matrix4();
+  const displayEnd = f.doorX - frameHalf - S.lanternGap;
+  const display = { width: P.displayWidth, height: P.displayHeight, shutters: false, planter: false };
+  windowParts(display, style.window, placement.makeTranslation((displayEnd - postInner) / 2, f.base + P.displayCenterHeight, f.halfD), out);
+  wallLanternParts(f.doorX + frameHalf + S.lanternGap / 2, f.base + P.lanternHeight, f.halfD, out);
+  const crateX = Math.min(f.doorX + S.doorWidth / 2 + P.stepOverhang + P.crateGap + P.crateWidth / 2, postInner - P.crateWidth / 2);
+  partsCrateParts(crateX, f.halfD, unit, out);
+
+  // Upstairs: two shuttered windows over the shopfront.
+  const upper = { width: P.upperWindowWidth, height: P.upperWindowHeight, shutters: true, planter: false };
+  for (const sx of [-1, 1]) {
+    windowParts(upper, style.window, placement.makeTranslation(sx * P.upperWindowSpacing, f.base + P.upperWindowCenterHeight, f.halfD), out);
+  }
+
+  // The +X wall: a window on each storey either side of its middle, and one in the gable.
+  const faceEast = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+  const ground = { width: S.windowWidth, height: S.windowHeight, shutters: true, planter: false };
+  for (const sz of [-1, 1]) {
+    placement.copy(faceEast).setPosition(f.halfW, f.base + S.windowCenterHeight, sz * P.sideWindowSpacing);
+    windowParts(ground, style.window, placement, out);
+    placement.copy(faceEast).setPosition(f.halfW, f.base + P.upperWindowCenterHeight, sz * P.sideWindowSpacing);
+    windowParts(upper, style.window, placement, out);
+  }
+  placement.copy(faceEast).setPosition(f.halfW, f.wallTop + gableRoofFrame(f.roof).rise * P.gableWindowRise, 0);
+  windowParts({ width: P.gableWindowWidth, height: P.gableWindowHeight, shutters: false, planter: false }, style.window, placement, out);
+}
+
+/**
+ * The parts exchange, placed in its rect exactly like a shop (the same insets, the door centred on
+ * the door tile's column), so it stays inside the rect as the shops do.
+ */
+function partsExchangeParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
+  const { spec, origin } = shopPlacement(grid, s.rect, s.door);
+  const local = createPartSet();
+  createPartsExchangeParts(spec, (i, k) => cosmetic(offset, FEATURE.crate, s.rect.x0, i, k), local);
+  const move = new THREE.Matrix4().makeTranslation(origin.x, origin.y, origin.z);
+  transformParts(local.body, move, out.body);
+  transformParts(local.glass, move, out.glass);
 }
 
 // ---------------------------------------------------------------------------
@@ -561,8 +747,8 @@ export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlace
     return;
   }
   switch (kind) {
-    case 'noticeBoard':
-      noticeBoardParts(grid, offset, s, out);
+    case 'partsExchange':
+      partsExchangeParts(grid, offset, s, out);
       return;
     case 'well':
       wellParts(grid, s, out);
@@ -576,7 +762,7 @@ export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlace
   }
 }
 
-/** Every structure of a map (the town's shops, board, well, lamp posts and hedges), in world space. */
+/** Every structure of a map (the town's shops, parts exchange, well, lamp posts and hedges), in world space. */
 export function mapStructureParts(def: MapDefinition, out: PartSet): void {
   for (const s of def.structures) structureParts(def.grid, def.cosmeticOffset, s, out);
 }

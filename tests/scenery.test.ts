@@ -4,7 +4,8 @@
  * - every warp opens a gap in the fence or wall, a clear corridor and a trail off the grid;
  * - forest and town planting profiles, the town's low stone wall with its west road gap;
  * - nothing outside a grid hides one of its tiles (the occlusion rule);
- * - the town's structures stay inside their rects (shops and hedges), low (well) or thin (lamps);
+ * - the town's structures stay inside their rects (shops, the parts exchange and hedges), low
+ *   (well) or thin (lamps), and the parts exchange is a two-storey workshop;
  * - StructureRenderer keeps one scenery per map, shows only the active one and shares one
  *   glow-glass material across every map.
  */
@@ -43,6 +44,8 @@ import {
 import { StructureRenderer } from '../src/render/StructureRenderer';
 import {
   LAMP_POST_SHAPE,
+  PARTS_EXCHANGE_SHAPE,
+  PARTS_EXCHANGE_STYLE,
   SHOP_INSET,
   SHOP_KINDS,
   SHOP_SHAPE,
@@ -52,7 +55,7 @@ import {
   structureParts,
 } from '../src/render/townGeometry';
 import type { FrameContext } from '../src/render/types';
-import { tileMinX, tileMinZ, worldRect } from '../src/world/grid';
+import { tileCenterX, tileMinX, tileMinZ, worldRect } from '../src/world/grid';
 import { MAPS, type StructurePlacement } from '../src/world/maps';
 import { BASE, withPlayer } from './testUtils';
 
@@ -311,8 +314,8 @@ describe('town structures', () => {
     const town = createPartSet();
     mapStructureParts(MAPS.town, town);
     expect(town.body.length).toBeGreaterThan(structures.length);
-    // Shop windows, door panes and wall lanterns, plus one lamp per post.
-    expect(town.glass.length).toBeGreaterThanOrEqual(4 * 3 + structures.filter((s) => s.kind === 'lampPost').length);
+    // Shop and parts exchange windows, door panes and wall lanterns, plus one lamp per post.
+    expect(town.glass.length).toBeGreaterThanOrEqual((SHOP_KINDS.length + 1) * 3 + structures.filter((s) => s.kind === 'lampPost').length);
     for (const id of ['farm', 'forest'] as const) {
       const parts = createPartSet();
       mapStructureParts(MAPS[id], parts);
@@ -321,7 +324,7 @@ describe('town structures', () => {
     }
   });
 
-  it('keeps every shop, hedge and the notice board inside its rect, so nothing reaches a walkable tile', () => {
+  it('keeps every shop, hedge and the parts exchange inside its rect, so nothing reaches a walkable tile', () => {
     for (const s of structures.filter((st) => st.kind !== 'well' && st.kind !== 'lampPost')) {
       const { body } = structureBox(s);
       expect(body.min.x).toBeGreaterThanOrEqual(tileMinX(grid, s.rect.x0) - EPS);
@@ -345,6 +348,50 @@ describe('town structures', () => {
       expect(body.max.z).toBeGreaterThan(tileMinZ(grid, s.rect.z0 + s.rect.depth) - SHOP_INSET.front + SHOP_SHAPE.eaveOverhang);
       expect(body.max.y).toBeGreaterThan(SHOP_STYLES[kind].wallHeight + SHOP_SHAPE.signHeight);
     }
+  });
+
+  it('builds the parts exchange as a two-storey workshop with a cog-and-claw sign, a big window and a crate by the door', () => {
+    const s = structures.find((st) => st.kind === 'partsExchange');
+    if (s === undefined || s.door === null) throw new Error('no parts exchange with a door');
+    const { body, parts } = structureBox(s);
+    const P = PARTS_EXCHANGE_SHAPE;
+    const style = PARTS_EXCHANGE_STYLE;
+    const boxOf = (part: THREE.BufferGeometry): THREE.Box3 =>
+      new THREE.Box3().setFromBufferAttribute(part.getAttribute('position') as THREE.BufferAttribute);
+    const base = SHOP_SHAPE.foundationHeight;
+
+    // Two storeys, taller than any shop.
+    expect(style.wallHeight).toBeGreaterThanOrEqual(2 * P.storeyHeight - EPS);
+    expect(style.wallHeight).toBeGreaterThan(Math.max(...SHOP_KINDS.map((kind) => SHOP_STYLES[kind].wallHeight)));
+
+    // Glow glass: the display window, two upper front windows, four +X windows, the gable window,
+    // the door pane and the lantern; five of them upstairs.
+    const glass = parts.glass.map(boxOf);
+    expect(glass).toHaveLength(10);
+    expect(glass.filter((g) => g.min.y > base + P.storeyHeight)).toHaveLength(5);
+
+    // The big front window: wider and taller than a shop window, on the ground floor.
+    expect(P.displayWidth).toBeGreaterThan(SHOP_SHAPE.windowWidth);
+    expect(P.displayHeight).toBeGreaterThan(SHOP_SHAPE.windowHeight);
+    const display = glass.filter((g) => g.max.x - g.min.x >= P.displayWidth - EPS && g.max.y - g.min.y >= P.displayHeight - EPS);
+    expect(display).toHaveLength(1);
+    expect(display[0]!.max.y).toBeLessThan(base + P.storeyHeight);
+
+    // The sign stands above the door at the eave edge, like the shops', and shows a cog and a claw.
+    const front = tileMinZ(grid, s.rect.z0 + s.rect.depth) - SHOP_INSET.front;
+    expect(body.max.z).toBeGreaterThan(front + SHOP_SHAPE.eaveOverhang);
+    expect(body.max.y).toBeGreaterThan(style.wallHeight + SHOP_SHAPE.signHeight);
+    expect(style.emblem).toBe('cogClaw');
+    for (const kind of SHOP_KINDS) {
+      expect(SHOP_STYLES[kind].wall).not.toBe(style.wall);
+      expect(SHOP_STYLES[kind].roof.roof).not.toBe(style.roof.roof);
+      expect(SHOP_STYLES[kind].emblem).not.toBe(style.emblem);
+    }
+
+    // A crate of parts in front of the wall, east of the door step, low on the ground.
+    const stepEast = tileCenterX(grid, s.door.tx) + SHOP_SHAPE.doorWidth / 2 + P.stepOverhang;
+    const crate = parts.body.map(boxOf).filter((b) => b.min.z > front && b.min.x > stepEast && b.max.y < 2 * P.crateHeight);
+    expect(crate.length).toBeGreaterThan(0);
   });
 
   it('keeps the well low and the lamp posts thin, with glowing lamps', () => {

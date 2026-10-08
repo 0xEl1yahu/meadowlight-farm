@@ -4,8 +4,8 @@
  * street from the west gate, and a river along the south with a promenade in front of it.
  *
  * Occlusion rule: the camera looks from +X/+Z, so anything tall hides the tiles on its −X/−Z
- * side. The shops therefore stand against the back edge, and every other back-band tile
- * (z 0–6) is hedge or the notice board, so nothing walkable is ever hidden behind a building.
+ * side. The shops and the parts exchange therefore stand against the back edge, and every other
+ * back-band tile (z 0–6) is hedge, so nothing walkable is ever hidden behind a building.
  * Only thin lamp posts and the low well stand in the open.
  */
 import { WORLD } from '../../config';
@@ -17,7 +17,7 @@ import type { MapDefinition, NpcPlacement, StructurePlacement, Surface } from '.
 
 const grid = createGridSpec(40, 32, WORLD.chunkSize, WORLD.tileSize);
 
-/** Rows z 0 … TOWN_BACK_BAND_DEPTH − 1 are shops, hedges and the notice board, wall to wall. */
+/** Rows z 0 … TOWN_BACK_BAND_DEPTH − 1 are shops, the parts exchange and hedges, wall to wall. */
 export const TOWN_BACK_BAND_DEPTH = 7;
 
 const rect = (x0: number, z0: number, width: number, depth: number): TileRect => ({ x0, z0, width, depth });
@@ -33,12 +33,11 @@ const structures: readonly StructurePlacement[] = [
   { kind: 'blacksmith', rect: rect(12, 0, 6, 7), door: { tx: 15, tz: 6 } },
   { kind: 'carpenter', rect: rect(22, 0, 6, 7), door: { tx: 25, tz: 6 } },
   { kind: 'ranch', rect: rect(31, 0, 7, 7), door: { tx: 34, tz: 6 } },
-  { kind: 'noticeBoard', rect: rect(19, 6, 2, 1), door: null },
+  // Sol's parts exchange stands on exactly the tiles of the old notice board and its three
+  // hedges, so the town's blocked tiles, and every saved town, stay the same.
+  { kind: 'partsExchange', rect: rect(18, 0, 4, 7), door: { tx: 20, tz: 6 } },
   hedge(0, 0, 3, 7),
   hedge(10, 0, 2, 7),
-  hedge(18, 0, 4, 6),
-  hedge(18, 6, 1, 1),
-  hedge(21, 6, 1, 1),
   hedge(28, 0, 3, 7),
   hedge(38, 0, 2, 7),
   { kind: 'well', rect: rect(19, 13, 2, 2), door: null },
@@ -65,7 +64,7 @@ const npcs: readonly NpcPlacement[] = [
 
 /** Cobbled main street, z 15–17 across the whole width. */
 export const TOWN_MAIN_STREET = rect(0, 15, 40, 3);
-/** Cobbled square, x 14–25, z 7–19: meets the blacksmith and carpenter doors and the notice board. */
+/** Cobbled square, x 14–25, z 7–19: meets the blacksmith, parts exchange and carpenter doors. */
 export const TOWN_SQUARE = rect(14, 7, 12, 13);
 /** Dirt: the door paths to the general store and the ranch, the promenade and its connector. */
 export const TOWN_DIRT_PATHS: readonly TileRect[] = [rect(6, 7, 1, 8), rect(34, 7, 1, 8), rect(3, 22, 34, 1), rect(19, 20, 2, 2)];
@@ -83,8 +82,8 @@ export function isTownRiver(tx: number, tz: number): boolean {
 }
 
 /**
- * Town-only layout rules, checked by `assertMapDefinitions`: the shops, hedges and notice board
- * cover the back band exactly once; no structure touches the river or a path, except the low
+ * Town-only layout rules, checked by `assertMapDefinitions`: the shops, the parts exchange and
+ * hedges cover the back band exactly once; no structure touches the river or a path, except the low
  * well standing in the cobbled square; every door is on its rect's front row with a walkable,
  * unbuilt tile in front of it.
  */
@@ -95,7 +94,7 @@ export function assertTownLayout(def: MapDefinition): void {
       const covering = def.structures.filter((s) => rectContains(s.rect, tx, tz));
       const kinds = covering.map((s) => s.kind).join(', ');
       if (covering.length !== 1 || covering[0]?.kind === 'well' || covering[0]?.kind === 'lampPost') {
-        throw new RangeError(`Town: back-band tile (${tx}, ${tz}) is covered by [${kinds}], not by exactly one shop, hedge or notice board`);
+        throw new RangeError(`Town: back-band tile (${tx}, ${tz}) is covered by [${kinds}], not by exactly one shop, parts exchange or hedge`);
       }
     }
   }

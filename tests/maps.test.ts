@@ -280,7 +280,8 @@ describe('warps and reserved tiles', () => {
     expect(isReservedTile(MAPS.town, 1, 16)).toBe(true);
     expect(isReservedTile(MAPS.town, 0, 13)).toBe(false);
     expect(structureAt(MAPS.town, 6, 6)?.kind).toBe('generalStore');
-    expect(structureAt(MAPS.town, 20, 6)?.kind).toBe('noticeBoard');
+    expect(structureAt(MAPS.town, 20, 6)?.kind).toBe('partsExchange');
+    expect(structureAt(MAPS.town, 18, 0)?.kind).toBe('partsExchange');
     expect(structureAt(MAPS.town, 20, 14)?.kind).toBe('well');
     expect(structureAt(MAPS.town, 36, 14)?.kind).toBe('lampPost');
     expect(structureAt(MAPS.town, 20, 16)).toBeNull();
@@ -341,6 +342,16 @@ describe('assertMapDefinitions', () => {
     [
       'a town back band with a gap',
       withDef('town', { structures: MAPS.town.structures.filter((s) => !(s.kind === 'hedge' && s.rect.x0 === 38)) }),
+    ],
+    [
+      'a town back band with a gap where the parts exchange stands',
+      withDef('town', { structures: MAPS.town.structures.filter((s) => s.kind !== 'partsExchange') }),
+    ],
+    [
+      'a parts exchange door off its front row',
+      withDef('town', {
+        structures: MAPS.town.structures.map((s) => (s.kind === 'partsExchange' ? { ...s, door: { tx: 20, tz: 5 } } : s)),
+      }),
     ],
     [
       'a farm spawn that is not clear',
@@ -504,12 +515,9 @@ describe('the town, Brookhollow', () => {
       { kind: 'blacksmith', rect: r(12, 0, 6, 7), door: { tx: 15, tz: 6 } },
       { kind: 'carpenter', rect: r(22, 0, 6, 7), door: { tx: 25, tz: 6 } },
       { kind: 'ranch', rect: r(31, 0, 7, 7), door: { tx: 34, tz: 6 } },
-      { kind: 'noticeBoard', rect: r(19, 6, 2, 1), door: null },
+      { kind: 'partsExchange', rect: r(18, 0, 4, 7), door: { tx: 20, tz: 6 } },
       hedge(0, 0, 3, 7),
       hedge(10, 0, 2, 7),
-      hedge(18, 0, 4, 6),
-      hedge(18, 6, 1, 1),
-      hedge(21, 6, 1, 1),
       hedge(28, 0, 3, 7),
       hedge(38, 0, 2, 7),
       { kind: 'well', rect: r(19, 13, 2, 2), door: null },
@@ -522,7 +530,36 @@ describe('the town, Brookhollow', () => {
     ]);
   });
 
-  it('covers the back band z 0–6 exactly once with shops, hedges and the notice board', () => {
+  it('stands the parts exchange on exactly the tiles of the old notice board and its three hedges', () => {
+    // Before part 4a: hedge(18, 0, 4, 6), hedge(18, 6, 1, 1), hedge(21, 6, 1, 1) and the notice board (19, 6, 2, 1).
+    const before = [r(18, 0, 4, 6), r(18, 6, 1, 1), r(21, 6, 1, 1), r(19, 6, 2, 1)];
+    const exchange = def.structures.find((s) => s.kind === 'partsExchange');
+    if (exchange === undefined) throw new Error('no parts exchange');
+    for (let tz = 0; tz < 32; tz++) {
+      for (let tx = 0; tx < 40; tx++) {
+        const old = before.filter((rect) => rectContains(rect, tx, tz)).length;
+        expect(old, key(tx, tz)).toBeLessThanOrEqual(1);
+        expect(rectContains(exchange.rect, tx, tz), key(tx, tz)).toBe(old === 1);
+      }
+    }
+  });
+
+  it('blocks exactly the tiles it blocked before the parts exchange, so saved towns need no migration', () => {
+    // Pinned without reading def.structures: the whole back band (z 0–6), the well and the six
+    // lamp posts are buildings, the river is water and everything else is open grass.
+    const lamps = [key(13, 8), key(26, 8), key(13, 20), key(26, 20), key(4, 14), key(36, 14)];
+    const isBuilding = (tx: number, tz: number): boolean =>
+      tz <= 6 || (tx >= 19 && tx <= 20 && tz >= 13 && tz <= 14) || lamps.includes(key(tx, tz));
+    let buildings = 0;
+    forEachTile(town, (tile, tx, tz) => {
+      const expected = isBuilding(tx, tz) ? blockedTile(Blocker.Building) : isTownRiver(tx, tz) ? blockedTile(Blocker.Water) : EMPTY_TILE;
+      expect(tile, key(tx, tz)).toEqual(expected);
+      if (tile.blocker === Blocker.Building) buildings++;
+    });
+    expect(buildings).toBe(40 * 7 + 4 + 6);
+  });
+
+  it('covers the back band z 0–6 exactly once with shops, hedges and the parts exchange', () => {
     for (let tz = 0; tz <= 6; tz++) {
       for (let tx = 0; tx < 40; tx++) {
         const covering = def.structures.filter((s) => rectContains(s.rect, tx, tz));
@@ -573,7 +610,14 @@ describe('the town, Brookhollow', () => {
     });
   });
 
-  it('opens every shop door onto a walkable path tile at z = 7, and the notice board is read from there', () => {
+  it('opens every shop door and the parts exchange door onto a walkable path tile at z = 7', () => {
+    expect(def.structures.filter((s) => s.door !== null).map((s) => s.kind)).toEqual([
+      'generalStore',
+      'blacksmith',
+      'carpenter',
+      'ranch',
+      'partsExchange',
+    ]);
     for (const s of def.structures) {
       if (s.door === null) continue;
       expect(s.door.tz).toBe(6);
@@ -581,10 +625,6 @@ describe('the town, Brookhollow', () => {
       const front = requireTile(town, s.door.tx, 7);
       expect(isWalkable(front), s.kind).toBe(true);
       expect(def.surfaceAt(s.door.tx, 7), s.kind).not.toBe('grass');
-    }
-    for (const tx of [19, 20]) {
-      expect(isWalkable(requireTile(town, tx, 7))).toBe(true);
-      expect(def.surfaceAt(tx, 7)).toBe('cobble');
     }
   });
 });

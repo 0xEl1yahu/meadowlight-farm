@@ -2,7 +2,7 @@
  * Structures & scenery renderer: everything built from a map's static definition — the meadow
  * ring around the grid, border woodland, bushes and flower clumps, the farm's fence, the town's
  * stone wall, trails leading off the grid at every warp, the farmstead (farmhouse and shipping
- * bin) and the town's structures (shops, notice board, well, lamp posts and hedges).
+ * bin) and the town's structures (shops, the parts exchange, well, lamp posts and hedges).
  *
  * Lifecycle
  * - One {@link StaticScenery} per map, built lazily on the first full rebuild (`sync(state, null)`)

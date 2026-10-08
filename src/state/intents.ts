@@ -498,7 +498,7 @@ export function planInteraction(state: GameState): ActionPlan {
         return plan(target, { kind: 'refill' }, 'refill');
       }
       return blocked(target, 'none');
-    // Debris waits for the right tool, and town buildings, the notice board, hedges and props
+    // Debris waits for the right tool, and town buildings, the parts exchange, hedges and props
     // have nothing to interact with yet: silent, so no toast.
     case Blocker.None:
     case Blocker.Rock:
