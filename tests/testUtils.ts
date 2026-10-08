@@ -26,6 +26,7 @@ import {
   type ItemId,
   type ItemStack,
   type MapId,
+  type NpcTalk,
   type RobotStats,
   type Quality,
   type Tile,
@@ -306,13 +307,40 @@ export function legacySave(state: GameState, version: 1 | 2): SaveJson {
 }
 
 /**
- * Hand-transforms a current (version 6) state back into the JSON of a version-5 save (farmclaws
- * part 3 spec §9.1): every field version 6 added is taken out again. The state must not hold
+ * Hand-transforms a current (version 7) state back into the JSON of a version-6 save (farmclaws
+ * part 4a spec §6): every field version 7 added is taken out again or turned back. The state must
+ * not hold anything a version-6 save cannot express. v5Save starts from this, so every older-save
+ * builder inherits it.
+ */
+export function v6Save(state: GameState): SaveJson {
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 6;
+  // The cast: version 6 has no Sol, Cosmo or Barnaby, and still has Fennick, Pip and friendship.
+  const npcs = state.npcs;
+  for (const id of ['sol', 'cosmo', 'barnaby'] as const) {
+    if (npcs[id].talks !== 0 || npcs[id].talkedToday) throw new Error(`v6Save: a version-6 save has no ${id} to have talked to`);
+  }
+  const relation = ({ talks, talkedToday }: NpcTalk): SaveJson => ({ points: 0, talkedToday, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks });
+  const idle: NpcTalk = { talks: 0, talkedToday: false };
+  save.npcs = {
+    marigold: relation(npcs.marigold),
+    bram: relation(npcs.bram),
+    juniper: relation(npcs.juniper),
+    tess: relation(npcs.tess),
+    fennick: relation(idle),
+    pip: relation(idle),
+  };
+  return save;
+}
+
+/**
+ * Hand-transforms a state back into the JSON of a version-5 save (farmclaws part 3 spec §9.1): it
+ * starts from v6Save, and every field version 6 added is taken out again. The state must not hold
  * anything a version-5 save cannot express. legacySave starts from this, so older saves never
- * carry part 3 fields either.
+ * carry part 3 or part 4a fields either.
  */
 export function v5Save(state: GameState): SaveJson {
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const save = v6Save(state);
   save.version = 5;
   // Stats: a v5 robot counts only today's tokens, as tokensToday.
   for (const robot of (save.robots as { list: SaveJson[] }).list) {
@@ -383,11 +411,10 @@ export const animal = (id: number, kind: AnimalKind, name: string): Animal => ({
 
 /**
  * Every later-workstream section filled in far from its defaults, still valid: a steel hoe with
- * an upgrade under way, every recipe, a full coop and a barn, friendships, a board request,
- * lifetime stats and a festival in progress with a full display.
+ * an upgrade under way, every recipe, a full coop and a barn, chats with Bram and Tess, a board
+ * request, lifetime stats and a festival in progress with a full display.
  */
 export function livelySections(): GameSections {
-  const idle = BASE.npcs.bram;
   return {
     profile: {
       playerName: 'Eli',
@@ -411,8 +438,8 @@ export function livelySections(): GameSections {
     nextEntityId: 8,
     npcs: {
       ...BASE.npcs,
-      bram: { points: 2500, talkedToday: true, giftsToday: 1, giftsThisWeek: 2, heartEventsSeen: [2, 4, 6], talks: 40 },
-      tess: { ...idle, points: 1000, heartEventsSeen: [4] },
+      bram: { talks: 40, talkedToday: true },
+      tess: { talks: 3, talkedToday: false },
     },
     quests: {
       completed: ['shipParsnips', 'visitTown', 'earnGold'],
@@ -437,7 +464,7 @@ export function livelySections(): GameSections {
           ? { itemId: 'pumpkin' as const, quantity: i + 1, quality: ((i / 2) % 3) as 0 | 1 | 2 }
           : { itemId: 'wood' as const, quantity: i + 1, quality: 0 as const },
       ),
-      giftTarget: 'pip',
+      giftTarget: 'tess',
       giftGiven: true,
     },
     robots: createDefaultSections().robots,

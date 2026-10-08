@@ -156,7 +156,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('validates real states', () => {
     expect(isValidGameState(BASE)).toBe(true);
     expect(isValidGameState(richState())).toBe(true);
-    expect(SAVE_VERSION).toBe(6);
+    expect(SAVE_VERSION).toBe(7);
   });
 });
 
@@ -1079,11 +1079,7 @@ const NEW_FIELDS: readonly string[] = [
   'happiness',
   'hasProduct',
   ...NPC_IDS,
-  'points',
   'talkedToday',
-  'giftsToday',
-  'giftsThisWeek',
-  'heartEventsSeen',
   'talks',
   'completed',
   'board',

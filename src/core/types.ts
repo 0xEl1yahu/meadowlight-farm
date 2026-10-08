@@ -12,7 +12,7 @@
 
 import type { BlockKind } from '../robots/blockKinds';
 
-export const SAVE_VERSION = 6 as const;
+export const SAVE_VERSION = 7 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -149,7 +149,8 @@ export type UpgradableTool = (typeof UPGRADABLE_TOOLS)[number];
 /** 0 basic, 1 copper, 2 steel. */
 export type ToolLevel = 0 | 1 | 2;
 
-export const NPC_IDS = ['marigold', 'bram', 'juniper', 'tess', 'fennick', 'pip'] as const;
+/** The farmclaws cast (part 4a spec §2.1). A character's index here is its `npcIndex` in line picks. */
+export const NPC_IDS = ['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess'] as const;
 export type NpcId = (typeof NPC_IDS)[number];
 
 export const ANIMAL_KINDS = ['chicken', 'cow'] as const;
@@ -1015,20 +1016,12 @@ export interface FarmBuilding {
   readonly animals: readonly Animal[];
 }
 
-export type HeartEventLevel = 2 | 4 | 6;
-
-export interface NpcRelation {
-  /** 0 … 2500 (250 per heart) */
-  readonly points: number;
-  readonly talkedToday: boolean;
-  /** 0 … 1 */
-  readonly giftsToday: number;
-  /** 0 … 2 */
-  readonly giftsThisWeek: number;
-  /** Ascending, unique. */
-  readonly heartEventsSeen: readonly HeartEventLevel[];
-  /** Lifetime conversations; rotates dialogue lines. */
+/** The player's chats with one character (farmclaws part 4a spec §3.4). */
+export interface NpcTalk {
+  /** Lifetime chats. Rotates nothing in 4a, but 0 picks the introduction. */
   readonly talks: number;
+  /** Whether the player talked to them today; reset each morning. */
+  readonly talkedToday: boolean;
 }
 
 export interface BoardRequest {
@@ -1078,7 +1071,7 @@ export interface GameSections {
   readonly buildings: readonly FarmBuilding[];
   /** Next id for buildings and animals (shared counter, starts at 1). */
   readonly nextEntityId: number;
-  readonly npcs: Readonly<Record<NpcId, NpcRelation>>;
+  readonly npcs: Readonly<Record<NpcId, NpcTalk>>;
   readonly quests: QuestState;
   readonly stats: LifetimeStats;
   readonly festival: FestivalState;

@@ -1,6 +1,6 @@
 import { INVENTORY, PLAYER, TOOLS, UNLOCKS, WORKBENCH, WORLD } from '../config';
 import { invariant } from '../core/invariant';
-import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type InventoryState, type NpcId, type NpcRelation } from '../core/types';
+import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type InventoryState, type NpcId, type NpcTalk } from '../core/types';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { withWorkbenchAt } from '../robots/workbench';
@@ -13,9 +13,9 @@ import { withZoneMarker } from './zoneMarker';
  * start from these, so an old save gains exactly the state a fresh game would have.
  */
 export function createDefaultSections(): GameSections {
-  const npcs = {} as Record<NpcId, NpcRelation>;
+  const npcs = {} as Record<NpcId, NpcTalk>;
   for (const id of NPC_IDS) {
-    npcs[id] = { points: 0, talkedToday: false, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks: 0 };
+    npcs[id] = { talks: 0, talkedToday: false };
   }
   return {
     profile: {

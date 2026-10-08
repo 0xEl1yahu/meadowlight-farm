@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, PLAYER, UNLOCKS, WORKBENCH } from '../src/config';
-import { Blocker, Direction, SAVE_VERSION, type GameState, type RobotStats } from '../src/core/types';
+import { Blocker, Direction, type GameState, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
 import { freeSpotNear } from '../src/robots/workbench';
@@ -46,11 +46,6 @@ const robotsOf = (save: SaveJson) => save.robots as SaveJson & { list: SaveJson[
 const firstRobot = (save: SaveJson): SaveJson => must(robotsOf(save).list[0]);
 
 describe('save version 6', () => {
-  it('is the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(6);
-    expect(BASE.version).toBe(6);
-  });
-
   it('round-trips a farm with robots and zones', () => {
     const state = v5Farm();
     expect(deserializeGame(serializeGame(state))).toEqual(loadedFrom(state));
@@ -58,8 +53,8 @@ describe('save version 6', () => {
 });
 
 describe('v5 → v6', () => {
-  it('writes version 6', () => {
-    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(6);
+  it('carries a v5 save on through version 6 to 7', () => {
+    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(7);
   });
 
   it('loads a v5 save as the state it was taken from', () => {
@@ -67,14 +62,14 @@ describe('v5 → v6', () => {
     expect(must(deserializeGame(JSON.stringify(v5Save(state))))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through every version to 6', () => {
+  it('migrates the version-2 fixture through every version to 7', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(6);
+    expect(loaded.version).toBe(7);
     expect(loaded.robots.list).toEqual([]);
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v5Save(BASE), version: 7 };
+    const save = { ...v5Save(BASE), version: 8 };
     expect(migrateSave(save)).toBe(save);
     expect(deserializeGame(JSON.stringify(save))).toBeNull();
   });

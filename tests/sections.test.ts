@@ -139,7 +139,7 @@ describe('hash salts', () => {
 });
 
 describe('createDefaultSections', () => {
-  const idle = { points: 0, talkedToday: false, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks: 0 };
+  const idle = { talks: 0, talkedToday: false };
   const expected: GameSections = {
     profile: {
       playerName: 'Farmer',
@@ -151,7 +151,7 @@ describe('createDefaultSections', () => {
     cooking: { known: ['friedMushrooms', 'veggieStew'], kitchenLevel: 0 },
     buildings: [],
     nextEntityId: 1,
-    npcs: { marigold: idle, bram: idle, juniper: idle, tess: idle, fennick: idle, pip: idle },
+    npcs: { sol: idle, cosmo: idle, barnaby: idle, marigold: idle, bram: idle, juniper: idle, tess: idle },
     quests: { completed: [], board: null },
     stats: {
       parsnipsShipped: 0,
@@ -334,18 +334,11 @@ describe('saved NPCs, quests, stats and festival reject', () => {
   const stacks = (count: number): ItemStack[] => Array.from({ length: count }, () => stack('wood', 1));
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     // NPCs
-    ['a missing NPC', ['npcs', 'pip'], undefined],
-    ['an unknown NPC', ['npcs', 'gus'], BASE.npcs.pip],
+    ['a missing NPC', ['npcs', 'sol'], undefined],
+    ['an unknown NPC', ['npcs', 'gus'], BASE.npcs.sol],
     ['npcs that are not an object', ['npcs'], []],
-    ['friendship above 10 hearts', ['npcs', 'bram', 'points'], 2501],
-    ['negative friendship', ['npcs', 'marigold', 'points'], -1],
-    ['two gifts in one day', ['npcs', 'bram', 'giftsToday'], 2],
-    ['three gifts in one week', ['npcs', 'bram', 'giftsThisWeek'], 3],
-    ['heart events out of order', ['npcs', 'bram', 'heartEventsSeen'], [4, 2]],
-    ['a repeated heart event', ['npcs', 'bram', 'heartEventsSeen'], [2, 2]],
-    ['an unknown heart event level', ['npcs', 'tess', 'heartEventsSeen'], [3]],
     ['negative talks', ['npcs', 'juniper', 'talks'], -1],
-    ['a non-boolean talkedToday', ['npcs', 'fennick', 'talkedToday'], 'yes'],
+    ['a non-boolean talkedToday', ['npcs', 'cosmo', 'talkedToday'], 'yes'],
     ['an NPC that is not an object', ['npcs', 'tess'], 1000],
     // Quests
     ['an unknown story quest', ['quests', 'completed'], ['shipParsnips', 'slayDragon']],

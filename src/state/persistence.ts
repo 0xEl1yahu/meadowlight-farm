@@ -6,6 +6,7 @@ import { INVENTORY, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
   MAP_IDS,
+  NPC_IDS,
   SAVE_VERSION,
   TileState,
   Weather,
@@ -15,6 +16,7 @@ import {
   type GameState,
   type GridSpec,
   type MapId,
+  type NpcId,
   type TileCoord,
   type WorldState,
 } from '../core/types';
@@ -475,6 +477,41 @@ function migrateZoneMarker(save: Obj): Obj {
   return { ...save, ui, inventory: { ...inventory, slots }, robots: { ...robots, pendingMarker: false } };
 }
 
+/** The characters version 7 keeps from version 6, with their chats (farmclaws part 4a spec §6.2). */
+const KEPT_NPCS: readonly NpcId[] = ['marigold', 'bram', 'juniper', 'tess'];
+/** The characters the farmclaws design cut; a version-6 save may still name them. */
+const REMOVED_NPCS: readonly string[] = ['fennick', 'pip'];
+
+/**
+ * A saved character as a v7 NpcTalk: only `talks` and `talkedToday`, copied as found, so a corrupt
+ * value still fails validation. A v6 relation and a v7 NpcTalk migrate alike; anything that isn't
+ * an object passes through for the validator to reject.
+ */
+function migrateNpcV6(saved: unknown): unknown {
+  return isObj(saved) ? { talks: saved.talks, talkedToday: saved.talkedToday } : saved;
+}
+
+/**
+ * Version 6 predates the farmclaws cast (part 4a spec §6.2): `npcs` becomes the seven new ids,
+ * where Marigold, Bram, Juniper and Tess keep their chats and Sol, Cosmo and Barnaby start at none.
+ * Fennick, Pip and every friendship field are dropped, and so is a board request or a festival gift
+ * target naming Fennick or Pip. `npcs` may already have the v7 shape, because migrateV2toV3 fills
+ * it from the current defaults.
+ */
+function migrateV6toV7(save: Obj): Obj {
+  const { npcs, quests, festival } = save;
+  if (!isObj(npcs)) return save;
+  const fresh = createDefaultSections().npcs;
+  let migrated: Obj = {
+    ...save,
+    version: 7,
+    npcs: Object.fromEntries(NPC_IDS.map((id) => [id, KEPT_NPCS.includes(id) ? migrateNpcV6(npcs[id]) : fresh[id]])),
+  };
+  if (isObj(quests) && isObj(quests.board) && isOneOf(quests.board.npc, REMOVED_NPCS)) migrated = { ...migrated, quests: { ...quests, board: null } };
+  if (isObj(festival) && isOneOf(festival.giftTarget, REMOVED_NPCS)) migrated = { ...migrated, festival: { ...festival, giftTarget: null } };
+  return migrated;
+}
+
 /**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
@@ -487,6 +524,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 3) v = migrateV3toV4(v);
   if (isObj(v) && v.version === 4) v = migrateV4toV5(v);
   if (isObj(v) && v.version === 5) v = migrateZoneMarker(migrateV5toV6(v));
+  if (isObj(v) && v.version === 6) v = migrateV6toV7(v);
   return v;
 }
 

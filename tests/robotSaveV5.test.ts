@@ -130,7 +130,7 @@ describe('save version 5', () => {
     delete (save.robots as SaveJson).zones;
     save.version = 4;
     const migrated = migrateSave(save) as SaveJson;
-    expect(migrated.version).toBe(6);
+    expect(migrated.version).toBe(7);
     expect(robotsOf(migrated).list.map((r) => [r.exec, r.md, r.off])).toEqual([
       [null, [], null],
       [null, [], null],
@@ -139,9 +139,9 @@ describe('save version 5', () => {
     expect(must(deserializeGame(JSON.stringify(save)))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through four steps to 6', () => {
+  it('migrates the version-2 fixture through five steps to 7', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(6);
+    expect(loaded.version).toBe(7);
     expect(loaded.robots.list).toEqual([]);
     expect(loaded.robots.zones).toEqual(BASE.robots.zones);
   });

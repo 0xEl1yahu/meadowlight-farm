@@ -15,7 +15,6 @@ import {
   type AnimalKind,
   type FarmBuildingKind,
   type GameSections,
-  type HeartEventLevel,
 } from '../core/types';
 import { isItemId } from '../items/items';
 import {
@@ -30,9 +29,8 @@ import {
   type Obj,
 } from './validation';
 
-/** Friendship points cap: 10 hearts of 250 points. */
-const MAX_NPC_POINTS = 2500;
-const HEART_EVENT_LEVELS: readonly HeartEventLevel[] = [2, 4, 6];
+/** The fields of an NpcTalk, exactly. */
+const NPC_TALK_KEYS = ['talks', 'talkedToday'] as const;
 /** Every coop and barn has room for this many animals. */
 const MAX_ANIMALS_PER_BUILDING = 4;
 /** Which building houses each animal kind. */
@@ -84,20 +82,13 @@ function isValidCooking(v: unknown): boolean {
   return isObj(v) && isCanonicalSubset(v.known, DISH_IDS) && isIntIn(v.kitchenLevel, 0, 1);
 }
 
-function isValidNpcRelation(v: unknown): boolean {
-  return (
-    isObj(v) &&
-    isIntIn(v.points, 0, MAX_NPC_POINTS) &&
-    isBool(v.talkedToday) &&
-    isIntIn(v.giftsToday, 0, 1) &&
-    isIntIn(v.giftsThisWeek, 0, 2) &&
-    isCanonicalSubset(v.heartEventsSeen, HEART_EVENT_LEVELS) &&
-    isCount(v.talks)
-  );
+function isValidNpcTalk(v: unknown): boolean {
+  return isObj(v) && hasExactKeys(v, NPC_TALK_KEYS) && isCount(v.talks) && isBool(v.talkedToday);
 }
 
+/** Exactly the seven characters (farmclaws part 4a spec §6.3), each with exactly an NpcTalk's fields. */
 function isValidNpcs(v: unknown): boolean {
-  return isObj(v) && hasExactKeys(v, NPC_IDS) && NPC_IDS.every((id) => isValidNpcRelation(v[id]));
+  return isObj(v) && hasExactKeys(v, NPC_IDS) && NPC_IDS.every((id) => isValidNpcTalk(v[id]));
 }
 
 function isValidAnimal(v: unknown, home: FarmBuildingKind): v is Obj {
