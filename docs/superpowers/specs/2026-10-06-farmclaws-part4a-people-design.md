@@ -79,8 +79,8 @@ Each shopkeeper stands beside the tile in front of their shop's door, so the doo
 - `assertMapDefinitions` (the startup check) also checks every placement:
   - the tile is on its map, walkable, and not reserved (gates and arrivals);
   - it is not a door tile or the tile in front of a door;
-  - it is reachable from the map's arrival tiles;
-  - no two characters share a tile, and each id appears on exactly one map.
+  - it is reachable: one of its orthogonal neighbours is walkable, isn't another character's spot, and can be reached from one of the map's arrival tiles over walkable tiles that aren't character spots (checked on the world generated with seed 0; a map with characters generates the same world for every seed);
+  - no two characters share a tile, and each id appears on exactly one map (until step 4 places Cosmo and Barnaby, at most one).
 - `npcAt(mapId, tx, tz): NpcId | null` (pure, in `src/people/cast.ts`) is the lookup.
 
 ### 2.3 Looks
@@ -109,14 +109,14 @@ Each shopkeeper stands beside the tile in front of their shop's door, so the doo
 - `planInteraction` checks for a character on the target tile **first**, before robots, objects and blockers: `{ kind: 'talkTo'; npc: NpcId }`, hint "Talk to {name}".
 - Talking costs no energy and no time, and works while carrying a robot, so `planCarry` checks for a character before its own rules.
 - Shift + E (`planShiftInteraction`) on a character acts like E.
-- The reducer opens `UiPanel { kind: 'talk'; npc: NpcId }`, which freezes the game like every panel, and records the chat (section 3.4).
+- The reducer opens `UiPanel { kind: 'talk'; npc: NpcId; line: string }`, which freezes the game like every panel, and records the chat (section 3.4). The panel carries the line, picked before the chat is recorded; the chat box only shows it.
 
 ### 3.2 The chat box (`src/ui/ChatBox.ts`, main chunk)
 
 - **Layout:** a panel along the bottom of the screen, above the hotbar. It shows the character's name, their role line under it in smaller text, today's line, and a row of action buttons. A **Close** button sits at the top right.
 - **Keys:** E, K, Enter and Escape close it. `panelKeyCommand` treats the talk panel like the inventory screen for the interact keys.
 - **Actions in 4a:**
-  - Marigold: **Shop**, which closes the chat and opens the seed shop.
+  - Marigold: **Shop**, which closes the chat and opens the seed shop, through one action, `talk/act`, that checks the talk panel is open on that character, the game isn't paused and the action is theirs.
   - Everyone else: none.
 
   The action list comes from a pure `npcActions(npc): readonly NpcAction[]` in `src/people/cast.ts`, which 4b and 4c extend.
@@ -242,7 +242,7 @@ The same character says the same line all day unless the farm changes a reactive
 
 ## 4. The parts exchange building
 
-- `STRUCTURE_KINDS` gains `'partsExchange'` and loses `'noticeBoard'`.
+- `STRUCTURE_KINDS` gains `'partsExchange'` and loses `'noticeBoard'`. (Section 5 adds the Neighbours map's kinds.)
 - In the town, the notice board and the hedges at x 18–21 (`hedge(18, 0, 4, 6)`, `hedge(18, 6, 1, 1)`, `hedge(21, 6, 1, 1)`, `noticeBoard (19, 6, 2, 1)`) are replaced by one structure: `{ kind: 'partsExchange', rect: (18, 0, 4, 7), door: (20, 6) }`.
 - The blocked tiles are exactly the same set as before, so saved town tiles don't change. A test pins this.
 - **Geometry** (`src/render/townGeometry.ts`): a narrow two-storey workshop in the shops' style, with a sign of a cog and a claw, a big front window, and a crate of parts by the door.
@@ -275,7 +275,10 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 - **Everything else** is grass, with low scenery only (flowers and small bushes, which don't block) outside the back band.
 - **The fences** are `woodFence` placed objects on the map's tiles.
 - **The fields are bare dirt** (the `'dirt'` surface on `Unplowed` tiles), not soil. The overnight step changes tilled soil on every map, and dirt stays put. Part 4c turns the insides into soil with crops.
-- **Houses** reuse the farmhouse's geometry builder (`FarmhouseSpec`) at the same scale, with each farmer's own roof colour (`NEIGHBOUR_ROOFS` in config). The coop is a small shed in the coop style of the farm buildings, or a plain wooden shed if no coop builder exists.
+- **Structure kinds:** the houses and the coop are `'cosmoHouse'`, `'barnabyHouse'` and `'chickenCoop'` in `STRUCTURE_KINDS`.
+- **Houses** reuse the farmhouse's geometry builder (`FarmhouseSpec`, which gains an optional roof colour) at the same scale, with each farmer's own roof colour (`NEIGHBOUR_ROOFS` in config). No coop builder exists, so the coop is a plain wooden shed.
+- **The neighbours' fences stay theirs:** on this map the pickaxe and the axe refuse an object on either field's fence ring with "That belongs to the neighbours."; anything the player puts down elsewhere comes back up as usual.
+- **Scenery:** the farm's style (a wooden fence round the grid, the farm's meadow tones) with its own cosmetic offset. The map's name is "The Neighbours".
 
 ### 5.3 Checks
 
@@ -294,7 +297,7 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 
 - **The `npcs` section:** `GameSections.npcs` becomes `Readonly<Record<NpcId, NpcTalk>>`, with `interface NpcTalk { readonly talks: number; readonly talkedToday: boolean }`.
 - `NpcRelation` and `HeartEventLevel` are removed, along with anything that only they used.
-- `UiPanel` gains `{ kind: 'talk'; npc: NpcId }`. The loader resets the panel, so this needs no migration.
+- `UiPanel` gains `{ kind: 'talk'; npc: NpcId; line: string }`. The loader resets the panel, so this needs no migration.
 
 ### 6.2 Migration (`migrateV6toV7`)
 
@@ -349,13 +352,14 @@ The chat box, the nameplates and the character models are checked in the browser
 
 1. Save version 7 scaffolding, the new `NPC_IDS` and the `npcs` reshape (migration, validation, the sections that named removed characters).
 2. The cast data, `npcAt`, `MapDefinition.npcs`, the startup checks, and blocking movement and placement.
-3. The parts exchange structure in the town and the east gate.
-4. The Neighbours map (layout, gates, migration of the map, checks).
+3. The parts exchange structure in the town, with its geometry.
+4. The Neighbours map (layout, both gates, migration of the map, checks).
 5. Line banks and `lineFor`.
 6. The talk intent, panel, chat recording, morning reset and panel keys.
 7. The chat box UI, with Marigold's Shop.
-8. Rendering: the characters, nameplates, the parts exchange, the houses, the coop and the fences.
-9. The playbook, the QA skill rows, and the spec sync.
+8. Rendering the characters and their nameplates.
+9. Rendering the Neighbours houses and the coop (the fences are placed objects, drawn already).
+10. The playbook, the QA skill rows, and the spec sync.
 
 ---
 
@@ -372,3 +376,30 @@ The chat box, the nameplates and the character models are checked in the browser
 - **§9.1:** the cast stands on fixed spots: shopkeepers by their shops, Sol by the parts exchange, and Cosmo and Barnaby by their fields on the Neighbours map.
 - **§9.2:** the parts exchange is a town building where the notice board stood.
 - **§11.2:** part 4 is built as 4a (people), 4b (shops and parts) and 4c (jobs). The neighbours' fields are on a new Neighbours map, east of the town.
+
+---
+
+## 11. Plan refinements
+
+Decided by the part 4a implementation plan and its execution. Each one keeps the intent of the rule it refines. Task N is implementation step N of section 8.
+
+- **R1.** The Neighbours houses and coop need structure kinds, so `STRUCTURE_KINDS` also gains `'cosmoHouse'`, `'barnabyHouse'` and `'chickenCoop'`. Structures are map data, not saved, so this needs no migration. (§5.2)
+- **R2.** The east gate is built with the Neighbours map (Task 4), not with the parts exchange (Task 3): a warp needs its target map and a reciprocal warp to pass the startup check. (§5.1, §8)
+- **R3.** The parts exchange's geometry lands with the structure (Task 3) rather than in the rendering step, so the town never draws a gap where the notice board stood. (§4, §8)
+- **R4.** Until Task 4 places Cosmo and Barnaby, the startup check allows an id on at most one map; Task 4 makes it exactly one. (§2.2)
+- **R5.** A character's spot is "reachable" when one of its orthogonal neighbours is walkable, isn't another character's spot, and can be reached from one of the map's arrival tiles over walkable tiles that aren't character spots. The check walks the map's world generated with seed 0; a map that lists characters generates the same world for every seed (the town and the Neighbours map do). A door tile is part of its building, so a spot on a door fails as "not walkable"; the door rule catches the tile in front of a door. (§2.2)
+- **R6.** The talk panel carries the line picked before the chat is recorded: `UiPanel { kind: 'talk'; npc: NpcId; line: string }`. The chat box only shows it, so the introduction is what the first chat shows, and the line can't change while the box is open. (§3.1, §3.4)
+- **R7.** Until Task 7 an open talk panel shows nothing, and E, K, Enter or Escape close it; until Task 8 the characters draw nothing, though their tiles already block; until Task 9 the Neighbours houses and coop draw nothing, though their tiles already block. (§8)
+- **R8.** Marigold's **Shop** is one action, `talk/act` (`actions.npcAct(npc, act)`), which checks that the talk panel is open on that character, the game isn't paused and the action is theirs, then swaps the talk panel for the shop in one step. (§3.2)
+- **R9.** The neighbours' fences can't be picked up: on the Neighbours map the pickaxe and the axe refuse an object on either field's fence ring with "That belongs to the neighbours."; anything the player puts down elsewhere on the map comes back up as usual. The spec doesn't say, and without it the player could carry Cosmo's fence home. (§5.2) *(Eli to confirm.)*
+- **R10.** Config: `PEOPLE.manyRobots` (4), `PEOPLE.copperOreLine` (5) and `PEOPLE.everydayLines` (6) carry the reactive thresholds and the bank size; `NPC_LOOKS` the sway and nameplate numbers; `NEIGHBOUR_ROOFS` the two roof colours; `Salt.MapNeighbours` the map's seed stream. (§2.3, §3.5, §5.2)
+- **R11.** The Neighbours map's `name` is "The Neighbours". The game shows map names nowhere yet. (§5) *(Eli to confirm.)*
+- **R12.** The Neighbours map uses the farm's scenery style (a wooden fence round the grid, the farm's meadow tones) with its own cosmetic offset. (§5.2)
+- **R13.** No appearance palettes existed, so Task 8 adds them (`APPEARANCE_PALETTES`, index 0 the player's current colours) and lets `PlayerModel` take an `Appearance`; the player's own model is built exactly as before. The cast's looks are picked from these palettes. (§2.3)
+- **R14.** Hat 0 is the straw hat the farmer has always worn, 1 is no hat, 2 a cap and 3 a knitted hat; hair style 0 is today's short hair, 1 a ponytail and 2 a bob. This replaces the Phase 0 spec's "0 = no hat". Every save already holds 0, so nothing migrates. (§2.3) *(Eli to confirm.)*
+- **R15.** Each prop hangs from one bone of the model, so it sways with the body: hats and the pencil on the head; the aprons, the neckerchief and the clipboard on the torso; the seed pouch on the hips. Cosmo's feathered straw hat replaces his own hat. Barnaby holds the clipboard against his chest with his left arm, the only pose a prop changes. (§2.3)
+- **R16.** The idle sway leans the upper body side to side, so the feet stay planted. Each character runs its `NPC_IDS` index sevenths of a period ahead, so no two sway in step. (§2.3)
+- **R17.** A nameplate is a 256 × 64 canvas: the name on a cream plate with an ink outline, sized to the name. It's drawn when its character is built (the first visit to that character's map) and then kept. `NPC_LOOKS.nameplateHeight` (1.5) and `NPC_LOOKS.nameplateScale` (0.36) place and size it. (§2.3)
+- **R18.** The neighbours' houses are the farmhouse with a roof colour (`FarmhouseSpec.roofColor`, from `NEIGHBOUR_ROOFS`: Cosmo sunflower yellow, Barnaby bright blue): the shingle rows and ridge are darker shades of it and the door's awning takes it too; their chimneys don't smoke. No coop builder existed, so the coop is a plain plank shed raised on legs, with a hens' ramp, a nest box and a small window. (§5.2) *(Eli to confirm.)*
+- **R19.** The parts exchange is steel-blue with slate trim and a mustard roof, colours no shop uses, and its walls are 4 units tall to the shops' 2.4–2.5, so it reads as two storeys. (§4) *(Eli to confirm.)*
+- **R20.** The main chunk's allowance over the part 2 baseline rises from 16 KiB to 26 KiB (`MAIN_GROWTH_MAX_GZIP` in `scripts/bundleRules.mjs`): at the spec commit the main chunk was 282.0 KiB of its 285.1 KiB budget, and part 4a's cast, lines, chat box and character renderer belong in the main chunk. Decided by Eli before the build. (Part 3 spec §10.1)

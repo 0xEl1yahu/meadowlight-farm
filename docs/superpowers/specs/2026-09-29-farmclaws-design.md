@@ -548,7 +548,7 @@ When jobs 6, 7 and 8 are all done, Wendell's sign changes from **THEY'LL DESTROY
 
 ### 9.1 The farmclaw cast
 
-They only chat. Their lines react to what's on the player's farm; for example, Wendell notices a flat robot left in a field. Lines are picked deterministically by day, like robot lines. None of them is the "correct" view. Each has a real point and a blind spot.
+They only chat. They stand on fixed spots: the shopkeepers by their shops, Sol by the parts exchange, and Cosmo and Barnaby by their fields on the Neighbours map, east of the town. Their lines react to what's on the player's farm; for example, Wendell notices a flat robot left in a field. Lines are picked deterministically by day, like robot lines. None of them is the "correct" view. Each has a real point and a blind spot.
 
 | Name | Stance | Real point | Blind spot | Jobs |
 | --- | --- | --- | --- | --- |
@@ -570,6 +570,8 @@ They only chat. Their lines react to what's on the player's farm; for example, W
 | Ranch | Tess | Chickens, cows, wheat (unchanged from v2) |
 | Parts exchange | Sol | Parts, paint, voices, common personality cores, repairs. Release 1 opens it with basic parts and repairs; the Antenna comes in release 2, and cores, paint, voices and personality cores in release 3. |
 | Robot workshop | Juniper (also still the carpenter) | Ready-made robots, custom robots and limited editions. Plus coop, barn, wood and stone from v2. Release 1 opens it with ready-made robots; custom robots and limited editions come in release 3. |
+
+The parts exchange is a town building where the notice board stood.
 
 **At the parts exchange:**
 - Parts sell back for 50%.
@@ -647,7 +649,7 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 | 1 Robot core | 1 | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes, carrying and repairs, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm (development builds only). |
 | 2 Language | 1 | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
 | 3 Robot screen | 1 | The workbench, Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
-| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye) and repairs. Juniper's workshop with ready-made robots in all three sizes. The balance pass. **Also decides where other farmers' fields are**: this design hasn't put them on a map yet. | The first hour of the new game, shippable |
+| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye) and repairs. Juniper's workshop with ready-made robots in all three sizes. The balance pass. Built as 4a (people), 4b (shops and parts) and 4c (jobs). The neighbours' fields are on a new Neighbours map, east of the town. | The first hour of the new game, shippable |
 | 5 Coordination | 2 | Messages, mailboxes, claims, triggers, schedules, power states, the Antenna. Job 4 (Ziggy) and job 5 (Sol's crew): tester and Test run, supervisor, mechanic, program library. | Multi-robot farms |
 | 6 Character | 3 | Paint, voices, personalities, line bank, fun facts, quirks, the efficient and quick cores, custom robots, limited editions, the Claw Fair | Robots with character |
 | 7 Guardrails | 4 | Jobs 6 to 8, Wendell and Hollis, the full .MD card set, rage events (robots on other maps, the chase and the catch), steam engine, rain barrel, sun panel, the hand-harvest bonus | The full curriculum |
@@ -659,7 +661,7 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 
 ## 12. Save versions
 
-Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. A release can therefore carry several version steps, and the loader runs them in order, so a live save from any earlier release loads. Part 8's migration also drops the cut v2 fields (friendship, gifts, cooking recipes).
+Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. A release can therefore carry several version steps, and the loader runs them in order, so a live save from any earlier release loads. Part 4a's migration (version 7) drops the friendship fields and the cut characters, Old Fennick and Pip; part 8's drops the rest of the cut v2 fields (gifts, cooking recipes).
 
 ---
 
