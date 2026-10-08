@@ -153,6 +153,10 @@ export type ToolLevel = 0 | 1 | 2;
 export const NPC_IDS = ['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess'] as const;
 export type NpcId = (typeof NPC_IDS)[number];
 
+/** What a character's chat-box buttons do (part 4a spec §3.2). Parts 4b and 4c add kinds. */
+export const NPC_ACTION_KINDS = ['shop'] as const;
+export type NpcActionKind = (typeof NPC_ACTION_KINDS)[number];
+
 export const ANIMAL_KINDS = ['chicken', 'cow'] as const;
 export type AnimalKind = (typeof ANIMAL_KINDS)[number];
 

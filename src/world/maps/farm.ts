@@ -33,6 +33,7 @@ export const FARM_MAP: MapDefinition = {
   warps,
   reserved,
   structures: [],
+  npcs: [],
   wild: {
     sproutChance: SHADE.sproutChance,
     spreadChancePerNeighbor: SHADE.spreadChancePerNeighbor,

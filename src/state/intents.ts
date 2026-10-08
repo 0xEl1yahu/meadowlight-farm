@@ -26,6 +26,7 @@ import {
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
+import { npcAt } from '../people/cast';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
@@ -336,15 +337,16 @@ export function isFarmOnlyPlaceable(itemId: PlaceableItemId): boolean {
 
 /**
  * Why `itemId` can't be placed on `target` of the active map, or null when it can. The tile must
- * be free walkable ground (no object, blocker or crop) and not a reserved tile; paths go on
- * grass only, everything else on grass or unfertilised soil; sprinklers and scarecrows only on
- * the farm. An empty string means "no, silently" (out of bounds).
+ * be free walkable ground (no object, blocker or crop), not a character's spot and not a reserved
+ * tile; paths go on grass only, everything else on grass or unfertilised soil; sprinklers and
+ * scarecrows only on the farm. An empty string means "no, silently" (out of bounds).
  */
 export function placementProblem(state: GameState, itemId: PlaceableItemId, target: TileCoord | null): string | null {
   if (target === null) return '';
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return '';
   if (isFarmOnlyPlaceable(itemId) && state.player.mapId !== 'farm') return `The ${getItem(itemId).name.toLowerCase()} belongs on your farm.`;
+  if (npcAt(state.player.mapId, target.tx, target.tz) !== null) return "Someone's standing there.";
   if (isReservedTile(selectActiveMap(state), target.tx, target.tz)) return 'Keep this spot clear.';
   if (state.player.mapId === 'farm' && robotsOnTile(state, target.tx, target.tz).length > 0) return "There's a robot in the way.";
   if (tile.object !== null || tile.state === TileState.Blocked || tile.crop !== null) return "There's something in the way.";

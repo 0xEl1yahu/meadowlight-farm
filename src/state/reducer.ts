@@ -43,6 +43,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
+import { npcAt } from '../people/cast';
 import { programmedRobot, withMd, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
@@ -282,7 +283,8 @@ function isDirection(value: number): value is Direction {
 }
 
 /**
- * One grid step. Inside the grid the destination must be walkable. Stepping off the edge takes
+ * One grid step. Inside the grid the destination must be walkable and no character may stand on
+ * it (part 4a spec §2.2); a refused step only turns the player. Stepping off the edge takes
  * the map's warp from this tile in this direction, if there is one: the player lands on the
  * warp's arrival tile on the other map, facing into it (a teleport, so `moveSeq` is untouched).
  * A warp whose arrival tile isn't walkable is refused like any blocked step.
@@ -293,7 +295,7 @@ function movePlayer(state: GameState, direction: Direction): GameState {
   const destination = stepTile(player, direction);
   const world = selectActiveWorld(state);
   if (inBounds(world.grid, destination.tx, destination.tz)) {
-    if (isWalkable(requireTile(world, destination.tx, destination.tz))) {
+    if (isWalkable(requireTile(world, destination.tx, destination.tz)) && npcAt(player.mapId, destination.tx, destination.tz) === null) {
       return {
         ...state,
         player: { ...player, tx: destination.tx, tz: destination.tz, facing: direction, moveSeq: player.moveSeq + 1 },

@@ -109,6 +109,7 @@ export const FOREST_MAP: MapDefinition = {
   ],
   reserved,
   structures: [],
+  npcs: [],
   wild,
   farmstead: null,
   scenery: 'forest',

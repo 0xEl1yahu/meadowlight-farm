@@ -13,7 +13,7 @@ import { Blocker, Direction, type TileRect, type WorldState } from '../../core/t
 import { createGridSpec, rectContains } from '../grid';
 import { EMPTY_TILE, blockedTile, createWorld } from '../tiles';
 import { precomputeMask, precomputeSurfaces } from './lookup';
-import type { MapDefinition, StructurePlacement, Surface } from './types';
+import type { MapDefinition, NpcPlacement, StructurePlacement, Surface } from './types';
 
 const grid = createGridSpec(40, 32, WORLD.chunkSize, WORLD.tileSize);
 
@@ -48,6 +48,19 @@ const structures: readonly StructurePlacement[] = [
   lampPost(26, 20),
   lampPost(4, 14),
   lampPost(36, 14),
+];
+
+/**
+ * The characters (part 4a spec §2.1), facing the square. Each shopkeeper stands one tile east of
+ * the tile in front of their door, so the door path stays clear; Juniper stands one tile west,
+ * because the lamp post at (26, 8) is south of the east tile. Sol stands at the top of the square.
+ */
+const npcs: readonly NpcPlacement[] = [
+  { id: 'sol', tx: 21, tz: 7, facing: Direction.South },
+  { id: 'marigold', tx: 7, tz: 7, facing: Direction.South },
+  { id: 'bram', tx: 16, tz: 7, facing: Direction.South },
+  { id: 'juniper', tx: 24, tz: 7, facing: Direction.South },
+  { id: 'tess', tx: 35, tz: 7, facing: Direction.South },
 ];
 
 /** Cobbled main street, z 15–17 across the whole width. */
@@ -130,6 +143,7 @@ export const TOWN_MAP: MapDefinition = {
     { tx: 1, tz: 16 },
   ],
   structures,
+  npcs,
   wild: null,
   farmstead: null,
   scenery: 'town',
