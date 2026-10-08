@@ -215,15 +215,31 @@ export const SHADE = {
   initialDensity: 0.12,
 } as const;
 
-/** Palette sizes for the player's look. Index 0 of every palette is the original look. */
+/**
+ * The number of choices for each part of a character's look: the colours in render/palette.ts
+ * APPEARANCE_PALETTES, the hair styles and hats in render/playerModel.ts HAIR_STYLES and
+ * HAT_STYLES. Index 0 of every list is the player's original look.
+ */
 export const APPEARANCE = {
   skinTones: 5,
   hairStyles: 3,
   hairColors: 6,
   shirtColors: 8,
   overallsColors: 6,
-  /** Including 0 = no hat. */
+  /** 0 is the straw hat (the original look) and 1 is no hat. */
   hats: 4,
+} as const;
+
+/** The characters on screen (farmclaws part 4a spec §2.3). */
+export const NPC_LOOKS = {
+  /** One whole idle sway, from one side to the other and back (seconds). */
+  swaySeconds: 3.2,
+  /** How far the upper body leans to each side at the end of a sway (degrees). */
+  swayDegrees: 2.5,
+  /** Height of the nameplate's centre above the character's feet (world units; the model is ~1.1 tall with a hat). */
+  nameplateHeight: 1.5,
+  /** Height of the nameplate sprite (world units); its width follows the plate's aspect. */
+  nameplateScale: 0.36,
 } as const;
 
 export const PROFILE = {

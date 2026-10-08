@@ -7,9 +7,15 @@
  *   units (hat included), so `directionYaw` from world/grid.ts turns it correctly.
  * - A small hierarchy of pivot groups ("bones"): root → body → hips → torso → head / arms, with
  *   the legs hanging from the body so they can stay planted while the upper body crouches.
- * - Every segment is ONE merged BufferGeometry with baked per-vertex colours (PALETTE.player),
- *   all sharing a single flat-shaded vertex-colour material. The whole farmer is nine draw
- *   calls; left and right limbs share their geometry.
+ * - Every segment is ONE merged BufferGeometry with baked per-vertex colours, all sharing a
+ *   single flat-shaded vertex-colour material. The whole farmer is nine draw calls; left and
+ *   right limbs share their geometry.
+ *
+ * Looks (farmclaws part 4a refinement R14)
+ * - The constructor takes an Appearance: skin, hair, shirt and overalls colours come from
+ *   APPEARANCE_PALETTES, plus a hair style (HAIR_STYLES) and a hat (HAT_STYLES). Index 0 of
+ *   each is the player's original look, so `new PlayerModel()` builds today's farmer: short
+ *   hair under the straw hat, in PALETTE.player's colours. NpcRenderer builds the cast with it.
  *
  * Held items
  * - Hoe, watering can, pickaxe, axe, scythe and zone marker are merged vertex-coloured props. A seed pouch
@@ -31,9 +37,10 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { ToolType } from '../core/types';
+import type { Appearance, ToolType } from '../core/types';
+import { at } from './geometryParts';
 import { createFlatMaterial } from './materials';
-import { PALETTE } from './palette';
+import { APPEARANCE_PALETTES, PALETTE } from './palette';
 
 // ---------------------------------------------------------------------------
 // Dimensions & colours
@@ -65,15 +72,15 @@ const LEG_SCALE_MAX = 1.15;
 /** Opacity of the contact shadow while standing on the ground. */
 const BLOB_OPACITY = 0.2;
 
-const SKIN = PALETTE.player.skin;
-const SHIRT = PALETTE.player.shirt;
-const OVERALLS = PALETTE.player.overalls;
-const HAIR = PALETTE.player.hair;
 const HAT = PALETTE.player.hat;
 const BOOTS = PALETTE.player.boots;
 const EYE = 0x3a2a2a;
 const CHEEK = 0xf6a6a0;
 const HAT_BAND = PALETTE.houseRoof;
+/** The other hats (HAT_STYLES): a red cap, and a mustard knitted hat with a cream pompom. */
+const CAP = 0xd8634e;
+const KNIT = 0xe0a84a;
+const KNIT_POMPOM = 0xfff4e0;
 const BRASS = 0xf2c46b;
 
 const WOOD = 0xcfa574;
@@ -97,13 +104,51 @@ const TOOL_WRAP: Readonly<Record<Exclude<ToolType, 'wateringCan'>, number>> = {
 const PENNANT = 0xe2563f;
 
 // ---------------------------------------------------------------------------
+// Looks
+// ---------------------------------------------------------------------------
+
+/** Appearance.hairStyle values, APPEARANCE.hairStyles of them; 0 is the original look. */
+export const HAIR_STYLES = { short: 0, ponytail: 1, bob: 2 } as const;
+
+/** Appearance.hat values, APPEARANCE.hats of them; 0, the straw hat, is the original look. */
+export const HAT_STYLES = { straw: 0, none: 1, cap: 2, knit: 3 } as const;
+
+/** The player's original look: index 0 of every palette, short hair and the straw hat. */
+export const DEFAULT_APPEARANCE: Appearance = {
+  skinTone: 0,
+  hairStyle: HAIR_STYLES.short,
+  hairColor: 0,
+  shirtColor: 0,
+  overallsColor: 0,
+  hat: HAT_STYLES.straw,
+};
+
+/** The four colours an Appearance picks from APPEARANCE_PALETTES. */
+interface BodyColors {
+  readonly skin: number;
+  readonly hair: number;
+  readonly shirt: number;
+  readonly overalls: number;
+}
+
+/** Throws a RangeError for an index outside its palette. */
+function appearanceColors(appearance: Appearance): BodyColors {
+  return {
+    skin: at(APPEARANCE_PALETTES.skin, appearance.skinTone),
+    hair: at(APPEARANCE_PALETTES.hair, appearance.hairColor),
+    shirt: at(APPEARANCE_PALETTES.shirt, appearance.shirtColor),
+    overalls: at(APPEARANCE_PALETTES.overalls, appearance.overallsColor),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Geometry baking
 // ---------------------------------------------------------------------------
 
 type Vec3Tuple = readonly [number, number, number];
 
 /** One primitive of a merged prop: a geometry, a flat colour and a placement. */
-interface Part {
+export interface Part {
   readonly geometry: THREE.BufferGeometry;
   readonly color: number;
   /** Brightness multiplier applied to `color` (1 = unchanged). */
@@ -142,9 +187,9 @@ function cone(radius: number, height: number, segments: number): THREE.BufferGeo
 /**
  * Merges primitives into one non-indexed geometry with a baked `color` attribute. Inputs are
  * converted to non-indexed and stripped to position + normal so every piece has identical
- * attributes; the source geometries are disposed.
+ * attributes; the source geometries are disposed. npcProps.ts bakes the cast's props with it.
  */
-function bakeParts(parts: readonly Part[]): THREE.BufferGeometry {
+export function bakeParts(parts: readonly Part[]): THREE.BufferGeometry {
   const pieces: THREE.BufferGeometry[] = [];
   for (const part of parts) {
     const source = part.geometry;
@@ -188,19 +233,73 @@ function bakeParts(parts: readonly Part[]): THREE.BufferGeometry {
 // Body segments
 // ---------------------------------------------------------------------------
 
-/** Head, hair and straw hat, relative to the neck pivot. The eyes are a separate mesh. */
-function buildHeadGeometry(): THREE.BufferGeometry {
+/** The hair over the scalp, plus a ponytail or a bob; `style` is a HAIR_STYLES value. */
+function hairParts(hair: number, style: number): Part[] {
+  const scalp = (): Part => ({ geometry: ico(0.178, 1), color: hair, position: [0, 0.178, -0.032], scale: [1.03, 0.95, 1] });
+  switch (style) {
+    case HAIR_STYLES.short:
+      return [scalp()];
+    case HAIR_STYLES.ponytail:
+      // A band at the back of the head and a tail hanging from it.
+      return [
+        scalp(),
+        { geometry: cylinder(0.036, 0.036, 0.03, 6), color: hair, shade: 0.75, position: [0, 0.2, -0.2], rotation: [Math.PI / 2, 0, 0] },
+        { geometry: ico(0.06, 0), color: hair, position: [0, 0.115, -0.225], scale: [0.8, 1.6, 0.8] },
+      ];
+    case HAIR_STYLES.bob:
+      // Hair down to the neck at the back, and a lock over each ear.
+      return [
+        scalp(),
+        { geometry: box(0.32, 0.18, 0.1), color: hair, position: [0, 0.11, -0.135] },
+        { geometry: box(0.05, 0.17, 0.15), color: hair, position: [0.165, 0.12, -0.03] },
+        { geometry: box(0.05, 0.17, 0.15), color: hair, position: [-0.165, 0.12, -0.03] },
+      ];
+    default:
+      throw new RangeError(`playerModel: no hair style ${style}`);
+  }
+}
+
+/** The hat over the hair; `hat` is a HAT_STYLES value. */
+function hatParts(hat: number): Part[] {
+  switch (hat) {
+    case HAT_STYLES.straw:
+      // Straw hat: wide brim, crown and a coral ribbon.
+      return [
+        { geometry: cylinder(0.27, 0.27, 0.024, 10), color: HAT, position: [0, 0.27, 0.01], rotation: [0.05, 0, 0] },
+        { geometry: cylinder(0.125, 0.15, 0.11, 8), color: HAT, shade: 1.04, position: [0, 0.335, 0] },
+        { geometry: cylinder(0.153, 0.153, 0.032, 8), color: HAT_BAND, position: [0, 0.3, 0] },
+        { geometry: cylinder(0.1, 0.125, 0.012, 8), color: HAT, shade: 0.9, position: [0, 0.395, 0] },
+      ];
+    case HAT_STYLES.none:
+      return [];
+    case HAT_STYLES.cap:
+      // Cap: a rounded crown, a peak over the eyes and a button on top.
+      return [
+        { geometry: cylinder(0.15, 0.182, 0.1, 8), color: CAP, position: [0, 0.31, 0] },
+        { geometry: box(0.2, 0.018, 0.13), color: CAP, shade: 0.85, position: [0, 0.27, 0.2], rotation: [0.12, 0, 0] },
+        { geometry: cylinder(0.024, 0.024, 0.016, 6), color: CAP, shade: 0.8, position: [0, 0.368, 0] },
+      ];
+    case HAT_STYLES.knit:
+      // Knitted hat: a tapering body, a ribbed cuff and a pompom.
+      return [
+        { geometry: cylinder(0.13, 0.186, 0.13, 8), color: KNIT, position: [0, 0.32, -0.005] },
+        { geometry: cylinder(0.192, 0.192, 0.05, 8), color: KNIT, shade: 0.85, position: [0, 0.272, -0.005] },
+        { geometry: ico(0.048, 0), color: KNIT_POMPOM, position: [0, 0.405, -0.005] },
+      ];
+    default:
+      throw new RangeError(`playerModel: no hat ${hat}`);
+  }
+}
+
+/** Head, hair and hat, relative to the neck pivot. The eyes are a separate mesh. */
+function buildHeadGeometry(colors: BodyColors, hairStyle: number, hat: number): THREE.BufferGeometry {
   return bakeParts([
-    { geometry: ico(0.17, 1), color: SKIN, position: [0, 0.16, 0], scale: [1, 0.94, 0.96] },
-    { geometry: ico(0.178, 1), color: HAIR, position: [0, 0.178, -0.032], scale: [1.03, 0.95, 1] },
-    { geometry: box(0.03, 0.03, 0.03), color: SKIN, shade: 0.9, position: [0, 0.118, 0.172] },
+    { geometry: ico(0.17, 1), color: colors.skin, position: [0, 0.16, 0], scale: [1, 0.94, 0.96] },
+    ...hairParts(colors.hair, hairStyle),
+    { geometry: box(0.03, 0.03, 0.03), color: colors.skin, shade: 0.9, position: [0, 0.118, 0.172] },
     { geometry: box(0.045, 0.022, 0.03), color: CHEEK, position: [0.096, 0.104, 0.128] },
     { geometry: box(0.045, 0.022, 0.03), color: CHEEK, position: [-0.096, 0.104, 0.128] },
-    // Straw hat: wide brim, crown and a coral ribbon.
-    { geometry: cylinder(0.27, 0.27, 0.024, 10), color: HAT, position: [0, 0.27, 0.01], rotation: [0.05, 0, 0] },
-    { geometry: cylinder(0.125, 0.15, 0.11, 8), color: HAT, shade: 1.04, position: [0, 0.335, 0] },
-    { geometry: cylinder(0.153, 0.153, 0.032, 8), color: HAT_BAND, position: [0, 0.3, 0] },
-    { geometry: cylinder(0.1, 0.125, 0.012, 8), color: HAT, shade: 0.9, position: [0, 0.395, 0] },
+    ...hatParts(hat),
   ]);
 }
 
@@ -213,49 +312,50 @@ function buildEyesGeometry(): THREE.BufferGeometry {
 }
 
 /** Shirt, overall bib and straps, relative to the torso pivot (the waist). */
-function buildTorsoGeometry(): THREE.BufferGeometry {
+function buildTorsoGeometry(colors: BodyColors): THREE.BufferGeometry {
   const strapX = 0.07;
+  const { skin, shirt, overalls } = colors;
   return bakeParts([
-    { geometry: box(0.3, 0.27, 0.2), color: SHIRT, position: [0, 0.195, 0] },
-    { geometry: cylinder(0.055, 0.062, 0.07, 6), color: SKIN, position: [0, 0.33, 0] },
-    { geometry: box(0.2, 0.15, 0.025), color: OVERALLS, position: [0, 0.13, 0.103] },
-    { geometry: box(0.08, 0.05, 0.012), color: OVERALLS, shade: 0.82, position: [0, 0.145, 0.121] },
-    { geometry: box(0.045, 0.14, 0.025), color: OVERALLS, position: [strapX, 0.26, 0.103] },
-    { geometry: box(0.045, 0.14, 0.025), color: OVERALLS, position: [-strapX, 0.26, 0.103] },
-    { geometry: box(0.045, 0.025, 0.21), color: OVERALLS, position: [strapX, 0.335, 0] },
-    { geometry: box(0.045, 0.025, 0.21), color: OVERALLS, position: [-strapX, 0.335, 0] },
-    { geometry: box(0.045, 0.27, 0.025), color: OVERALLS, position: [strapX, 0.2, -0.103] },
-    { geometry: box(0.045, 0.27, 0.025), color: OVERALLS, position: [-strapX, 0.2, -0.103] },
+    { geometry: box(0.3, 0.27, 0.2), color: shirt, position: [0, 0.195, 0] },
+    { geometry: cylinder(0.055, 0.062, 0.07, 6), color: skin, position: [0, 0.33, 0] },
+    { geometry: box(0.2, 0.15, 0.025), color: overalls, position: [0, 0.13, 0.103] },
+    { geometry: box(0.08, 0.05, 0.012), color: overalls, shade: 0.82, position: [0, 0.145, 0.121] },
+    { geometry: box(0.045, 0.14, 0.025), color: overalls, position: [strapX, 0.26, 0.103] },
+    { geometry: box(0.045, 0.14, 0.025), color: overalls, position: [-strapX, 0.26, 0.103] },
+    { geometry: box(0.045, 0.025, 0.21), color: overalls, position: [strapX, 0.335, 0] },
+    { geometry: box(0.045, 0.025, 0.21), color: overalls, position: [-strapX, 0.335, 0] },
+    { geometry: box(0.045, 0.27, 0.025), color: overalls, position: [strapX, 0.2, -0.103] },
+    { geometry: box(0.045, 0.27, 0.025), color: overalls, position: [-strapX, 0.2, -0.103] },
     { geometry: box(0.03, 0.03, 0.02), color: BRASS, position: [strapX, 0.196, 0.121] },
     { geometry: box(0.03, 0.03, 0.02), color: BRASS, position: [-strapX, 0.196, 0.121] },
   ]);
 }
 
 /** Overall seat, relative to the hip pivot. */
-function buildPelvisGeometry(): THREE.BufferGeometry {
+function buildPelvisGeometry(colors: BodyColors): THREE.BufferGeometry {
   return bakeParts([
-    { geometry: box(0.29, 0.14, 0.2), color: OVERALLS, position: [0, 0.005, 0] },
-    { geometry: box(0.3, 0.03, 0.21), color: OVERALLS, shade: 0.85, position: [0, 0.06, 0] },
+    { geometry: box(0.29, 0.14, 0.2), color: colors.overalls, position: [0, 0.005, 0] },
+    { geometry: box(0.3, 0.03, 0.21), color: colors.overalls, shade: 0.85, position: [0, 0.06, 0] },
   ]);
 }
 
 /** One leg with a rolled cuff and a boot, hanging from the hip joint (sole at y = -legLength). */
-function buildLegGeometry(): THREE.BufferGeometry {
+function buildLegGeometry(colors: BodyColors): THREE.BufferGeometry {
   const sole = -PLAYER_RIG.legLength;
   return bakeParts([
-    { geometry: box(0.12, 0.26, 0.13), color: OVERALLS, position: [0, -0.13, 0] },
-    { geometry: box(0.135, 0.04, 0.145), color: OVERALLS, shade: 0.82, position: [0, -0.245, 0] },
+    { geometry: box(0.12, 0.26, 0.13), color: colors.overalls, position: [0, -0.13, 0] },
+    { geometry: box(0.135, 0.04, 0.145), color: colors.overalls, shade: 0.82, position: [0, -0.245, 0] },
     { geometry: box(0.13, 0.085, 0.19), color: BOOTS, position: [0, sole + 0.0575, 0.025] },
     { geometry: box(0.14, 0.025, 0.2), color: BOOTS, shade: 0.72, position: [0, sole + 0.0125, 0.025] },
   ]);
 }
 
 /** One arm: short sleeve, forearm and hand, hanging from the shoulder joint. */
-function buildArmGeometry(): THREE.BufferGeometry {
+function buildArmGeometry(colors: BodyColors): THREE.BufferGeometry {
   return bakeParts([
-    { geometry: box(0.1, 0.13, 0.1), color: SHIRT, position: [0, -0.055, 0] },
-    { geometry: box(0.075, 0.14, 0.075), color: SKIN, position: [0, -0.18, 0] },
-    { geometry: ico(0.052, 0), color: SKIN, position: [0, -PLAYER_RIG.armLength, 0.005] },
+    { geometry: box(0.1, 0.13, 0.1), color: colors.shirt, position: [0, -0.055, 0] },
+    { geometry: box(0.075, 0.14, 0.075), color: colors.skin, position: [0, -0.18, 0] },
+    { geometry: ico(0.052, 0), color: colors.skin, position: [0, -PLAYER_RIG.armLength, 0.005] },
   ]);
 }
 
@@ -434,7 +534,10 @@ function segment(geometry: THREE.BufferGeometry, material: THREE.Material, recei
   return mesh;
 }
 
-/** The farmer's bone hierarchy and meshes. Owns (and disposes) its geometries and materials. */
+/**
+ * The farmer's bone hierarchy and meshes, in the colours, hair and hat of an Appearance (the
+ * player's original look by default). Owns (and disposes) its geometries and materials.
+ */
 export class PlayerModel {
   /** Placed at the feet and yawed by the renderer. */
   readonly root = new THREE.Group();
@@ -457,8 +560,10 @@ export class PlayerModel {
   private readonly geometries: THREE.BufferGeometry[] = [];
   private readonly materials: THREE.Material[] = [];
 
-  constructor() {
+  /** Throws a RangeError when `appearance` picks a colour, hair style or hat that doesn't exist. */
+  constructor(appearance: Appearance = DEFAULT_APPEARANCE) {
     const R = PLAYER_RIG;
+    const colors = appearanceColors(appearance);
     const material = createFlatMaterial(0xffffff, { vertexColors: true });
     this.blobMaterial = new THREE.MeshBasicMaterial({
       color: 0x1d2a22,
@@ -468,12 +573,12 @@ export class PlayerModel {
     });
     this.materials.push(material, this.blobMaterial);
 
-    const headGeometry = buildHeadGeometry();
+    const headGeometry = buildHeadGeometry(colors, appearance.hairStyle, appearance.hat);
     const eyesGeometry = buildEyesGeometry();
-    const torsoGeometry = buildTorsoGeometry();
-    const pelvisGeometry = buildPelvisGeometry();
-    const legGeometry = buildLegGeometry();
-    const armGeometry = buildArmGeometry();
+    const torsoGeometry = buildTorsoGeometry(colors);
+    const pelvisGeometry = buildPelvisGeometry(colors);
+    const legGeometry = buildLegGeometry(colors);
+    const armGeometry = buildArmGeometry(colors);
     const blobGeometry = new THREE.CircleGeometry(0.27, 12);
     blobGeometry.rotateX(-Math.PI / 2);
     this.geometries.push(
@@ -487,6 +592,10 @@ export class PlayerModel {
     );
 
     this.root.name = 'player';
+    // The bones NpcRenderer hangs the cast's props from (npcProps.ts NPC_PROP_BONES).
+    this.hips.name = 'hips';
+    this.torso.name = 'torso';
+    this.head.name = 'head';
     this.root.add(this.body);
 
     this.groundBlob = new THREE.Mesh(blobGeometry, this.blobMaterial);

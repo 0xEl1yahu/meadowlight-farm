@@ -966,7 +966,7 @@ export interface RobotUnlocks {
 export interface Appearance {
   /** 0 … APPEARANCE.skinTones - 1 */
   readonly skinTone: number;
-  /** 0 … APPEARANCE.hairStyles - 1 */
+  /** 0 … APPEARANCE.hairStyles - 1: short (the original look), a ponytail, a bob (render/playerModel.ts HAIR_STYLES). */
   readonly hairStyle: number;
   /** 0 … APPEARANCE.hairColors - 1 */
   readonly hairColor: number;
@@ -974,7 +974,7 @@ export interface Appearance {
   readonly shirtColor: number;
   /** 0 … APPEARANCE.overallsColors - 1 */
   readonly overallsColor: number;
-  /** 0 = no hat, 1 … APPEARANCE.hats - 1 */
+  /** 0 … APPEARANCE.hats - 1: the straw hat (the original look), no hat, a cap, a knitted hat (render/playerModel.ts HAT_STYLES). */
   readonly hat: number;
 }
 

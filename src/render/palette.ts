@@ -48,3 +48,19 @@ export const PALETTE = {
     boots: 0x6b4a3a,
   },
 } as const;
+
+/**
+ * Colour choices for a character's look (farmclaws part 4a refinement R14): one list per
+ * Appearance colour field, sized exactly by APPEARANCE in config. Index 0 of each is the
+ * player's original colour (PALETTE.player), so the default appearance draws today's farmer.
+ */
+export const APPEARANCE_PALETTES = {
+  /** Appearance.skinTone: fair to deep. */
+  skin: [PALETTE.player.skin, 0xeec3a0, 0xd9a57f, 0xb8805c, 0x8d5b3f],
+  /** Appearance.hairColor: chestnut, near-black, honey, auburn, silver, flaxen. */
+  hair: [PALETTE.player.hair, 0x3d2c25, 0xd8a65e, 0xb4583a, 0xa8a29c, 0xf0d58a],
+  /** Appearance.shirtColor: sky, coral, leaf, sunflower, lavender, cream, mint, rose. */
+  shirt: [PALETTE.player.shirt, 0xe8897a, 0x9ccf7a, 0xf2c46b, 0xc9b6ff, 0xf4ead2, 0x7fcfc4, 0xeda5c4],
+  /** Appearance.overallsColor: denim, moss, walnut, plum, slate, rust. */
+  overalls: [PALETTE.player.overalls, 0x6b8f5a, 0x8f6a4f, 0x7a6aa8, 0x5c6672, 0xb06e4c],
+} as const satisfies Readonly<Record<'skin' | 'hair' | 'shirt' | 'overalls', readonly number[]>>;
