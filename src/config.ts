@@ -407,3 +407,13 @@ export const ROBOT_SCREEN = {
   /** What new .MD card values start at: a DO return at 6:00 pm; "tokens are below" 10. */
   cardDefaults: { returnMinute: 18 * 60, tokensBelow: 10 },
 } as const;
+
+/** What the characters say (farmclaws part 4a spec §3.3, §3.5). */
+export const PEOPLE = {
+  /** Barnaby's "4 or more robots" line holds from this many robots. */
+  manyRobots: 4,
+  /** Bram's "5 or more copper ore" line holds from this much copper ore in the inventory. */
+  copperOreLine: 5,
+  /** Lines in every character's everyday bank. */
+  everydayLines: 6,
+} as const;
