@@ -82,9 +82,13 @@ describe('warp openings', () => {
     ]);
   });
 
-  it('opens as wide as the forest trail and the town road where they meet the edge', () => {
+  it('opens as wide as the forest trail, the town road and the Neighbours lane where they meet the edge', () => {
     expect(warpOpenings(MAPS.forest)).toEqual([{ side: 'east', start: 14, end: 17, surface: 'dirt' }]);
-    expect(warpOpenings(MAPS.town)).toEqual([{ side: 'west', start: 15, end: 18, surface: 'cobble' }]);
+    expect(warpOpenings(MAPS.town)).toEqual([
+      { side: 'west', start: 15, end: 18, surface: 'cobble' },
+      { side: 'east', start: 15, end: 18, surface: 'cobble' },
+    ]);
+    expect(warpOpenings(MAPS.neighbours)).toEqual([{ side: 'west', start: 13, end: 16, surface: 'dirt' }]);
   });
 
   it('gives every warp of every map an opening that contains its tile', () => {
@@ -197,6 +201,7 @@ describe('town wall', () => {
     expect(planScenery(MAPS.town)).toMatchObject({ wall: true, fence: false });
     expect(planScenery(MAPS.farm)).toMatchObject({ wall: false, fence: true });
     expect(planScenery(MAPS.forest)).toMatchObject({ wall: false, fence: false });
+    expect(planScenery(MAPS.neighbours)).toMatchObject({ wall: false, fence: true });
   });
 });
 

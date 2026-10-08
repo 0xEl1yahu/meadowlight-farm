@@ -54,7 +54,7 @@ export interface WildTuning {
 
 export interface MapDefinition {
   readonly id: MapId;
-  /** 'Meadowlight Farm' | 'Mossy Woods' | 'Brookhollow' */
+  /** 'Meadowlight Farm' | 'Mossy Woods' | 'Brookhollow' | 'The Neighbours' */
   readonly name: string;
   /** createGridSpec(w, d, WORLD.chunkSize, WORLD.tileSize) */
   readonly grid: GridSpec;
@@ -63,7 +63,7 @@ export interface MapDefinition {
   readonly warps: readonly Warp[];
   /** Warp tiles + arrival tiles. Never hold debris, wild crops, weeds, objects or forage (generators and later workstreams check this). */
   readonly reserved: readonly TileCoord[];
-  /** Blocker.Building footprints (town). */
+  /** Blocker.Building footprints (the town and the Neighbours). */
   readonly structures: readonly StructurePlacement[];
   /** The characters standing on this map, each on a fixed spot; their tiles block the player like a structure. */
   readonly npcs: readonly NpcPlacement[];

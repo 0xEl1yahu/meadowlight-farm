@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { APPEARANCE } from '../src/config';
-import { DIRECTIONS, Direction, NPC_IDS, type GameState, type MapId, type NpcId } from '../src/core/types';
+import { DIRECTIONS, Direction, MAP_IDS, NPC_IDS, type GameState, type MapId, type NpcId } from '../src/core/types';
 import { CAST, CAST_LOOKS, NPC_PROPS, npcActions, npcAt, npcSpot } from '../src/people/cast';
 import { actions } from '../src/state/actions';
 import { placementProblem } from '../src/state/intents';
@@ -224,5 +224,51 @@ describe('npcActions', () => {
     }
     expect(Object.isFrozen(npcActions('sol'))).toBe(true);
     expect(Object.isFrozen(npcActions('marigold'))).toBe(true);
+  });
+});
+
+/** Cosmo and Barnaby, as spec §2.1 places them on the Neighbours map. */
+const NEIGHBOURS_SPOTS: readonly NpcPlacement[] = [
+  { id: 'cosmo', tx: 7, tz: 13, facing: Direction.South },
+  { id: 'barnaby', tx: 25, tz: 15, facing: Direction.North },
+];
+
+describe('the Neighbours cast', () => {
+  it('stands Cosmo and Barnaby on the lane by their fields, facing it', () => {
+    expect(MAPS.neighbours.npcs).toEqual(NEIGHBOURS_SPOTS);
+    for (const spot of NEIGHBOURS_SPOTS) {
+      expect(npcAt('neighbours', spot.tx, spot.tz)).toBe(spot.id);
+      expect(npcSpot(spot.id)).toEqual({ mapId: 'neighbours', placement: spot });
+    }
+    expect(npcAt('neighbours', 6, 13)).toBeNull();
+    expect(npcAt('town', 7, 13)).toBeNull();
+    expect(arrivalTiles(MAPS, 'neighbours')).toEqual([{ tx: 1, tz: 14 }]);
+    expect(arrivalTiles(MAPS, 'town')).toEqual([
+      { tx: 1, tz: 16 },
+      { tx: 38, tz: 16 },
+    ]);
+  });
+
+  it('places every character on exactly one map', () => {
+    for (const id of NPC_IDS) {
+      const maps = MAP_IDS.filter((mapId) => MAPS[mapId].npcs.some((p) => p.id === id));
+      expect(maps, id).toEqual([npcSpot(id).mapId]);
+    }
+  });
+
+  it('throws on a character placed on no map, naming them', () => {
+    const defs: Record<MapId, MapDefinition> = {
+      ...MAPS,
+      neighbours: { ...MAPS.neighbours, npcs: MAPS.neighbours.npcs.filter((p) => p.id !== 'barnaby') },
+    };
+    expect(() => assertMapDefinitions(defs)).toThrow(new RangeError('Character barnaby is placed on no map'));
+  });
+
+  it("blocks walking into Cosmo and placing a chest on Barnaby's tile", () => {
+    const beside = withPlayer(BASE, { tx: 6, tz: 13 }, Direction.West, 'neighbours');
+    expect(gameReducer(beside, actions.move(Direction.East)).player).toEqual({ ...beside.player, facing: Direction.East });
+    const facingBarnaby = holding(withPlayer(BASE, { tx: 25, tz: 14 }, Direction.South, 'neighbours'), 'chest');
+    expect(placementProblem(facingBarnaby, 'chest', { tx: 25, tz: 15 })).toBe("Someone's standing there.");
+    expect(lastText(gameReducer(facingBarnaby, actions.useTool()))).toBe("Someone's standing there.");
   });
 });

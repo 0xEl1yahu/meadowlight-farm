@@ -32,6 +32,7 @@ import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
 import { zoneRectBetween } from '../robots/zones';
 import { isReservedTile, mapSeed } from '../world/maps';
+import { isFenceTile } from '../world/maps/neighbours';
 import { getTile, isSoil, isWalkable } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
 import { isZoneMarkerSelected, selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
@@ -295,6 +296,9 @@ function planClearZone(state: GameState, target: TileCoord | null): ActionPlan {
 /** The pickaxe's and the axe's answer at the workbench, which is built into the farm (part 3 spec §2.1). */
 const PART_OF_THE_FARM = "It's part of the farm.";
 
+/** The pickaxe's and the axe's answer at the neighbours' fences (part 4a plan refinement R9). */
+const THE_NEIGHBOURS = 'That belongs to the neighbours.';
+
 /** The empty workbench's hint and toast (part 3 spec §2.2). */
 const EMPTY_BENCH = 'Bring a robot here to work on it';
 
@@ -321,6 +325,7 @@ function isPlaceableKind(kind: PlacedObject['kind']): kind is PlaceableItemId {
 /** Picking a placed object up with the pickaxe or axe; free, but it must fit and a chest must be empty. */
 function planPickUp(state: GameState, target: TileCoord, object: PlacedObject, tool: 'pickaxe' | 'axe'): ActionPlan {
   if (object.kind === 'workbench') return blocked(target, tool, PART_OF_THE_FARM);
+  if (state.player.mapId === 'neighbours' && isFenceTile(target.tx, target.tz)) return blocked(target, tool, THE_NEIGHBOURS);
   if (!isPlaceableKind(object.kind) || PICKUP_TOOL[object.kind] !== tool) return blocked(target, tool);
   if (object.kind === 'chest' && object.slots.some((slot) => slot !== null)) {
     return blocked(target, tool, 'Empty the chest first.');

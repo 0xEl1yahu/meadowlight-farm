@@ -17,6 +17,7 @@ export const Salt = {
   WildPick: 0x3c6ef372,
   MapForest: 0x68e31da4,
   MapTown: 0xb5297a4d,
+  MapNeighbours: 0x4f6cdd1d,
   ForestGen: 0x1b56c4e9,
   TownGen: 0x7fb5d329,
   Quality: 0x2545f491,

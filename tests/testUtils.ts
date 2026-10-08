@@ -41,6 +41,7 @@ import { createDefaultSections, createInitialState } from '../src/state/initialS
 import { countItem } from '../src/state/inventory';
 import { serializeGame } from '../src/state/persistence';
 import { withMap } from '../src/state/selectors';
+import { MAPS } from '../src/world/maps';
 import { calendarTime } from '../src/time/clock';
 import { locateTile } from '../src/world/grid';
 import { isWalkable, requireTile, setTile } from '../src/world/tiles';
@@ -330,6 +331,12 @@ export function v6Save(state: GameState): SaveJson {
     fennick: relation(idle),
     pip: relation(idle),
   };
+  // The Neighbours map: version 6 has none, so the player can't be on it and it must be as a new game makes it.
+  if (state.player.mapId === 'neighbours') throw new Error('v6Save: a version-6 save has no Neighbours map to stand on');
+  if (!deepEqual(state.maps.neighbours, MAPS.neighbours.generate(state.seed))) {
+    throw new Error('v6Save: a version-6 save has no Neighbours map to have changed');
+  }
+  delete (save.maps as SaveJson).neighbours;
   return save;
 }
 

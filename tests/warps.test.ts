@@ -64,12 +64,14 @@ function expectArrived(prev: GameState, next: GameState, warp: Warp): void {
 }
 
 describe('taking a warp', () => {
-  it('has four warps: the farm gates to the forest and the town, and one back from each', () => {
+  it('has six warps: the farm gates to the forest and the town, the town gate to the Neighbours, and one back from each', () => {
     expect(WARPS.map(({ label }) => label)).toEqual([
       'farm (0, 13) → forest',
       'farm (47, 38) → town',
       'forest (35, 15) → farm',
       'town (0, 16) → farm',
+      'town (39, 16) → neighbours',
+      'neighbours (0, 14) → town',
     ]);
   });
 
@@ -144,8 +146,8 @@ describe('edges without a warp', () => {
         }
       }
     }
-    // Every edge step of the farm (48 × 40), forest (36 × 30) and town (40 × 32), minus the four warps.
-    expect(blocked).toBe(2 * (48 + 40) + 2 * (36 + 30) + 2 * (40 + 32) - 4);
+    // Every edge step of the farm (48 × 40), forest (36 × 30), town (40 × 32) and the Neighbours (40 × 28), minus the six warps.
+    expect(blocked).toBe(2 * (48 + 40) + 2 * (36 + 30) + 2 * (40 + 32) + 2 * (40 + 28) - 6);
   });
 
   it('only warps in the exit direction: the gate tile itself turns or steps like any other tile', () => {

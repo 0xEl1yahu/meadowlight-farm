@@ -23,6 +23,8 @@ export function mapSeed(seed: number, id: MapId): number {
       return hash32(seed, Salt.MapForest);
     case 'town':
       return hash32(seed, Salt.MapTown);
+    case 'neighbours':
+      return hash32(seed, Salt.MapNeighbours);
   }
 }
 

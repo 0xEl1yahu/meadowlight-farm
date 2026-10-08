@@ -1,7 +1,8 @@
 /**
  * Brookhollow (40 × 32): the town south-east of the farm. Pure data, identical for every seed:
  * shops along the back (−Z) edge behind a hedge line, a cobbled square with a well, a main
- * street from the west gate, and a river along the south with a promenade in front of it.
+ * street from the west gate to the east gate, and a river along the south with a promenade in
+ * front of it.
  *
  * Occlusion rule: the camera looks from +X/+Z, so anything tall hides the tiles on its −X/−Z
  * side. The shops and the parts exchange therefore stand against the back edge, and every other
@@ -52,7 +53,8 @@ const structures: readonly StructurePlacement[] = [
 /**
  * The characters (part 4a spec §2.1), facing the square. Each shopkeeper stands one tile east of
  * the tile in front of their door, so the door path stays clear; Juniper stands one tile west,
- * because the lamp post at (26, 8) is south of the east tile. Sol stands at the top of the square.
+ * because the lamp post at (26, 8) is south of the east tile. Sol stands beside the parts
+ * exchange's door.
  */
 const npcs: readonly NpcPlacement[] = [
   { id: 'sol', tx: 21, tz: 7, facing: Direction.South },
@@ -136,10 +138,15 @@ export const TOWN_MAP: MapDefinition = {
   name: 'Brookhollow',
   grid,
   allowsTilling: false,
-  warps: [{ from: { tx: 0, tz: 16 }, exit: Direction.West, to: { mapId: 'farm', tx: 46, tz: 38, facing: Direction.West } }],
+  warps: [
+    { from: { tx: 0, tz: 16 }, exit: Direction.West, to: { mapId: 'farm', tx: 46, tz: 38, facing: Direction.West } },
+    { from: { tx: 39, tz: 16 }, exit: Direction.East, to: { mapId: 'neighbours', tx: 1, tz: 14, facing: Direction.East } },
+  ],
   reserved: [
     { tx: 0, tz: 16 },
     { tx: 1, tz: 16 },
+    { tx: 39, tz: 16 },
+    { tx: 38, tz: 16 },
   ],
   structures,
   npcs,

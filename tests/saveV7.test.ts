@@ -4,11 +4,13 @@
  * adds its cases here.
  */
 import { describe, expect, it } from 'vitest';
-import { Direction, NPC_IDS, SAVE_VERSION, type GameState, type NpcId, type NpcTalk } from '../src/core/types';
+import { Direction, MAP_IDS, NPC_IDS, SAVE_VERSION, type GameState, type NpcId, type NpcTalk } from '../src/core/types';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { hasExactKeys, isObj } from '../src/state/validation';
+import { MAPS } from '../src/world/maps';
+import { EMPTY_TILE } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, atDay, livelySections, must, v6Save, withPlayer, type SaveJson } from './testUtils';
+import { BASE, atDay, livelySections, must, v6Save, withPlayer, withTile, type SaveJson } from './testUtils';
 
 /** `state` with the given characters' chats replaced. */
 function withTalks(state: GameState, talks: Partial<Record<NpcId, NpcTalk>>): GameState {
@@ -213,5 +215,66 @@ describe('save version 7 rejects', () => {
     expect(JSON.stringify(save)).not.toBe(serializeGame(state));
     expect(isValidGameState(save)).toBe(false);
     expect(load(save)).toBeNull();
+  });
+});
+
+describe('the Neighbours map in saves', () => {
+  const onTheLane = (): GameState => withPlayer(BASE, { tx: 1, tz: 14 }, Direction.East, 'neighbours');
+
+  it('round-trips a game standing on the Neighbours map', () => {
+    const state = onTheLane();
+    expect(must(deserializeGame(serializeGame(state)))).toEqual(state);
+  });
+
+  it('adds the Neighbours map to a v6 save made in town, and leaves the player in town', () => {
+    const state = chatted();
+    const save = v6Save(state);
+    expect(Object.keys(save.maps as SaveJson)).toEqual(['farm', 'forest', 'town']);
+    expect(Object.keys((migrateSave(save) as SaveJson).maps as SaveJson)).toEqual([...MAP_IDS]);
+    const loaded = must(load(save));
+    expect(loaded.maps.neighbours).toEqual(MAPS.neighbours.generate(state.seed));
+    expect(loaded.maps.town).toEqual(state.maps.town);
+    expect(loaded.player).toEqual(state.player);
+  });
+
+  it('leaves a v6 save with a malformed seed without the map, for the validator to reject', () => {
+    const save = { ...v6Save(BASE), seed: -1 };
+    expect('neighbours' in ((migrateSave(save) as SaveJson).maps as SaveJson)).toBe(false);
+    expect(load(save)).toBeNull();
+  });
+
+  it('v6Save refuses a player on the Neighbours map, or a Neighbours map that changed', () => {
+    expect(() => v6Save(onTheLane())).toThrow('v6Save');
+    const changed = withTile(BASE, { tx: 15, tz: 8 }, { ...EMPTY_TILE, object: { kind: 'woodPath' } }, 'neighbours');
+    expect(() => v6Save(changed)).toThrow('v6Save');
+  });
+
+  it('rejects a Neighbours map that is missing, the wrong size or another map, and a player standing on a fence', () => {
+    const save = JSON.parse(serializeGame(onTheLane())) as SaveJson;
+    const maps = (copy: SaveJson): SaveJson => copy.maps as SaveJson;
+    const corrupt = (edit: (copy: SaveJson) => void): SaveJson => {
+      const copy = JSON.parse(JSON.stringify(save)) as SaveJson;
+      edit(copy);
+      return copy;
+    };
+    expect(load(save)).not.toBeNull();
+    const broken = [
+      corrupt((c) => {
+        delete maps(c).neighbours;
+      }),
+      corrupt((c) => {
+        (maps(c).neighbours as { grid: SaveJson }).grid.width = 48;
+      }),
+      corrupt((c) => {
+        maps(c).neighbours = maps(c).town;
+      }),
+      corrupt((c) => {
+        Object.assign(c.player as SaveJson, { tx: 3, tz: 8 });
+      }),
+    ];
+    for (const bad of broken) {
+      expect(isValidGameState(bad)).toBe(false);
+      expect(load(bad)).toBeNull();
+    }
   });
 });

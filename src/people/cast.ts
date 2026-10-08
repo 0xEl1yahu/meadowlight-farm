@@ -57,13 +57,13 @@ export function npcAt(mapId: MapId, tx: number, tz: number): NpcId | null {
   return null;
 }
 
-/** Where `npc` stands, or null when no map places them. */
-export function npcSpot(npc: NpcId): { readonly mapId: MapId; readonly placement: NpcPlacement } | null {
+/** Where `npc` stands. The startup check places every character on exactly one map. */
+export function npcSpot(npc: NpcId): { readonly mapId: MapId; readonly placement: NpcPlacement } {
   for (const def of Object.values(MAPS)) {
     const placement = def.npcs.find((p) => p.id === npc);
     if (placement !== undefined) return { mapId: def.id, placement };
   }
-  return null;
+  throw new RangeError(`Character ${npc} is placed on no map`);
 }
 
 /** A button in the chat box (spec §3.2). */

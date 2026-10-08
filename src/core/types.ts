@@ -134,7 +134,7 @@ export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId | Pl
 // Identifier lists for later workstreams. They are data keys only: their item registry
 // entries, icons and behaviour arrive with the workstream that uses them.
 
-export const MAP_IDS = ['farm', 'forest', 'town'] as const;
+export const MAP_IDS = ['farm', 'forest', 'town', 'neighbours'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 /** 0 normal, 1 silver, 2 gold. */
@@ -232,6 +232,9 @@ export const STRUCTURE_KINDS = [
   'well',
   'lampPost',
   'hedge',
+  'cosmoHouse',
+  'barnabyHouse',
+  'chickenCoop',
 ] as const;
 export type StructureKind = (typeof STRUCTURE_KINDS)[number];
 

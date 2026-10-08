@@ -3,13 +3,14 @@
  * game, and lookups. The definitions are validated once at module load.
  */
 import { PLAYER } from '../../config';
-import { DIRECTIONS, MAP_IDS, type MapId, type NpcId, type TileRect, type WorldState } from '../../core/types';
+import { DIRECTIONS, MAP_IDS, NPC_IDS, type MapId, type NpcId, type TileRect, type WorldState } from '../../core/types';
 import { inBounds, rectContains, rectInBounds, stepTile, tileCount } from '../grid';
 import { getTile, isWalkable } from '../tiles';
 import { isPondTile } from '../worldgen';
 import { FARM_MAP } from './farm';
 import { FOREST_MAP } from './forest';
 import { arrivalTiles, coordIn, reachableTiles } from './lookup';
+import { NEIGHBOURS_MAP, assertNeighboursLayout } from './neighbours';
 import { TOWN_MAP, assertTownLayout } from './town';
 import type { MapDefinition } from './types';
 
@@ -72,8 +73,8 @@ function assertFarmSpawn(def: MapDefinition): void {
  * neither a door nor the tile in front of one, alone on its tile, and reachable: one of its
  * orthogonal neighbours can be walked to from one of the map's arrival tiles, over walkable
  * tiles that aren't characters' spots. A map that lists characters generates the same world for
- * every seed, so the world from seed 0 is the one walked, generated once per map. A character
- * stands on at most one map.
+ * every seed, so the world from seed 0 is the one walked, generated once per map. Every
+ * character stands on exactly one map.
  */
 function assertNpcPlacements(defs: Readonly<Record<MapId, MapDefinition>>): void {
   const placed = new Set<NpcId>();
@@ -99,6 +100,9 @@ function assertNpcPlacements(defs: Readonly<Record<MapId, MapDefinition>>): void
       placed.add(p.id);
     });
   }
+  for (const npc of NPC_IDS) {
+    if (!placed.has(npc)) throw new RangeError(`Character ${npc} is placed on no map`);
+  }
 }
 
 /**
@@ -106,8 +110,8 @@ function assertNpcPlacements(defs: Readonly<Record<MapId, MapDefinition>>): void
  * target out of bounds, a warp without a reciprocal (the target map must have a warp to this
  * map arriving orthogonally next to `from`), an unreserved warp or arrival tile, a structure
  * outside the grid or overlapping another structure or a reserved tile, a farm spawn that isn't
- * clear, the town's own layout rules (`assertTownLayout`), and a character's spot that breaks
- * a rule of `assertNpcPlacements`.
+ * clear, the town's and the Neighbours' own layout rules (`assertTownLayout`,
+ * `assertNeighboursLayout`), and a character's spot that breaks a rule of `assertNpcPlacements`.
  */
 export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>>): void {
   for (const id of MAP_IDS) {
@@ -122,9 +126,15 @@ export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>
   assertNpcPlacements(defs);
   assertFarmSpawn(defs.farm);
   assertTownLayout(defs.town);
+  assertNeighboursLayout(defs.neighbours);
 }
 
-export const MAPS: Readonly<Record<MapId, MapDefinition>> = { farm: FARM_MAP, forest: FOREST_MAP, town: TOWN_MAP };
+export const MAPS: Readonly<Record<MapId, MapDefinition>> = {
+  farm: FARM_MAP,
+  forest: FOREST_MAP,
+  town: TOWN_MAP,
+  neighbours: NEIGHBOURS_MAP,
+};
 assertMapDefinitions(MAPS);
 
 export function getMap(id: MapId): MapDefinition {
@@ -136,5 +146,10 @@ export const MAX_MAP_TILE_COUNT: number = Math.max(...MAP_IDS.map((id) => tileCo
 
 /** A new game's worlds, one per map, each from its own map seed. */
 export function generateMaps(seed: number): Record<MapId, WorldState> {
-  return { farm: MAPS.farm.generate(seed), forest: MAPS.forest.generate(seed), town: MAPS.town.generate(seed) };
+  return {
+    farm: MAPS.farm.generate(seed),
+    forest: MAPS.forest.generate(seed),
+    town: MAPS.town.generate(seed),
+    neighbours: MAPS.neighbours.generate(seed),
+  };
 }

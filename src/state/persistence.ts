@@ -496,7 +496,7 @@ function migrateNpcV6(saved: unknown): unknown {
  * where Marigold, Bram, Juniper and Tess keep their chats and Sol, Cosmo and Barnaby start at none.
  * Fennick, Pip and every friendship field are dropped, and so is a board request or a festival gift
  * target naming Fennick or Pip. `npcs` may already have the v7 shape, because migrateV2toV3 fills
- * it from the current defaults.
+ * it from the current defaults. The Neighbours map is generated from its fixed definition.
  */
 function migrateV6toV7(save: Obj): Obj {
   const { npcs, quests, festival } = save;
@@ -509,6 +509,9 @@ function migrateV6toV7(save: Obj): Obj {
   };
   if (isObj(quests) && isObj(quests.board) && isOneOf(quests.board.npc, REMOVED_NPCS)) migrated = { ...migrated, quests: { ...quests, board: null } };
   if (isObj(festival) && isOneOf(festival.giftTarget, REMOVED_NPCS)) migrated = { ...migrated, festival: { ...festival, giftTarget: null } };
+  if (isObj(save.maps) && isIntIn(save.seed, 0, 0xffffffff)) {
+    migrated = { ...migrated, maps: { ...save.maps, neighbours: MAPS.neighbours.generate(save.seed) } };
+  }
   return migrated;
 }
 

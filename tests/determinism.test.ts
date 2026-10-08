@@ -7,7 +7,7 @@
  * reproduce that state, the deep-frozen states must never be mutated, and every transition
  * must honour the render contract (unchanged chunks and tiles keep their identity) on every
  * map. A second, state-aware "traveller" session keeps walking to the gates, so warps between
- * all three maps are replayed and checked the same way. Also covers the seeded hash primitives everything stochastic is built on.
+ * every map are replayed and checked the same way. Also covers the seeded hash primitives everything stochastic is built on.
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, TIME } from '../src/config';
@@ -27,6 +27,7 @@ import {
   type WorldState,
 } from '../src/core/types';
 import { seedItemId } from '../src/farming/crops';
+import { npcAt } from '../src/people/cast';
 import { actions, type GameAction } from '../src/state/actions';
 import { createInitialState } from '../src/state/initialState';
 import { serializeGame } from '../src/state/persistence';
@@ -81,8 +82,11 @@ function randomSession(seed: number, length: number): GameAction[] {
   return Array.from({ length }, () => randomAction(rng));
 }
 
-/** Walking distance from every tile of `world` to `goal` over walkable tiles (-1: unreachable). */
-function distanceField(world: WorldState, goal: TileCoord): Int32Array {
+/**
+ * Walking distance from every tile of `world` (map `mapId`) to `goal` over walkable tiles where no
+ * character stands, as the player walks (-1: unreachable).
+ */
+function distanceField(world: WorldState, mapId: MapId, goal: TileCoord): Int32Array {
   const { width } = world.grid;
   const dist = new Int32Array(width * world.grid.depth).fill(-1);
   dist[goal.tz * width + goal.tx] = 0;
@@ -93,7 +97,7 @@ function distanceField(world: WorldState, goal: TileCoord): Int32Array {
     for (const direction of DIRECTIONS) {
       const next = stepTile(current, direction);
       const tile = getTile(world, next.tx, next.tz);
-      if (tile === null || !isWalkable(tile) || dist[next.tz * width + next.tx] !== -1) continue;
+      if (tile === null || !isWalkable(tile) || npcAt(mapId, next.tx, next.tz) !== null || dist[next.tz * width + next.tx] !== -1) continue;
       dist[next.tz * width + next.tx] = d + 1;
       queue.push(next);
     }
@@ -133,7 +137,7 @@ function traveller(seed: number): (state: GameState) => GameAction {
     const { warp } = goal;
     if (player.tx === warp.from.tx && player.tz === warp.from.tz) return actions.move(warp.exit);
     const world = selectActiveWorld(state);
-    if (field === null || field.world !== world || field.warp !== warp) field = { world, warp, dist: distanceField(world, warp.from) };
+    if (field === null || field.world !== world || field.warp !== warp) field = { world, warp, dist: distanceField(world, player.mapId, warp.from) };
     return actions.move(stepDown(world, field.dist, player) ?? pick(rng, DIRECTIONS));
   };
 }
@@ -308,11 +312,11 @@ describe('deterministic replay across maps', () => {
   };
 
   it(
-    'keeps warping between all three maps, one teleport per warp or morning',
+    'keeps warping between every map, one teleport per warp or morning',
     () => {
       const { state, warps, visited } = travel();
       expect(warps).toBeGreaterThan(20);
-      expect([...visited].sort()).toEqual(['farm', 'forest', 'town']);
+      expect([...visited].sort()).toEqual([...MAP_IDS].sort());
       expect(state.player.teleportSeq).toBe(state.time.absoluteDay + warps);
       expect(state.stats.visitedTown).toBe(true);
     },

@@ -1,5 +1,5 @@
 /**
- * The three maps (src/world/maps/): the static definitions and their module-load validation,
+ * The four maps (src/world/maps/): the static definitions and their module-load validation,
  * the per-map generators, the per-map seed, the overnight pipeline on every map, and the
  * version-2 → version-3 migration of the old single farm world into `maps`.
  *
@@ -185,10 +185,15 @@ describe('map definitions', () => {
       wild: null,
       decor: { tuftChance: 0.04, flowerChance: 0.03 },
       cosmeticOffset: { x: 3001, z: 4007 },
-      warps: [{ from: { tx: 0, tz: 16 }, exit: Direction.West, to: { mapId: 'farm', tx: 46, tz: 38, facing: Direction.West } }],
+      warps: [
+        { from: { tx: 0, tz: 16 }, exit: Direction.West, to: { mapId: 'farm', tx: 46, tz: 38, facing: Direction.West } },
+        { from: { tx: 39, tz: 16 }, exit: Direction.East, to: { mapId: 'neighbours', tx: 1, tz: 14, facing: Direction.East } },
+      ],
       reserved: [
         { tx: 0, tz: 16 },
         { tx: 1, tz: 16 },
+        { tx: 39, tz: 16 },
+        { tx: 38, tz: 16 },
       ],
     });
     expect([MAPS.town.grid.width, MAPS.town.grid.depth]).toEqual([40, 32]);
@@ -271,6 +276,9 @@ describe('warps and reserved tiles', () => {
     expect(findWarp(MAPS.forest, 35, 15, Direction.East)?.to).toEqual({ mapId: 'farm', tx: 1, tz: 13, facing: Direction.East });
     expect(findWarp(MAPS.town, 0, 16, Direction.West)?.to).toEqual({ mapId: 'farm', tx: 46, tz: 38, facing: Direction.West });
     expect(findWarp(MAPS.town, 0, 15, Direction.West)).toBeNull();
+    expect(findWarp(MAPS.town, 39, 16, Direction.East)?.to).toEqual({ mapId: 'neighbours', tx: 1, tz: 14, facing: Direction.East });
+    expect(findWarp(MAPS.town, 39, 15, Direction.East)).toBeNull();
+    expect(findWarp(MAPS.neighbours, 0, 14, Direction.West)?.to).toEqual({ mapId: 'town', tx: 38, tz: 16, facing: Direction.West });
   });
 
   it('answers isReservedTile and structureAt', () => {
@@ -279,6 +287,8 @@ describe('warps and reserved tiles', () => {
     expect(isReservedTile(MAPS.forest, 34, 15)).toBe(true);
     expect(isReservedTile(MAPS.town, 1, 16)).toBe(true);
     expect(isReservedTile(MAPS.town, 0, 13)).toBe(false);
+    expect(isReservedTile(MAPS.town, 38, 16)).toBe(true);
+    expect(isReservedTile(MAPS.neighbours, 1, 14)).toBe(true);
     expect(structureAt(MAPS.town, 6, 6)?.kind).toBe('generalStore');
     expect(structureAt(MAPS.town, 20, 6)?.kind).toBe('partsExchange');
     expect(structureAt(MAPS.town, 18, 0)?.kind).toBe('partsExchange');
@@ -360,6 +370,10 @@ describe('assertMapDefinitions', () => {
     [
       'an unreserved arrival tile',
       withDef('farm', { reserved: MAPS.farm.reserved.filter((r) => !(r.tx === 1 && r.tz === 13)) }),
+    ],
+    [
+      'an east gate with no way back from the Neighbours',
+      withDef('neighbours', { warps: [] }),
     ],
   ];
 
@@ -598,6 +612,16 @@ describe('the town, Brookhollow', () => {
     });
   });
 
+  it('opens the east gate at the east end of the main street, onto the Neighbours lane', () => {
+    expect(def.warps[1]).toEqual({ from: { tx: 39, tz: 16 }, exit: Direction.East, to: { mapId: 'neighbours', tx: 1, tz: 14, facing: Direction.East } });
+    for (const tx of [38, 39]) {
+      expect(structureAt(def, tx, 16), key(tx, 16)).toBeNull();
+      expect(requireTile(town, tx, 16), key(tx, 16)).toEqual(EMPTY_TILE);
+      expect(def.surfaceAt(tx, 16), key(tx, 16)).toBe('cobble');
+      expect(isReservedTile(def, tx, 16), key(tx, 16)).toBe(true);
+    }
+  });
+
   it('paves the street and the square with cobble, the paths with dirt, and grasses the rest', () => {
     expect(TOWN_MAIN_STREET).toEqual(r(0, 15, 40, 3));
     expect(TOWN_SQUARE).toEqual(r(14, 7, 12, 13));
@@ -639,11 +663,13 @@ describe('generation and map seeds', () => {
     }
   });
 
-  it('gives a different forest for every seed, while the town is the same for all of them', () => {
+  it('gives a different forest for every seed, while the town and the Neighbours are the same for all of them', () => {
     const forests = SEEDS.map((seed) => JSON.stringify(generateMaps(seed).forest));
     expect(new Set(forests).size).toBe(SEEDS.length);
     const towns = SEEDS.map((seed) => JSON.stringify(generateMaps(seed).town));
     expect(new Set(towns).size).toBe(1);
+    const neighbours = SEEDS.map((seed) => JSON.stringify(generateMaps(seed).neighbours));
+    expect(new Set(neighbours).size).toBe(1);
   });
 
   it('derives the map seed: the save seed itself on the farm, separate u32 streams elsewhere', () => {
@@ -651,11 +677,12 @@ describe('generation and map seeds', () => {
       expect(mapSeed(seed, 'farm')).toBe(seed);
       expect(mapSeed(seed, 'forest')).toBe(hash32(seed, Salt.MapForest));
       expect(mapSeed(seed, 'town')).toBe(hash32(seed, Salt.MapTown));
+      expect(mapSeed(seed, 'neighbours')).toBe(hash32(seed, Salt.MapNeighbours));
       for (const id of MAP_IDS) {
         const value = mapSeed(seed, id);
         expect(Number.isInteger(value) && value >= 0 && value <= 0xffffffff).toBe(true);
       }
-      expect(mapSeed(seed, 'forest')).not.toBe(mapSeed(seed, 'town'));
+      expect(new Set(MAP_IDS.filter((id) => id !== 'farm').map((id) => mapSeed(seed, id))).size).toBe(MAP_IDS.length - 1);
     }
   });
 
@@ -772,6 +799,7 @@ describe('overnight on every map', () => {
   it('keeps the reference of a map that did not change overnight', () => {
     const next = startNextDay(atDay(BASE, 3), false);
     expect(next.maps.town).toBe(BASE.maps.town);
+    expect(next.maps.neighbours).toBe(BASE.maps.neighbours);
     expect(next.maps.forest).not.toBe(BASE.maps.forest); // its wild crops grow
     expect(next.maps.farm).not.toBe(BASE.maps.farm);
   });
@@ -855,7 +883,7 @@ describe('migrating the single farm world of an older save into maps', () => {
   }
   const clear = { state: TileState.Unplowed, blocker: Blocker.None, blockerHp: 0, crop: null, object: null, fertilizer: null };
 
-  it('turns a version-2 save with a rock on a gate tile into three maps with the gates clear', () => {
+  it('turns a version-2 save with a rock on a gate tile into every map, with the gates clear', () => {
     const state = gatesInTheWay();
     const v2 = legacySave(state, 2);
     const migrated = migrateSave(v2) as SaveJson;
@@ -879,6 +907,7 @@ describe('migrating the single farm world of an older save into maps', () => {
     expect(loaded.maps.farm.chunks.map((c) => c.revision)).toEqual(state.maps.farm.chunks.map((c) => c.revision));
     expect(loaded.maps.forest).toEqual(MAPS.forest.generate(state.seed));
     expect(loaded.maps.town).toEqual(MAPS.town.generate(state.seed));
+    expect(loaded.maps.neighbours).toEqual(MAPS.neighbours.generate(state.seed));
     expect(loaded.player).toEqual(state.player);
     for (const { tx, tz } of MAPS.farm.reserved) expect(isWalkable(tileAt(loaded, { tx, tz }, 'farm'))).toBe(true);
   });
@@ -892,7 +921,7 @@ describe('migrating the single farm world of an older save into maps', () => {
     expect(loaded.maps.forest).toEqual(MAPS.forest.generate(state.seed));
   });
 
-  it('generates the forest and the town from the save seed', () => {
+  it('generates the forest, the town and the Neighbours from the save seed', () => {
     const seed = 424242;
     const state = { ...BASE, seed, maps: generateMaps(seed) };
     const loaded = must(deserializeGame(JSON.stringify(legacySave(state, 2))));
