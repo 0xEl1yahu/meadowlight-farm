@@ -504,7 +504,7 @@ Any state the game can produce must load; a corrupted field is rejected.
 
 - **The editor chunk** (every lazy chunk containing Blockly, found through its source map's `sources`, added up: `blockly/core` and `blockly/msg/en` load as two chunks) must be ≤ **250 KB gzipped**.
 - **The robot screen chunk** must be ≤ **40 KB gzipped**.
-- **The main entry chunk** must be ≤ the part 2 baseline + **16 KB gzipped** (R35). The baseline is recorded in `scripts/bundle-baseline.json` as 275,539 bytes (part 2's `index-CUmkGRNG.js` at commit `2a92771` through `zlib.gzipSync` at level 6; the `gzip -6` command line gives 274,312 for the same file).
+- **The main entry chunk** must be ≤ the part 2 baseline + **26 KB gzipped** (R35; raised from 16 KB by the part 4a spec's refinement R20). The baseline is recorded in `scripts/bundle-baseline.json` as 275,539 bytes (part 2's `index-CUmkGRNG.js` at commit `2a92771` through `zlib.gzipSync` at level 6; the `gzip -6` command line gives 274,312 for the same file).
 - **Blockly placement:** no Blockly module may appear in the main chunk or the screen chunk (checked by name in each source map's `sources`).
 - **Chunks without a source map:** one of at most 1 KB gzipped (a bundler runtime helper, such as Rolldown's runtime chunk) counts as other, with no budget, and is still scanned by the dist check (section 10.3); a larger one fails the check (R36).
 

@@ -114,9 +114,9 @@ describe('evaluateBudgets', () => {
     const rows = evaluateBudgets(classifyChunks([MAIN, SCREEN, CORE, EN], MAIN.file), BASELINE);
     expect(EDITOR_MAX_GZIP).toBe(250 * 1024);
     expect(SCREEN_MAX_GZIP).toBe(40 * 1024);
-    expect(MAIN_GROWTH_MAX_GZIP).toBe(16 * 1024);
+    expect(MAIN_GROWTH_MAX_GZIP).toBe(26 * 1024);
     expect(rows).toEqual([
-      { role: 'main', files: [MAIN.file], gzipBytes: 270 * KIB, limitBytes: BASELINE + 16 * KIB, ok: true },
+      { role: 'main', files: [MAIN.file], gzipBytes: 270 * KIB, limitBytes: BASELINE + 26 * KIB, ok: true },
       { role: 'screen', files: [SCREEN.file], gzipBytes: 30 * KIB, limitBytes: 40 * KIB, ok: true },
       { role: 'editor', files: [CORE.file, EN.file], gzipBytes: 209 * KIB, limitBytes: 250 * KIB, ok: true },
     ]);
@@ -132,7 +132,7 @@ describe('evaluateBudgets', () => {
     expect(budgetProblems(rows)).toEqual(['The screen chunk is 40.0 KiB gzipped, over its 40.0 KiB budget (assets/RobotScreen-BBB.js).']);
   });
 
-  it('holds the main chunk to the baseline plus 16 KiB', () => {
+  it('holds the main chunk to the baseline plus 26 KiB', () => {
     const grown = { ...MAIN, gzipBytes: BASELINE + MAIN_GROWTH_MAX_GZIP + 1 };
     expect(budgetProblems(evaluateBudgets({ main: grown, screen: null, editor: [] }, BASELINE))).toEqual([
       `The main chunk is ${formatKiB(BASELINE + MAIN_GROWTH_MAX_GZIP + 1)} gzipped, over its ${formatKiB(BASELINE + MAIN_GROWTH_MAX_GZIP)} budget (assets/index-AAA.js).`,

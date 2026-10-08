@@ -208,7 +208,7 @@ Every task's **Interfaces** block repeats the part of this contract it consumes 
 
 #### Contract for Task 10: Playbook and spec sync
 - `.claude/skills/game-driven-qa/scenarios/farmclaws-part4a.md` (spec §7's 8 steps); `SKILL.md` gains part 4a rows.
-- The spec edits listed in spec §10, plus a "Plan refinements" section in the part 4a spec for R1–R19 and any ruling recorded in a part 4a commit body.
+- The spec edits listed in spec §10, plus a "Plan refinements" section in the part 4a spec for R1–R20 and any ruling recorded in a part 4a commit body.
 
 ---
 
@@ -236,9 +236,10 @@ Decided while drafting this plan. Task 10 writes each into the part 4a spec. Tho
 - **R18.** The neighbours' houses are the farmhouse with a roof colour (`FarmhouseSpec.roofColor`, from `NEIGHBOUR_ROOFS`: Cosmo sunflower yellow, Barnaby bright blue): the shingle rows and ridge are darker shades of it and the door's awning takes it too; their chimneys don't smoke. No coop builder existed, so the coop is a plain plank shed raised on legs, with a hens' ramp, a nest box and a small window (spec §5.2). *Colours and the coop's look for Eli.*
 - **R19.** The parts exchange is steel-blue with slate trim and a mustard roof, colours no shop uses, and its walls are 4 units tall to the shops' 2.4–2.5, so it reads as two storeys (spec §4). *For Eli.*
 
+- **R20.** The main chunk's allowance over the part 2 baseline rises from 16 KiB to 26 KiB (`MAIN_GROWTH_MAX_GZIP` in `scripts/bundleRules.mjs`; part 3 spec §10.1): at the spec commit the main chunk was 282.0 KiB of its 285.1 KiB budget, and part 4a's cast, lines, chat box and character renderer belong in the main chunk. Decided by Eli before the build.
+
 ## Open decisions for Eli
 
-- **The main-chunk budget.** At the spec commit the main chunk is 282.0 KiB gzipped against a 285.1 KiB budget. Task 8 alone adds about 3.3 KiB, and Tasks 4, 5, 7 and 9 add more, so `build:check` will fail in Task 10 unless the budget rises or something moves behind a lazy import. Recommendation: raise the allowance by 10 KiB as a part 4a refinement of the part 3 budget. Task 10 Step 5 stops and asks if it's still undecided.
 - **Cosmo's front door** (5, 4) opens onto his own fence ring at (5, 5). Legal, and the door does nothing in 4a; the spec's numbers are kept.
 - **The field gates** (6, 12) and (24, 16) are grass between the dirt field and the dirt lane. Making them dirt is a one-line change in `neighboursSurface`.
 - **Placing inside the neighbours' fields** is still allowed. Part 4c, which turns the fields into soil, may want to refuse it.
@@ -9218,7 +9219,7 @@ and directly after the row that starts `| Keys do nothing while a robot screen i
    10. The playbook, the QA skill rows, and the spec sync.
    ```
 
-9. At the end of the file, after §10's last bullet, append the refinements section. It lists R1–R19 from the plan's header, in order, as the plan's "Plan refinements of the spec" list words them:
+9. At the end of the file, after §10's last bullet, append the refinements section. It lists R1–R20 from the plan's header, in order, as the plan's "Plan refinements of the spec" list words them:
 
 ```markdown
 

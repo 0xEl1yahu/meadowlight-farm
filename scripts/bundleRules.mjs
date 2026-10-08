@@ -5,10 +5,10 @@
 
 export const KIB = 1024;
 
-/** Spec §10.1: the lazy Blockly editor, the lazy robot screen, and the main chunk's growth over the part 2 baseline. */
+/** Spec §10.1: the lazy Blockly editor, the lazy robot screen, and the main chunk's growth over the part 2 baseline (raised from 16 KiB for part 4a's cast, chat box and characters). */
 export const EDITOR_MAX_GZIP = 250 * KIB;
 export const SCREEN_MAX_GZIP = 40 * KIB;
-export const MAIN_GROWTH_MAX_GZIP = 16 * KIB;
+export const MAIN_GROWTH_MAX_GZIP = 26 * KIB;
 /** A chunk without a source map is only tolerated up to this size (bundler runtime helpers); it still gets the dev-hook grep. */
 export const UNMAPPED_MAX_GZIP = 1 * KIB;
 
