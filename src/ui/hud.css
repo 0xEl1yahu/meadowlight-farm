@@ -1085,6 +1085,88 @@
 }
 
 /* -------------------------------------------------------------------------------------------
+ * Chat box (ChatBox.ts, farmclaws part 4a spec §3.2): first in the bottom-centre column, so it
+ * sits just above the hotbar while the talk panel is open (the hint hides then). The phone
+ * modifier spans the screen from gutter to gutter, over the energy bar's column on narrow
+ * screens, and lets the buttons wrap.
+ * ----------------------------------------------------------------------------------------- */
+
+.chat-box {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'heading close'
+    'line line'
+    'actions actions';
+  align-items: start;
+  gap: 8px 12px;
+  width: min(560px, 100%);
+  padding: 12px 14px 14px 16px;
+  pointer-events: auto;
+  animation: hud-pop-in 0.22s ease-out backwards;
+}
+
+.chat-box__heading {
+  grid-area: heading;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.chat-box__name {
+  color: var(--hud-ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.chat-box__role {
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-box__close {
+  grid-area: close;
+  min-height: 30px;
+  padding: 3px 12px 2px;
+}
+
+.chat-box__line {
+  grid-area: line;
+  padding: 9px 12px;
+  border: 2px solid var(--hud-line);
+  border-radius: var(--hud-radius-sm);
+  background: var(--hud-parchment);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.chat-box__actions {
+  grid-area: actions;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.chat-box--phone {
+  align-self: flex-start;
+  width: calc(100vw - 2 * var(--hud-gutter));
+}
+
+.chat-box--phone .chat-box__actions {
+  flex-wrap: wrap;
+}
+
+.chat-box--phone .chat-box__action {
+  flex: 1 1 auto;
+}
+
+/* -------------------------------------------------------------------------------------------
  * Modals (shop, pause)
  * ----------------------------------------------------------------------------------------- */
 
@@ -1710,6 +1792,7 @@
 @media (prefers-reduced-motion: reduce) {
   .hud-toast,
   .hud-modal__card,
+  .chat-box,
   .hud-help__panel,
   .hud-daywipe__content {
     animation-name: hud-fade-in !important;

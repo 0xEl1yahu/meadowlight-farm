@@ -2,7 +2,18 @@
  * Every way the game state can change. Actions are plain serialisable objects, so an action
  * log replayed from the same initial state reproduces the same game exactly.
  */
-import type { CraftingRecipeId, Direction, GameState, MdCard, MessageTone, RobotProgram, SeedItemId, SlotRef } from '../core/types';
+import type {
+  CraftingRecipeId,
+  Direction,
+  GameState,
+  MdCard,
+  MessageTone,
+  NpcActionKind,
+  NpcId,
+  RobotProgram,
+  SeedItemId,
+  SlotRef,
+} from '../core/types';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -46,7 +57,9 @@ export type GameAction =
   /** Scraps the robot on the workbench for gold (farmclaws part 3 spec §3.3). */
   | { readonly type: 'robot/scrap'; readonly robotId: number }
   /** Paints the robot on the workbench ROBOT_PAINTS[paint] (part 3 spec §3.4). */
-  | { readonly type: 'robot/paint'; readonly robotId: number; readonly paint: number };
+  | { readonly type: 'robot/paint'; readonly robotId: number; readonly paint: number }
+  /** An action button in the chat box, e.g. Marigold's Shop (farmclaws part 4a spec §3.2). */
+  | { readonly type: 'talk/act'; readonly npc: NpcId; readonly act: NpcActionKind };
 
 export type GameActionType = GameAction['type'];
 
@@ -83,4 +96,5 @@ export const actions = {
   switchRobot: (robotId: number, on: boolean): GameAction => ({ type: 'robot/switch', robotId, on }),
   scrapRobot: (robotId: number): GameAction => ({ type: 'robot/scrap', robotId }),
   paintRobot: (robotId: number, paint: number): GameAction => ({ type: 'robot/paint', robotId, paint }),
+  npcAct: (npc: NpcId, act: NpcActionKind): GameAction => ({ type: 'talk/act', npc, act }),
 } as const;

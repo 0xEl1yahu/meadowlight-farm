@@ -10,13 +10,14 @@ import { INVENTORY } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import { Direction, NPC_IDS, type GameState, type MapId, type NpcId, type TileCoord } from '../src/core/types';
 import { IGNORED, INTERACT_KEYS, panelKeyCommand } from '../src/input/panelKeys';
+import { npcSpot } from '../src/people/cast';
 import { LINE_BANKS, lineFor } from '../src/people/lines';
 import { actions } from '../src/state/actions';
 import { describeIntent, planInteraction, planPrimaryAction, planShiftInteraction, type ActionPlan } from '../src/state/intents';
 import { gameReducer, startNextDay } from '../src/state/reducer';
 import { selectIsFrozen } from '../src/state/selectors';
 import { EMPTY_TILE } from '../src/world/tiles';
-import { BASE, emptyHanded, holding, robotOf, withEnergy, withPlayer, withRobots, withTile } from './testUtils';
+import { BASE, emptyHanded, holding, must, robotOf, withEnergy, withPlayer, withRobots, withTile } from './testUtils';
 
 const interact = (state: GameState): GameState => gameReducer(state, actions.interact());
 const peek = (state: GameState): GameState => gameReducer(state, actions.peek());
@@ -224,5 +225,60 @@ describe('the talk panel keys (spec §3.2)', () => {
   it('I and B open nothing over it', () => {
     expect(press('KeyI', OPEN)).toBe(OPEN);
     expect(press('KeyB', OPEN)).toBe(OPEN);
+  });
+});
+
+describe("the chat box's actions (talk/act)", () => {
+  /** BASE with the talk panel open on `npc`, paused or not. */
+  const talkingTo = (npc: NpcId, paused = false): GameState => ({
+    ...BASE,
+    ui: { ...BASE.ui, panel: { kind: 'talk', npc, line: 'Lovely weather.' }, paused },
+  });
+  const shopFor = (state: GameState, npc: NpcId): GameState => gameReducer(state, actions.npcAct(npc, 'shop'));
+
+  it("Marigold's Shop swaps the talk panel for the seed shop and changes nothing else", () => {
+    const state = talkingTo('marigold');
+    const next = shopFor(state, 'marigold');
+    expect(next.ui).toEqual({ ...state.ui, panel: { kind: 'shop' } });
+    expect(next.npcs).toBe(state.npcs);
+    expect(next.player).toBe(state.player);
+    expect(next.inventory).toBe(state.inventory);
+    expect(next.time).toBe(state.time);
+    expect(next.messages).toBe(state.messages);
+  });
+
+  it('opens the shop from a real chat with Marigold, and the shop closes as usual', () => {
+    const { mapId, placement } = must(npcSpot('marigold'));
+    const before = withPlayer(BASE, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+    const talking = gameReducer(before, actions.interact());
+    expect(talking.ui.panel.kind).toBe('talk');
+    const shopping = shopFor(talking, 'marigold');
+    expect(shopping.ui.panel).toEqual({ kind: 'shop' });
+    expect(shopping.npcs).toBe(talking.npcs);
+    expect(gameReducer(shopping, actions.setShopOpen(false)).ui.panel).toEqual({ kind: 'none' });
+  });
+
+  it('does nothing when the talk panel is open on someone else', () => {
+    const state = talkingTo('bram');
+    expect(shopFor(state, 'marigold')).toBe(state);
+  });
+
+  it('does nothing without a talk panel', () => {
+    expect(shopFor(BASE, 'marigold')).toBe(BASE);
+    const shop: GameState = { ...BASE, ui: { ...BASE.ui, panel: { kind: 'shop' } } };
+    expect(shopFor(shop, 'marigold')).toBe(shop);
+  });
+
+  it("does nothing for an action the character doesn't have", () => {
+    for (const npc of NPC_IDS) {
+      if (npc === 'marigold') continue;
+      const state = talkingTo(npc);
+      expect(shopFor(state, npc)).toBe(state);
+    }
+  });
+
+  it('does nothing while paused', () => {
+    const state = talkingTo('marigold', true);
+    expect(shopFor(state, 'marigold')).toBe(state);
   });
 });

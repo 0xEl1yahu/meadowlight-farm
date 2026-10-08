@@ -5,7 +5,8 @@
  *   top-left       message toasts (aria-live polite)
  *   top-right      clock panel: date, time, day dial, weather + forecast, gold, shipment, speed
  *   bottom-left    collapsible controls chip above a small performance readout
- *   bottom-centre  context hint ("Space: Till", "E: Harvest") above the 12-slot hotbar
+ *   bottom-centre  the chat box while talking (ChatBox.ts), then the context hint ("Space: Till",
+ *                  "E: Harvest") above the 12-slot hotbar
  *   bottom-right   vertical energy bar
  *   overlays       seed shop modal, backpack / chest screen (InventoryScreen.ts), pause card,
  *                  day-transition fade
@@ -50,6 +51,7 @@ import {
 } from '../state/selectors';
 import { dayProgress, formatClock, formatDate } from '../time/clock';
 import { weatherLabel } from '../time/weather';
+import { ChatBox } from './ChatBox';
 import {
   clamp01,
   closestWithin,
@@ -1168,6 +1170,7 @@ export class Hud {
   private readonly hotbar: Hotbar;
   private readonly hint: ContextHint;
   private readonly zoneChip: ZoneChip;
+  private readonly chat: ChatBox;
   private readonly toasts: ToastStack;
   private readonly shop: ShopModal;
   private readonly inventory: InventoryScreen;
@@ -1197,6 +1200,7 @@ export class Hud {
     this.hotbar = new Hotbar(context);
     this.hint = new ContextHint();
     this.zoneChip = new ZoneChip();
+    this.chat = new ChatBox(context);
     this.toasts = new ToastStack();
     this.shop = new ShopModal(context);
     this.inventory = new InventoryScreen(context);
@@ -1211,7 +1215,7 @@ export class Hud {
     const left = h('div', 'hud-left');
     left.append(this.help.element, this.perf.element);
     const center = h('div', 'hud-center');
-    center.append(this.hint.element, this.zoneChip.element, this.hotbar.element);
+    center.append(this.chat.element, this.hint.element, this.zoneChip.element, this.hotbar.element);
     const right = h('div', 'hud-right');
     right.append(this.energy.element);
     const bottom = h('div', 'hud-bottom');
@@ -1238,6 +1242,7 @@ export class Hud {
     this.hotbar.sync(state, prev);
     this.hint.sync(state, prev);
     this.zoneChip.sync(state, prev);
+    this.chat.sync(state, prev);
     this.toasts.sync(state, prev);
     this.shop.sync(state, prev);
     this.inventory.sync(state, prev);

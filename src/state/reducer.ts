@@ -26,6 +26,8 @@ import {
   type CropId,
   type InventoryState,
   type ItemStack,
+  type NpcActionKind,
+  type NpcId,
   type PlaceableItemId,
   type PlacedObject,
   type Quality,
@@ -44,7 +46,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
-import { npcAt } from '../people/cast';
+import { npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { programmedRobot, withMd, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
@@ -152,6 +154,8 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return scrapRobot(state, action.robotId);
     case 'robot/paint':
       return paintRobot(state, action.robotId, action.paint);
+    case 'talk/act':
+      return talkAct(state, action.npc, action.act);
     default: {
       const unknown: never = action;
       void unknown;
@@ -878,6 +882,31 @@ function paintRobot(state: GameState, robotId: number, paint: number): GameState
   if (state.player.gold < cost) return pushMessage(state, `A paint job costs ${cost}g.`, 'warn');
   const painted = withRobot({ ...state, player: { ...state.player, gold: state.player.gold - cost } }, { ...robot, paint });
   return pushMessage(painted, `Painted ${robot.name} ${colour}.`, 'success');
+}
+
+// ---------------------------------------------------------------------------
+// The chat box (farmclaws part 4a spec §3.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * `talk/act`: an action button in the chat box. It acts only while the talk panel is open on
+ * `npc`, the game isn't paused and `act` is one of `npcActions(npc)`; anything else changes
+ * nothing. The Shop swaps the talk panel for the seed shop in one step. Parts 4b and 4c add a
+ * case per new action kind.
+ */
+function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
+  const panel = state.ui.panel;
+  if (panel.kind !== 'talk' || panel.npc !== npc || state.ui.paused) return state;
+  if (!npcActions(npc).some((action) => action.kind === act)) return state;
+  switch (act) {
+    case 'shop':
+      return { ...state, ui: { ...state.ui, panel: { kind: 'shop' } } };
+    default: {
+      const unknown: never = act;
+      void unknown;
+      return state;
+    }
+  }
 }
 
 /** Replaces the whole state (new game / loaded save): no panel open, unpaused, no zone draft, the player flagged as teleported. */
