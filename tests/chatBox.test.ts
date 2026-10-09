@@ -20,9 +20,9 @@ const SPEC_CAST: Readonly<Record<NpcId, readonly [string, string]>> = {
   cosmo: ['Cosmo', 'Farmer'],
   barnaby: ['Barnaby', 'Farmer'],
   marigold: ['Marigold', 'General store'],
-  bram: ['Bram', 'Blacksmith'],
+  berlioz: ['Berlioz', 'Blacksmith'],
   juniper: ['Juniper', 'Carpenter'],
-  tess: ['Tess', 'Ranch'],
+  tallulah: ['Tallulah', 'Ranch'],
 };
 
 /** BASE with the talk panel open on `npc`, carrying `line`. */

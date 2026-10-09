@@ -27,6 +27,7 @@ import {
   type GameSections,
   type GameState,
   type ItemStack,
+  type SeedItemId,
 } from '../src/core/types';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
@@ -152,7 +153,7 @@ describe('createDefaultSections', () => {
     cooking: { known: ['friedMushrooms', 'veggieStew'], kitchenLevel: 0 },
     buildings: [],
     nextEntityId: 1,
-    npcs: { sol: idle, cosmo: idle, barnaby: idle, marigold: idle, bram: idle, juniper: idle, tess: idle },
+    npcs: { sol: idle, cosmo: idle, barnaby: idle, marigold: idle, berlioz: idle, juniper: idle, tallulah: idle },
     quests: { completed: [], board: null },
     stats: {
       parsnipsShipped: 0,
@@ -173,6 +174,12 @@ describe('createDefaultSections', () => {
       zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
       unlocks: UNLOCKS.job1,
       pendingMarker: false,
+      deliveries: [],
+    },
+    shopsSoldToday: {
+      parts: { claw: 0, wateringHead: 0, tiller: 0, seeder: 0, basket: 0, sensorEye: 0 },
+      robots: { mini: 0, standard: 0, big: 0 },
+      seeds: Object.fromEntries(CROP_IDS.map((id) => [`${id}_seeds`, 0])) as Record<SeedItemId, number>,
     },
   };
 
@@ -199,7 +206,7 @@ describe('createDefaultSections', () => {
     const b = createDefaultSections();
     expect(a).toEqual(b);
     expect(a.npcs).not.toBe(b.npcs);
-    expect(a.npcs.bram).not.toBe(b.npcs.bram);
+    expect(a.npcs.berlioz).not.toBe(b.npcs.berlioz);
     expect(a.profile).not.toBe(b.profile);
     expect(a.festival.display).not.toBe(b.festival.display);
   });
@@ -340,7 +347,7 @@ describe('saved NPCs, quests, stats and festival reject', () => {
     ['npcs that are not an object', ['npcs'], []],
     ['negative talks', ['npcs', 'juniper', 'talks'], -1],
     ['a non-boolean talkedToday', ['npcs', 'cosmo', 'talkedToday'], 'yes'],
-    ['an NPC that is not an object', ['npcs', 'tess'], 1000],
+    ['an NPC that is not an object', ['npcs', 'tallulah'], 1000],
     // Quests
     ['an unknown story quest', ['quests', 'completed'], ['shipParsnips', 'slayDragon']],
     ['a repeated story quest', ['quests', 'completed'], ['visitTown', 'visitTown']],

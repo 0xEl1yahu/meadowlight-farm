@@ -1,21 +1,25 @@
 /**
  * Save validation for the GameState sections later workstreams fill in (profile, tools,
- * crafting, cooking, buildings, NPCs, quests, stats, festival). Phase 0 only stores them, so
+ * crafting, cooking, buildings, NPCs, quests, stats, festival, shop stock). Phase 0 only stores them, so
  * these checks pin down exactly the shapes and ranges the section types document.
  */
-import { APPEARANCE, LAYOUT, PROFILE } from '../config';
+import { APPEARANCE, LAYOUT, PROFILE, SHOP_STOCK } from '../config';
 import {
   ANIMAL_KINDS,
+  BASIC_PART_IDS,
   CRAFTING_RECIPE_IDS,
+  CROP_IDS,
   DISH_IDS,
   FARM_BUILDING_KINDS,
   NPC_IDS,
+  ROBOT_SIZES,
   STORY_QUEST_IDS,
   UPGRADABLE_TOOLS,
   type AnimalKind,
   type FarmBuildingKind,
   type GameSections,
 } from '../core/types';
+import { seedItemId } from '../farming/crops';
 import { isItemId } from '../items/items';
 import {
   hasExactKeys,
@@ -41,6 +45,8 @@ const MAX_HAPPINESS = 255;
 /** Blossom Fair has 12 eggs, stored as a bitmask. */
 const MAX_EGG_MASK = 0xfff;
 const MAX_FESTIVAL_DISPLAY = 9;
+/** Every seed item, one per crop: the keys of Marigold's sold-today counts. */
+const SEED_ITEM_IDS = CROP_IDS.map(seedItemId);
 
 /** A player, farm or animal name: 1 … PROFILE.maxNameLength characters, trimmed, not blank. */
 export function isValidName(v: unknown): v is string {
@@ -178,6 +184,22 @@ function isValidFestival(v: unknown): boolean {
   );
 }
 
+/** A shop's sold-today counts: exactly `ids`, each an integer from 0 to the shop's daily stock. */
+function isValidSoldCounts(v: unknown, ids: readonly string[], stock: number): boolean {
+  return isObj(v) && hasExactKeys(v, ids) && ids.every((id) => isIntIn(v[id], 0, stock));
+}
+
+/** What each shop sold today (farmclaws part 4b spec §9): Sol's parts, Juniper's robots and Marigold's seeds. */
+function isValidShopsSoldToday(v: unknown): boolean {
+  return (
+    isObj(v) &&
+    hasExactKeys(v, ['parts', 'robots', 'seeds']) &&
+    isValidSoldCounts(v.parts, BASIC_PART_IDS, SHOP_STOCK.partsPerDay) &&
+    isValidSoldCounts(v.robots, ROBOT_SIZES, SHOP_STOCK.robotsPerSizePerDay) &&
+    isValidSoldCounts(v.seeds, SEED_ITEM_IDS, SHOP_STOCK.seedsPerDay)
+  );
+}
+
 /** Every section `createDefaultSections()` produces, read from an untrusted save object. */
 export function isValidSections(v: Obj): v is Obj & GameSections {
   return (
@@ -189,6 +211,7 @@ export function isValidSections(v: Obj): v is Obj & GameSections {
     isValidNpcs(v.npcs) &&
     isValidQuests(v.quests) &&
     isValidStats(v.stats) &&
-    isValidFestival(v.festival)
+    isValidFestival(v.festival) &&
+    isValidShopsSoldToday(v.shopsSoldToday)
   );
 }

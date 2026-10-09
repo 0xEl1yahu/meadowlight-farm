@@ -437,8 +437,18 @@ export const NEIGHBOUR_ROOFS = {
 export const PEOPLE = {
   /** Barnaby's "4 or more robots" line holds from this many robots. */
   manyRobots: 4,
-  /** Bram's "5 or more copper ore" line holds from this much copper ore in the inventory. */
+  /** Berlioz's "5 or more copper ore" line holds from this much copper ore in the inventory. */
   copperOreLine: 5,
   /** Lines in every character's everyday bank. */
   everydayLines: 6,
+} as const;
+
+/** How much each shop sells per day before it restocks the next morning (farmclaws part 4b spec §6). */
+export const SHOP_STOCK = {
+  /** Sol's parts: of each basic part. */
+  partsPerDay: 2,
+  /** Juniper's robots: of each size. */
+  robotsPerSizePerDay: 1,
+  /** Marigold's seeds: packets of each seed. */
+  seedsPerDay: 30,
 } as const;

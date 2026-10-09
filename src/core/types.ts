@@ -12,7 +12,7 @@
 
 import type { BlockKind } from '../robots/blockKinds';
 
-export const SAVE_VERSION = 7 as const;
+export const SAVE_VERSION = 8 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -150,7 +150,7 @@ export type UpgradableTool = (typeof UPGRADABLE_TOOLS)[number];
 export type ToolLevel = 0 | 1 | 2;
 
 /** The farmclaws cast (part 4a spec §2.1). A character's index here is its `npcIndex` in line picks. */
-export const NPC_IDS = ['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess'] as const;
+export const NPC_IDS = ['sol', 'cosmo', 'barnaby', 'marigold', 'berlioz', 'juniper', 'tallulah'] as const;
 export type NpcId = (typeof NPC_IDS)[number];
 
 /** What a character's chat-box buttons do (part 4a spec §3.2). Parts 4b and 4c add kinds. */
@@ -530,6 +530,10 @@ export const ROBOT_PART_IDS = [
 ] as const;
 export type RobotPartId = (typeof ROBOT_PART_IDS)[number];
 
+/** The parts Sol sells (farmclaws part 4b spec §2): every part but the antenna and the cores. */
+export const BASIC_PART_IDS = ['claw', 'wateringHead', 'tiller', 'seeder', 'basket', 'sensorEye'] as const satisfies readonly RobotPartId[];
+export type BasicPartId = (typeof BASIC_PART_IDS)[number];
+
 /**
  * What a robot's power is doing. Being carried is separate (`Robot.carried`). `ruined`: a broken
  * robot left in the water overnight; it can only be scrapped (farmclaws part 3 spec §3.2).
@@ -744,6 +748,14 @@ export interface RobotsState {
   readonly pendingMarker: boolean;
   /** What the robot screen offers (farmclaws part 3 spec §7). Gates the editor only, never the simulation. */
   readonly unlocks: RobotUnlocks;
+  /** Robots bought at Juniper's workshop, in order, delivered the next morning (farmclaws part 4b spec §4.6). */
+  readonly deliveries: readonly RobotDelivery[];
+}
+
+/** A robot ordered from Juniper's workshop, waiting for the night step (farmclaws part 4b spec §4.5). */
+export interface RobotDelivery {
+  readonly size: RobotSize;
+  readonly name: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1087,13 @@ export interface FestivalState {
   readonly giftGiven: boolean;
 }
 
+/** What each shop has sold today (farmclaws part 4b spec §6); every count is cleared each morning. */
+export interface ShopsSoldToday {
+  readonly parts: Readonly<Record<BasicPartId, number>>;
+  readonly robots: Readonly<Record<RobotSize, number>>;
+  readonly seeds: Readonly<Record<SeedItemId, number>>;
+}
+
 /** Every §2.7 section of GameState, as produced by `createDefaultSections()`. */
 export interface GameSections {
   readonly profile: ProfileState;
@@ -1089,6 +1108,7 @@ export interface GameSections {
   readonly stats: LifetimeStats;
   readonly festival: FestivalState;
   readonly robots: RobotsState;
+  readonly shopsSoldToday: ShopsSoldToday;
 }
 
 export interface GameState extends GameSections {

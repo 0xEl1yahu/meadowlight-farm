@@ -8,9 +8,9 @@ results come from the part 4a spec and `src/config.ts`.
 
 Town landmarks: the west gate (0,16) from the farm · the east gate (39,16) to the Neighbours ·
 the main street z 15–17 · the square x 14–25, z 7–19. The cast stands facing south, and you
-talk to each from the tile below, facing north: Marigold (7,7) → stand (7,8) · Bram (16,7) →
+talk to each from the tile below, facing north: Marigold (7,7) → stand (7,8) · Berlioz (16,7) →
 (16,8) · Sol (21,7), beside the parts exchange's door (20,6) → (21,8) · Juniper (24,7) → (24,8)
-· Tess (35,7) → (35,8). On the Neighbours map: the west gate (0,14) back to town · the lane
+· Tallulah (35,7) → (35,8). On the Neighbours map: the west gate (0,14) back to town · the lane
 z 13–15 · Cosmo (7,13) faces south → stand (7,14) facing north · Barnaby (25,15) faces north →
 stand (25,14) facing south. Cosmo's field is fenced x 3–10, z 5–12 (gate (6,12)); Barnaby's
 x 20–29, z 16–25 (gate (24,16)).
@@ -39,7 +39,7 @@ await new Promise((r) => setTimeout(r, 100));
 const L = await __qa.mod('/src/people/lines.ts');
 const chat = () => { const box = document.querySelector('.chat-box'); return box === null || box.hidden ? null : box.innerText; };
 const out = {};
-for (const [id, tx] of [['marigold', 7], ['bram', 16], ['sol', 21], ['juniper', 24], ['tess', 35]]) {
+for (const [id, tx] of [['marigold', 7], ['berlioz', 16], ['sol', 21], ['juniper', 24], ['tallulah', 35]]) {
   __qa.patch((s) => { Object.assign(s.player, { mapId: 'town', tx, tz: 8, facing: 0 }); });   // setup: in front of the character
   await new Promise((r) => setTimeout(r, 50));
   const hint = document.body.innerText.includes(`Talk to ${id[0].toUpperCase()}${id.slice(1)}`);
@@ -60,14 +60,14 @@ introduction> }` and `first.box` containing the name, the role line and that int
 `closed` `{ panel: 'none', box: null }`; `secondIsEveryday: true`, `secondIsExpected: true`;
 `npcs` `{ talks: 2, talkedToday: true }`. The introductions, verbatim:
 - Marigold (General store): "Welcome! I'm Marigold. Seeds, fertiliser, a bigger backpack one day. Shop with me any time."
-- Bram (Blacksmith): "Bram. Blacksmith. I sharpen tools and I don't do small talk."
+- Berlioz (Blacksmith): "Berlioz. Blacksmith. I sharpen tools and I don't do small talk."
 - Sol (Parts exchange): "Sol. I used to seed fields by hand; now I build the hands. When your robots need parts, this is the place."
 - Juniper (Carpenter): "Juniper. I build barns, coops and anything with a hammer. Soon, robots too."
-- Tess (Ranch): "Hi there, I'm Tess. Chickens, cows and wheat to feed them. Come see the ranch."
+- Tallulah (Ranch): "Hi there, I'm Tallulah. Chickens, cows and wheat to feed them. Come see the ranch."
 
 (On a fresh farm the backpack holds parsnip seeds and no robot is on the bench, so neither
 Marigold's "Out of seeds?" nor Juniper's bench line fires; a fresh farm's day 1 isn't rainy in
-the default seed, but if Tess's second line is "Rain again. The cows don't mind, and neither do
+the default seed, but if Tallulah's second line is "Rain again. The cows don't mind, and neither do
 I." check `__qa.state().weather`: on a watering day that line is right, and `secondIsEveryday`
 is then false by design.)
 

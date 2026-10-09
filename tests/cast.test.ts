@@ -21,9 +21,9 @@ import { BASE, holding, reachableFrom, tileAt, withPlayer } from './testUtils';
 const TOWN_SPOTS: readonly NpcPlacement[] = [
   { id: 'sol', tx: 21, tz: 7, facing: Direction.South },
   { id: 'marigold', tx: 7, tz: 7, facing: Direction.South },
-  { id: 'bram', tx: 16, tz: 7, facing: Direction.South },
+  { id: 'berlioz', tx: 16, tz: 7, facing: Direction.South },
   { id: 'juniper', tx: 24, tz: 7, facing: Direction.South },
-  { id: 'tess', tx: 35, tz: 7, facing: Direction.South },
+  { id: 'tallulah', tx: 35, tz: 7, facing: Direction.South },
 ];
 
 /** The shipped definitions with the town's characters replaced by `npcs`. */
@@ -52,9 +52,9 @@ describe('the cast', () => {
       cosmo: { name: 'Cosmo', role: 'Farmer' },
       barnaby: { name: 'Barnaby', role: 'Farmer' },
       marigold: { name: 'Marigold', role: 'General store' },
-      bram: { name: 'Bram', role: 'Blacksmith' },
+      berlioz: { name: 'Berlioz', role: 'Blacksmith' },
       juniper: { name: 'Juniper', role: 'Carpenter' },
-      tess: { name: 'Tess', role: 'Ranch' },
+      tallulah: { name: 'Tallulah', role: 'Ranch' },
     });
     expect(Object.keys(CAST)).toEqual([...NPC_IDS]);
   });
@@ -156,15 +156,15 @@ describe('the startup check on the characters', () => {
       withTownNpcs(moved('marigold', 6, 7)),
       'Map town: marigold at (6, 7) is on a door or the tile in front of one',
     ],
-    ['two characters on one tile', withTownNpcs(moved('bram', 21, 7)), 'Map town: bram at (21, 7) shares its tile with sol'],
+    ['two characters on one tile', withTownNpcs(moved('berlioz', 21, 7)), 'Map town: berlioz at (21, 7) shares its tile with sol'],
     [
       'a spot walled in by the other characters',
       withTownNpcs([
         { id: 'sol', tx: 21, tz: 9, facing: Direction.South },
         { id: 'marigold', tx: 20, tz: 9, facing: Direction.South },
-        { id: 'bram', tx: 22, tz: 9, facing: Direction.South },
+        { id: 'berlioz', tx: 22, tz: 9, facing: Direction.South },
         { id: 'juniper', tx: 21, tz: 10, facing: Direction.South },
-        { id: 'tess', tx: 21, tz: 8, facing: Direction.South },
+        { id: 'tallulah', tx: 21, tz: 8, facing: Direction.South },
       ]),
       "Map town: sol at (21, 9) can't be reached from the map's arrival tiles",
     ],

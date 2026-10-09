@@ -53,8 +53,8 @@ describe('save version 6', () => {
 });
 
 describe('v5 → v6', () => {
-  it('carries a v5 save on through version 6 to 7', () => {
-    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(7);
+  it('carries a v5 save on through versions 6 and 7 to 8', () => {
+    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(8);
   });
 
   it('loads a v5 save as the state it was taken from', () => {
@@ -62,9 +62,9 @@ describe('v5 → v6', () => {
     expect(must(deserializeGame(JSON.stringify(v5Save(state))))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through every version to 7', () => {
+  it('migrates the version-2 fixture through every version to 8', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(7);
+    expect(loaded.version).toBe(8);
     expect(loaded.robots.list).toEqual([]);
   });
 

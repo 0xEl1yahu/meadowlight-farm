@@ -307,14 +307,45 @@ export function legacySave(state: GameState, version: 1 | 2): SaveJson {
   return save;
 }
 
+/** Part 4b's renames (spec §8), turned back: a version-8 character id and the id version 7 saves it under. */
+const V7_NPC_IDS: ReadonlyMap<string, string> = new Map([
+  ['berlioz', 'bram'],
+  ['tallulah', 'tess'],
+]);
+const v7NpcId = (id: unknown): unknown => (typeof id === 'string' ? (V7_NPC_IDS.get(id) ?? id) : id);
+
 /**
- * Hand-transforms a current (version 7) state back into the JSON of a version-6 save (farmclaws
- * part 4a spec §6): every field version 7 added is taken out again or turned back. The state must
- * not hold anything a version-6 save cannot express. v5Save starts from this, so every older-save
- * builder inherits it.
+ * Hand-transforms a current (version 8) state back into the JSON of a version-7 save (farmclaws
+ * part 4b spec §9): no deliveries, no stock counts, and Berlioz and Tallulah back to Bram and Tess
+ * in `npcs`, the board and the festival gift target. The state must not hold anything a version-7
+ * save cannot express. v6Save starts from this, so every older-save builder inherits it.
+ */
+export function v7Save(state: GameState): SaveJson {
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 7;
+  if (state.robots.deliveries.length > 0) throw new Error('v7Save: a version-7 save has no robot deliveries');
+  delete (save.robots as SaveJson).deliveries;
+  const sold = state.shopsSoldToday;
+  for (const counts of [sold.parts, sold.robots, sold.seeds] as readonly Readonly<Record<string, number>>[]) {
+    if (Object.values(counts).some((count) => count !== 0)) throw new Error('v7Save: a version-7 save has no shop stock sold');
+  }
+  delete save.shopsSoldToday;
+  save.npcs = Object.fromEntries(Object.entries(save.npcs as SaveJson).map(([id, talk]) => [v7NpcId(id), talk]));
+  const board = (save.quests as { board: SaveJson | null }).board;
+  if (board !== null) board.npc = v7NpcId(board.npc);
+  const festival = save.festival as SaveJson;
+  festival.giftTarget = v7NpcId(festival.giftTarget);
+  return save;
+}
+
+/**
+ * Hand-transforms a state back into the JSON of a version-6 save (farmclaws part 4a spec §6): it
+ * starts from v7Save, and every field version 7 added is taken out again or turned back. The state
+ * must not hold anything a version-6 save cannot express. v5Save starts from this, so every
+ * older-save builder inherits it.
  */
 export function v6Save(state: GameState): SaveJson {
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const save = v7Save(state);
   save.version = 6;
   // The cast: version 6 has no Sol, Cosmo or Barnaby, and still has Fennick, Pip and friendship.
   const npcs = state.npcs;
@@ -325,9 +356,9 @@ export function v6Save(state: GameState): SaveJson {
   const idle: NpcTalk = { talks: 0, talkedToday: false };
   save.npcs = {
     marigold: relation(npcs.marigold),
-    bram: relation(npcs.bram),
+    bram: relation(npcs.berlioz),
     juniper: relation(npcs.juniper),
-    tess: relation(npcs.tess),
+    tess: relation(npcs.tallulah),
     fennick: relation(idle),
     pip: relation(idle),
   };
@@ -418,7 +449,7 @@ export const animal = (id: number, kind: AnimalKind, name: string): Animal => ({
 
 /**
  * Every later-workstream section filled in far from its defaults, still valid: a steel hoe with
- * an upgrade under way, every recipe, a full coop and a barn, chats with Bram and Tess, a board
+ * an upgrade under way, every recipe, a full coop and a barn, chats with Berlioz and Tallulah, a board
  * request, lifetime stats and a festival in progress with a full display.
  */
 export function livelySections(): GameSections {
@@ -445,8 +476,8 @@ export function livelySections(): GameSections {
     nextEntityId: 8,
     npcs: {
       ...BASE.npcs,
-      bram: { talks: 40, talkedToday: true },
-      tess: { talks: 3, talkedToday: false },
+      berlioz: { talks: 40, talkedToday: true },
+      tallulah: { talks: 3, talkedToday: false },
     },
     quests: {
       completed: ['shipParsnips', 'visitTown', 'earnGold'],
@@ -471,10 +502,11 @@ export function livelySections(): GameSections {
           ? { itemId: 'pumpkin' as const, quantity: i + 1, quality: ((i / 2) % 3) as 0 | 1 | 2 }
           : { itemId: 'wood' as const, quantity: i + 1, quality: 0 as const },
       ),
-      giftTarget: 'tess',
+      giftTarget: 'tallulah',
       giftGiven: true,
     },
     robots: createDefaultSections().robots,
+    shopsSoldToday: createDefaultSections().shopsSoldToday,
   };
 }
 

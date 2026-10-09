@@ -146,7 +146,7 @@ function buildSeedPouch(): THREE.BufferGeometry {
   ]);
 }
 
-/** Bram: a leather smith's apron from the chest to the knees, with neck straps, a tie and rivets. */
+/** Berlioz: a leather smith's apron from the chest to the knees, with neck straps, a tie and rivets. */
 function buildSmithApron(): THREE.BufferGeometry {
   return bakeParts([
     { geometry: box(0.22, 0.2, 0.02), color: LEATHER, position: [0, 0.2, 0.135] },
@@ -175,7 +175,7 @@ function buildPencil(): THREE.BufferGeometry {
   );
 }
 
-/** Tess: a red neckerchief, a band round the neck with a triangle over the chest and a knot. */
+/** Tallulah: a red neckerchief, a band round the neck with a triangle over the chest and a knot. */
 function buildNeckerchief(): THREE.BufferGeometry {
   return bakeParts([
     { geometry: cylinder(0.072, 0.078, 0.035, 8), color: KERCHIEF, position: [0, 0.335, 0] },

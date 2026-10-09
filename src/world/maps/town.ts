@@ -59,9 +59,9 @@ const structures: readonly StructurePlacement[] = [
 const npcs: readonly NpcPlacement[] = [
   { id: 'sol', tx: 21, tz: 7, facing: Direction.South },
   { id: 'marigold', tx: 7, tz: 7, facing: Direction.South },
-  { id: 'bram', tx: 16, tz: 7, facing: Direction.South },
+  { id: 'berlioz', tx: 16, tz: 7, facing: Direction.South },
   { id: 'juniper', tx: 24, tz: 7, facing: Direction.South },
-  { id: 'tess', tx: 35, tz: 7, facing: Direction.South },
+  { id: 'tallulah', tx: 35, tz: 7, facing: Direction.South },
 ];
 
 /** Cobbled main street, z 15–17 across the whole width. */

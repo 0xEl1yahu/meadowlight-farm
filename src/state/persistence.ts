@@ -6,7 +6,6 @@ import { INVENTORY, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
   MAP_IDS,
-  NPC_IDS,
   SAVE_VERSION,
   TileState,
   Weather,
@@ -477,10 +476,17 @@ function migrateZoneMarker(save: Obj): Obj {
   return { ...save, ui, inventory: { ...inventory, slots }, robots: { ...robots, pendingMarker: false } };
 }
 
+/** The cast as version 7 saves it (farmclaws part 4a spec §2.1), before part 4b renamed Bram and Tess. */
+const V7_NPC_IDS: readonly string[] = ['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess'];
 /** The characters version 7 keeps from version 6, with their chats (farmclaws part 4a spec §6.2). */
-const KEPT_NPCS: readonly NpcId[] = ['marigold', 'bram', 'juniper', 'tess'];
+const KEPT_NPCS: readonly string[] = ['marigold', 'bram', 'juniper', 'tess'];
 /** The characters the farmclaws design cut; a version-6 save may still name them. */
 const REMOVED_NPCS: readonly string[] = ['fennick', 'pip'];
+/** Part 4b's renames (spec §8): a version-7 character id and the id version 8 gives it. */
+const RENAMED_NPCS: ReadonlyMap<string, NpcId> = new Map([
+  ['bram', 'berlioz'],
+  ['tess', 'tallulah'],
+]);
 
 /**
  * A saved character as a v7 NpcTalk: only `talks` and `talkedToday`, copied as found, so a corrupt
@@ -492,26 +498,68 @@ function migrateNpcV6(saved: unknown): unknown {
 }
 
 /**
- * Version 6 predates the farmclaws cast (part 4a spec §6.2): `npcs` becomes the seven new ids,
- * where Marigold, Bram, Juniper and Tess keep their chats and Sol, Cosmo and Barnaby start at none.
- * Fennick, Pip and every friendship field are dropped, and so is a board request or a festival gift
- * target naming Fennick or Pip. `npcs` may already have the v7 shape, because migrateV2toV3 fills
- * it from the current defaults. The Neighbours map is generated from its fixed definition.
+ * A kept character's record in a v6 save. migrateV2toV3 fills `npcs` from the current defaults,
+ * so a save that started at version 2 names Bram and Tess by their version-8 ids.
+ */
+function savedNpcV6(npcs: Obj, id: string): unknown {
+  const renamed = RENAMED_NPCS.get(id);
+  return npcs[id] === undefined && renamed !== undefined ? npcs[renamed] : npcs[id];
+}
+
+/**
+ * Version 6 predates the farmclaws cast (part 4a spec §6.2): `npcs` becomes the seven version-7
+ * ids, where Marigold, Bram, Juniper and Tess keep their chats and Sol, Cosmo and Barnaby start at
+ * none. Fennick, Pip and every friendship field are dropped, and so is a board request or a
+ * festival gift target naming Fennick or Pip. `npcs` may already have a later shape, because
+ * migrateV2toV3 fills it from the current defaults. The Neighbours map is generated from its fixed
+ * definition.
  */
 function migrateV6toV7(save: Obj): Obj {
   const { npcs, quests, festival } = save;
   if (!isObj(npcs)) return save;
-  const fresh = createDefaultSections().npcs;
   let migrated: Obj = {
     ...save,
     version: 7,
-    npcs: Object.fromEntries(NPC_IDS.map((id) => [id, KEPT_NPCS.includes(id) ? migrateNpcV6(npcs[id]) : fresh[id]])),
+    npcs: Object.fromEntries(
+      V7_NPC_IDS.map((id) => [id, KEPT_NPCS.includes(id) ? migrateNpcV6(savedNpcV6(npcs, id)) : { talks: 0, talkedToday: false }]),
+    ),
   };
   if (isObj(quests) && isObj(quests.board) && isOneOf(quests.board.npc, REMOVED_NPCS)) migrated = { ...migrated, quests: { ...quests, board: null } };
   if (isObj(festival) && isOneOf(festival.giftTarget, REMOVED_NPCS)) migrated = { ...migrated, festival: { ...festival, giftTarget: null } };
   if (isObj(save.maps) && isIntIn(save.seed, 0, 0xffffffff)) {
     migrated = { ...migrated, maps: { ...save.maps, neighbours: MAPS.neighbours.generate(save.seed) } };
   }
+  return migrated;
+}
+
+/** A saved character id as version 8 names it: Bram's and Tess's renamed, anything else as found. */
+function renamedNpc(id: unknown): unknown {
+  return typeof id === 'string' ? (RENAMED_NPCS.get(id) ?? id) : id;
+}
+
+/**
+ * Version 7 predates the shops (farmclaws part 4b spec §9): the robots section gains no deliveries,
+ * every shop has sold nothing today, and Bram and Tess become Berlioz and Tallulah: their `npcs`
+ * records move to the new ids unchanged, and a board request or a festival gift target naming
+ * them follows. A record already under a new id stays where it is, so the validator rejects the
+ * old id beside it.
+ */
+function migrateV7toV8(save: Obj): Obj {
+  const { npcs, robots, quests, festival } = save;
+  if (!isObj(npcs) || !isObj(robots)) return save;
+  const renameKey = (id: string): string => {
+    const renamed = RENAMED_NPCS.get(id);
+    return renamed === undefined || Object.prototype.hasOwnProperty.call(npcs, renamed) ? id : renamed;
+  };
+  let migrated: Obj = {
+    ...save,
+    version: 8,
+    robots: { ...robots, deliveries: [] },
+    shopsSoldToday: createDefaultSections().shopsSoldToday,
+    npcs: Object.fromEntries(Object.entries(npcs).map(([id, talk]) => [renameKey(id), talk])),
+  };
+  if (isObj(quests) && isObj(quests.board)) migrated = { ...migrated, quests: { ...quests, board: { ...quests.board, npc: renamedNpc(quests.board.npc) } } };
+  if (isObj(festival)) migrated = { ...migrated, festival: { ...festival, giftTarget: renamedNpc(festival.giftTarget) } };
   return migrated;
 }
 
@@ -528,6 +576,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 4) v = migrateV4toV5(v);
   if (isObj(v) && v.version === 5) v = migrateZoneMarker(migrateV5toV6(v));
   if (isObj(v) && v.version === 6) v = migrateV6toV7(v);
+  if (isObj(v) && v.version === 7) v = migrateV7toV8(v);
   return v;
 }
 

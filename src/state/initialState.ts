@@ -1,12 +1,29 @@
 import { INVENTORY, PLAYER, TOOLS, UNLOCKS, WORKBENCH, WORLD } from '../config';
 import { invariant } from '../core/invariant';
-import { NPC_IDS, SAVE_VERSION, type GameSections, type GameState, type InventoryState, type NpcId, type NpcTalk } from '../core/types';
+import {
+  BASIC_PART_IDS,
+  CROP_IDS,
+  NPC_IDS,
+  ROBOT_SIZES,
+  SAVE_VERSION,
+  type GameSections,
+  type GameState,
+  type InventoryState,
+  type NpcId,
+  type NpcTalk,
+} from '../core/types';
+import { seedItemId } from '../farming/crops';
 import { createInitialTime } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { withWorkbenchAt } from '../robots/workbench';
 import { generateMaps } from '../world/maps';
 import { createInventory } from './inventory';
 import { withZoneMarker } from './zoneMarker';
+
+/** A count of 0 for each of `ids`. */
+function zeroCounts<K extends string>(ids: readonly K[]): Record<K, number> {
+  return Object.fromEntries(ids.map((id) => [id, 0])) as Record<K, number>;
+}
 
 /**
  * Defaults for every section later workstreams fill in. A new game and the save migration both
@@ -49,7 +66,9 @@ export function createDefaultSections(): GameSections {
       zones: { A: null, B: null, C: null, D: null, E: null, F: null, G: null, H: null },
       pendingMarker: false,
       unlocks: UNLOCKS.job1,
+      deliveries: [],
     },
+    shopsSoldToday: { parts: zeroCounts(BASIC_PART_IDS), robots: zeroCounts(ROBOT_SIZES), seeds: zeroCounts(CROP_IDS.map(seedItemId)) },
   };
 }
 

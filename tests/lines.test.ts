@@ -83,9 +83,9 @@ describe('lineFor', () => {
       cosmo: 'Your robot talked today! Mine talks every day. To the chickens. They love it, probably.',
       barnaby: "Four robots or more? Now you're thinking like me. Scale fixes everything.",
       marigold: "Out of seeds? I've got plenty for spring.",
-      bram: "That's a fair bit of copper. Sprinklers don't build themselves.",
+      berlioz: "That's a fair bit of copper. Sprinklers don't build themselves.",
       juniper: 'Gizmo is up on your bench, I hear. A good bench is half the job.',
-      tess: "Rain again. The cows don't mind, and neither do I.",
+      tallulah: "Rain again. The cows don't mind, and neither do I.",
     });
   });
 });
@@ -166,14 +166,14 @@ describe('reactive lines', () => {
     expect(lineFor(state, 'marigold')).toBe(everydayPick(state, 'marigold'));
   });
 
-  it('Bram notices PEOPLE.copperOreLine copper ore across slots', () => {
+  it('Berlioz notices PEOPLE.copperOreLine copper ore across slots', () => {
     const state = withSlots(quiet(), [stack('copperOre', 2), stack('hoe', 1), stack('copperOre', PEOPLE.copperOreLine - 2)]);
-    expect(lineFor(state, 'bram')).toBe("That's a fair bit of copper. Sprinklers don't build themselves.");
+    expect(lineFor(state, 'berlioz')).toBe("That's a fair bit of copper. Sprinklers don't build themselves.");
   });
 
-  it('Bram says an everyday line with one copper ore fewer', () => {
+  it('Berlioz says an everyday line with one copper ore fewer', () => {
     const state = withSlots(quiet(), [stack('copperOre', PEOPLE.copperOreLine - 1)]);
-    expect(lineFor(state, 'bram')).toBe(everydayPick(state, 'bram'));
+    expect(lineFor(state, 'berlioz')).toBe(everydayPick(state, 'berlioz'));
   });
 
   it('Juniper names the robot on the workbench', () => {
@@ -186,15 +186,15 @@ describe('reactive lines', () => {
     expect(lineFor(state, 'juniper')).toBe("$& $' Co. is up on your bench, I hear. A good bench is half the job.");
   });
 
-  it('Tess notices rain and storms', () => {
+  it('Tallulah notices rain and storms', () => {
     for (const weather of [Weather.Rain, Weather.Storm]) {
-      expect(lineFor({ ...quiet(), weather }, 'tess')).toBe("Rain again. The cows don't mind, and neither do I.");
+      expect(lineFor({ ...quiet(), weather }, 'tallulah')).toBe("Rain again. The cows don't mind, and neither do I.");
     }
   });
 
-  it('Tess says an everyday line in snow', () => {
+  it('Tallulah says an everyday line in snow', () => {
     const state = { ...quiet(), weather: Weather.Snow };
-    expect(lineFor(state, 'tess')).toBe(everydayPick(state, 'tess'));
+    expect(lineFor(state, 'tallulah')).toBe(everydayPick(state, 'tallulah'));
   });
 });
 
@@ -328,8 +328,8 @@ const SPEC_BANKS: Readonly<Record<NpcId, LineBank>> = {
       'If something wilts, it was the season, not you. Mostly.',
     ],
   },
-  bram: {
-    introduction: "Bram. Blacksmith. I sharpen tools and I don't do small talk.",
+  berlioz: {
+    introduction: "Berlioz. Blacksmith. I sharpen tools and I don't do small talk.",
     reactive: [
       { when: 'copperOre', text: "That's a fair bit of copper. Sprinklers don't build themselves." },
     ],
@@ -356,8 +356,8 @@ const SPEC_BANKS: Readonly<Record<NpcId, LineBank>> = {
       'If it creaks, it needs a nail. If it wobbles, it needs two.',
     ],
   },
-  tess: {
-    introduction: "Hi there, I'm Tess. Chickens, cows and wheat to feed them. Come see the ranch.",
+  tallulah: {
+    introduction: "Hi there, I'm Tallulah. Chickens, cows and wheat to feed them. Come see the ranch.",
     reactive: [
       { when: 'raining', text: "Rain again. The cows don't mind, and neither do I." },
     ],

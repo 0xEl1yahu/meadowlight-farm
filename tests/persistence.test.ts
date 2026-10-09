@@ -156,7 +156,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('validates real states', () => {
     expect(isValidGameState(BASE)).toBe(true);
     expect(isValidGameState(richState())).toBe(true);
-    expect(SAVE_VERSION).toBe(7);
+    expect(SAVE_VERSION).toBe(8);
   });
 });
 
@@ -494,7 +494,7 @@ describe('placed objects and fertiliser in saves', () => {
     ['a fractional chest quality', [...tileAtPath(6, 10), 'object', 'slots', 35, 'quality'], 1.5],
     ['a chest without slots', [...tileAtPath(6, 10), 'object', 'slots'], undefined],
     ['an extra field on a sprinkler', [...tileAtPath(7, 10), 'object', 'radius'], 2],
-    ['an extra field on a chest', [...tileAtPath(6, 10), 'object', 'owner'], 'bram'],
+    ['an extra field on a chest', [...tileAtPath(6, 10), 'object', 'owner'], 'berlioz'],
     ['a forage object of a crop', [...tileAtPath(6, 11), 'object', 'itemId'], 'parsnip'],
     ['a negative forage spawn day', [...tileAtPath(6, 11), 'object', 'spawnDay'], -1],
     ['a fractional forage spawn day', [...tileAtPath(6, 11), 'object', 'spawnDay'], 0.5],

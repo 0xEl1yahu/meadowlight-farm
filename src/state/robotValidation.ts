@@ -663,17 +663,25 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   return isWalkable(tile);
 }
 
+/** A robot ordered from Juniper's workshop (part 4b spec §9): exactly a size and a robot name. */
+function isValidDelivery(v: unknown): boolean {
+  return isObj(v) && hasExactKeys(v, ['size', 'name']) && isOneOf(v.size, ROBOT_SIZES) && isValidName(v.name);
+}
+
 /**
- * The robots section: ids unique, ascending and below nextId; at most maxRobots; every robot
- * valid on the farm; the carried robot (if any) matches `player.carrying` and the player is on
- * the farm; at most one robot is on the bench; exactly one workbench stands on the farm; the
- * pool, last night's fuel, the log and the zones valid.
+ * The robots section: ids unique, ascending and below nextId; at most maxRobots, counting the
+ * deliveries due; every robot valid on the farm and every delivery well formed; the carried robot
+ * (if any) matches `player.carrying` and the player is on the farm; at most one robot is on the
+ * bench; exactly one workbench stands on the farm; the pool, last night's fuel, the log and the
+ * zones valid.
  */
 export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player: unknown): boolean {
-  if (!isObj(v) || !hasExactKeys(v, ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks', 'pendingMarker']) || !isObj(player)) return false;
+  const keys = ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks', 'pendingMarker', 'deliveries'];
+  if (!isObj(v) || !hasExactKeys(v, keys) || !isObj(player)) return false;
   if (!isBool(v.pendingMarker)) return false;
   if (!isValidZones(v.zones) || !isValidUnlocks(v.unlocks)) return false;
-  if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || v.list.length > ROBOTS.maxRobots) return false;
+  if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || !Array.isArray(v.deliveries)) return false;
+  if (v.list.length + v.deliveries.length > ROBOTS.maxRobots || !v.deliveries.every(isValidDelivery)) return false;
   let previous = 0;
   let carried = 0;
   let benched = 0;

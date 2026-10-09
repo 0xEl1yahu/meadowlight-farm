@@ -103,8 +103,8 @@ export const LINE_BANKS: Readonly<Record<NpcId, LineBank>> = {
       'If something wilts, it was the season, not you. Mostly.',
     ],
   },
-  bram: {
-    introduction: "Bram. Blacksmith. I sharpen tools and I don't do small talk.",
+  berlioz: {
+    introduction: "Berlioz. Blacksmith. I sharpen tools and I don't do small talk.",
     reactive: [
       { when: 'copperOre', text: "That's a fair bit of copper. Sprinklers don't build themselves." },
     ],
@@ -131,8 +131,8 @@ export const LINE_BANKS: Readonly<Record<NpcId, LineBank>> = {
       'If it creaks, it needs a nail. If it wobbles, it needs two.',
     ],
   },
-  tess: {
-    introduction: "Hi there, I'm Tess. Chickens, cows and wheat to feed them. Come see the ranch.",
+  tallulah: {
+    introduction: "Hi there, I'm Tallulah. Chickens, cows and wheat to feed them. Come see the ranch.",
     reactive: [
       { when: 'raining', text: "Rain again. The cows don't mind, and neither do I." },
     ],

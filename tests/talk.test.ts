@@ -37,9 +37,9 @@ const INTRODUCTION = "Welcome! I'm Marigold. Seeds, fertiliser, a bigger backpac
 const FACING_EACH: readonly (readonly [NpcId, MapId, TileCoord, Direction, string])[] = [
   ['sol', 'town', { tx: 21, tz: 8 }, Direction.North, 'Sol'],
   ['marigold', 'town', { tx: 7, tz: 8 }, Direction.North, 'Marigold'],
-  ['bram', 'town', { tx: 16, tz: 8 }, Direction.North, 'Bram'],
+  ['berlioz', 'town', { tx: 16, tz: 8 }, Direction.North, 'Berlioz'],
   ['juniper', 'town', { tx: 24, tz: 8 }, Direction.North, 'Juniper'],
-  ['tess', 'town', { tx: 35, tz: 8 }, Direction.North, 'Tess'],
+  ['tallulah', 'town', { tx: 35, tz: 8 }, Direction.North, 'Tallulah'],
   ['cosmo', 'neighbours', { tx: 7, tz: 14 }, Direction.North, 'Cosmo'],
   ['barnaby', 'neighbours', { tx: 25, tz: 14 }, Direction.South, 'Barnaby'],
 ];
@@ -259,7 +259,7 @@ describe("the chat box's actions (talk/act)", () => {
   });
 
   it('does nothing when the talk panel is open on someone else', () => {
-    const state = talkingTo('bram');
+    const state = talkingTo('berlioz');
     expect(shopFor(state, 'marigold')).toBe(state);
   });
 

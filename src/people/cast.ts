@@ -18,9 +18,9 @@ export const CAST: Readonly<Record<NpcId, CastMember>> = {
   cosmo: { name: 'Cosmo', role: 'Farmer' },
   barnaby: { name: 'Barnaby', role: 'Farmer' },
   marigold: { name: 'Marigold', role: 'General store' },
-  bram: { name: 'Bram', role: 'Blacksmith' },
+  berlioz: { name: 'Berlioz', role: 'Blacksmith' },
   juniper: { name: 'Juniper', role: 'Carpenter' },
-  tess: { name: 'Tess', role: 'Ranch' },
+  tallulah: { name: 'Tallulah', role: 'Ranch' },
 };
 
 /** The one prop each character carries on top of the player's model (spec §2.3). */
@@ -37,16 +37,16 @@ export interface CastLook {
  * Every character has a shirt colour of their own and none wears the player's shirt 0, so no two
  * of them, and none of them and a new player, look alike. Hats: 0 is the farmer's straw hat, 1 no
  * hat, 2 a cap, 3 a knitted hat. Cosmo's feathered hat is his prop and Juniper's pencil sits on the
- * head, so both wear no hat; Sol wears the cap, Barnaby the knitted hat and Tess the straw hat.
+ * head, so both wear no hat; Sol wears the cap, Barnaby the knitted hat and Tallulah the straw hat.
  */
 export const CAST_LOOKS: Readonly<Record<NpcId, CastLook>> = {
   sol: { appearance: { skinTone: 3, hairStyle: 2, hairColor: 4, shirtColor: 3, overallsColor: 2, hat: 2 }, prop: 'toolApron' },
   cosmo: { appearance: { skinTone: 1, hairStyle: 1, hairColor: 2, shirtColor: 5, overallsColor: 1, hat: 1 }, prop: 'featherHat' },
   barnaby: { appearance: { skinTone: 2, hairStyle: 0, hairColor: 5, shirtColor: 1, overallsColor: 4, hat: 3 }, prop: 'clipboard' },
   marigold: { appearance: { skinTone: 0, hairStyle: 2, hairColor: 3, shirtColor: 6, overallsColor: 3, hat: 1 }, prop: 'seedPouch' },
-  bram: { appearance: { skinTone: 4, hairStyle: 0, hairColor: 1, shirtColor: 2, overallsColor: 5, hat: 1 }, prop: 'smithApron' },
+  berlioz: { appearance: { skinTone: 4, hairStyle: 0, hairColor: 1, shirtColor: 2, overallsColor: 5, hat: 1 }, prop: 'smithApron' },
   juniper: { appearance: { skinTone: 2, hairStyle: 1, hairColor: 0, shirtColor: 7, overallsColor: 0, hat: 1 }, prop: 'pencil' },
-  tess: { appearance: { skinTone: 1, hairStyle: 2, hairColor: 5, shirtColor: 4, overallsColor: 2, hat: 0 }, prop: 'neckerchief' },
+  tallulah: { appearance: { skinTone: 1, hairStyle: 2, hairColor: 5, shirtColor: 4, overallsColor: 2, hat: 0 }, prop: 'neckerchief' },
 };
 
 /** The character standing on (tx, tz) of map `mapId`, or null. */
@@ -79,9 +79,9 @@ const ACTIONS: Readonly<Record<NpcId, readonly NpcAction[]>> = {
   cosmo: NO_ACTIONS,
   barnaby: NO_ACTIONS,
   marigold: Object.freeze([{ kind: 'shop', label: 'Shop' }]),
-  bram: NO_ACTIONS,
+  berlioz: NO_ACTIONS,
   juniper: NO_ACTIONS,
-  tess: NO_ACTIONS,
+  tallulah: NO_ACTIONS,
 };
 
 /** The chat box's action buttons for `npc`, in order: Marigold's Shop, and none for anyone else yet. */
