@@ -258,7 +258,7 @@ Decorations on the front of the parts exchange and Juniper's workshop (the carpe
 
 ## 10. Bundle
 
-- The parts shop and the workshop panels live in a new lazy chunk, `src/ui/shops/`, loaded through one dynamic import when either panel first opens, like the robot screen. Its budget is ≤ **20 KiB** gzipped, checked by `build:check`.
+- All three shops' panels live in a new lazy chunk, `src/ui/shops/`, loaded through one dynamic import when any of them first opens, like the robot screen: Sol's parts shop, Juniper's workshop, and Marigold's seed shop, which moves there from the HUD (decided by Eli when the main chunk ran low). Its budget is ≤ **20 KiB** gzipped, checked by `build:check`.
 - Part items, their icons, the actions and the reducer stay in the main chunk, which must stay within its current budget (295.1 KiB). If it can't, the build stops and asks Eli.
 - The Parts section and the preview mode are in the robot screen chunk.
 

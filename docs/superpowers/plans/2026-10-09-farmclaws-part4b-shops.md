@@ -75,13 +75,14 @@
 
 ### Task 3: Sol's parts shop
 
-**Files:** `src/core/types.ts`, `src/people/cast.ts`, `src/state/actions.ts`, `src/state/reducer.ts`, `src/input/panelKeys.ts`, `src/ui/ShopsHost.ts` (new, main chunk), `src/ui/shops/ShopsScreen.ts`, `src/ui/shops/PartsShopPanel.ts`, `src/ui/shops/shops.css`, `src/ui/shops/viewModel.ts` (new, lazy chunk), `src/ui/Hud.ts` or `src/main.ts` (mount the host), `scripts/bundleRules.mjs`, `scripts/check-bundle.mjs`, `tests/partsShop.test.ts` (new), `tests/checkBundle.test.ts`.
+**Files:** `src/core/types.ts`, `src/people/cast.ts`, `src/state/actions.ts`, `src/state/reducer.ts`, `src/input/panelKeys.ts`, `src/ui/ShopsHost.ts` (new, main chunk), `src/ui/shops/ShopsScreen.ts`, `src/ui/shops/PartsShopPanel.ts`, `src/ui/shops/shops.css`, `src/ui/shops/viewModel.ts` (new, lazy chunk), `src/ui/Hud.ts` (the seed shop leaves it) and `src/main.ts` (mount the host), `src/ui/shops/SeedShopPanel.ts` (new), `scripts/bundleRules.mjs`, `scripts/check-bundle.mjs`, `tests/partsShop.test.ts` (new), `tests/checkBundle.test.ts`.
 
 **Changes:**
 - `NPC_ACTION_KINDS` gains `'partsShop'` and `'workshop'` (Task 4 uses the second). `npcActions('sol')` → `[{ kind: 'partsShop', label: 'Shop' }]`. `talkAct`: `'partsShop'` swaps the talk panel for `{ kind: 'partsShop' }`.
 - `UiPanel` gains `{ kind: 'partsShop' }` and `{ kind: 'workshop' }`. `panelKeyCommand`: E/K/Enter close both, like the talk panel.
 - Actions: `{ type: 'parts/buy'; part: RobotPartId }` → `actions.buyPart(part)`; `{ type: 'parts/sell'; part: RobotPartId }` → `actions.sellPart(part)`. Reducer: no-op unless the parts shop is open and the game unpaused; buy only `BASIC_PART_IDS`; texts from spec §3.3; sell-back `Math.floor(PARTS.prices[part] * PARTS.sellBackShare)`.
-- `ShopsHost` mirrors `RobotScreenHost`: when `ui.panel.kind` is `'partsShop'` or `'workshop'`, it lazy-loads `./shops/ShopsScreen` once and hands it the store; failure toasts "The shop didn't open. Try again." through `ui/notify` and closes the panel. *(New text, record as a ruling.)*
+- **The seed shop moves into the lazy chunk** (Eli's call, to free main-chunk room): `ShopModal` leaves `src/ui/Hud.ts` for `src/ui/shops/SeedShopPanel.ts`, with its CSS, unchanged in look and behaviour (B and Marigold's Shop still open it). `Hud.ts` no longer mounts it.
+- `ShopsHost` mirrors `RobotScreenHost`: when `ui.panel.kind` is `'shop'`, `'partsShop'` or `'workshop'`, it lazy-loads `./shops/ShopsScreen` once and hands it the store; failure toasts "The shop didn't open. Try again." through `ui/notify` and closes the panel. *(New text, record as a ruling.)*
 - `src/ui/shops/viewModel.ts` (pure): `partsShopView(state): { gold; buy: readonly PartRow[]; sell: readonly SellRow[] }` with the spec's lines and prices. `PartsShopPanel` renders it in the HUD's modal style.
 - `bundleRules.mjs`: `SHOPS_SOURCE = 'src/ui/shops/ShopsScreen.ts'`, a `shops` role found by source map like `screen`, `SHOPS_MAX_GZIP = 20 * KIB`, and a problem when the shops code is in the main chunk.
 
@@ -142,13 +143,13 @@
 
 ### Task 7: Daily stock at all three shops
 
-**Files:** `src/state/reducer.ts` (`buySeeds`, `parts/buy`, `workshop/order`, `startNextDay`), `src/state/selectors.ts`, `src/ui/Hud.ts` (`ShopModal`), `src/ui/shops/viewModel.ts`, `src/ui/shops/PartsShopPanel.ts`, `src/ui/shops/WorkshopPanel.ts`, `tests/shopStock.test.ts` (new), `tests/partsShop.test.ts`, `tests/workshop.test.ts`.
+**Files:** `src/state/reducer.ts` (`buySeeds`, `parts/buy`, `workshop/order`, `startNextDay`), `src/state/selectors.ts`, `src/ui/shops/SeedShopPanel.ts`, `src/ui/shops/viewModel.ts`, `src/ui/shops/PartsShopPanel.ts`, `src/ui/shops/WorkshopPanel.ts`, `tests/shopStock.test.ts` (new), `tests/partsShop.test.ts`, `tests/workshop.test.ts`.
 
 **Changes:**
 - Pure selectors: `partsLeft(state, part)`, `robotsLeft(state, size)`, `seedsLeft(state, seedId)`: `SHOP_STOCK` minus `shopsSoldToday`.
 - Each buy or order checks and counts its stock with spec §6's toasts; a seed buy over what's left gives "Only {n} left today." (none left: "Out of stock. Marigold restocks tomorrow."). Selling back to Sol doesn't touch stock.
 - `startNextDay` resets `shopsSoldToday`, keeping the same object when nothing was sold.
-- The three panels show "{n} left", disable what can't be bought, and show "Out of stock" / "Sold out today". `ShopModal` is in the main chunk: keep its change small.
+- The three panels show "{n} left", disable what can't be bought, and show "Out of stock" / "Sold out today". The seed shop is in the lazy chunk since Task 3.
 
 **Tests:** each shop sells exactly its daily amount, then refuses with its toast; partial seed buys; selling back doesn't restock; the morning reset (and the same object when nothing sold); a mid-day save keeps the counts; the view rows' "{n} left" and sold-out states.
 
