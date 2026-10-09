@@ -25,6 +25,9 @@ Global rules (unchanged from parts 1–4a; see also `CLAUDE.md`): the simulation
 - **Juniper's robot workshop:** one ready-made robot per size, a read-only look at its program before buying, a name at checkout, delivery the next morning.
 - **Fitting parts at the workbench:** a Parts section in the robot screen's Looks tab.
 - **Scrapping** returns the robot's parts along with its bag.
+- **Daily stock** at all three shops, with out-of-stock messages: Sol's parts, Juniper's robots and Marigold's seeds.
+- **Shopfronts:** display stands, small props and posters outside the parts exchange and Juniper's workshop.
+- **Two renames:** Bram becomes **Berlioz**, and Tess becomes **Tallulah**.
 - Save version 8, with migration and validation.
 - A short browser playbook.
 
@@ -40,6 +43,9 @@ Global rules (unchanged from parts 1–4a; see also `CLAUDE.md`): the simulation
 | Trades | Not built: selling back and buying covers it |
 | Naming a bought robot | Typed at checkout, with a suggested name filled in |
 | Reading a program before buying | The real robot screen, read-only |
+| Names | Bram becomes Berlioz; Tess becomes Tallulah |
+| Stock | Sol's parts, Juniper's robots and Marigold's seeds all run out each day and restock in the morning |
+| Stands, props and posters | 4b dresses Sol's and Juniper's shopfronts, with FarmClaw posters; the rest of the town's props and brand posters (Byre, Tokenly, Hollis Handpicked, Claw Fair, Sprocket Cereal) come with 4d town life |
 
 **Part 4b does not build:**
 
@@ -50,7 +56,8 @@ Global rules (unchanged from parts 1–4a; see also `CLAUDE.md`): the simulation
 | Efficient and quick cores, paint, voices, personality cores, custom robots, limited editions | Release 3 (part 6) |
 | Trades | Cut for release 1 |
 | Renaming a robot | Not planned |
-| Bram's and Tess's menus | Not in farmclaws release 1 |
+| Berlioz's and Tallulah's menus | Not in farmclaws release 1 |
+| Posters, stands and props around the rest of the town | 4d Town life |
 
 ---
 
@@ -192,18 +199,64 @@ Scrapping (part 3) now puts the robot's parts into the backpack along with its b
 
 ---
 
-## 6. Save version 8
+## 6. Daily stock
+
+Each shop sells a fixed amount per day, and restocks every morning (`startNextDay` clears the counts). The amounts are in config (`SHOP_STOCK`):
+
+| Shop | Stock | Out of stock |
+| --- | --- | --- |
+| Sol's parts | 2 of each basic part per day (`SHOP_STOCK.partsPerDay`) | "Out of stock. Sol restocks tomorrow." |
+| Juniper's robots | 1 of each size per day (`SHOP_STOCK.robotsPerSizePerDay`) | "Sold out today. Juniper builds another tomorrow." |
+| Marigold's seeds | 30 packets of each seed per day (`SHOP_STOCK.seedsPerDay`) | "Out of stock. Marigold restocks tomorrow." |
+
+- **What the player sees:** every row shows "{n} left". A sold-out row shows "Out of stock" in place of its buttons (Juniper's card: "Sold out today").
+- **Seeds:** a ×5 or ×10 button is disabled when fewer packets are left than it would buy. If a buy asks for more than is left anyway: "Only {n} left today."
+- **The rules** sit in the reducer, so the messages above are the toasts a refused buy or order gives. Selling parts back to Sol doesn't add to his stock.
+- The counts are saved, so reloading mid-day doesn't restock.
+
+---
+
+## 7. Shopfronts
+
+Decorations on the front of the parts exchange and Juniper's workshop (the carpenter). They stand inside each building's footprint, in the back band, so they change no tile, keep the occlusion rule, and need no migration.
+
+- **The parts exchange:**
+  - A display stand by the door, with a claw, a watering head and a sensor eye on it.
+  - A poster on each side of the door: **FarmClaw**, "Your farm. Our claws." and **FarmClaw**, "Genuine FarmClaw parts."
+- **Juniper's workshop:**
+  - A Mini robot standing still on a low stand beside the door: the robot model in its own colours, with no lights or sway.
+  - A poster: **FarmClaw**, "Robots built to order."
+  - A crate of planks and cogs.
+- **Posters** are ads for made-up brands. FarmClaw is the valley's robot maker. Each poster is a brand name, a slogan and a simple picture: a claw for FarmClaw.
+  - They're drawn once, when the town is built, onto one shared canvas texture (an atlas), so all the posters together cost one material and one draw call. The text is fixed English, drawn with the canvas's `fillText` like the nameplates.
+  - Part 4d adds the rest: **Byre** at Tallulah's ranch ("Milk from cows, not claws. 100% claw free."), and **Tokenly** ("Keep your claws charged."), **Hollis Handpicked** ("Picked by people. Slowly."), **Claw Fair** ("Parade · Contest · Day 14") and **Sprocket Cereal** ("Part of a balanced robot.") around the town. Every brand is made up.
+
+---
+
+## 8. Names
+
+- **Bram becomes Berlioz**, and **Tess becomes Tallulah**. Their ids change too: `NPC_IDS` is `['sol', 'cosmo', 'barnaby', 'marigold', 'berlioz', 'juniper', 'tallulah']`, in the same order, so every everyday-line pick stays the same.
+- Their introductions:
+  - Berlioz: "Berlioz. Blacksmith. I sharpen tools and I don't do small talk."
+  - Tallulah: "Hi there, I'm Tallulah. Chickens, cows and wheat to feed them. Come see the ranch."
+- Their other lines, roles, spots and looks are unchanged. Comments, tests and the playbooks that name them change to match.
+
+---
+
+## 9. Save version 8
 
 - **`robots.deliveries`:** `readonly RobotDelivery[]`, with `interface RobotDelivery { readonly size: RobotSize; readonly name: string }`. New games start with `[]`.
+- **`shopsSoldToday`** (a new section): `{ readonly parts: Readonly<Record<BasicPartId, number>>; readonly robots: Readonly<Record<RobotSize, number>>; readonly seeds: Readonly<Record<SeedItemId, number>> }`, every count 0 in a new game, reset each morning.
+- **`npcs`:** the keys `bram` and `tess` become `berlioz` and `tallulah`.
 - **Part items** need no new field: they are `ItemId`s, so the existing stack validation accepts them once `isItemId` knows them.
 - **`UiPanel`** gains `partsShop`, `workshop` and the robot screen's `preview` mode; the loader resets the panel, so they need no migration.
-- **Migration (`migrateV7toV8`):** `robots.deliveries = []`; `SAVE_VERSION = 8`.
-- **Validation:** `deliveries` is an array of objects with exactly `size` (one of `ROBOT_SIZES`) and `name` (the robot name rule), and robots plus deliveries are at most `ROBOTS.maxRobots`.
+- **Migration (`migrateV7toV8`):** `robots.deliveries = []`; `shopsSoldToday` at all zeros; the `npcs` entries for `bram` and `tess` move to `berlioz` and `tallulah` unchanged, and `quests.board.npc` and `festival.giftTarget` follow the rename; `SAVE_VERSION = 8`.
+- **Validation:** `deliveries` is an array of objects with exactly `size` (one of `ROBOT_SIZES`) and `name` (the robot name rule), and robots plus deliveries are at most `ROBOTS.maxRobots`. `shopsSoldToday` has exactly its three keys, each with exactly its ids, every count an integer from 0 to that shop's daily stock. `npcs` has the new ids.
 - `v7Save` in `tests/testUtils.ts` turns a v8 state back into v7 JSON, and `v6Save` starts from it.
 
 ---
 
-## 7. Bundle
+## 10. Bundle
 
 - The parts shop and the workshop panels live in a new lazy chunk, `src/ui/shops/`, loaded through one dynamic import when either panel first opens, like the robot screen. Its budget is ≤ **20 KiB** gzipped, checked by `build:check`.
 - Part items, their icons, the actions and the reducer stay in the main chunk, which must stay within its current budget (295.1 KiB). If it can't, the build stops and asks Eli.
@@ -211,7 +264,7 @@ Scrapping (part 3) now puts the robot's parts into the backpack along with its b
 
 ---
 
-## 8. Tests
+## 11. Tests
 
 | File | Covers |
 | --- | --- |
@@ -219,7 +272,11 @@ Scrapping (part 3) now puts the robot's parts into the backpack along with its b
 | `tests/partsShop.test.ts` | Sol's Shop action; buying (gold, room, only basic parts); selling at half price, rounded down; the panel guards (no panel, paused). |
 | `tests/workshop.test.ts` | Juniper's Workshop action; the range and the harvester program pass the checkers; the suggested name skips used names and wraps; ordering (name rule, gold, the 12-robot cap counting deliveries); the guards; delivery overnight beside the workbench, in order, with the toast; the morning stack runs. |
 | `tests/fitParts.test.ts` | Fit and take off: slots, duplicates, catalogue order, the tank, a full backpack, the sensor-eye and basket refusals, bench-only, ruined, paused; scrapping returns parts or refuses. |
-| `tests/saveV8.test.ts` | v7 → v8 (and the v2 fixture through every version), a round trip with deliveries due and parts in the backpack and a chest, one corrupted field per rule. |
+| `tests/shopStock.test.ts` | Each shop's daily stock: the counts, the out-of-stock toasts, "Only {n} left today.", selling back doesn't restock, the morning reset. |
+| `tests/saveV8.test.ts` | v7 → v8 (and the v2 fixture through every version): deliveries, the stock counts, the npcs rename with the board and gift target following it; a round trip with deliveries due, stock sold and parts in the backpack and a chest; one corrupted field per rule. |
+| `tests/cast.test.ts`, `tests/lines.test.ts` (update) | Berlioz and Tallulah: names, ids, spots and the two new introductions. |
+| `tests/scenery.test.ts` (extend) | The shopfront props stay inside their buildings' rects and keep the occlusion rule. |
+| `tests/posters.test.ts` | The poster atlas layout: every 4b poster has a cell, the cells don't overlap, and each poster's brand and slogan are the spec's (drawing itself is checked by playing). |
 | `tests/robotScreen.test.ts` (extend) | The preview's header, tabs and close; the Parts section's rows for bench, peek and ruined. |
 | `tests/checkBundle.test.ts` (extend) | The shops chunk found by source map and its 20 KiB budget. |
 
@@ -228,22 +285,26 @@ Scrapping (part 3) now puts the robot's parts into the backpack along with its b
 2. Read the Mini's program at Juniper's, order a Mini with a typed name, sleep: it's by the workbench.
 3. On the bench, take its claw off and fit the watering head.
 4. Order a Standard; the counter and the 12-robot cap.
+5. Buy a part until it's out of stock; sleep; it's back.
+6. Look at the two shopfronts, and talk to Berlioz and Tallulah.
 
 ---
 
-## 9. Implementation steps
+## 12. Implementation steps
 
-1. Save version 8 and `robots.deliveries`.
+1. Save version 8: `robots.deliveries`, `shopsSoldToday`, and the Berlioz and Tallulah renames.
 2. Parts as items: the item kind, prices, names, icons, the bin refusal.
 3. Sol's parts shop: the action, `parts/buy` and `parts/sell`, the lazy shops chunk and its panel, the budget check.
 4. Juniper's workshop: the range, suggested names, ordering, the panel, and delivery overnight.
 5. The robot screen preview mode.
 6. Fitting parts: `robot/fit`, `robot/unfit`, the Looks tab's Parts section, and scrapping returning parts.
-7. The playbook and the spec sync.
+7. Daily stock at all three shops.
+8. The shopfronts.
+9. The playbook and the spec sync.
 
 ---
 
-## 10. Done means
+## 13. Done means
 
 - Every test above passes. Typecheck, the full suite, the build and `build:check` are green.
 - Eli has played it.
@@ -251,8 +312,9 @@ Scrapping (part 3) now puts the robot's parts into the backpack along with its b
 
 ---
 
-## 11. Changes to the farmclaws design
+## 14. Changes to the farmclaws design
 
 - **§9.2:** trades are cut for release 1: Sol buys parts back at half price and sells new ones. Repairs stay at the shipping bin, which Sol's menu points to.
-- **§9.2:** Juniper's ready-made robots are delivered beside the workbench the next morning.
-- **§11.2:** two parts are added after part 4, before part 5: **4d Town life** (anonymous townsfolk with fixed personalities walking short routes, market stalls, benches and planters, bunting and banners, barrels, crates and a cart) and **4e Graphics pass** (soft fitted shadows, ambient sky lighting, a water shader, and post-processing: ambient occlusion, night bloom, colour grading and a vignette, better anti-aliasing; a low / medium / high quality setting, phones defaulting to medium, the heavy parts loaded lazily).
+- **§9.2:** Juniper's ready-made robots are delivered beside the workbench the next morning. Every shop has a daily stock and restocks each morning.
+- **§9.2, §10 and §15:** Bram is renamed Berlioz, and Tess is renamed Tallulah.
+- **§11.2:** two parts are added after part 4, before part 5: **4d Town life** (anonymous townsfolk with fixed personalities walking short routes, market stalls, benches and planters, bunting and banners, barrels, crates and a cart, and posters, stands and small props around the town, including brand posters for Byre, Tokenly, Hollis Handpicked, Claw Fair and Sprocket Cereal) and **4e Graphics pass** (soft fitted shadows, ambient sky lighting, a water shader, and post-processing: ambient occlusion, night bloom, colour grading and a vignette, better anti-aliasing; a low / medium / high quality setting, phones defaulting to medium, the heavy parts loaded lazily).
