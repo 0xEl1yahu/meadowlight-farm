@@ -7,10 +7,11 @@
  * hash in core/hash.ts, so an action log replayed from the same initial state reproduces the
  * exact same game.
  */
-import { INVENTORY, PLAYER, ROBOT_CARE, ROBOT_PAINTS, TIME, TOOLS } from '../config';
+import { INVENTORY, PARTS, PLAYER, ROBOT_CARE, ROBOT_PAINTS, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
 import { joinWithAnd, qualityPrefix } from '../core/text';
 import {
+  BASIC_PART_IDS,
   Blocker,
   DIRECTIONS,
   MAP_IDS,
@@ -32,6 +33,7 @@ import {
   type PlacedObject,
   type Quality,
   type Robot,
+  type RobotPartId,
   type SeedItemId,
   type ShippingState,
   type SlotRef,
@@ -45,7 +47,7 @@ import { runCrows } from '../farming/crows';
 import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
-import { getItem, isSeedItemId, sellPriceFor } from '../items/items';
+import { getItem, isPartItemId, isSeedItemId, sellBackPrice, sellPriceFor } from '../items/items';
 import { npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { programmedRobot, withMd, withZone } from '../robots/edits';
@@ -63,10 +65,12 @@ import { planInteraction, planPrimaryAction, planShiftInteraction, type ActionPl
 import {
   addItem,
   capacityFor,
+  countItem,
   mergeStacks,
   moveAcrossSlots,
   moveWithinSlots,
   removeFromSlot,
+  removeItem,
   selectedStack,
   type Slots,
 } from './inventory';
@@ -130,6 +134,10 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return pushMessage(state, action.text, action.tone);
     case 'shop/buy':
       return buySeeds(state, action.itemId, action.quantity);
+    case 'parts/buy':
+      return buyPart(state, action.part);
+    case 'parts/sell':
+      return sellPart(state, action.part);
     case 'crafting/craft':
       return craft(state, action.recipe);
     case 'game/setPaused':
@@ -724,6 +732,34 @@ function buySeeds(state: GameState, itemId: SeedItemId, quantity: number): GameS
   return pushMessage(next, `Bought ${item.name} ×${quantity} for ${cost}g.`, 'success');
 }
 
+/** True while Sol's parts shop is open and the game runs: the only time `parts/buy` and `parts/sell` act (part 4b spec §3.3). */
+function partsShopOpen(state: GameState): boolean {
+  return state.ui.panel.kind === 'partsShop' && !state.ui.paused;
+}
+
+/** `parts/buy`: one basic part into the backpack for its price, or a toast saying why not. */
+function buyPart(state: GameState, part: RobotPartId): GameState {
+  if (!partsShopOpen(state) || !(BASIC_PART_IDS as readonly unknown[]).includes(part)) return state;
+  const price = PARTS.prices[part];
+  if (state.player.gold < price) return pushMessage(state, `You need ${price}g.`, 'warn');
+  if (capacityFor(state.inventory, part) < 1) return pushMessage(state, 'Your inventory is full.', 'warn');
+  const { inventory } = addItem(state.inventory, part, 1);
+  const next: GameState = { ...state, inventory, player: { ...state.player, gold: state.player.gold - price } };
+  return pushMessage(next, `Bought a ${getItem(part).name.toLowerCase()}.`, 'success');
+}
+
+/** `parts/sell`: one part out of the backpack for half its price, rounded down. Nothing happens without one. */
+function sellPart(state: GameState, part: RobotPartId): GameState {
+  if (!partsShopOpen(state) || !isPartItemId(part) || countItem(state.inventory, part) < 1) return state;
+  const gold = sellBackPrice(part);
+  const next: GameState = {
+    ...state,
+    inventory: removeItem(state.inventory, part, 1),
+    player: { ...state.player, gold: state.player.gold + gold },
+  };
+  return pushMessage(next, `Sold a ${getItem(part).name.toLowerCase()} for ${gold}g.`, 'success');
+}
+
 /**
  * `crafting/craft`: rejected while paused or for an unknown id; otherwise, when craftCheck
  * allows it, uses the ingredients (lowest quality first) and adds the output, or explains why not.
@@ -891,7 +927,8 @@ function paintRobot(state: GameState, robotId: number, paint: number): GameState
 /**
  * `talk/act`: an action button in the chat box. It acts only while the talk panel is open on
  * `npc`, the game isn't paused and `act` is one of `npcActions(npc)`; anything else changes
- * nothing. The Shop swaps the talk panel for the seed shop in one step. Parts 4b and 4c add a
+ * nothing. Marigold's Shop swaps the talk panel for the seed shop in one step, Sol's for the
+ * parts shop and Juniper's Workshop for the workshop (part 4b spec §3.1, §4.1). Part 4c adds a
  * case per new action kind.
  */
 function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
@@ -901,6 +938,10 @@ function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
   switch (act) {
     case 'shop':
       return { ...state, ui: { ...state.ui, panel: { kind: 'shop' } } };
+    case 'partsShop':
+      return { ...state, ui: { ...state.ui, panel: { kind: 'partsShop' } } };
+    case 'workshop':
+      return { ...state, ui: { ...state.ui, panel: { kind: 'workshop' } } };
     default: {
       const unknown: never = act;
       void unknown;

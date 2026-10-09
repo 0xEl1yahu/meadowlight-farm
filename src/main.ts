@@ -41,6 +41,7 @@ import { clearSave, loadGame, saveGame } from './state/persistence';
 import { gameReducer } from './state/reducer';
 import { Hud } from './ui/Hud';
 import { RobotScreenHost } from './ui/RobotScreenHost';
+import { ShopsHost } from './ui/ShopsHost';
 import { selectActiveWorld, selectIsFrozen } from './state/selectors';
 
 declare global {
@@ -110,6 +111,7 @@ function bootstrap(): () => void {
     }),
   });
   const robotScreen = new RobotScreenHost({ root: hudRoot, store });
+  const shops = new ShopsHost({ root: hud.shopsLayer, store });
   const input = new InputController({
     target: window,
     canvas: ctx.renderer.domElement,
@@ -121,6 +123,7 @@ function bootstrap(): () => void {
   for (const system of systems) system.sync(initial, null);
   hud.sync(initial, null);
   robotScreen.sync(initial, null);
+  shops.sync(initial, null);
   ctx.rig.snap(player.focus);
 
   const simClock = new FixedStepClock(TIME.realSecondsPerGameMinute, TIME.maxTickMinutes);
@@ -132,7 +135,9 @@ function bootstrap(): () => void {
     if (plan.setGrid) ctx.setActiveGrid(selectActiveWorld(state).grid);
     const systemsPrev = plan.systemsPrev === 'null' ? null : prev;
     for (const system of systems) system.sync(state, systemsPrev);
-    hud.sync(state, plan.hudPrev === 'null' ? null : prev);
+    const hudPrev = plan.hudPrev === 'null' ? null : prev;
+    hud.sync(state, hudPrev);
+    shops.sync(state, hudPrev);
     robotScreen.sync(state, prev);
     if (plan.snapCamera) ctx.rig.snap(player.focus);
     const newDay = state.time.absoluteDay !== prev.time.absoluteDay;
@@ -195,6 +200,7 @@ function bootstrap(): () => void {
     window.removeEventListener('pagehide', saveOnHide);
     unsubscribe();
     input.dispose();
+    shops.dispose();
     hud.dispose();
     robotScreen.dispose();
     for (const system of systems) system.dispose();

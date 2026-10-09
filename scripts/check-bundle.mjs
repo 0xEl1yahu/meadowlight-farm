@@ -1,8 +1,10 @@
 /**
- * Post-build check (farmclaws part 3 spec §10.1 and §10.3) on the normal build in dist/:
+ * Post-build check (farmclaws part 3 spec §10.1 and §10.3, part 4b spec §10) on the normal build in dist/:
  * - gzip budgets (zlib level 6): the lazy Blockly editor ≤ 250 KiB, the lazy robot screen
- *   ≤ 40 KiB, the main entry chunk ≤ the part 2 baseline (scripts/bundle-baseline.json) + 26 KiB;
- * - Blockly in neither the main chunk nor the screen chunk (by each source map's `sources`);
+ *   ≤ 40 KiB, the lazy shops ≤ 20 KiB, the main entry chunk ≤ the part 2 baseline
+ *   (scripts/bundle-baseline.json) + 26 KiB;
+ * - the robot screen and the shops each a lazy chunk of their own, and Blockly in neither of them
+ *   nor the main chunk (by each source map's `sources`);
  * - no dev-hook name in any file of dist/, source maps included.
  * Prints a table of sizes and exits 1 with a sentence per problem.
  *

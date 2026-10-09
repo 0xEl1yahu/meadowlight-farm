@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROBOT_SCREEN } from '../src/config';
 import { Direction, NPC_IDS, type GameState, type NpcId } from '../src/core/types';
-import { npcSpot } from '../src/people/cast';
+import { npcSpot, type NpcAction } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
@@ -58,12 +58,16 @@ describe('chatBoxView', () => {
     });
   });
 
-  it("shows every character's name and role line, with buttons only for Marigold", () => {
+  it("shows every character's name and role line, with buttons only for Marigold and Sol", () => {
+    const buttons: Partial<Record<NpcId, readonly NpcAction[]>> = {
+      marigold: [{ kind: 'shop', label: 'Shop' }],
+      sol: [{ kind: 'partsShop', label: 'Shop' }],
+    };
     for (const npc of NPC_IDS) {
       const view = must(chatBoxView(talkingTo(npc)));
       expect(view.npc).toBe(npc);
       expect([view.name, view.role]).toEqual(SPEC_CAST[npc]);
-      expect(view.actions).toEqual(npc === 'marigold' ? [{ kind: 'shop', label: 'Shop' }] : []);
+      expect(view.actions).toEqual(buttons[npc] ?? []);
     }
   });
 

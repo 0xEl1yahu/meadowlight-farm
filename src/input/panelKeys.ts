@@ -2,9 +2,9 @@
  * Panel and menu keys, decided from the state alone so the rules can be tested without a DOM.
  *
  *   I              toggles the inventory; closes an open chest
- *   E, K, Enter    interact, or close an open inventory, chest or chat box instead; with Shift,
- *                  peek (planShiftInteraction: talk to a character, E's meaning at the
- *                  workbench, else a robot's screen)
+ *   E, K, Enter    interact, or close an open inventory, chest, chat box, parts shop or workshop
+ *                  instead; with Shift, peek (planShiftInteraction: talk to a character, E's
+ *                  meaning at the workbench, else a robot's screen)
  *   B              toggles the seed shop; does nothing while the inventory or a chest is open
  *   Escape         closes any open panel, otherwise drops a zone draft, otherwise toggles pause
  *   (none)         while a robot screen is open: it owns the keyboard (part 3 spec §4.1)
@@ -41,8 +41,9 @@ export function panelKeyCommand(code: string, state: GameState, shift = false): 
   if (state.ui.panel.kind === 'robot') return null;
   const panel = state.ui.panel.kind;
   if (INTERACT_KEYS.has(code)) {
-    // The chat box closes like the inventory screen, Shift or not (part 4a spec §3.2).
-    if (isInventoryScreenOpen(state) || panel === 'talk') return actions.closePanel();
+    // The chat box closes like the inventory screen, Shift or not (part 4a spec §3.2), and so do
+    // Sol's and Juniper's panels (part 4b spec §3.1, §4.1).
+    if (isInventoryScreenOpen(state) || panel === 'talk' || panel === 'partsShop' || panel === 'workshop') return actions.closePanel();
     return shift ? actions.peek() : actions.interact();
   }
   switch (code) {

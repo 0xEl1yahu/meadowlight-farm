@@ -1,5 +1,5 @@
 /**
- * The rules behind scripts/check-bundle.mjs (farmclaws part 3 spec §10), kept free of Node APIs
+ * The rules behind scripts/check-bundle.mjs (farmclaws part 3 spec §10, part 4b spec §10), kept free of Node APIs
  * so tests/checkBundle.test.ts can run them on made-up chunks. Sizes are gzipped bytes.
  */
 
@@ -8,6 +8,8 @@ export const KIB = 1024;
 /** Spec §10.1: the lazy Blockly editor, the lazy robot screen, and the main chunk's growth over the part 2 baseline (raised from 16 KiB for part 4a's cast, chat box and characters). */
 export const EDITOR_MAX_GZIP = 250 * KIB;
 export const SCREEN_MAX_GZIP = 40 * KIB;
+/** Part 4b spec §10: the lazy shops chunk (the seed shop, Sol's parts shop and Juniper's workshop). */
+export const SHOPS_MAX_GZIP = 20 * KIB;
 export const MAIN_GROWTH_MAX_GZIP = 26 * KIB;
 /** A chunk without a source map is only tolerated up to this size (bundler runtime helpers); it still gets the dev-hook grep. */
 export const UNMAPPED_MAX_GZIP = 1 * KIB;
@@ -16,12 +18,14 @@ export const UNMAPPED_MAX_GZIP = 1 * KIB;
 export const BLOCKLY_SOURCE = 'node_modules/blockly/';
 /** The chunk whose source map lists a path ending in this is the robot screen chunk. */
 export const SCREEN_SOURCE = 'src/ui/robotScreen/RobotScreen.ts';
+/** The chunk whose source map lists a path ending in this is the shops chunk. */
+export const SHOPS_SOURCE = 'src/ui/shops/ShopsScreen.ts';
 /** Spec §10.3: names only the dev hooks use. `setProgram` is left out: three.js's WebGLRenderer has its own. */
 export const DEV_HOOK_WORDS = ['robotLog', 'installRobotDev', 'addScriptedRobot', 'setMd', 'setZone', 'unlockAll'];
 
 const slashes = (path) => path.replace(/\\/g, '/');
 const blocklySources = (chunk) => chunk.sources.filter((s) => slashes(s).includes(BLOCKLY_SOURCE));
-const holdsScreen = (chunk) => chunk.sources.some((s) => slashes(s).endsWith(SCREEN_SOURCE));
+const holdsSource = (chunk, source) => chunk.sources.some((s) => slashes(s).endsWith(source));
 
 /** "275.5 KiB". */
 export function formatKiB(bytes) {
@@ -35,9 +39,23 @@ export function entryScriptPath(html) {
 }
 
 /**
- * Sorts the built chunks into the main entry chunk, the robot screen chunk, the editor chunks
- * (every other chunk holding Blockly: `blockly/core` and `blockly/msg/en` may land in separate
- * chunks) and the rest, and lists every placement problem.
+ * The lazy chunk whose source map lists `source`, or null with a problem when it is missing or
+ * bundled into the main chunk.
+ */
+function findLazy(chunks, main, source, name, problems) {
+  if (main !== null && holdsSource(main, source)) {
+    problems.push(`${name.inMain} in the main chunk (${main.file}). Load ${source} only through import().`);
+    return null;
+  }
+  const chunk = chunks.find((c) => holdsSource(c, source)) ?? null;
+  if (chunk === null) problems.push(`No chunk's source map lists ${source}. ${name.missing}`);
+  return chunk;
+}
+
+/**
+ * Sorts the built chunks into the main entry chunk, the robot screen chunk, the shops chunk, the
+ * editor chunks (every other chunk holding Blockly: `blockly/core` and `blockly/msg/en` may land
+ * in separate chunks) and the rest, and lists every placement problem.
  *
  * @param {readonly { file: string, gzipBytes: number, sources: readonly string[], unmapped?: boolean }[]} chunks
  * @param {string | null} entryFile the entry script's path inside dist/
@@ -55,16 +73,11 @@ export function classifyChunks(chunks, entryFile) {
     }
   }
 
-  let screen = null;
-  if (main !== null && holdsScreen(main)) {
-    problems.push(`The robot screen is in the main chunk (${main.file}). Load ${SCREEN_SOURCE} only through import().`);
-  } else {
-    screen = chunks.find((c) => holdsScreen(c)) ?? null;
-    if (screen === null) problems.push(`No chunk's source map lists ${SCREEN_SOURCE}. The robot screen must be a lazy chunk of its own.`);
-  }
+  const screen = findLazy(chunks, main, SCREEN_SOURCE, { inMain: 'The robot screen is', missing: 'The robot screen must be a lazy chunk of its own.' }, problems);
+  const shops = findLazy(chunks, main, SHOPS_SOURCE, { inMain: 'The shops are', missing: 'The shops must be a lazy chunk of their own.' }, problems);
 
   let blocklyMisplaced = false;
-  for (const [role, chunk] of [['main', main], ['screen', screen]]) {
+  for (const [role, chunk] of [['main', main], ['screen', screen], ['shops', shops]]) {
     if (chunk === null) continue;
     const found = blocklySources(chunk);
     if (found.length === 0) continue;
@@ -72,19 +85,19 @@ export function classifyChunks(chunks, entryFile) {
     problems.push(`Blockly is in the ${role} chunk (${chunk.file}), e.g. ${found[0]}. Import blockly only through import() inside src/ui/robotScreen/.`);
   }
 
-  const editor = chunks.filter((c) => c !== main && c !== screen && blocklySources(c).length > 0);
+  const editor = chunks.filter((c) => c !== main && c !== screen && c !== shops && blocklySources(c).length > 0);
   if (editor.length === 0 && !blocklyMisplaced) {
     problems.push(`No lazy chunk's source map lists ${BLOCKLY_SOURCE}. The Program tab must load blockly through import().`);
   }
-  const other = chunks.filter((c) => c !== main && c !== screen && !editor.includes(c));
-  return { main, screen, editor, other, problems };
+  const other = chunks.filter((c) => c !== main && c !== screen && c !== shops && !editor.includes(c));
+  return { main, screen, shops, editor, other, problems };
 }
 
 /**
- * One row per budget that has a chunk to measure: main (baseline + growth), screen and editor
- * (the editor chunks' sizes added up).
+ * One row per budget that has a chunk to measure: main (baseline + growth), screen, shops and
+ * editor (the editor chunks' sizes added up).
  *
- * @param {{ main: { file: string, gzipBytes: number } | null, screen: { file: string, gzipBytes: number } | null, editor: readonly { file: string, gzipBytes: number }[] }} roles
+ * @param {{ main: { file: string, gzipBytes: number } | null, screen: { file: string, gzipBytes: number } | null, shops: { file: string, gzipBytes: number } | null, editor: readonly { file: string, gzipBytes: number }[] }} roles
  * @param {number} baselineMainGzip the part 2 main chunk, from scripts/bundle-baseline.json
  */
 export function evaluateBudgets(roles, baselineMainGzip) {
@@ -94,6 +107,9 @@ export function evaluateBudgets(roles, baselineMainGzip) {
   }
   if (roles.screen !== null) {
     rows.push({ role: 'screen', files: [roles.screen.file], gzipBytes: roles.screen.gzipBytes, limitBytes: SCREEN_MAX_GZIP });
+  }
+  if (roles.shops !== null) {
+    rows.push({ role: 'shops', files: [roles.shops.file], gzipBytes: roles.shops.gzipBytes, limitBytes: SHOPS_MAX_GZIP });
   }
   if (roles.editor.length > 0) {
     const gzipBytes = roles.editor.reduce((sum, c) => sum + c.gzipBytes, 0);

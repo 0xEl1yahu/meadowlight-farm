@@ -276,14 +276,6 @@
   border-color: var(--hud-rose-deep);
 }
 
-.hud-btn--buy {
-  min-width: 48px;
-  min-height: 32px;
-  padding: 4px 10px 3px;
-  background: var(--hud-butter);
-  border-color: var(--hud-butter-deep);
-}
-
 .hud-iconbtn {
   display: inline-grid;
   place-items: center;
@@ -306,33 +298,6 @@
 .hud-iconbtn .hud-inline-icon {
   width: 18px;
   height: 18px;
-}
-
-.hud-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--hud-cream-deep);
-  color: var(--hud-ink-soft);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.hud-tag.is-regrow {
-  background: var(--hud-mint-wash);
-  color: var(--hud-mint-deep);
-  box-shadow: inset 0 0 0 1.5px var(--hud-mint);
-}
-
-.hud-tag.is-sell {
-  background: var(--hud-peach-wash);
-}
-
-.hud-tag.is-season {
-  background: var(--hud-lilac);
-  color: var(--hud-ink);
 }
 
 /* -------------------------------------------------------------------------------------------
@@ -1167,7 +1132,7 @@
 }
 
 /* -------------------------------------------------------------------------------------------
- * Modals (shop, pause)
+ * Modals (pause; the shops' panels in src/ui/shops/shops.css share them)
  * ----------------------------------------------------------------------------------------- */
 
 /*
@@ -1228,140 +1193,6 @@
   color: var(--hud-ink-soft);
   font-size: 14px;
   font-weight: 500;
-}
-
-/* Seed shop ------------------------------------------------------------------------------- */
-
-.hud-shop__gold {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px 4px 6px;
-  border: 2px solid var(--hud-wood-deep);
-  border-radius: var(--hud-radius-sm);
-  background: linear-gradient(var(--hud-wood-dark), var(--hud-wood-deep));
-  color: var(--hud-gold);
-  font-size: 17px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.hud-shop__gold-coin .hud-inline-icon {
-  width: 20px;
-  height: 20px;
-}
-
-.hud-shop__list {
-  display: grid;
-  gap: 10px;
-}
-
-.hud-shop__item {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
-  grid-template-areas: 'icon info buy';
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 2px solid var(--hud-line);
-  border-radius: 14px;
-  background: var(--hud-parchment);
-  box-shadow: inset 0 -3px 0 var(--hud-cream-deep);
-}
-
-.hud-shop__icon {
-  grid-area: icon;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  padding: 5px;
-  border: 2px solid var(--hud-wood-light);
-  border-radius: 12px;
-  background: var(--hud-cream);
-}
-
-.hud-shop__info {
-  grid-area: info;
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.hud-shop__name-row {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.hud-shop__name {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.hud-shop__price {
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--hud-butter);
-  color: var(--hud-ink);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.hud-shop__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.hud-shop__owned {
-  color: var(--hud-ink-faint);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.hud-shop__buy {
-  grid-area: buy;
-  display: flex;
-  gap: 6px;
-}
-
-.hud-shop__empty {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  padding: 18px 12px 12px;
-  border: 2px dashed var(--hud-line);
-  border-radius: 14px;
-  background: var(--hud-parchment);
-  text-align: center;
-}
-
-.hud-shop__empty-art {
-  display: block;
-  width: 84px;
-  height: 84px;
-}
-
-.hud-shop__empty-title {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.hud-shop__empty-text {
-  max-width: 34ch;
-  color: var(--hud-ink-soft);
-  line-height: 1.45;
-}
-
-.hud-shop__footer {
-  color: var(--hud-ink-faint);
-  font-size: 12px;
-  font-weight: 500;
-  text-align: center;
 }
 
 /* Pause ----------------------------------------------------------------------------------- */
@@ -1738,23 +1569,6 @@
     width: min(260px, calc(100vw - 2 * var(--hud-gutter)));
   }
 
-  .hud-shop__item {
-    grid-template-columns: 44px minmax(0, 1fr);
-    grid-template-areas:
-      'icon info'
-      'buy buy';
-    gap: 8px 10px;
-  }
-
-  .hud-shop__icon {
-    width: 44px;
-    height: 44px;
-  }
-
-  .hud-shop__buy .hud-btn {
-    flex: 1;
-  }
-
   .hud-modal__header {
     flex-wrap: wrap;
   }
@@ -1825,9 +1639,15 @@
 }
 
 /* -------------------------------------------------------------------------------------------
- * Robot screen loading card (RobotScreenHost.ts). It shows before the screen's lazy stylesheet
+ * Lazy screens: the shops' layer (ShopsHost.ts mounts the shops in it, in the seed shop's old
+ * place among the overlays, so they stack as before) and the loading card the robot screen and
+ * the shops show (RobotScreenHost.ts, ShopsHost.ts). The card shows before the lazy stylesheet
  * arrives, so it lives here.
  * ----------------------------------------------------------------------------------------- */
+
+.hud-shops {
+  display: contents;
+}
 
 .robot-screen-loading {
   position: absolute;

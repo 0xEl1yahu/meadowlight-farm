@@ -253,3 +253,8 @@ export function sellPriceFor(itemId: ItemId, quality: Quality): number {
   const price = getItem(itemId).sellPrice;
   return price === null ? 0 : Math.floor(price * FARMING.qualityMultipliers[quality]);
 }
+
+/** What Sol pays for one `part` (farmclaws part 4b spec §3.2): half its price, rounded down. */
+export function sellBackPrice(part: RobotPartId): number {
+  return Math.floor(PARTS.prices[part] * PARTS.sellBackShare);
+}

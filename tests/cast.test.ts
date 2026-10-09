@@ -215,15 +215,15 @@ describe("a character's tile", () => {
 });
 
 describe('npcActions', () => {
-  it('gives Marigold the Shop button and everyone else none', () => {
+  it("gives Marigold the seed shop, Sol the parts shop and everyone else none", () => {
     expect(npcActions('marigold')).toEqual([{ kind: 'shop', label: 'Shop' }]);
+    expect(npcActions('sol')).toEqual([{ kind: 'partsShop', label: 'Shop' }]);
     for (const id of NPC_IDS) {
-      if (id === 'marigold') continue;
+      if (id === 'marigold' || id === 'sol') continue;
       expect(npcActions(id), id).toEqual([]);
-      expect(npcActions(id), id).toBe(npcActions('sol'));
+      expect(npcActions(id), id).toBe(npcActions('cosmo'));
     }
-    expect(Object.isFrozen(npcActions('sol'))).toBe(true);
-    expect(Object.isFrozen(npcActions('marigold'))).toBe(true);
+    for (const id of NPC_IDS) expect(Object.isFrozen(npcActions(id)), id).toBe(true);
   });
 });
 

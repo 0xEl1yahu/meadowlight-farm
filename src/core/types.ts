@@ -154,8 +154,11 @@ export type ToolLevel = 0 | 1 | 2;
 export const NPC_IDS = ['sol', 'cosmo', 'barnaby', 'marigold', 'berlioz', 'juniper', 'tallulah'] as const;
 export type NpcId = (typeof NPC_IDS)[number];
 
-/** What a character's chat-box buttons do (part 4a spec §3.2). Parts 4b and 4c add kinds. */
-export const NPC_ACTION_KINDS = ['shop'] as const;
+/**
+ * What a character's chat-box buttons do (part 4a spec §3.2): Marigold's seed shop, Sol's parts
+ * shop and Juniper's workshop (part 4b spec §3.1, §4.1). Part 4c adds kinds.
+ */
+export const NPC_ACTION_KINDS = ['shop', 'partsShop', 'workshop'] as const;
 export type NpcActionKind = (typeof NPC_ACTION_KINDS)[number];
 
 export const ANIMAL_KINDS = ['chicken', 'cow'] as const;
@@ -474,6 +477,10 @@ export interface ShippingState {
 export type UiPanel =
   | { readonly kind: 'none' }
   | { readonly kind: 'shop' }
+  /** Sol's parts shop (farmclaws part 4b spec §3). */
+  | { readonly kind: 'partsShop' }
+  /** Juniper's robot workshop (farmclaws part 4b spec §4). */
+  | { readonly kind: 'workshop' }
   | { readonly kind: 'inventory' }
   | { readonly kind: 'chest'; readonly mapId: MapId; readonly tx: number; readonly tz: number }
   /** The robot screen (farmclaws part 3 spec §4): editable at the workbench, read-only when peeking. */

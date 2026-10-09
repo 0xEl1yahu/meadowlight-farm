@@ -10,6 +10,7 @@ import type {
   MessageTone,
   NpcActionKind,
   NpcId,
+  RobotPartId,
   RobotProgram,
   SeedItemId,
   SlotRef,
@@ -37,6 +38,10 @@ export type GameAction =
   /** A toast from the UI itself, e.g. when the robot screen fails to load (part 3 spec §4.1). */
   | { readonly type: 'ui/notify'; readonly text: string; readonly tone: MessageTone }
   | { readonly type: 'shop/buy'; readonly itemId: SeedItemId; readonly quantity: number }
+  /** Buys one basic part from Sol (farmclaws part 4b spec §3.3). */
+  | { readonly type: 'parts/buy'; readonly part: RobotPartId }
+  /** Sells one part from the backpack back to Sol for half its price. */
+  | { readonly type: 'parts/sell'; readonly part: RobotPartId }
   /** Crafts one batch of a known recipe from the player's inventory. */
   | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
@@ -84,6 +89,8 @@ export const actions = {
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),
   notify: (text: string, tone: MessageTone): GameAction => ({ type: 'ui/notify', text, tone }),
   buy: (itemId: SeedItemId, quantity: number): GameAction => ({ type: 'shop/buy', itemId, quantity }),
+  buyPart: (part: RobotPartId): GameAction => ({ type: 'parts/buy', part }),
+  sellPart: (part: RobotPartId): GameAction => ({ type: 'parts/sell', part }),
   craft: (recipe: CraftingRecipeId): GameAction => ({ type: 'crafting/craft', recipe }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),

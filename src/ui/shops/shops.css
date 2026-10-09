@@ -1,0 +1,237 @@
+/*
+ * The shops (src/ui/shops/), loaded with the shops' lazy chunk: Marigold's seed shop, moved here
+ * unchanged from hud.css, and Sol's parts shop in the same style. The panels mount inside .hud, so
+ * they use its --hud-* tokens and the shared .hud-modal, .hud-btn and .hud-iconbtn styles.
+ */
+
+/* -------------------------------------------------------------------------------------------
+ * Shared pieces
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-btn--buy {
+  min-width: 48px;
+  min-height: 32px;
+  padding: 4px 10px 3px;
+  background: var(--hud-butter);
+  border-color: var(--hud-butter-deep);
+}
+
+.hud-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--hud-cream-deep);
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hud-tag.is-regrow {
+  background: var(--hud-mint-wash);
+  color: var(--hud-mint-deep);
+  box-shadow: inset 0 0 0 1.5px var(--hud-mint);
+}
+
+.hud-tag.is-sell {
+  background: var(--hud-peach-wash);
+}
+
+.hud-tag.is-season {
+  background: var(--hud-lilac);
+  color: var(--hud-ink);
+}
+
+
+/* -------------------------------------------------------------------------------------------
+ * Seed shop
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-shop__gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 6px;
+  border: 2px solid var(--hud-wood-deep);
+  border-radius: var(--hud-radius-sm);
+  background: linear-gradient(var(--hud-wood-dark), var(--hud-wood-deep));
+  color: var(--hud-gold);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hud-shop__gold-coin .hud-inline-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.hud-shop__list {
+  display: grid;
+  gap: 10px;
+}
+
+.hud-shop__item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  grid-template-areas: 'icon info buy';
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 2px solid var(--hud-line);
+  border-radius: 14px;
+  background: var(--hud-parchment);
+  box-shadow: inset 0 -3px 0 var(--hud-cream-deep);
+}
+
+.hud-shop__icon {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 5px;
+  border: 2px solid var(--hud-wood-light);
+  border-radius: 12px;
+  background: var(--hud-cream);
+}
+
+.hud-shop__info {
+  grid-area: info;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hud-shop__name-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hud-shop__name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hud-shop__price {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--hud-butter);
+  color: var(--hud-ink);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-shop__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hud-shop__owned {
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-shop__buy {
+  grid-area: buy;
+  display: flex;
+  gap: 6px;
+}
+
+.hud-shop__empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 18px 12px 12px;
+  border: 2px dashed var(--hud-line);
+  border-radius: 14px;
+  background: var(--hud-parchment);
+  text-align: center;
+}
+
+.hud-shop__empty-art {
+  display: block;
+  width: 84px;
+  height: 84px;
+}
+
+.hud-shop__empty-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.hud-shop__empty-text {
+  max-width: 34ch;
+  color: var(--hud-ink-soft);
+  line-height: 1.45;
+}
+
+.hud-shop__footer {
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Sol's parts shop: the seed shop's rows, a line of text under each name, and two sections.
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-parts__heading {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.hud-parts__section {
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hud-parts__line {
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.hud-parts__empty {
+  padding: 12px;
+  border: 2px dashed var(--hud-line);
+  border-radius: 14px;
+  background: var(--hud-parchment);
+  color: var(--hud-ink-soft);
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------------------------
+ * Narrow screens (hud.css's breakpoint)
+ * ----------------------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .hud-shop__item {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      'icon info'
+      'buy buy';
+    gap: 8px 10px;
+  }
+
+  .hud-shop__icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hud-shop__buy .hud-btn {
+    flex: 1;
+  }
+}
