@@ -80,11 +80,11 @@ const ACTIONS: Readonly<Record<NpcId, readonly NpcAction[]>> = {
   barnaby: NO_ACTIONS,
   marigold: Object.freeze([{ kind: 'shop', label: 'Shop' }]),
   berlioz: NO_ACTIONS,
-  juniper: NO_ACTIONS,
+  juniper: Object.freeze([{ kind: 'workshop', label: 'Workshop' }]),
   tallulah: NO_ACTIONS,
 };
 
-/** The chat box's action buttons for `npc`, in order: Marigold's and Sol's Shop, and none for anyone else yet. */
+/** The chat box's action buttons for `npc`, in order: Marigold's and Sol's Shop, Juniper's Workshop, and none for anyone else yet. */
 export function npcActions(npc: NpcId): readonly NpcAction[] {
   return ACTIONS[npc];
 }

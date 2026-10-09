@@ -1,7 +1,8 @@
 /**
  * Opens the shops (farmclaws part 4b spec §10). The host lives in the main chunk; the shops
- * themselves (src/ui/shops/: Marigold's seed shop and Sol's parts shop) are one dynamic import,
- * made the first time a shop panel opens, so their code stays out of the game's first download.
+ * themselves (src/ui/shops/: Marigold's seed shop, Sol's parts shop and Juniper's workshop) are
+ * one dynamic import, made the first time a shop panel opens, so their code stays out of the
+ * game's first download.
  *
  * - While the module loads, a card says "Opening…". Escape still closes the panel through the
  *   ordinary panel keys, so a stalled import can't trap the player.

@@ -215,11 +215,12 @@ describe("a character's tile", () => {
 });
 
 describe('npcActions', () => {
-  it("gives Marigold the seed shop, Sol the parts shop and everyone else none", () => {
+  it("gives Marigold the seed shop, Sol the parts shop, Juniper the workshop and everyone else none", () => {
     expect(npcActions('marigold')).toEqual([{ kind: 'shop', label: 'Shop' }]);
     expect(npcActions('sol')).toEqual([{ kind: 'partsShop', label: 'Shop' }]);
+    expect(npcActions('juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
     for (const id of NPC_IDS) {
-      if (id === 'marigold' || id === 'sol') continue;
+      if (id === 'marigold' || id === 'sol' || id === 'juniper') continue;
       expect(npcActions(id), id).toEqual([]);
       expect(npcActions(id), id).toBe(npcActions('cosmo'));
     }

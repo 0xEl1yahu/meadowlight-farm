@@ -7,15 +7,16 @@
  * hash in core/hash.ts, so an action log replayed from the same initial state reproduces the
  * exact same game.
  */
-import { INVENTORY, PARTS, PLAYER, ROBOT_CARE, ROBOT_PAINTS, TIME, TOOLS } from '../config';
+import { INVENTORY, PARTS, PLAYER, ROBOT_CARE, ROBOT_PAINTS, ROBOTS, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
-import { joinWithAnd, qualityPrefix } from '../core/text';
+import { joinWithAnd, qualityPrefix, withArticle } from '../core/text';
 import {
   BASIC_PART_IDS,
   Blocker,
   DIRECTIONS,
   MAP_IDS,
   NPC_IDS,
+  ROBOT_SIZES,
   SEASON_NAMES,
   TileState,
   Weather,
@@ -34,6 +35,7 @@ import {
   type Quality,
   type Robot,
   type RobotPartId,
+  type RobotSize,
   type SeedItemId,
   type ShippingState,
   type SlotRef,
@@ -50,6 +52,7 @@ import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, sellBackPrice, sellPriceFor } from '../items/items';
 import { npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
+import { ROBOT_CAP_RULE, ROBOT_NAME_RULE } from '../robots/create';
 import { programmedRobot, withMd, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
@@ -75,6 +78,7 @@ import {
   type Slots,
 } from './inventory';
 import { pushMessage } from './messages';
+import { isValidName } from './sectionValidation';
 import {
   selectActiveMap,
   selectActiveWorld,
@@ -138,6 +142,8 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return buyPart(state, action.part);
     case 'parts/sell':
       return sellPart(state, action.part);
+    case 'workshop/order':
+      return orderRobot(state, action.size, action.name);
     case 'crafting/craft':
       return craft(state, action.recipe);
     case 'game/setPaused':
@@ -745,7 +751,7 @@ function buyPart(state: GameState, part: RobotPartId): GameState {
   if (capacityFor(state.inventory, part) < 1) return pushMessage(state, 'Your inventory is full.', 'warn');
   const { inventory } = addItem(state.inventory, part, 1);
   const next: GameState = { ...state, inventory, player: { ...state.player, gold: state.player.gold - price } };
-  return pushMessage(next, `Bought a ${getItem(part).name.toLowerCase()}.`, 'success');
+  return pushMessage(next, `Bought ${partName(part)}.`, 'success');
 }
 
 /** `parts/sell`: one part out of the backpack for half its price, rounded down. Nothing happens without one. */
@@ -757,7 +763,31 @@ function sellPart(state: GameState, part: RobotPartId): GameState {
     inventory: removeItem(state.inventory, part, 1),
     player: { ...state.player, gold: state.player.gold + gold },
   };
-  return pushMessage(next, `Sold a ${getItem(part).name.toLowerCase()} for ${gold}g.`, 'success');
+  return pushMessage(next, `Sold ${partName(part)} for ${gold}g.`, 'success');
+}
+
+/** "a claw", "an antenna": a part's name in lower case after its article. */
+function partName(part: RobotPartId): string {
+  return withArticle(getItem(part).name.toLowerCase());
+}
+
+/**
+ * `workshop/order` (part 4b spec §4.5): pays for a robot from Juniper's workshop and queues its
+ * delivery for the morning, or says why not. Only while the workshop is open and the game runs.
+ */
+function orderRobot(state: GameState, size: RobotSize, name: string): GameState {
+  if (state.ui.panel.kind !== 'workshop' || state.ui.paused || !ROBOT_SIZES.includes(size)) return state;
+  const { price } = ROBOTS.sizes[size];
+  const robots = state.robots;
+  if (!isValidName(name)) return pushMessage(state, ROBOT_NAME_RULE, 'warn');
+  if (state.player.gold < price) return pushMessage(state, `You need ${price}g.`, 'warn');
+  if (robots.list.length + robots.deliveries.length >= ROBOTS.maxRobots) return pushMessage(state, ROBOT_CAP_RULE, 'warn');
+  const next: GameState = {
+    ...state,
+    player: { ...state.player, gold: state.player.gold - price },
+    robots: { ...robots, deliveries: [...robots.deliveries, { size, name }] },
+  };
+  return pushMessage(next, `Juniper will deliver ${name} tomorrow morning.`, 'success');
 }
 
 /**

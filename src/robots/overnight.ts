@@ -1,10 +1,11 @@
 /**
  * The robots' night, run inside startNextDay after the maps grow (farmclaws part 1 spec §5.7):
  * generators burn, a carried robot is set down, repairs come back, broken robots left in the
- * water are ruined (part 3 spec §3.2), robots near a generator recharge, and every robot is reset
- * for the morning where it stands. Pure.
+ * water are ruined (part 3 spec §3.2), robots near a generator recharge, robots ordered from
+ * Juniper arrive by the workbench (part 4b spec §4.6), and every robot is reset for the morning
+ * where it stands. Pure.
  */
-import { GENERATORS, PLAYER, ROBOTS, TIME } from '../config';
+import { GENERATORS, PLAYER, ROBOTS, TIME, WORKBENCH } from '../config';
 import { joinWithAnd } from '../core/text';
 import {
   Blocker,
@@ -20,9 +21,12 @@ import {
 import { withZoneMarker } from '../state/zoneMarker';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
+import { newRobot } from './create';
 import { morningExec } from './exec';
 import { logRobotEvent, pruneRobotLog } from './log';
 import { ZERO_ROBOT_STATS, batteryFor, isWeekStart, periodFor, resumedPower } from './stats';
+import { freeSpotNear } from './workbench';
+import { WORKSHOP_ROBOTS } from './workshop';
 import { nearestFreeWalkable, withFarm, withRobot } from './world';
 
 /** A morning toast the night produced. */
@@ -142,6 +146,30 @@ function recharge(state: GameState, burners: readonly TileCoord[], returned: Rea
   return next;
 }
 
+/**
+ * Every delivery due becomes a robot, in order (part 4b spec §4.6): the workshop's parts and
+ * program for its size, its name, facing South, on the free tile nearest the workbench's home
+ * that isn't the spawn or under a robot (one delivered tonight included). Built with newRobot,
+ * not addRobot: the order checked the name and the cap (deliveries counted), the save validator
+ * holds both, the catalogue passes the program checks, and freeSpotNear only gives open ground.
+ * Runs after recharging, so a new robot is never named as missing a generator, and before the
+ * morning reset, which starts its morning stack.
+ */
+function deliverRobots(state: GameState, notes: RobotNote[]): GameState {
+  const due = state.robots.deliveries;
+  if (due.length === 0) return state;
+  let next: GameState = { ...state, robots: { ...state.robots, deliveries: [] } };
+  for (const { size, name } of due) {
+    const taken = [PLAYER.spawn, ...next.robots.list.filter((robot) => robot.power !== 'repairing')];
+    const at = freeSpotNear(next.maps.farm, WORKBENCH.home, taken);
+    const id = next.robots.nextId;
+    const robot = newRobot({ ...WORKSHOP_ROBOTS[size], name, size, place: { ...at, facing: Direction.South } }, id, next.time.minuteOfDay);
+    next = { ...next, robots: { ...next.robots, nextId: id + 1, list: [...next.robots.list, robot] } };
+    notes.push({ text: `Juniper delivered ${name}. It's waiting by the workbench.`, tone: 'success' });
+  }
+  return next;
+}
+
 /** Deep equality for plain save data: numbers, strings, booleans, null, arrays and plain objects. */
 function samePlainData(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -238,6 +266,6 @@ export function runRobotsOvernight(state: GameState): { readonly state: GameStat
   const burned = burnGenerators(state, notes);
   const repaired = returnRepaired(setDownCarried(burned.state), notes);
   let next = recharge(ruinSoaked(repaired.state, notes), burned.burners, repaired.returned, notes);
-  next = deliverPendingMarker(resetForMorning(next), notes);
+  next = deliverPendingMarker(resetForMorning(deliverRobots(next, notes)), notes);
   return { state: pruneRobotLog(next), notes };
 }

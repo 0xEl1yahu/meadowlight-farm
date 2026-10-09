@@ -6,6 +6,11 @@ export function qualityPrefix(quality: Quality): string {
   return quality === 2 ? 'Gold ' : quality === 1 ? 'Silver ' : '';
 }
 
+/** `noun` after "a", or "an" before a vowel: "a claw", "an antenna". */
+export function withArticle(noun: string): string {
+  return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
+}
+
 /** "a", "a and b", "a, b and c"; `empty` when the list has nothing in it. */
 export function joinWithAnd(list: readonly string[], empty: string): string {
   return list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1] ?? ''}` : (list[0] ?? empty);

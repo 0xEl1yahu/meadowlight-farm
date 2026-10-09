@@ -37,9 +37,15 @@ export interface RobotSpec {
 
 export type AddRobotResult = { readonly state: GameState; readonly id: number } | { readonly error: string };
 
+/** The robot name rule's refusal (isValidName). */
+export const ROBOT_NAME_RULE = `A robot needs a name of 1 to ${PROFILE.maxNameLength} characters.`;
+
+/** The cap's refusal; the cap counts deliveries due wherever a robot is ordered (part 4b spec §4.5). */
+export const ROBOT_CAP_RULE = `The farm already has ${ROBOTS.maxRobots} robots.`;
+
 function specProblem(state: GameState, spec: RobotSpec): string | null {
-  if (state.robots.list.length >= ROBOTS.maxRobots) return `The farm already has ${ROBOTS.maxRobots} robots.`;
-  if (!isValidName(spec.name)) return `A robot needs a name of 1 to ${PROFILE.maxNameLength} characters.`;
+  if (state.robots.list.length >= ROBOTS.maxRobots) return ROBOT_CAP_RULE;
+  if (!isValidName(spec.name)) return ROBOT_NAME_RULE;
   if (!(ROBOT_SIZES as readonly unknown[]).includes(spec.size)) return `A robot's size is one of ${ROBOT_SIZES.join(', ')}.`;
   if (!isCanonicalSubset(spec.parts, ROBOT_PART_IDS)) return 'Parts must be listed once each, in catalogue order.';
   if (spec.parts.length > ROBOTS.sizes[spec.size].partSlots) return `A ${spec.size} robot has room for ${ROBOTS.sizes[spec.size].partSlots} parts.`;
@@ -60,15 +66,12 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
 }
 
 /**
- * Adds a robot at `spec.place`, fully charged (not from the pool), working and not carried. A
- * block program starts idle (execAt: atTime triggers already past today are spent); its morning
- * stack first runs at the next morning reset.
+ * A new robot from `spec`, numbered `id`, at `spec.place`: fully charged, working, not carried,
+ * with an empty bag. A block program starts idle at `minuteOfDay` (execAt: atTime triggers
+ * already past are spent). It doesn't check the spec; addRobot does.
  */
-export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
-  const problem = specProblem(state, spec);
-  if (problem !== null) return { error: problem };
-  const id = state.robots.nextId;
-  const robot: Robot = {
+export function newRobot(spec: RobotSpec, id: number, minuteOfDay: number): Robot {
+  return {
     id,
     name: spec.name,
     size: spec.size,
@@ -84,10 +87,10 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     onBench: false,
     program: spec.program,
     pc: 0,
-    exec: spec.program.kind === 'blocks' ? execAt(spec.program, state.time.minuteOfDay) : null,
+    exec: spec.program.kind === 'blocks' ? execAt(spec.program, minuteOfDay) : null,
     md: spec.md ?? [],
     off: null,
-    nextActMinute: state.time.minuteOfDay + periodFor(spec),
+    nextActMinute: minuteOfDay + periodFor(spec),
     repairReadyDay: null,
     stats: ZERO_ROBOT_STATS,
     moveSeq: 0,
@@ -96,5 +99,16 @@ export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
     lastAction: null,
     paint: 0,
   };
+}
+
+/**
+ * Adds a robot at `spec.place` (newRobot), fully charged (not from the pool). Its morning stack
+ * first runs at the next morning reset.
+ */
+export function addRobot(state: GameState, spec: RobotSpec): AddRobotResult {
+  const problem = specProblem(state, spec);
+  if (problem !== null) return { error: problem };
+  const id = state.robots.nextId;
+  const robot = newRobot(spec, id, state.time.minuteOfDay);
   return { state: { ...state, robots: { ...state.robots, nextId: id + 1, list: [...state.robots.list, robot] } }, id };
 }

@@ -58,10 +58,11 @@ describe('chatBoxView', () => {
     });
   });
 
-  it("shows every character's name and role line, with buttons only for Marigold and Sol", () => {
+  it("shows every character's name and role line, with buttons only for Marigold, Sol and Juniper", () => {
     const buttons: Partial<Record<NpcId, readonly NpcAction[]>> = {
       marigold: [{ kind: 'shop', label: 'Shop' }],
       sol: [{ kind: 'partsShop', label: 'Shop' }],
+      juniper: [{ kind: 'workshop', label: 'Workshop' }],
     };
     for (const npc of NPC_IDS) {
       const view = must(chatBoxView(talkingTo(npc)));

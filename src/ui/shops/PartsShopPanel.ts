@@ -7,6 +7,7 @@
  * - The Buy rows never change; the Sell rows are rebuilt when the backpack changes.
  * - Buttons blur after mouse clicks but keep focus on keyboard activation (releasePointerFocus).
  */
+import { withArticle } from '../../core/text';
 import type { GameState, RobotPartId } from '../../core/types';
 import { isPartItemId } from '../../items/items';
 import { actions } from '../../state/actions';
@@ -106,7 +107,7 @@ export class PartsShopPanel {
     const nameRow = h('div', 'hud-shop__name-row');
     nameRow.append(h('span', 'hud-shop__name', row.name), h('span', 'hud-shop__price', `${row.price}g`));
     info.append(nameRow, h('p', 'hud-parts__line', row.line));
-    const button = this.button(row.part, 'buy', 'Buy', `Buy a ${row.name.toLowerCase()} for ${row.price}g`);
+    const button = this.button(row.part, 'buy', 'Buy', `Buy ${withArticle(row.name.toLowerCase())} for ${row.price}g`);
     return this.row(row.part, info, button);
   }
 
@@ -115,7 +116,7 @@ export class PartsShopPanel {
     const nameRow = h('div', 'hud-shop__name-row');
     nameRow.append(h('span', 'hud-shop__name', row.name), h('span', 'hud-shop__price', `${row.price}g`));
     info.append(nameRow, h('span', 'hud-shop__owned', `In your bag: ${row.count}`));
-    const button = this.button(row.part, 'sell', 'Sell one', `Sell a ${row.name.toLowerCase()} for ${row.price}g`);
+    const button = this.button(row.part, 'sell', 'Sell one', `Sell ${withArticle(row.name.toLowerCase())} for ${row.price}g`);
     return this.row(row.part, info, button);
   }
 

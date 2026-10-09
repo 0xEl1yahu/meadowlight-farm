@@ -12,6 +12,7 @@ import type {
   NpcId,
   RobotPartId,
   RobotProgram,
+  RobotSize,
   SeedItemId,
   SlotRef,
 } from '../core/types';
@@ -42,6 +43,8 @@ export type GameAction =
   | { readonly type: 'parts/buy'; readonly part: RobotPartId }
   /** Sells one part from the backpack back to Sol for half its price. */
   | { readonly type: 'parts/sell'; readonly part: RobotPartId }
+  /** Orders a robot from Juniper's workshop, delivered the next morning (farmclaws part 4b spec §4.5). */
+  | { readonly type: 'workshop/order'; readonly size: RobotSize; readonly name: string }
   /** Crafts one batch of a known recipe from the player's inventory. */
   | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
@@ -91,6 +94,7 @@ export const actions = {
   buy: (itemId: SeedItemId, quantity: number): GameAction => ({ type: 'shop/buy', itemId, quantity }),
   buyPart: (part: RobotPartId): GameAction => ({ type: 'parts/buy', part }),
   sellPart: (part: RobotPartId): GameAction => ({ type: 'parts/sell', part }),
+  orderRobot: (size: RobotSize, name: string): GameAction => ({ type: 'workshop/order', size, name }),
   craft: (recipe: CraftingRecipeId): GameAction => ({ type: 'crafting/craft', recipe }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),

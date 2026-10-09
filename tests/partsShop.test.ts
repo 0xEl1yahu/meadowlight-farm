@@ -134,6 +134,13 @@ describe('parts/sell', () => {
     }
   });
 
+  it('says "an" before a part whose name starts with a vowel', () => {
+    for (const [part, name] of [['antenna', 'an antenna'], ['efficientCore', 'an efficient core'], ['quickCore', 'a quick core']] as const) {
+      const next = sell(withSlots(SHOP, [stack(part, 1)]), part);
+      expect(lastToast(next), part).toMatchObject({ text: `Sold ${name} for ${Math.floor(PARTS.prices[part] * PARTS.sellBackShare)}g.` });
+    }
+  });
+
   it('does nothing without the part, or for an item that is not a part', () => {
     const state = withSlots(SHOP, [stack('claw', 1), stack('stone', 5)]);
     expect(sell(state, 'tiller')).toBe(state);

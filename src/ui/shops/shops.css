@@ -214,6 +214,51 @@
 }
 
 /* -------------------------------------------------------------------------------------------
+ * Juniper's workshop: the parts shop's rows, the robot count under the gold, and a checkout row
+ * that takes the place of a card's buttons.
+ * ----------------------------------------------------------------------------------------- */
+
+.hud-workshop__count {
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-workshop__checkout {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-workshop__label {
+  flex-basis: 100%;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hud-workshop__name {
+  flex: 1 1 160px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 2px solid var(--hud-wood-light);
+  border-radius: 10px;
+  background: var(--hud-cream);
+  color: var(--hud-ink);
+  font: inherit;
+  font-weight: 600;
+  user-select: text;
+}
+
+.hud-workshop__name:focus-visible {
+  outline: 3px solid var(--hud-focus);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------------------------
  * Narrow screens (hud.css's breakpoint)
  * ----------------------------------------------------------------------------------------- */
 

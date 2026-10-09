@@ -1,6 +1,6 @@
 /**
  * The shops (farmclaws part 4b spec §10): one lazy chunk, loaded by ShopsHost the first time a
- * shop panel opens, holding Marigold's seed shop and Sol's parts shop. Each panel shows itself
+ * shop panel opens, holding Marigold's seed shop, Sol's parts shop and Juniper's workshop. Each panel shows itself
  * while its `ui.panel` kind is open and hides otherwise, so the screen just passes every state on.
  */
 import './shops.css';
@@ -11,6 +11,7 @@ import { ItemIconCache } from '../slots';
 import type { ShopPanelContext } from './context';
 import { PartsShopPanel } from './PartsShopPanel';
 import { SeedShopPanel } from './SeedShopPanel';
+import { WorkshopPanel } from './WorkshopPanel';
 
 export interface ShopsScreenOptions {
   /** The HUD's shops layer; the panels are appended to it. */
@@ -24,6 +25,7 @@ export class ShopsScreen {
   private readonly lifetime = new AbortController();
   private readonly seeds: SeedShopPanel;
   private readonly parts: PartsShopPanel;
+  private readonly workshop: WorkshopPanel;
 
   constructor(options: ShopsScreenOptions) {
     screenCount += 1;
@@ -38,18 +40,21 @@ export class ShopsScreen {
     };
     this.seeds = new SeedShopPanel(context);
     this.parts = new PartsShopPanel(context);
-    options.root.append(this.seeds.element, this.parts.element);
+    this.workshop = new WorkshopPanel(context);
+    options.root.append(this.seeds.element, this.parts.element, this.workshop.element);
   }
 
   /** `prev` null redraws the open panel from scratch. */
   sync(state: GameState, prev: GameState | null): void {
     this.seeds.sync(state, prev);
     this.parts.sync(state, prev);
+    this.workshop.sync(state, prev);
   }
 
   dispose(): void {
     this.lifetime.abort();
     this.seeds.element.remove();
     this.parts.element.remove();
+    this.workshop.element.remove();
   }
 }
