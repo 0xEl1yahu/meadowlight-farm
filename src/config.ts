@@ -7,6 +7,7 @@ import {
   EVERY_CHOICES,
   type ItemStack,
   type RobotActionKind,
+  type RobotPartId,
   type RobotSize,
   type RobotUnlocks,
   type TileCoord,
@@ -451,4 +452,20 @@ export const SHOP_STOCK = {
   robotsPerSizePerDay: 1,
   /** Marigold's seeds: packets of each seed. */
   seedsPerDay: 30,
+} as const;
+
+/** Robot part prices (farmclaws design §3.7) and the share of a price Sol pays to buy one back (part 4b spec §3.2). */
+export const PARTS = {
+  prices: {
+    claw: 300,
+    wateringHead: 400,
+    tiller: 500,
+    seeder: 500,
+    basket: 350,
+    antenna: 600,
+    sensorEye: 450,
+    efficientCore: 1500,
+    quickCore: 1500,
+  } satisfies Readonly<Record<RobotPartId, number>>,
+  sellBackShare: 0.5,
 } as const;

@@ -12,8 +12,9 @@
  */
 import { Weather, type MessageTone, type ToolType } from '../core/types';
 import { CROPS, type CropVisual } from '../farming/crops';
-import type { FertilizerItem, ItemDefinition, MaterialItem, PlaceableItem, SeedItem } from '../items/items';
+import type { FertilizerItem, ItemDefinition, MaterialItem, PartItem, PlaceableItem, SeedItem } from '../items/items';
 import { PALETTE } from '../render/palette';
+import { PART_PATHS } from './partShapes';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -636,6 +637,23 @@ function fertilizerParts(item: FertilizerItem): SVGElement[] {
   return parts;
 }
 
+/** A steel badge with the part's robot-screen drawing inked on it, so the two always match. */
+function partParts(item: PartItem): SVGElement[] {
+  const color = item.color;
+  return [
+    faceted('9,3 23,3 29,9 29,23 23,29 9,29 3,23 3,9', hex(color), [facet('9,3 23,3 29,9 29,15 3,15 3,9', light(color, 0.3))]),
+    svgNode('path', {
+      d: PART_PATHS[item.id],
+      transform: 'translate(7 7) scale(0.75)',
+      fill: 'none',
+      stroke: INK,
+      'stroke-width': 2.4,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  ];
+}
+
 /** Icon for any registry item: tools, tinted seed packets, faceted produce and materials. */
 export function createItemIcon(item: ItemDefinition, className: string = ICON_CLASS): SVGSVGElement {
   switch (item.kind) {
@@ -651,6 +669,8 @@ export function createItemIcon(item: ItemDefinition, className: string = ICON_CL
       return svgRoot(placeableParts(item), className);
     case 'fertilizer':
       return svgRoot(fertilizerParts(item), className);
+    case 'part':
+      return svgRoot(partParts(item), className);
   }
 }
 

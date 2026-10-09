@@ -3,59 +3,11 @@
  * and the Looks tab's robot preview. Built with createElementNS; nothing is parsed.
  */
 import type { RobotPartId } from '../../core/types';
+import { PART_PATHS } from '../partShapes';
 import { paintHex } from './viewModel';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const OUTLINE = '#5a3d2b';
-
-type Shape = readonly [tag: 'path' | 'circle' | 'rect', attrs: Readonly<Record<string, string>>];
-
-/** Line drawings on a 24 × 24 grid, stroked in currentColor. */
-const PART_SHAPES: Readonly<Record<RobotPartId, readonly Shape[]>> = {
-  claw: [
-    ['path', { d: 'M7 3v6a5 5 0 0 0 10 0V3' }],
-    ['path', { d: 'M12 14v7' }],
-    ['path', { d: 'M9 21h6' }],
-  ],
-  wateringHead: [
-    ['path', { d: 'M5 9h9v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z' }],
-    ['path', { d: 'M14 11l5-5' }],
-    ['path', { d: 'M20 12c1 1.4 1.5 2.2 1.5 3a1.5 1.5 0 0 1-3 0c0-.8.5-1.6 1.5-3z' }],
-  ],
-  tiller: [
-    ['path', { d: 'M4 5h16' }],
-    ['path', { d: 'M7 5v11' }],
-    ['path', { d: 'M12 5v14' }],
-    ['path', { d: 'M17 5v11' }],
-  ],
-  seeder: [
-    ['path', { d: 'M12 3c4 3.5 4 10 0 15c-4-5-4-11.5 0-15z' }],
-    ['path', { d: 'M12 8v13' }],
-  ],
-  basket: [
-    ['path', { d: 'M3 10h18l-2.5 9h-13z' }],
-    ['path', { d: 'M8 10a4 4 0 0 1 8 0' }],
-    ['path', { d: 'M9 13v3M15 13v3' }],
-  ],
-  antenna: [
-    ['path', { d: 'M12 21V10' }],
-    ['circle', { cx: '12', cy: '8', r: '2' }],
-    ['path', { d: 'M7.5 4.5a6 6 0 0 0 0 7' }],
-    ['path', { d: 'M16.5 4.5a6 6 0 0 1 0 7' }],
-  ],
-  sensorEye: [
-    ['path', { d: 'M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z' }],
-    ['circle', { cx: '12', cy: '12', r: '3' }],
-  ],
-  efficientCore: [
-    ['circle', { cx: '12', cy: '12', r: '9' }],
-    ['path', { d: 'M8.5 15.5c0-4.5 2.5-7 7-7c0 4.5-2.5 7-7 7z' }],
-  ],
-  quickCore: [
-    ['circle', { cx: '12', cy: '12', r: '9' }],
-    ['path', { d: 'M13 6l-4 7h4l-2 5 5-7h-4z' }],
-  ],
-};
 
 function svgNode<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Readonly<Record<string, string>>): SVGElementTagNameMap[K] {
   const node = document.createElementNS(SVG_NS, tag) as SVGElementTagNameMap[K];
@@ -74,7 +26,7 @@ export function createPartIcon(part: RobotPartId): SVGSVGElement {
     'stroke-linejoin': 'round',
     'aria-hidden': 'true',
   });
-  for (const [tag, attrs] of PART_SHAPES[part]) svg.append(svgNode(tag, attrs));
+  svg.append(svgNode('path', { d: PART_PATHS[part] }));
   return svg;
 }
 

@@ -6,6 +6,7 @@
  */
 import { ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN } from '../../config';
 import {
+  ROBOT_PART_IDS,
   ROBOT_TABS,
   type GameState,
   type Robot,
@@ -15,6 +16,7 @@ import {
   type RobotTab,
   type RobotUnlocks,
 } from '../../core/types';
+import { getItem } from '../../items/items';
 import { robotSays, whatHappened } from '../../robots/logText';
 import { SWITCHABLE_POWERS, batteryFor, scrapValue } from '../../robots/stats';
 import { formatClock } from '../../time/clock';
@@ -27,17 +29,8 @@ const perCropFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 
 
 export const SIZE_LABELS: Readonly<Record<RobotSize, string>> = { mini: 'Mini', standard: 'Standard', big: 'Big' };
 
-export const PART_LABELS: Readonly<Record<RobotPartId, string>> = {
-  claw: 'Claw',
-  wateringHead: 'Watering head',
-  tiller: 'Tiller',
-  seeder: 'Seeder',
-  basket: 'Basket',
-  antenna: 'Antenna',
-  sensorEye: 'Sensor eye',
-  efficientCore: 'Efficient core',
-  quickCore: 'Quick core',
-};
+/** Each part's name, from its item (part 4b spec §2), so the screen and the backpack agree. */
+export const PART_LABELS = Object.fromEntries(ROBOT_PART_IDS.map((part) => [part, getItem(part).name])) as Readonly<Record<RobotPartId, string>>;
 
 export const POWER_LABELS: Readonly<Record<RobotPower, string>> = {
   working: 'Working',

@@ -129,7 +129,8 @@ export type FertilizerItemId = (typeof FERTILIZER_ITEM_IDS)[number];
 
 export type SeedItemId = `${CropId}_seeds`;
 export type ProduceItemId = CropId;
-export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId | PlaceableItemId | FertilizerItemId;
+/** Robot parts are items too (farmclaws part 4b spec §2): RobotPartId is declared with the robots below. */
+export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId | PlaceableItemId | FertilizerItemId | RobotPartId;
 
 // Identifier lists for later workstreams. They are data keys only: their item registry
 // entries, icons and behaviour arrive with the workstream that uses them.

@@ -2,13 +2,14 @@
  * Item registry. Tools and materials are declared here; seed and produce items are derived
  * from the crop registry so new crops need no item boilerplate.
  */
-import { FARMING, INVENTORY, TOOLS } from '../config';
+import { FARMING, INVENTORY, PARTS, TOOLS } from '../config';
 import { CROPS, seedItemId } from '../farming/crops';
 import {
   CROP_IDS,
   FERTILIZER_ITEM_IDS,
   MATERIAL_IDS,
   PLACEABLE_ITEM_IDS,
+  ROBOT_PART_IDS,
   type FertilizerItemId,
   type FertilizerKind,
   type PlaceableItemId,
@@ -17,11 +18,12 @@ import {
   type ItemId,
   type MaterialItemId,
   type Quality,
+  type RobotPartId,
   type SeedItemId,
   type ToolType,
 } from '../core/types';
 
-export type ItemKind = 'tool' | 'seed' | 'produce' | 'material' | 'placeable' | 'fertilizer';
+export type ItemKind = 'tool' | 'seed' | 'produce' | 'material' | 'placeable' | 'fertilizer' | 'part';
 
 interface ItemBase {
   readonly id: ItemId;
@@ -74,7 +76,15 @@ export interface FertilizerItem extends ItemBase {
   readonly fertilizer: FertilizerKind;
 }
 
-export type ItemDefinition = ToolItem | SeedItem | ProduceItem | MaterialItem | PlaceableItem | FertilizerItem;
+/** A robot part (farmclaws part 4b spec §2): fitted at the workbench, bought from and sold back to Sol, never shipped. */
+export interface PartItem extends ItemBase {
+  readonly kind: 'part';
+  readonly id: RobotPartId;
+  /** Sol's price; he buys one back for PARTS.sellBackShare of it. */
+  readonly price: number;
+}
+
+export type ItemDefinition = ToolItem | SeedItem | ProduceItem | MaterialItem | PlaceableItem | FertilizerItem | PartItem;
 
 const TOOL_INFO: Readonly<Record<ToolType, { name: string; description: string; color: number }>> = {
   hoe: { name: 'Hoe', description: 'Tills grass into soil. Clears withered crops.', color: 0xb98b5e },
@@ -124,6 +134,22 @@ const FERTILIZER_INFO: Readonly<Record<FertilizerItemId, SimpleInfo & { fertiliz
   qualityFertilizer: { name: 'Quality Fertiliser', description: 'Mix into empty soil: much better odds of silver and gold crops.', sellPrice: 5, color: 0x6a8a4a, fertilizer: 'quality' },
   speedGro: { name: 'Speed-Gro', description: 'Mix into empty soil: crops grow 10% faster.', sellPrice: 5, color: 0x4a9a8a, fertilizer: 'speedGro' },
 };
+
+/** Name and description per part; the basic six describe themselves with Sol's shop lines (part 4b spec §3.2). */
+const PART_INFO: Readonly<Record<RobotPartId, readonly [name: string, description: string]>> = {
+  claw: ['Claw', 'Harvest, take from and deposit into.'],
+  wateringHead: ['Watering head', 'Water and refill. Holds 20 uses.'],
+  tiller: ['Tiller', 'Till soil.'],
+  seeder: ['Seeder', 'Plant seeds.'],
+  basket: ['Basket', 'Two more bag stacks.'],
+  antenna: ['Antenna', 'Send messages to other robots.'],
+  sensorEye: ['Sensor eye', 'Sees the tile ahead, the rain and the time.'],
+  efficientCore: ['Efficient core', 'Actions cost a quarter fewer tokens.'],
+  quickCore: ['Quick core', 'Acts every 3 minutes instead of 4.'],
+};
+
+/** Every part shares the robots' steel; the icon's drawing tells them apart. */
+const PART_COLOR = 0x9fb4c8;
 
 function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
   const registry = new Map<ItemId, ItemDefinition>();
@@ -191,6 +217,11 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
     const info = FERTILIZER_INFO[id];
     registry.set(id, { kind: 'fertilizer', id, ...info, maxStack: INVENTORY.maxStack, hasQuality: false });
   }
+  for (const id of ROBOT_PART_IDS) {
+    const [name, description] = PART_INFO[id];
+    const price = PARTS.prices[id];
+    registry.set(id, { kind: 'part', id, name, description, price, maxStack: INVENTORY.maxStack, sellPrice: null, color: PART_COLOR, hasQuality: false });
+  }
   return registry;
 }
 
@@ -208,6 +239,10 @@ export function isItemId(value: unknown): value is ItemId {
 
 export function isSeedItemId(value: unknown): value is SeedItemId {
   return isItemId(value) && getItem(value).kind === 'seed';
+}
+
+export function isPartItemId(value: unknown): value is RobotPartId {
+  return isItemId(value) && getItem(value).kind === 'part';
 }
 
 /**

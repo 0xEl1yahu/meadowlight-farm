@@ -555,6 +555,7 @@ export function planPrimaryAction(state: GameState): ActionPlan {
       return planFertilize(state, item, target);
     case 'produce':
     case 'material':
+    case 'part':
       return planInteraction(state);
   }
 }
