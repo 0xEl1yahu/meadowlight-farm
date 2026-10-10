@@ -22,6 +22,7 @@ import {
   Weather,
   ZONE_IDS,
   type ActionKind,
+  type BasicPartId,
   type Direction,
   type GameState,
   type CraftingRecipeId,
@@ -38,6 +39,7 @@ import {
   type RobotSize,
   type SeedItemId,
   type ShippingState,
+  type ShopsSoldToday,
   type SlotRef,
   type Tile,
   type TileCoord,
@@ -81,6 +83,9 @@ import {
 import { pushMessage } from './messages';
 import { isValidName } from './sectionValidation';
 import {
+  partsLeft,
+  robotsLeft,
+  seedsLeft,
   selectActiveMap,
   selectActiveWorld,
   selectIsFrozen,
@@ -240,12 +245,28 @@ function morningNpcs(npcs: GameState['npcs']): GameState['npcs'] {
   return next;
 }
 
+/** A shop's counts back at zero; the same object when nothing was sold. */
+function zeroed<K extends string>(counts: Readonly<Record<K, number>>): Readonly<Record<K, number>> {
+  const ids = Object.keys(counts) as K[];
+  if (ids.every((id) => counts[id] === 0)) return counts;
+  return Object.fromEntries(ids.map((id) => [id, 0])) as Record<K, number>;
+}
+
+/** Every shop restocks in the morning (part 4b spec §6); a shop that sold nothing keeps its counts. */
+function restocked(sold: ShopsSoldToday): ShopsSoldToday {
+  const parts = zeroed(sold.parts);
+  const robots = zeroed(sold.robots);
+  const seeds = zeroed(sold.seeds);
+  return parts === sold.parts && robots === sold.robots && seeds === sold.seeds ? sold : { parts, robots, seeds };
+}
+
 /**
  * Day transition: pay out the shipping bin (each stack at its quality's price, counted into the
  * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
  * pipeline on every map with that map's seed, restore energy, clear yesterday's chats
- * (`talkedToday`) and put the player back at the house on the farm. Then the robots' night runs
- * (farmclaws part 1 §5.7); its toasts follow the morning's own messages.
+ * (`talkedToday`), restock the shops (part 4b spec §6) and put the player back at the house on
+ * the farm. Then the robots' night runs (farmclaws part 1 §5.7); its toasts follow the
+ * morning's own messages.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -288,6 +309,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     shipping: { pending: [], lastPayout: payout },
     stats: shippedStats(state, payout),
     npcs: morningNpcs(state.npcs),
+    shopsSoldToday: restocked(state.shopsSoldToday),
   };
   const night = runRobotsOvernight(next);
   next = night.state;
@@ -738,6 +760,7 @@ function moveItem(state: GameState, from: SlotRef, to: SlotRef, quantity: number
   return moved === null ? state : writeSlots(writeSlots(state, src, moved.src), dst, moved.dst);
 }
 
+/** `shop/buy`: a batch of in-season seeds from Marigold, within what's left of today's stock, or a toast saying why not. */
 function buySeeds(state: GameState, itemId: SeedItemId, quantity: number): GameState {
   if (state.ui.panel.kind !== 'shop' || !Number.isInteger(quantity) || quantity < 1 || !isSeedItemId(itemId)) return state;
   const item = getItem(itemId);
@@ -745,11 +768,20 @@ function buySeeds(state: GameState, itemId: SeedItemId, quantity: number): GameS
   if (!selectShopStock(state).some((stock) => stock.id === itemId)) {
     return pushMessage(state, `${item.name} aren't sold in ${SEASON_NAMES[state.time.season]}.`, 'warn');
   }
+  const left = seedsLeft(state, itemId);
+  if (left === 0) return pushMessage(state, 'Out of stock. Marigold restocks tomorrow.', 'warn');
+  if (quantity > left) return pushMessage(state, `Only ${left} left today.`, 'warn');
   const cost = item.price * quantity;
   if (cost > state.player.gold) return pushMessage(state, "You can't afford that.", 'warn');
   if (capacityFor(state.inventory, itemId) < quantity) return pushMessage(state, 'Your inventory is full.', 'warn');
   const { inventory } = addItem(state.inventory, itemId, quantity);
-  const next: GameState = { ...state, inventory, player: { ...state.player, gold: state.player.gold - cost } };
+  const sold = state.shopsSoldToday;
+  const next: GameState = {
+    ...state,
+    inventory,
+    player: { ...state.player, gold: state.player.gold - cost },
+    shopsSoldToday: { ...sold, seeds: { ...sold.seeds, [itemId]: sold.seeds[itemId] + quantity } },
+  };
   return pushMessage(next, `Bought ${item.name} ×${quantity} for ${cost}g.`, 'success');
 }
 
@@ -758,18 +790,32 @@ function partsShopOpen(state: GameState): boolean {
   return state.ui.panel.kind === 'partsShop' && !state.ui.paused;
 }
 
-/** `parts/buy`: one basic part into the backpack for its price, or a toast saying why not. */
+function isBasicPartId(part: RobotPartId): part is BasicPartId {
+  return (BASIC_PART_IDS as readonly RobotPartId[]).includes(part);
+}
+
+/** `parts/buy`: one basic part into the backpack for its price, counted into today's stock, or a toast saying why not. */
 function buyPart(state: GameState, part: RobotPartId): GameState {
-  if (!partsShopOpen(state) || !(BASIC_PART_IDS as readonly unknown[]).includes(part)) return state;
+  if (!partsShopOpen(state) || !isBasicPartId(part)) return state;
+  if (partsLeft(state, part) === 0) return pushMessage(state, 'Out of stock. Sol restocks tomorrow.', 'warn');
   const price = PARTS.prices[part];
   if (state.player.gold < price) return pushMessage(state, `You need ${price}g.`, 'warn');
   if (capacityFor(state.inventory, part) < 1) return pushMessage(state, 'Your inventory is full.', 'warn');
   const { inventory } = addItem(state.inventory, part, 1);
-  const next: GameState = { ...state, inventory, player: { ...state.player, gold: state.player.gold - price } };
+  const sold = state.shopsSoldToday;
+  const next: GameState = {
+    ...state,
+    inventory,
+    player: { ...state.player, gold: state.player.gold - price },
+    shopsSoldToday: { ...sold, parts: { ...sold.parts, [part]: sold.parts[part] + 1 } },
+  };
   return pushMessage(next, `Bought ${partName(part)}.`, 'success');
 }
 
-/** `parts/sell`: one part out of the backpack for half its price, rounded down. Nothing happens without one. */
+/**
+ * `parts/sell`: one part out of the backpack for half its price, rounded down. Nothing happens
+ * without one. Sol's stock stays as it is.
+ */
 function sellPart(state: GameState, part: RobotPartId): GameState {
   if (!partsShopOpen(state) || !isPartItemId(part) || countItem(state.inventory, part) < 1) return state;
   const gold = sellBackPrice(part);
@@ -796,20 +842,24 @@ function previewRobot(state: GameState, size: RobotSize): GameState {
 }
 
 /**
- * `workshop/order` (part 4b spec §4.5): pays for a robot from Juniper's workshop and queues its
- * delivery for the morning, or says why not. Only while the workshop is open and the game runs.
+ * `workshop/order` (part 4b spec §4.5, §6): pays for a robot from Juniper's workshop, counts it
+ * into today's stock and queues its delivery for the morning, or says why not. Only while the
+ * workshop is open and the game runs.
  */
 function orderRobot(state: GameState, size: RobotSize, name: string): GameState {
   if (state.ui.panel.kind !== 'workshop' || state.ui.paused || !ROBOT_SIZES.includes(size)) return state;
   const { price } = ROBOTS.sizes[size];
   const robots = state.robots;
+  if (robotsLeft(state, size) === 0) return pushMessage(state, 'Sold out today. Juniper builds another tomorrow.', 'warn');
   if (!isValidName(name)) return pushMessage(state, ROBOT_NAME_RULE, 'warn');
   if (state.player.gold < price) return pushMessage(state, `You need ${price}g.`, 'warn');
   if (robots.list.length + robots.deliveries.length >= ROBOTS.maxRobots) return pushMessage(state, ROBOT_CAP_RULE, 'warn');
+  const sold = state.shopsSoldToday;
   const next: GameState = {
     ...state,
     player: { ...state.player, gold: state.player.gold - price },
     robots: { ...robots, deliveries: [...robots.deliveries, { size, name }] },
+    shopsSoldToday: { ...sold, robots: { ...sold.robots, [size]: sold.robots[size] + 1 } },
   };
   return pushMessage(next, `Juniper will deliver ${name} tomorrow morning.`, 'success');
 }

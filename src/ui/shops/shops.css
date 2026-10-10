@@ -1,7 +1,8 @@
 /*
  * The shops (src/ui/shops/), loaded with the shops' lazy chunk: Marigold's seed shop, moved here
- * unchanged from hud.css, and Sol's parts shop in the same style. The panels mount inside .hud, so
- * they use its --hud-* tokens and the shared .hud-modal, .hud-btn and .hud-iconbtn styles.
+ * from hud.css, and Sol's parts shop and Juniper's workshop in the same style. The panels mount
+ * inside .hud, so they use its --hud-* tokens and the shared .hud-modal, .hud-btn and
+ * .hud-iconbtn styles.
  */
 
 /* -------------------------------------------------------------------------------------------
@@ -145,6 +146,18 @@
   gap: 6px;
 }
 
+.hud-shop__sold-out {
+  grid-area: buy;
+  justify-self: end;
+  padding: 4px 12px 3px;
+  border: 2px dashed var(--hud-line);
+  border-radius: 999px;
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .hud-shop__empty {
   display: grid;
   justify-items: center;
@@ -278,5 +291,10 @@
 
   .hud-shop__buy .hud-btn {
     flex: 1;
+  }
+
+  .hud-shop__sold-out {
+    justify-self: stretch;
+    text-align: center;
   }
 }

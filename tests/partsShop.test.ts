@@ -160,12 +160,12 @@ describe('partsShopView', () => {
     const view = partsShopView(SHOP);
     expect(view.gold).toBe(2000);
     expect(view.buy).toEqual([
-      { part: 'claw', name: 'Claw', line: 'Harvest, take from and deposit into.', price: 300 },
-      { part: 'wateringHead', name: 'Watering head', line: 'Water and refill. Holds 20 uses.', price: 400 },
-      { part: 'tiller', name: 'Tiller', line: 'Till soil.', price: 500 },
-      { part: 'seeder', name: 'Seeder', line: 'Plant seeds.', price: 500 },
-      { part: 'basket', name: 'Basket', line: 'Two more bag stacks.', price: 350 },
-      { part: 'sensorEye', name: 'Sensor eye', line: 'Sees the tile ahead, the rain and the time.', price: 450 },
+      { part: 'claw', name: 'Claw', line: 'Harvest, take from and deposit into.', price: 300, left: '2 left', soldOut: null },
+      { part: 'wateringHead', name: 'Watering head', line: 'Water and refill. Holds 20 uses.', price: 400, left: '2 left', soldOut: null },
+      { part: 'tiller', name: 'Tiller', line: 'Till soil.', price: 500, left: '2 left', soldOut: null },
+      { part: 'seeder', name: 'Seeder', line: 'Plant seeds.', price: 500, left: '2 left', soldOut: null },
+      { part: 'basket', name: 'Basket', line: 'Two more bag stacks.', price: 350, left: '2 left', soldOut: null },
+      { part: 'sensorEye', name: 'Sensor eye', line: 'Sees the tile ahead, the rain and the time.', price: 450, left: '2 left', soldOut: null },
     ]);
   });
 

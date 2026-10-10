@@ -6,7 +6,8 @@
  * the suggested name, Buy for {price}g and Cancel. It draws workshopView and dispatches
  * `workshop/order`; the reducer gives every refusal's toast, so the buttons stay enabled.
  *
- * - The cards never change; the gold, the count and the suggested name follow the state.
+ * - The cards are built once; the gold, the count, the suggested name and each card's "{n} left"
+ *   (spec §6) follow the state. A sold-out card shows "Sold out today" in place of its buttons.
  * - The checkout closes when an order lands (the deliveries grow), on Cancel, on Escape in the
  *   name field, and whenever the panel opens again. The input controller skips keys typed in the
  *   field, so Enter there submits the checkout and Escape cancels it.
@@ -31,6 +32,8 @@ interface CardParts {
   readonly buttons: HTMLElement;
   readonly read: HTMLButtonElement;
   readonly buy: HTMLButtonElement;
+  readonly left: HTMLElement;
+  readonly soldOut: HTMLElement;
 }
 
 /** The size a workshop preview showed, or null for any other panel. */
@@ -47,9 +50,12 @@ export class WorkshopPanel {
   private readonly checkout = h('form', 'hud-workshop__checkout');
   private readonly nameField = h('input', 'hud-workshop__name');
   private readonly confirm = hudButton('hud-btn hud-btn--buy');
+  private readonly close = hudButton('hud-iconbtn hud-modal__close');
   private readonly context: ShopPanelContext;
   private buying: CardParts | null = null;
   private suggested = '';
+  /** The sizes Juniper has sold out of today. */
+  private readonly soldOut = new Set<RobotSize>();
 
   constructor(context: ShopPanelContext) {
     this.context = context;
@@ -71,7 +77,7 @@ export class WorkshopPanel {
     goldRow.title = 'Your gold';
     goldRow.append(iconHost('hud-shop__gold-coin', createCoinIcon()), this.goldValue, h('span', 'hud-shop__gold-unit', 'g'));
     heading.append(title, goldRow, this.count);
-    const close = hudButton('hud-iconbtn hud-modal__close');
+    const close = this.close;
     close.setAttribute('aria-label', 'Close the workshop');
     close.title = 'Close (Esc)';
     close.append(createCloseIcon());
@@ -146,16 +152,35 @@ export class WorkshopPanel {
     setHidden(this.element, !open);
     if (!open) return;
     const opened = prev === null || prev.ui.panel.kind !== 'workshop';
+    const changed =
+      opened ||
+      state.player.gold !== prev.player.gold ||
+      state.robots !== prev.robots ||
+      state.seed !== prev.seed ||
+      state.shopsSoldToday !== prev.shopsSoldToday;
+    if (changed) this.syncView(state);
     if (opened) {
       this.closeCheckout(false);
       const previewed = prev === null ? null : previewedSize(prev.ui.panel);
       this.cards.find((entry) => entry.card.size === previewed)?.read.focus();
     } else if (state.robots.deliveries.length > prev.robots.deliveries.length) this.closeCheckout(true);
-    if (!opened && state.player.gold === prev.player.gold && state.robots === prev.robots && state.seed === prev.seed) return;
+  }
+
+  private syncView(state: GameState): void {
     const view = workshopView(state);
     setText(this.goldValue, numberFormat.format(view.gold));
     setText(this.count, view.count);
     this.suggested = view.suggestedName;
+    for (const card of view.cards) {
+      const parts = this.cards.find((entry) => entry.card.size === card.size);
+      if (parts === undefined) continue;
+      setText(parts.left, card.left);
+      if (card.soldOut === null) this.soldOut.delete(card.size);
+      else this.soldOut.add(card.size);
+      if (parts !== this.buying) setHidden(parts.buttons, card.soldOut !== null);
+      setHidden(parts.soldOut, card.soldOut === null);
+      if (card.soldOut !== null) setText(parts.soldOut, card.soldOut);
+    }
   }
 
   private cardParts(card: WorkshopCard): CardParts {
@@ -163,7 +188,8 @@ export class WorkshopPanel {
     const info = h('div', 'hud-shop__info');
     const nameRow = h('div', 'hud-shop__name-row');
     nameRow.append(h('span', 'hud-shop__name', card.title), h('span', 'hud-shop__price', gold(card.price)));
-    info.append(nameRow, h('p', 'hud-parts__line', card.specs), h('p', 'hud-parts__line', card.line));
+    const left = h('span', 'hud-shop__owned');
+    info.append(nameRow, h('p', 'hud-parts__line', card.specs), h('p', 'hud-parts__line', card.line), left);
     const buttons = h('div', 'hud-shop__buy');
     const read = hudButton('hud-btn', 'Read program');
     read.dataset.size = card.size;
@@ -172,8 +198,10 @@ export class WorkshopPanel {
     buy.dataset.size = card.size;
     buy.setAttribute('aria-label', `Buy a ${card.title} robot for ${gold(card.price)}`);
     buttons.append(read, buy);
-    element.append(iconHost('hud-shop__icon', this.context.icons.get('claw')), info, buttons);
-    return { card, element, buttons, read, buy };
+    const soldOut = h('span', 'hud-shop__sold-out');
+    soldOut.hidden = true;
+    element.append(iconHost('hud-shop__icon', this.context.icons.get('claw')), info, buttons, soldOut);
+    return { card, element, buttons, read, buy, left, soldOut };
   }
 
   /** Turns `parts` into the checkout, with the suggested name selected in the field. */
@@ -189,14 +217,19 @@ export class WorkshopPanel {
     this.nameField.select();
   }
 
-  /** Back to the card's buttons; `refocus` moves focus to its Buy button when focus was in the checkout. */
+  /**
+   * Back to the card's buttons, or its "Sold out today" when the order took the last one;
+   * `refocus` moves focus to its Buy button (the close button once sold out) when focus was in
+   * the checkout.
+   */
   private closeCheckout(refocus: boolean): void {
     const parts = this.buying;
     if (parts === null) return;
     const hadFocus = this.checkout.contains(document.activeElement);
+    const soldOut = this.soldOut.has(parts.card.size);
     this.buying = null;
     setHidden(this.checkout, true);
-    setHidden(parts.buttons, false);
-    if (refocus && hadFocus) parts.buy.focus();
+    setHidden(parts.buttons, soldOut);
+    if (refocus && hadFocus) (soldOut ? this.close : parts.buy).focus();
   }
 }

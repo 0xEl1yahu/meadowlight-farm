@@ -1,12 +1,13 @@
 /**
- * Marigold's seed shop (farmclaws part 4a), moved unchanged from the HUD into the shops' lazy
- * chunk (part 4b spec §10). B, and Shop in Marigold's chat, open it.
+ * Marigold's seed shop (farmclaws part 4a), moved from the HUD into the shops' lazy chunk (part
+ * 4b spec §10). B, and Shop in Marigold's chat, open it.
  *
  * - The stock is the season's seeds (selectShopStock); each row buys ×1, ×5 or ×10 through
- *   `shop/buy`, and a button is disabled while its batch costs more gold than the player has or
- *   doesn't fit in the bag.
- * - Rows are rebuilt when the shop opens or the season changes, and only the buttons, owned
- *   counts and gold readout update otherwise.
+ *   `shop/buy`, and a button is disabled while its batch is more than today's packets left (spec
+ *   §6), costs more gold than the player has or doesn't fit in the bag.
+ * - Each row shows "{n} left"; a sold-out row shows "Out of stock" in place of its buttons.
+ * - Rows are rebuilt when the shop opens or the season changes, and only the buttons, counts and
+ *   gold readout update otherwise.
  * - Buttons blur after mouse clicks but keep focus on keyboard activation (releasePointerFocus).
  */
 import { SEASON_NAMES, Season, type GameState } from '../../core/types';
@@ -19,6 +20,7 @@ import { closestWithin, h, hudButton, iconHost, releasePointerFocus, setHidden, 
 import { createCloseIcon, createCoinIcon, createWinterIcon } from '../icons';
 import type { ItemIconCache } from '../slots';
 import type { ShopPanelContext } from './context';
+import { seedStock } from './viewModel';
 
 const BUY_QUANTITIES: readonly number[] = [1, 5, 10];
 
@@ -34,6 +36,10 @@ interface ShopRow {
   readonly item: SeedItem;
   readonly buttons: readonly BuyButton[];
   readonly owned: HTMLElement;
+  readonly left: HTMLElement;
+  /** The buttons' box, swapped for `soldOut` once none are left. */
+  readonly buy: HTMLElement;
+  readonly soldOut: HTMLElement;
 }
 
 function metaTag(text: string, modifier = ''): HTMLElement {
@@ -116,7 +122,9 @@ export class SeedShopPanel {
       this.syncAvailability(state);
       return;
     }
-    if (state.player.gold !== prev.player.gold || state.inventory !== prev.inventory) this.syncAvailability(state);
+    if (state.player.gold !== prev.player.gold || state.inventory !== prev.inventory || state.shopsSoldToday !== prev.shopsSoldToday) {
+      this.syncAvailability(state);
+    }
   }
 
   private buildStock(state: GameState): void {
@@ -161,9 +169,10 @@ export class SeedShopPanel {
     if (crop.seasons.length > 1) {
       meta.append(metaTag(`Grows in ${crop.seasons.map((season) => SEASON_NAMES[season]).join(' & ')}`, 'is-season'));
     }
+    const left = h('span', 'hud-shop__owned');
     const owned = h('span', 'hud-shop__owned');
     owned.hidden = true;
-    info.append(nameRow, meta, owned);
+    info.append(nameRow, meta, left, owned);
 
     const buy = h('div', 'hud-shop__buy');
     const buttons = BUY_QUANTITIES.map((quantity): BuyButton => {
@@ -175,8 +184,10 @@ export class SeedShopPanel {
       return { button, quantity };
     });
 
-    element.append(iconHost('hud-shop__icon', this.icons.get(item.id)), info, buy);
-    return { element, item, buttons, owned };
+    const soldOut = h('span', 'hud-shop__sold-out');
+    soldOut.hidden = true;
+    element.append(iconHost('hud-shop__icon', this.icons.get(item.id)), info, buy, soldOut);
+    return { element, item, buttons, owned, left, buy, soldOut };
   }
 
   private syncAvailability(state: GameState): void {
@@ -186,18 +197,26 @@ export class SeedShopPanel {
       const inBag = countItem(state.inventory, row.item.id);
       setHidden(row.owned, inBag === 0);
       if (inBag > 0) setText(row.owned, `In your bag: ${inBag}`);
+      const stock = seedStock(state, row.item.id);
+      setText(row.left, stock.label);
+      setHidden(row.buy, stock.soldOut !== null);
+      setHidden(row.soldOut, stock.soldOut === null);
+      if (stock.soldOut !== null) setText(row.soldOut, stock.soldOut);
       const room = capacityFor(state.inventory, row.item.id);
       for (const { button, quantity } of row.buttons) {
         const cost = row.item.price * quantity;
+        const inStock = quantity <= stock.left;
         const affordable = cost <= gold;
         const fits = quantity <= room;
-        const disabled = !affordable || !fits;
+        const disabled = !inStock || !affordable || !fits;
         if (button.disabled !== disabled) button.disabled = disabled;
-        const title = !affordable
-          ? `Costs ${numberFormat.format(cost)}g, you have ${numberFormat.format(gold)}g`
-          : !fits
-            ? 'Not enough room in your bag'
-            : `Buy ${quantity} for ${numberFormat.format(cost)}g`;
+        const title = !inStock
+          ? `Only ${stock.left} left today.`
+          : !affordable
+            ? `Costs ${numberFormat.format(cost)}g, you have ${numberFormat.format(gold)}g`
+            : !fits
+              ? 'Not enough room in your bag'
+              : `Buy ${quantity} for ${numberFormat.format(cost)}g`;
         setTitle(button, title);
       }
     }

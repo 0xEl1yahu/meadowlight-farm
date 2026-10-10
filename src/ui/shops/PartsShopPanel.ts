@@ -4,11 +4,12 @@
  * the footer about repairs. It draws partsShopView and dispatches `parts/buy` and `parts/sell`;
  * the reducer gives every refusal's toast, so the Buy buttons stay enabled.
  *
- * - The Buy rows never change; the Sell rows are rebuilt when the backpack changes.
+ * - The Buy rows are built once; each shows "{n} left" (spec §6), and a sold-out row shows "Out
+ *   of stock" in place of its Buy button. The Sell rows are rebuilt when the backpack changes.
  * - Buttons blur after mouse clicks but keep focus on keyboard activation (releasePointerFocus).
  */
 import { withArticle } from '../../core/text';
-import type { GameState, RobotPartId } from '../../core/types';
+import type { BasicPartId, GameState, RobotPartId } from '../../core/types';
 import { isPartItemId } from '../../items/items';
 import { actions } from '../../state/actions';
 import { closestWithin, h, hudButton, iconHost, releasePointerFocus, setHidden, setText } from '../dom';
@@ -18,11 +19,19 @@ import { PARTS_FOR_SALE, partsShopView, type PartRow, type SellRow } from './vie
 
 const numberFormat = new Intl.NumberFormat('en-US');
 
+/** The parts of a Buy row that follow today's stock. */
+interface StockParts {
+  readonly left: HTMLElement;
+  readonly buy: HTMLButtonElement;
+  readonly soldOut: HTMLElement;
+}
+
 export class PartsShopPanel {
   readonly element = h('div', 'hud-modal hud-shop hud-parts');
   private readonly goldValue = h('span', 'hud-shop__gold-value');
   private readonly sellList = h('ul', 'hud-shop__list');
   private readonly sellEmpty = h('p', 'hud-parts__empty');
+  private readonly stock = new Map<BasicPartId, StockParts>();
   private readonly context: ShopPanelContext;
 
   constructor(context: ShopPanelContext) {
@@ -91,9 +100,20 @@ export class PartsShopPanel {
     setHidden(this.element, !open);
     if (!open) return;
     const opened = prev === null || prev.ui.panel.kind !== 'partsShop';
-    if (!opened && state.player.gold === prev.player.gold && state.inventory === prev.inventory) return;
+    const sold = opened || state.shopsSoldToday !== prev.shopsSoldToday;
+    if (!opened && !sold && state.player.gold === prev.player.gold && state.inventory === prev.inventory) return;
     const view = partsShopView(state);
     setText(this.goldValue, numberFormat.format(view.gold));
+    if (sold) {
+      for (const row of view.buy) {
+        const parts = this.stock.get(row.part);
+        if (parts === undefined) continue;
+        setText(parts.left, row.left);
+        setHidden(parts.buy, row.soldOut !== null);
+        setHidden(parts.soldOut, row.soldOut === null);
+        if (row.soldOut !== null) setText(parts.soldOut, row.soldOut);
+      }
+    }
     if (opened || state.inventory !== prev.inventory) {
       this.sellList.replaceChildren(...view.sell.map((row) => this.sellRow(row)));
       setHidden(this.sellList, view.sell.length === 0);
@@ -106,9 +126,13 @@ export class PartsShopPanel {
     const info = h('div', 'hud-shop__info');
     const nameRow = h('div', 'hud-shop__name-row');
     nameRow.append(h('span', 'hud-shop__name', row.name), h('span', 'hud-shop__price', `${row.price}g`));
-    info.append(nameRow, h('p', 'hud-parts__line', row.line));
-    const button = this.button(row.part, 'buy', 'Buy', `Buy ${withArticle(row.name.toLowerCase())} for ${row.price}g`);
-    return this.row(row.part, info, button);
+    const left = h('span', 'hud-shop__owned');
+    info.append(nameRow, h('p', 'hud-parts__line', row.line), left);
+    const buy = this.button(row.part, 'buy', 'Buy', `Buy ${withArticle(row.name.toLowerCase())} for ${row.price}g`);
+    const soldOut = h('span', 'hud-shop__sold-out');
+    soldOut.hidden = true;
+    this.stock.set(row.part, { left, buy, soldOut });
+    return this.row(row.part, info, buy, soldOut);
   }
 
   private sellRow(row: SellRow): HTMLElement {
@@ -120,10 +144,10 @@ export class PartsShopPanel {
     return this.row(row.part, info, button);
   }
 
-  private row(part: RobotPartId, info: HTMLElement, button: HTMLButtonElement): HTMLElement {
+  private row(part: RobotPartId, info: HTMLElement, ...controls: HTMLElement[]): HTMLElement {
     const element = h('li', 'hud-shop__item');
     const buy = h('div', 'hud-shop__buy');
-    buy.append(button);
+    buy.append(...controls);
     element.append(iconHost('hud-shop__icon', this.context.icons.get(part)), info, buy);
     return element;
   }

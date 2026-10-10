@@ -167,7 +167,7 @@ describe('workshop/order', () => {
     const eleven = withRobots(WORKSHOP, robotsNamed(11));
     const ok = order(eleven, 'mini', 'Bolt');
     expect(ok.robots.deliveries).toHaveLength(1);
-    const full = order(ok, 'mini', 'Cog');
+    const full = order(ok, 'standard', 'Cog');
     expect(full.robots).toBe(ok.robots);
     expect(full.player).toBe(ok.player);
     expect(lastToast(full)).toMatchObject({ text: 'The farm already has 12 robots.', tone: 'warn' });
@@ -266,9 +266,9 @@ describe('workshopView', () => {
     expect(view.gold).toBe(20000);
     expect(view.count).toBe('3 / 12 robots');
     expect(view.cards).toEqual([
-      { size: 'mini', title: 'Mini', price: 1500, specs: '1 part slot · 80 battery · 12 blocks', line: 'Comes with a claw and a program that harvests Zone A.' },
-      { size: 'standard', title: 'Standard', price: 4000, specs: '2 part slots · 200 battery · 30 blocks', line: 'Comes with a claw and a program that harvests Zone A.' },
-      { size: 'big', title: 'Big', price: 10000, specs: '3 part slots · 500 battery · 80 blocks', line: 'Comes with a claw and a program that harvests Zone A.' },
+      { size: 'mini', title: 'Mini', price: 1500, specs: '1 part slot · 80 battery · 12 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null },
+      { size: 'standard', title: 'Standard', price: 4000, specs: '2 part slots · 200 battery · 30 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null },
+      { size: 'big', title: 'Big', price: 10000, specs: '3 part slots · 500 battery · 80 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null },
     ]);
     expect(view.suggestedName).toBe(suggestedName(state));
   });

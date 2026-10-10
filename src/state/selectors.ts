@@ -1,8 +1,19 @@
 /**
  * Read-only derivations from GameState, shared by reducers, render systems and the HUD.
  */
-import { FARMING, PLAYER, TIME } from '../config';
-import type { ChestSlots, GameState, MapId, Tile, TileCoord, Weather, WorldState } from '../core/types';
+import { FARMING, PLAYER, SHOP_STOCK, TIME } from '../config';
+import type {
+  BasicPartId,
+  ChestSlots,
+  GameState,
+  MapId,
+  RobotSize,
+  SeedItemId,
+  Tile,
+  TileCoord,
+  Weather,
+  WorldState,
+} from '../core/types';
 import { cropsInSeason, seedItemId } from '../farming/crops';
 import { getItem, sellPriceFor, type ItemDefinition, type SeedItem } from '../items/items';
 import { formatClock, formatDate } from '../time/clock';
@@ -133,6 +144,21 @@ export function selectShopStock(state: GameState): readonly SeedItem[] {
       if (item.kind !== 'seed') throw new Error(`Item ${item.id} is not a seed`);
       return item;
     });
+}
+
+/** How many of a basic part Sol has left today (farmclaws part 4b spec §6). */
+export function partsLeft(state: GameState, part: BasicPartId): number {
+  return SHOP_STOCK.partsPerDay - state.shopsSoldToday.parts[part];
+}
+
+/** How many robots of a size Juniper has left to build today. */
+export function robotsLeft(state: GameState, size: RobotSize): number {
+  return SHOP_STOCK.robotsPerSizePerDay - state.shopsSoldToday.robots[size];
+}
+
+/** How many packets of a seed Marigold has left today. */
+export function seedsLeft(state: GameState, seedId: SeedItemId): number {
+  return SHOP_STOCK.seedsPerDay - state.shopsSoldToday.seeds[seedId];
 }
 
 /** Minutes left before the player passes out. */
