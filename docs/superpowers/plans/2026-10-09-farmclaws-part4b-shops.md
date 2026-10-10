@@ -12,7 +12,7 @@
 
 - `CLAUDE.md` rules apply: pure simulation, strict TS with `erasableSyntaxOnly`, numbers in `src/config.ts`, `textContent` only, structural sharing, no TODOs, no dev-hook names in production files (action types `parts/buy`, `parts/sell`, `workshop/order`, `robot/fit`, `robot/unfit` are clear of them).
 - The gate (`npm run typecheck && npm test && npm run build`) passes after every task; `npm run build:check` after Tasks 2, 3, 5, 6, 7, 8 and 9.
-- **Main chunk budget:** 292.9 of 295.1 KiB at the start. Keep everything UI-heavy in the lazy shops chunk or the robot screen chunk. If `build:check` fails on the main budget, stop and ask Eli; don't raise it.
+- **Main chunk budget:** 292.9 of 295.1 KiB at the start; Eli raised it to 299.1 KiB (baseline + 30 KiB) after Task 4. Keep everything UI-heavy in the lazy shops chunk or the robot screen chunk. If `build:check` fails on the main budget, stop and ask Eli; don't raise it.
 - One commit per task: `Farmclaws part 4b: <summary>`, then why, ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Record any ruling that changes a spec rule, number or text as a `Ruling:` line in the body.
 - Browser checks are Eli's: he plays it. Task 9 writes a short playbook but doesn't run it.
 
