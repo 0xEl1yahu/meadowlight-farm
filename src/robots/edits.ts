@@ -1,18 +1,20 @@
 /**
- * Editing a robot's program and .MD and the farm's zones (farmclaws part 2 spec §12, part 3 spec
- * §4.7). The workbench's reducer actions and the dev hooks make every edit through these, after
- * the same gate: isProgramShape → checkProgram and isMdShape → checkMd. Pure.
+ * Editing a robot's program, .MD and parts and the farm's zones (farmclaws part 2 spec §12, part 3
+ * spec §4.7, part 4b spec §5.2). The workbench's reducer actions and the dev hooks make every edit
+ * through these, after the same gate: isProgramShape → checkProgram and isMdShape → checkMd. Pure.
  *
  * The refusals for malformed input never name a dev hook: this module is in the production bundle,
  * which the dist check greps for hook names. The hooks print their usage line instead.
  */
-import { TIME } from '../config';
-import { ZONE_IDS, type GameState, type MdCard, type Robot, type RobotProgram, type ZoneId, type ZoneRect } from '../core/types';
+import { ROBOTS, TIME } from '../config';
+import { withArticle } from '../core/text';
+import { ROBOT_PART_IDS, ZONE_IDS, type GameState, type MdCard, type Robot, type RobotPartId, type RobotProgram, type ZoneId, type ZoneRect } from '../core/types';
+import { partNoun } from '../items/items';
 import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { isInt, isObj, isOneOf } from '../state/validation';
 import { checkMd, checkProgram, isValidZoneRect } from './check';
 import { execAt, morningExec } from './exec';
-import { periodFor } from './stats';
+import { bagStacks, hasPart, periodFor } from './stats';
 
 export const PROGRAM_SHAPE = 'That program is not a script or a block program.';
 export const MD_SHAPE = 'That .MD is not a list of cards.';
@@ -71,6 +73,35 @@ export function withMd(robot: Robot, md: readonly MdCard[]): Robot | string {
     exec: { ...exec, frames: returning ? [] : exec.frames, doneCards: [] },
     power: returning && robot.power === 'working' ? 'standby' : robot.power,
   };
+}
+
+/**
+ * `robot` with `part` fitted (part 4b spec §5.2): `parts` stays in catalogue order, and a watering
+ * head comes with a full tank. Returns the refusal for a part it already has or a robot with no
+ * free slot.
+ */
+export function withPartFitted(robot: Robot, part: RobotPartId): Robot | string {
+  if (hasPart(robot, part)) return `${robot.name} already has ${withArticle(partNoun(part))}.`;
+  if (robot.parts.length >= ROBOTS.sizes[robot.size].partSlots) return `${robot.name} has no free part slot.`;
+  return {
+    ...robot,
+    parts: ROBOT_PART_IDS.filter((id) => id === part || hasPart(robot, id)),
+    tank: part === 'wateringHead' ? ROBOTS.tankCapacity : robot.tank,
+  };
+}
+
+/**
+ * `robot` with `part` taken off, so a saved robot stays valid: the sensor eye stays while the
+ * program needs it (removing a part only ever fails checkProgram's sensor rule), the basket while
+ * the bag holds more stacks than the robot could carry without it, and a watering head's tank
+ * empties. The reducer only sends parts the robot has; for one it hasn't, the refusal says so.
+ */
+export function withPartRemoved(robot: Robot, part: RobotPartId): Robot | string {
+  if (!hasPart(robot, part)) return `${robot.name} has no ${partNoun(part)}.`;
+  const parts = robot.parts.filter((id) => id !== part);
+  if (checkProgram(robot.program, { size: robot.size, parts }) !== null) return `${robot.name}'s program uses the sensor eye.`;
+  if (robot.bag.length > bagStacks({ size: robot.size, parts })) return `Empty ${robot.name}'s bag before taking the basket off.`;
+  return { ...robot, parts, tank: part === 'wateringHead' ? 0 : robot.tank };
 }
 
 function isZoneRectShape(v: unknown): v is ZoneRect {

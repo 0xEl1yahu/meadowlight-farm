@@ -68,6 +68,10 @@ export type GameAction =
   | { readonly type: 'robot/scrap'; readonly robotId: number }
   /** Paints the robot on the workbench ROBOT_PAINTS[paint] (part 3 spec §3.4). */
   | { readonly type: 'robot/paint'; readonly robotId: number; readonly paint: number }
+  /** Fits a part from the backpack to the robot on the workbench (farmclaws part 4b spec §5.2). */
+  | { readonly type: 'robot/fit'; readonly robotId: number; readonly part: RobotPartId }
+  /** Takes a part off the robot on the workbench into the backpack. */
+  | { readonly type: 'robot/unfit'; readonly robotId: number; readonly part: RobotPartId }
   /** An action button in the chat box, e.g. Marigold's Shop (farmclaws part 4a spec §3.2). */
   | { readonly type: 'talk/act'; readonly npc: NpcId; readonly act: NpcActionKind };
 
@@ -110,5 +114,7 @@ export const actions = {
   switchRobot: (robotId: number, on: boolean): GameAction => ({ type: 'robot/switch', robotId, on }),
   scrapRobot: (robotId: number): GameAction => ({ type: 'robot/scrap', robotId }),
   paintRobot: (robotId: number, paint: number): GameAction => ({ type: 'robot/paint', robotId, paint }),
+  fitPart: (robotId: number, part: RobotPartId): GameAction => ({ type: 'robot/fit', robotId, part }),
+  unfitPart: (robotId: number, part: RobotPartId): GameAction => ({ type: 'robot/unfit', robotId, part }),
   npcAct: (npc: NpcId, act: NpcActionKind): GameAction => ({ type: 'talk/act', npc, act }),
 } as const;

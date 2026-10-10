@@ -1,14 +1,15 @@
 /**
- * Pure view models for the robot screen (farmclaws part 3 spec §4, part 4b spec §4.4): the robot
- * shown, the header, the tabs each mode shows, the switch, the Stats and Log rows, and the
- * prompts. No DOM, so tests/robotScreen.test.ts covers every rule here; RobotScreen.ts and the
+ * Pure view models for the robot screen (farmclaws part 3 spec §4, part 4b spec §4.4, §5.1): the
+ * robot shown, the header, the tabs each mode shows, the switch, the Stats and Log rows, the
+ * Parts section and the prompts. No DOM, so tests/robotScreen.test.ts covers every rule here; RobotScreen.ts and the
  * tabs only draw what these return.
  */
-import { ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN } from '../../config';
+import { ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, ROBOTS } from '../../config';
 import {
   ROBOT_PART_IDS,
   ROBOT_TABS,
   type GameState,
+  type InventoryState,
   type Robot,
   type RobotPartId,
   type RobotPower,
@@ -22,6 +23,7 @@ import { robotSays, whatHappened } from '../../robots/logText';
 import { SWITCHABLE_POWERS, batteryFor, scrapValue } from '../../robots/stats';
 import { catalogueRobot } from '../../robots/workshop';
 import { findRobot } from '../../robots/world';
+import { countItem } from '../../state/inventory';
 import { formatClock } from '../../time/clock';
 
 /**
@@ -287,6 +289,47 @@ export function scrapPrompt(robot: Robot): string {
 /** The Looks tab's button (spec §3.4). */
 export function paintButtonText(): string {
   return `Paint · ${numberFormat.format(ROBOT_CARE.paintCost)}g`;
+}
+
+/** The Looks tab's Parts section (part 4b spec §5.1). */
+export const PARTS_TEXT = {
+  heading: 'Parts',
+  fitted: 'Fitted',
+  backpack: 'From your backpack',
+  emptySlot: 'Empty slot',
+  noneToFit: 'No parts in your backpack to fit.',
+  takeOff: 'Take off',
+  fit: 'Fit',
+} as const;
+
+export interface PartRow {
+  readonly part: RobotPartId;
+  readonly name: string;
+}
+
+export interface PartsSectionView {
+  /** True when the section has its Take off and Fit buttons: on the bench, for a robot that isn't ruined. */
+  readonly editable: boolean;
+  /** One per part slot: its fitted part, or null for an empty slot. */
+  readonly slots: readonly (PartRow | null)[];
+  /** The parts in the backpack the robot can take, in catalogue order; empty when not editable. */
+  readonly fittable: readonly PartRow[];
+}
+
+/**
+ * The Parts section (part 4b spec §5.1): every slot, and on the bench the backpack's parts that
+ * aren't fitted yet, one row per part (its stacks together, as the parts shop's Sell list). A
+ * preview, a peek or a ruined robot shows the fitted parts only, with no buttons.
+ */
+export function partsSectionView(robot: Robot, mode: RobotScreenMode, inventory: InventoryState): PartsSectionView {
+  const editable = mode === 'bench' && !isReadOnly(robot, mode);
+  const row = (part: RobotPartId): PartRow => ({ part, name: PART_LABELS[part] });
+  const slots = Array.from({ length: ROBOTS.sizes[robot.size].partSlots }, (_, i) => {
+    const part = robot.parts[i];
+    return part === undefined ? null : row(part);
+  });
+  const fittable = editable ? ROBOT_PART_IDS.filter((part) => !robot.parts.includes(part) && countItem(inventory, part) > 0).map(row) : [];
+  return { editable, slots, fittable };
 }
 
 /** A ROBOT_PAINTS colour as CSS. */

@@ -50,11 +50,11 @@ import { runCrows } from '../farming/crows';
 import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
-import { getItem, isPartItemId, isSeedItemId, sellBackPrice, sellPriceFor } from '../items/items';
+import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
 import { npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE } from '../robots/create';
-import { programmedRobot, withMd, withZone } from '../robots/edits';
+import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
 import { SWITCHABLE_POWERS, carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
@@ -171,6 +171,10 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return scrapRobot(state, action.robotId);
     case 'robot/paint':
       return paintRobot(state, action.robotId, action.paint);
+    case 'robot/fit':
+      return fitPart(state, action.robotId, action.part);
+    case 'robot/unfit':
+      return unfitPart(state, action.robotId, action.part);
     case 'talk/act':
       return talkAct(state, action.npc, action.act);
     default: {
@@ -779,7 +783,7 @@ function sellPart(state: GameState, part: RobotPartId): GameState {
 
 /** "a claw", "an antenna": a part's name in lower case after its article. */
 function partName(part: RobotPartId): string {
-  return withArticle(getItem(part).name.toLowerCase());
+  return withArticle(partNoun(part));
 }
 
 /**
@@ -848,13 +852,19 @@ function ruinedRefusal(state: GameState, robot: Robot): GameState | null {
 }
 
 /**
- * Applies a program or .MD edit to robot `robotId`: the edited robot and a success toast, or the
- * edit's refusal as a warn toast with nothing else changed. The robot must be on the workbench
- * (part 3 spec §4.7); the dev hooks call the edits directly and aren't limited to it. An unknown
- * id changes nothing. Edits aren't frozen with the game: the robot screen that sends them is a
- * panel.
+ * Applies a program, .MD or parts edit to robot `robotId`: the edited robot (with `inventory`, when
+ * the edit moves a part) and a success toast, or the edit's refusal as a warn toast with nothing
+ * else changed. The robot must be on the workbench (part 3 spec §4.7); the dev hooks call the
+ * edits directly and aren't limited to it. An unknown id changes nothing. Edits aren't frozen
+ * with the game: the robot screen that sends them is a panel.
  */
-function editRobot(state: GameState, robotId: number, edit: (robot: Robot) => Robot | string, done: (name: string) => string): GameState {
+function editRobot(
+  state: GameState,
+  robotId: number,
+  edit: (robot: Robot) => Robot | string,
+  done: (name: string) => string,
+  inventory: InventoryState = state.inventory,
+): GameState {
   const robot = findRobot(state, robotId);
   if (robot === null) return state;
   const away = offBenchRefusal(robot);
@@ -863,7 +873,39 @@ function editRobot(state: GameState, robotId: number, edit: (robot: Robot) => Ro
   if (ruined !== null) return ruined;
   const edited = edit(robot);
   if (typeof edited === 'string') return pushMessage(state, edited, 'warn');
-  return pushMessage(withRobot(state, edited), done(robot.name), 'success');
+  return pushMessage(withRobot({ ...state, inventory }, edited), done(robot.name), 'success');
+}
+
+/**
+ * `robot/fit` (part 4b spec §5.2): one `part` from the backpack onto the robot on the bench.
+ * Nothing happens while paused, or without that part in the backpack.
+ */
+function fitPart(state: GameState, robotId: number, part: RobotPartId): GameState {
+  if (state.ui.paused || !isPartItemId(part) || countItem(state.inventory, part) < 1) return state;
+  return editRobot(
+    state,
+    robotId,
+    (robot) => withPartFitted(robot, part),
+    (name) => `Fitted ${partName(part)} to ${name}.`,
+    removeItem(state.inventory, part, 1),
+  );
+}
+
+/**
+ * `robot/unfit` (part 4b spec §5.2): `part` off the robot on the bench into the backpack, which
+ * needs room for it. Nothing happens while paused, or for a part the robot hasn't got.
+ */
+function unfitPart(state: GameState, robotId: number, part: RobotPartId): GameState {
+  const robot = findRobot(state, robotId);
+  if (state.ui.paused || robot === null || !isPartItemId(part) || !robot.parts.includes(part)) return state;
+  const { inventory, added } = addItem(state.inventory, part, 1);
+  return editRobot(
+    state,
+    robotId,
+    (on) => (added < 1 ? 'Your inventory is full.' : withPartRemoved(on, part)),
+    (name) => `Took the ${partNoun(part)} off ${name}.`,
+    inventory,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -929,16 +971,17 @@ function withBagUnpacked(inventory: InventoryState, bag: readonly ItemStack[]): 
 }
 
 /**
- * `robot/scrap`: the robot on the bench leaves the farm with its own log entries, its bag goes
- * into the backpack (refused when it can't all fit), the player gets scrapValue in gold, and the
- * open panel closes. Ids (and log ids) are never reused.
+ * `robot/scrap`: the robot on the bench leaves the farm with its own log entries, its bag and its
+ * parts go into the backpack (refused when they can't all fit, part 4b spec §5.3), the player gets
+ * scrapValue in gold, and the open panel closes. Ids (and log ids) are never reused.
  */
 function scrapRobot(state: GameState, robotId: number): GameState {
   const robot = findRobot(state, robotId);
   if (robot === null) return state;
   const away = offBenchRefusal(robot);
   if (away !== null) return pushMessage(state, away, 'warn');
-  const inventory = withBagUnpacked(state.inventory, robot.bag);
+  const parts = robot.parts.map((part): ItemStack => ({ itemId: part, quantity: 1, quality: 0 }));
+  const inventory = withBagUnpacked(state.inventory, [...robot.bag, ...parts]);
   if (inventory === null) return pushMessage(state, `Make room in your backpack for ${robot.name}'s bag first.`, 'warn');
   const gold = scrapValue(robot);
   const { log } = state.robots;

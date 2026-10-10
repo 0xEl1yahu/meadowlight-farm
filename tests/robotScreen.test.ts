@@ -51,6 +51,7 @@ import {
   paintButtonText,
   paintHex,
   paintName,
+  partsSectionView,
   phoneQuery,
   ruinedNote,
   samePanel,
@@ -76,7 +77,7 @@ import {
   removeCard,
   setCardValue,
 } from '../src/ui/robotScreen/mdFields';
-import { BASE, atDay, robotOf, withRobots } from './testUtils';
+import { BASE, atDay, robotOf, stack, withRobots, withSlots } from './testUtils';
 
 function withPanel(state: GameState, panel: GameState['ui']['panel']): GameState {
   return { ...state, ui: { ...state.ui, panel } };
@@ -265,6 +266,34 @@ describe('nextTab', () => {
   it('stays put with a single tab', () => {
     expect(nextTab(['log'], 'log', 'ArrowRight')).toBe('log');
     expect(nextTab(['log'], 'log', 'End')).toBe('log');
+  });
+});
+
+describe('the Parts section (part 4b spec §5.1)', () => {
+  const backpack = withSlots(BASE, [stack('tiller', 2), stack('wood', 5), stack('claw', 1), stack('tiller', 1), stack('basket', 1)]).inventory;
+
+  it('lists every slot and the backpack parts the robot can take, on the bench', () => {
+    const robot = robotOf({ size: 'big', parts: ['claw', 'tiller'] });
+    expect(partsSectionView(robot, 'bench', backpack)).toEqual({
+      editable: true,
+      slots: [{ part: 'claw', name: 'Claw' }, { part: 'tiller', name: 'Tiller' }, null],
+      fittable: [{ part: 'basket', name: 'Basket' }],
+    });
+    expect(partsSectionView(robotOf({ size: 'standard' }), 'bench', backpack).fittable).toEqual([
+      { part: 'tiller', name: 'Tiller' },
+      { part: 'basket', name: 'Basket' },
+    ]);
+  });
+
+  it('has nothing to fit from a backpack without parts', () => {
+    expect(partsSectionView(robotOf(), 'bench', BASE.inventory)).toEqual({ editable: true, slots: [{ part: 'claw', name: 'Claw' }], fittable: [] });
+  });
+
+  it('shows the fitted parts only, with no buttons, in a preview, a peek and for a ruined robot', () => {
+    const fitted = { editable: false, slots: [{ part: 'claw', name: 'Claw' }, null], fittable: [] };
+    expect(partsSectionView(catalogueRobot('standard'), 'preview', backpack)).toEqual(fitted);
+    expect(partsSectionView(robotOf({ size: 'standard' }), 'peek', backpack)).toEqual(fitted);
+    expect(partsSectionView(robotOf({ size: 'standard', power: 'ruined' }), 'bench', backpack)).toEqual(fitted);
   });
 });
 

@@ -482,6 +482,65 @@
   gap: 8px;
 }
 
+.rs-parts {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 4px;
+}
+
+.rs-parts:focus {
+  outline: none;
+}
+
+.rs-parts__heading {
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rs-parts__list {
+  display: grid;
+  gap: 6px;
+}
+
+.rs-parts__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 6px 4px 8px;
+  border: 2px solid var(--hud-line);
+  border-radius: var(--hud-radius-sm);
+  background: var(--hud-parchment);
+}
+
+.rs-parts__row--empty {
+  border-style: dashed;
+  background: transparent;
+  color: var(--hud-ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rs-parts__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.rs-parts__button {
+  min-height: 30px;
+  padding: 3px 12px 2px;
+  font-size: 12px;
+}
+
+.rs-parts__none {
+  color: var(--hud-ink-soft);
+  font-size: 12px;
+}
+
 .rs-swatch {
   position: relative;
   width: 36px;
@@ -866,6 +925,10 @@
 
 .robot-screen[data-layout='phone'] .rs-looks {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.robot-screen[data-layout='phone'] .rs-parts {
+  max-width: none;
 }
 
 .robot-screen[data-layout='phone'] .rs-looks__swatches {

@@ -258,3 +258,8 @@ export function sellPriceFor(itemId: ItemId, quality: Quality): number {
 export function sellBackPrice(part: RobotPartId): number {
   return Math.floor(PARTS.prices[part] * PARTS.sellBackShare);
 }
+
+/** A part's name in lower case, for messages: "watering head". */
+export function partNoun(part: RobotPartId): string {
+  return getItem(part).name.toLowerCase();
+}
