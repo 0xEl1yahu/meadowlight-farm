@@ -566,19 +566,22 @@ They only chat. They stand on fixed spots: the shopkeepers by their shops, Sol b
 | Place | Keeper | Sells / does |
 | --- | --- | --- |
 | General store | Marigold | Seeds, fertiliser, backpack upgrade (unchanged from v2) |
-| Blacksmith | Bram | Tool upgrades, copper ore, steam engine, sun panel |
-| Ranch | Tess | Chickens, cows, wheat (unchanged from v2) |
-| Parts exchange | Sol | Parts, paint, voices, common personality cores, repairs. Release 1 opens it with basic parts and repairs; the Antenna comes in release 2, and cores, paint, voices and personality cores in release 3. |
+| Blacksmith | Berlioz | Tool upgrades, copper ore, steam engine, sun panel |
+| Ranch | Tallulah | Chickens, cows, wheat (unchanged from v2) |
+| Parts exchange | Sol | Parts, paint, voices, common personality cores. Release 1 opens it with basic parts; the Antenna comes in release 2, and cores, paint, voices and personality cores in release 3. |
 | Robot workshop | Juniper (also still the carpenter) | Ready-made robots, custom robots and limited editions. Plus coop, barn, wood and stone from v2. Release 1 opens it with ready-made robots; custom robots and limited editions come in release 3. |
 
-The parts exchange is a town building where the notice board stood.
+The parts exchange is a town building where the notice board stood. Bram the blacksmith is renamed Berlioz, and Tess at the ranch is renamed Tallulah.
+
+**Every shop has a daily stock** and restocks each morning: Sol's parts, Juniper's robots and Marigold's seeds can sell out for the day.
 
 **At the parts exchange:**
-- Parts sell back for 50%.
-- A trade swaps one part for another and pays or charges the difference.
+- Sol sells new parts and buys any part back for 50%.
+- Trades are cut for release 1: selling back and buying covers them.
+- Repairs stay at the shipping bin (a robot can't leave the farm), which Sol's shop points to.
 
 **At the robot workshop:**
-- **Ready-made robots** come with a program already loaded, which the player can open and read before buying.
+- **Ready-made robots** come with a program already loaded, which the player can open and read before buying. They are delivered beside the workbench the next morning.
 - **Custom robots:** pick size, parts, paint, voice, personality and quirk, pay the sum plus a 10% build fee, and the robot is delivered the next morning.
 - **Limited editions:**
   - One is offered each Monday, chosen by `hash32(seed, week)`.
@@ -606,7 +609,7 @@ This replaces the four v2 festivals. It runs on day 14 of spring, summer and fal
 | E Animals | Kept as written |
 | F Forest and foraging | Kept. Old Fennick is removed from it. |
 | G Cooking | Cut |
-| H Town and people | The map and shops are kept. Friendship hearts, gifts and heart events are cut. Old Fennick and Pip are cut. Marigold, Bram, Juniper and Tess keep their shops and chat only. The farmclaw cast (section 9.1) is added. |
+| H Town and people | The map and shops are kept. Friendship hearts, gifts and heart events are cut. Old Fennick and Pip are cut. Marigold, Berlioz (was Bram), Juniper and Tallulah (was Tess) keep their shops and chat only. The farmclaw cast (section 9.1) is added. |
 | I Quests | Replaced by jobs (section 8) |
 | J Festivals | Replaced by the Claw Fair (section 9.3) |
 
@@ -649,7 +652,9 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 | 1 Robot core | 1 | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes, carrying and repairs, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm (development builds only). |
 | 2 Language | 1 | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
 | 3 Robot screen | 1 | The workbench, Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
-| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye) and repairs. Juniper's workshop with ready-made robots in all three sizes. The balance pass. Built as 4a (people), 4b (shops and parts) and 4c (jobs). The neighbours' fields are on a new Neighbours map, east of the town. | The first hour of the new game, shippable |
+| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye); repairs stay at the shipping bin. Juniper's workshop with ready-made robots in all three sizes. The balance pass. Built as 4a (people), 4b (shops and parts) and 4c (jobs). The neighbours' fields are on a new Neighbours map, east of the town. | The first hour of the new game, shippable |
+| 4d Town life | After 4, before 5 | Anonymous townsfolk with fixed personalities walking short routes; market stalls, benches and planters; bunting and banners; barrels, crates and a cart; posters, stands and small props around the town, including brand posters for Byre at Tallulah's ranch ("Milk from cows, not claws. 100% claw free."), Tokenly ("Keep your claws charged."), Hollis Handpicked ("Picked by people. Slowly."), Claw Fair ("Parade · Contest · Day 14") and Sprocket Cereal ("Part of a balanced robot."). Every brand is made up; FarmClaw, the valley's robot maker, already has its posters at Sol's and Juniper's from 4b. | A town that feels lived in |
+| 4e Graphics pass | After 4, before 5 | Soft fitted shadows, ambient sky lighting, a water shader, and post-processing: ambient occlusion, night bloom, colour grading and a vignette, better anti-aliasing. A low / medium / high quality setting, with phones defaulting to medium; the heavy parts load lazily. | The same game, better lit |
 | 5 Coordination | 2 | Messages, mailboxes, claims, triggers, schedules, power states, the Antenna. Job 4 (Ziggy) and job 5 (Sol's crew): tester and Test run, supervisor, mechanic, program library. | Multi-robot farms |
 | 6 Character | 3 | Paint, voices, personalities, line bank, fun facts, quirks, the efficient and quick cores, custom robots, limited editions, the Claw Fair | Robots with character |
 | 7 Guardrails | 4 | Jobs 6 to 8, Wendell and Hollis, the full .MD card set, rage events (robots on other maps, the chase and the catch), steam engine, rain barrel, sun panel, the hand-harvest bonus | The full curriculum |
@@ -692,7 +697,7 @@ These are decided in this document so it has no gaps. Each is easy to change in 
 
 1. **Names:** Cosmo, Hollis, Barnaby, Wendell, Sol, Ziggy, and Sol's crew Maple, Otto and Rue.
 2. **Shopkeepers:** Juniper runs the robot workshop alongside carpentry. Sol runs the parts exchange.
-3. **Cast cuts:** Old Fennick and Pip are cut. Marigold, Bram, Juniper and Tess stay as shopkeepers who chat.
+3. **Cast cuts:** Old Fennick and Pip are cut. Marigold, Berlioz, Juniper and Tallulah stay as shopkeepers who chat. (Bram and Tess were renamed Berlioz and Tallulah in part 4b.)
 4. **Hollis has no job.** An optional "A day by hand" job, where you farm a day for him with no robots, could be added.
 5. **Hand harvest** gets +5 points on silver and gold.
 6. **Water for generators** comes from rain barrels.

@@ -64,6 +64,7 @@ Global rules (unchanged from parts 1–4a; see also `CLAUDE.md`): the simulation
 ## 2. Parts as items
 
 - **Item kind `'part'`.** Every id in `ROBOT_PART_IDS` becomes an `ItemId` of kind `'part'`, with the part's name from the robot screen ("Claw", "Watering head", "Tiller", "Seeder", "Basket", "Antenna", "Sensor eye", "Efficient core", "Quick core") and its price from config (`PARTS.prices`, the design §3.7 table). The antenna and the cores are items too, so a save or a chest can hold any part, but only the basic six are sold in 4b.
+- **Descriptions** (the inventory tooltip): the basic six use Sol's shop lines from section 3.2; the Antenna says "Send messages to other robots.", the Efficient core "Actions cost a quarter fewer tokens." and the Quick core "Acts every 3 minutes instead of 4." (R1)
 - Parts stack like materials (`INVENTORY.maxStack`) and have no quality.
 - **They can't be shipped:** `sellPrice` is null, so the bin refuses them with its existing "{item} can't be shipped." Sol buys them back instead.
 - **Icons:** each part item has an inventory icon in `src/ui/icons.ts`, drawn from the robot screen's part icon shapes so they match.
@@ -81,7 +82,7 @@ Global rules (unchanged from parts 1–4a; see also `CLAUDE.md`): the simulation
 ### 3.2 The panel
 
 - **Title:** "Sol's parts exchange". Under it, the player's gold.
-- **Buy:** one row per basic part, in catalogue order (Claw, Watering head, Tiller, Seeder, Basket, Sensor eye): the icon, the name, what it provides (below), the price, and a **Buy** button.
+- **Buy** (the first list's heading): one row per basic part, in catalogue order (Claw, Watering head, Tiller, Seeder, Basket, Sensor eye): the icon, the name, what it provides (below), the price, and a **Buy** button.
 
   | Part | Line |
   | --- | --- |
@@ -92,15 +93,15 @@ Global rules (unchanged from parts 1–4a; see also `CLAUDE.md`): the simulation
   | Basket | "Two more bag stacks." |
   | Sensor eye | "Sees the tile ahead, the rain and the time." |
 
-- **Sell:** one row per part item stack in the backpack, in catalogue order: the icon, the name, the count, the sell-back price (`floor(price × PARTS.sellBackShare)`, with `PARTS.sellBackShare` 0.5) and a **Sell one** button. With none: "No parts in your backpack."
+- **Sell** (the second list's heading): one row per part the backpack holds, its stacks counted together, in catalogue order: the icon, the name, the count ("In your bag: {n}", as in the seed shop), the sell-back price (`floor(price × PARTS.sellBackShare)`, with `PARTS.sellBackShare` 0.5) and a **Sell one** button, since `parts/sell` names a part, not a stack. With none: "No parts in your backpack." (R4)
 - **Footer:** "Repairs: carry a broken robot to the shipping bin."
 
 ### 3.3 Buying and selling
 
-- Buying puts one part in the backpack and takes its price: "Bought a {part}." (the part's name in lower case).
+- Buying puts one part in the backpack and takes its price: "Bought a {part}." (the part's name in lower case, after "an" when it starts with a vowel: "Bought an antenna."). (R5)
   - Not enough gold: "You need {price}g."
   - No room: "Your inventory is full."
-- Selling takes one part from the backpack and pays the sell-back price: "Sold a {part} for {gold}g."
+- Selling takes one part from the backpack and pays the sell-back price: "Sold a {part} for {gold}g." ("an" before a vowel again: "Sold an antenna for 300g."). (R5)
 - Actions: `parts/buy` `{ part }` and `parts/sell` `{ part }`. Both do nothing unless the parts shop panel is open and the game isn't paused, and `parts/buy` only takes a basic part.
 
 ---
@@ -137,22 +138,22 @@ With Zone A unset the loop does nothing and the robot powers down at once. The p
 ### 4.3 The panel
 
 - **Title:** "Juniper's robot workshop". Under it, the player's gold and "{n} / 12 robots" (robots on the farm plus deliveries due).
-- **One card per size:** the size ("Mini", "Standard", "Big"), the price, "{slots} part slots · {battery} battery · {blocks} blocks", "Comes with a claw and a program that harvests Zone A.", and two buttons, **Read program** and **Buy**.
-- **Read program** opens the robot screen in preview mode (section 4.4).
-- **Buy** turns the card into the checkout: "Name your robot", a text field holding the suggested name (section 4.5), **Buy for {price}g** and **Cancel**.
+- **One card per size:** the size ("Mini", "Standard", "Big"), the price, "{slots} part slots · {battery} battery · {blocks} blocks" ("1 part slot" on the Mini) (R6), "Comes with a claw and a program that harvests Zone A.", and two buttons, **Read program** and **Buy**.
+- **Read program** opens the robot screen in preview mode (section 4.4) through `workshop/preview` `{ size }`, which does nothing unless the workshop panel is open and the game isn't paused. (R12)
+- **Buy** turns the card into the checkout: "Name your robot", a text field holding the suggested name (section 4.5), **Buy for {price}g** and **Cancel**. While the field has focus, Enter orders and Escape cancels the checkout (the input controller leaves typed keys alone). (R9)
 
 ### 4.4 The preview
 
 - `UiPanel { kind: 'robot'; mode: 'preview'; size: RobotSize }` opens the robot screen (its lazy chunk) on the catalogue robot, which isn't in the state.
 - The header shows the size and "From Juniper's workshop", and no On/Off switch, **Lift off** or **Scrap**.
 - The tabs are Program (read-only, as when peeking) and Looks (without the Parts section's buttons).
-- Closing the preview (Escape or its close button) returns to the workshop panel.
+- Closing the preview returns to the workshop panel: `ui/closePanel` on a preview opens `{ kind: 'workshop' }` instead of closing, so Escape, the close button and a failed screen load all come back there. (R11)
 
 ### 4.5 Ordering
 
-- **The suggested name** is the first name in `WORKSHOP_NAMES` (a fixed list of 24 robot names in `src/robots/workshop.ts`), starting from index `hash32(seed, robots.nextId + deliveries.length) % 24` and wrapping, that no robot on the farm and no due delivery already has.
+- **The suggested name** is the first name in `WORKSHOP_NAMES` (24 robot names in `src/robots/workshop.ts`: Bolt, Clover, Rivet, Turnip, Sprocket, Pebble, Widget, Bramble, Gizmo, Nutmeg, Dynamo, Thistle, Cobble, Ratchet, Sorrel, Gadget, Puddle, Tinker, Barley, Piston, Fennel, Nugget, Dandelion and Whirr) (R7), starting from index `hash32(seed, robots.nextId + deliveries.length) % 24` and wrapping, that no robot on the farm and no due delivery already has.
 - **Buy for {price}g** orders the robot: `workshop/order` `{ size, name }`.
-  - The name goes through the existing robot name rule: "A robot needs a name of 1 to 24 characters."
+  - The name is trimmed, then goes through the existing robot name rule (R9): "A robot needs a name of 1 to 24 characters."
   - Not enough gold: "You need {price}g."
   - Robots on the farm plus deliveries due already 12: "The farm already has 12 robots."
   - Otherwise the price is paid, `robots.deliveries` gains `{ size, name }`, the checkout closes, and the toast says "Juniper will deliver {name} tomorrow morning."
@@ -160,7 +161,7 @@ With Zone A unset the loop does nothing and the robot powers down at once. The p
 
 ### 4.6 Delivery
 
-- In the night step (`runRobotsOvernight`), before the morning reset, every due delivery becomes a robot, in order, through `addRobot`: the catalogue size, parts and program, the order's name, fully charged, working, facing South, on `freeSpotNear(farm, WORKBENCH.home, taken)` where `taken` holds the spawn tile, every standing robot and every robot already delivered tonight.
+- In the night step (`runRobotsOvernight`), before the morning reset, every due delivery becomes a robot, in order, through `newRobot` (`addRobot`'s robot builder, without its checks, which the order, the save validator, the catalogue and `freeSpotNear` already guarantee) (R8): the catalogue size, parts and program, the order's name, fully charged, working, facing South, on `freeSpotNear(farm, WORKBENCH.home, taken)` where `taken` holds the spawn tile, every standing robot and every robot already delivered tonight.
 - `robots.deliveries` empties.
 - Each delivery's morning toast: "Juniper delivered {name}. It's waiting by the workbench."
 - The robot's morning stack runs that morning like any other robot's.
@@ -174,7 +175,7 @@ With Zone A unset the loop does nothing and the robot powers down at once. The p
 The robot screen's **Looks** tab gains a **Parts** section, for a robot on the bench (mode `'bench'`):
 
 - **Fitted:** one row per slot (`ROBOTS.sizes[size].partSlots`): a fitted part's icon and name with a **Take off** button, or "Empty slot".
-- **From your backpack:** one row per part item stack in the backpack that the robot can take (not already fitted), with **Fit**. With none: "No parts in your backpack to fit."
+- **From your backpack:** one row per part the backpack holds that the robot can take (not already fitted), its stacks together as in the parts shop's Sell list, with **Fit**, since `robot/fit` names a part, not a stack (R13). With none: "No parts in your backpack to fit."
 - When peeking, the section shows the fitted parts only, with no buttons. A ruined robot shows "{name} is ruined. It can only be scrapped." as the other tabs do.
 
 ### 5.2 The rules
@@ -182,7 +183,7 @@ The robot screen's **Looks** tab gains a **Parts** section, for a robot on the b
 - **Fit** (`robot/fit` `{ robotId, part }`) moves one part from the backpack into the robot. The robot's `parts` stays in catalogue order.
   - No free slot: "{name} has no free part slot."
   - Already fitted: "{name} already has a {part}."
-  - Done: "Fitted a {part} to {name}."
+  - Done: "Fitted a {part} to {name}." (Both say "an" before a vowel, as in section 3.3.) (R5)
   - Fitting a watering head fills its tank (`ROBOTS.tankCapacity`).
 - **Take off** (`robot/unfit` `{ robotId, part }`) moves the part into the backpack.
   - No room: "Your inventory is full."
@@ -190,7 +191,7 @@ The robot screen's **Looks** tab gains a **Parts** section, for a robot on the b
   - A basket while the bag holds more stacks than the robot could carry without it: "Empty {name}'s bag before taking the basket off."
   - Done: "Took the {part} off {name}."
   - Taking off a watering head empties the tank.
-- Both only work on the robot on the bench, not ruined, with the game unpaused, exactly like the other bench edits (`editRobot`).
+- Both only work on the robot on the bench, not ruined, with the game unpaused, exactly like the other bench edits (`editRobot`). `robot/fit` without that part in the backpack, `robot/unfit` of a part the robot hasn't got, and either while paused do nothing, with no toast. (R14)
 - A program that uses an action whose part is gone stays as it is: the action is already a mistake at run time ("Tried to {verb}, but it doesn't have the part for that."), as in part 1.
 
 ### 5.3 Scrapping
@@ -211,7 +212,7 @@ Each shop sells a fixed amount per day, and restocks every morning (`startNextDa
 
 - **What the player sees:** every row shows "{n} left". A sold-out row shows "Out of stock" in place of its buttons (Juniper's card: "Sold out today").
 - **Seeds:** a ×5 or ×10 button is disabled when fewer packets are left than it would buy. If a buy asks for more than is left anyway: "Only {n} left today."
-- **The rules** sit in the reducer, so the messages above are the toasts a refused buy or order gives. Selling parts back to Sol doesn't add to his stock.
+- **The rules** sit in the reducer, so the messages above are the toasts a refused buy or order gives. The stock check comes before the name, gold and room checks (after the season check for seeds), so a sold-out shop always says it is sold out (R15). Selling parts back to Sol doesn't add to his stock.
 - The counts are saved, so reloading mid-day doesn't restock.
 
 ---
@@ -258,8 +259,8 @@ Decorations on the front of the parts exchange and Juniper's workshop (the carpe
 
 ## 10. Bundle
 
-- All three shops' panels live in a new lazy chunk, `src/ui/shops/`, loaded through one dynamic import when any of them first opens, like the robot screen: Sol's parts shop, Juniper's workshop, and Marigold's seed shop, which moves there from the HUD (decided by Eli when the main chunk ran low). Its budget is ≤ **20 KiB** gzipped, checked by `build:check`.
-- Part items, their icons, the actions and the reducer stay in the main chunk, which must stay within its budget: the part 2 baseline plus 30 KiB (299.1 KiB), raised by Eli from 26 KiB during the build. If it can't, the build stops and asks Eli.
+- All three shops' panels live in a new lazy chunk, `src/ui/shops/`, loaded through one dynamic import when any of them first opens, like the robot screen: Sol's parts shop, Juniper's workshop, and Marigold's seed shop, which moves there from the HUD (decided by Eli when the main chunk ran low; R2). Its budget is ≤ **20 KiB** gzipped, checked by `build:check`, which finds the chunk by source map and refuses shop code in the main chunk. If the chunk fails to load, the panel closes with the toast "The shop didn't open. Try again." (R3)
+- Part items, their icons, the actions and the reducer stay in the main chunk, which must stay within its budget: the part 2 baseline plus 30 KiB (299.1 KiB), raised by Eli from 26 KiB during the build (R10). If it can't, the build stops and asks Eli.
 - The Parts section and the preview mode are in the robot screen chunk.
 
 ---
@@ -318,3 +319,25 @@ Decorations on the front of the parts exchange and Juniper's workshop (the carpe
 - **§9.2:** Juniper's ready-made robots are delivered beside the workbench the next morning. Every shop has a daily stock and restocks each morning.
 - **§9.2, §10 and §15:** Bram is renamed Berlioz, and Tess is renamed Tallulah.
 - **§11.2:** two parts are added after part 4, before part 5: **4d Town life** (anonymous townsfolk with fixed personalities walking short routes, market stalls, benches and planters, bunting and banners, barrels, crates and a cart, and posters, stands and small props around the town, including brand posters for Byre, Tokenly, Hollis Handpicked, Claw Fair and Sprocket Cereal) and **4e Graphics pass** (soft fitted shadows, ambient sky lighting, a water shader, and post-processing: ambient occlusion, night bloom, colour grading and a vignette, better anti-aliasing; a low / medium / high quality setting, phones defaulting to medium, the heavy parts loaded lazily).
+
+---
+
+## 15. Plan refinements
+
+Decided by the part 4b implementation plan and its execution, each with the commit that made it. Each one keeps the intent of the rule it refines, and the sections above already say what it decided. Task N is implementation step N of section 12.
+
+- **R1** (`e388d64`). The antenna's and the cores' item descriptions (their inventory tooltips) weren't in the spec: "Send messages to other robots.", "Actions cost a quarter fewer tokens." and "Acts every 3 minutes instead of 4."; the basic six use Sol's shop lines from §3.2. (§2)
+- **R2** (`88a223b`). After parts became items the main chunk had about 0.8 KiB left, so Eli moved Marigold's seed shop out of the HUD into the lazy shops chunk with Sol's and Juniper's, rather than raise the budget again. The plan's Tasks 3 and 7 changed with it. (§10)
+- **R3** (`fcc73dc`). When the shops chunk fails to load, the panel closes with the toast "The shop didn't open. Try again." (§10)
+- **R4** (`fcc73dc`). The parts shop's Sell list has one row per part the backpack holds, its stacks counted together ("In your bag: {n}", as in the seed shop), since `parts/sell` names a part, not a stack; the panel's two lists are headed "Buy" and "Sell". (§3.2)
+- **R5** (`b83d4d5`). "Bought a {part}." and "Sold a {part} for {gold}g." say "an" before a vowel ("Sold an antenna for 300g.", "an efficient core"). The fitting toasts "{name} already has a {part}." and "Fitted a {part} to {name}." follow the same rule. (§3.3, §5.2)
+- **R6** (`b83d4d5`). The Mini's card says "1 part slot", not "1 part slots". (§4.3)
+- **R7** (`b83d4d5`). `WORKSHOP_NAMES`, which the spec left open, are Bolt, Clover, Rivet, Turnip, Sprocket, Pebble, Widget, Bramble, Gizmo, Nutmeg, Dynamo, Thistle, Cobble, Ratchet, Sorrel, Gadget, Puddle, Tinker, Barley, Piston, Fennel, Nugget, Dandelion and Whirr. (§4.5)
+- **R8** (`b83d4d5`). Deliveries become robots through `newRobot` (`addRobot`'s robot builder) instead of `addRobot`, whose checks the order, the save validator, the catalogue and `freeSpotNear` already guarantee; it keeps 0.4 KiB out of the main chunk. (§4.6)
+- **R9** (`b83d4d5`). While the checkout's name field has focus, Enter orders and Escape cancels the checkout (the input controller leaves typed keys alone); the name is trimmed before ordering. (§4.3, §4.5)
+- **R10** (`b0a4a4a`). After Juniper's workshop the main chunk had about 0.5 KiB left, and Tasks 5–8 still added simulation and render code that belongs there, so Eli raised its allowance over the part 2 baseline from 26 KiB to 30 KiB (299.1 KiB). The part 3 spec and the plan say so too. (§10)
+- **R11** (`7ab8749`). `ui/closePanel` on a preview returns to `{ kind: 'workshop' }` instead of closing, which is how "returns to the workshop panel" is built (Escape, the close button and a failed screen load all go through it). (§4.4)
+- **R12** (`7ab8749`). Read program dispatches a new action, `workshop/preview` `{ size }`, which does nothing unless the workshop is open and the game isn't paused. (§4.3)
+- **R13** (`3ab2ddb`). The Parts section's "From your backpack" list has one row per part the backpack holds, its stacks together (as the parts shop's Sell list), since `robot/fit` names a part, not a stack. (§5.1)
+- **R14** (`3ab2ddb`). `robot/fit` without that part in the backpack, `robot/unfit` of a part the robot hasn't got, and either while paused do nothing, with no toast. (§5.2)
+- **R15** (`5637e22`). The stock check comes before the name, gold and room checks (after the season check for seeds), so a sold-out shop always says it is sold out. (§6)
