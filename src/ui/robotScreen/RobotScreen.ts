@@ -1,9 +1,14 @@
 /**
  * The robot screen (farmclaws part 3 spec §4): a full-screen panel for one robot, in bench mode
- * (editable) or peek mode (Stats and Log only). It is loaded lazily by RobotScreenHost.
+ * (editable), peek mode (Stats and Log only) or preview mode (a workshop robot's Program and
+ * Looks, read-only, part 4b spec §4.4). It is loaded lazily by RobotScreenHost.
  *
  * - Header: the robot's name, size, part icons, tokens / battery, power and off text; in bench
- *   mode the On / Off switch, Lift off and Scrap. The close button is always there.
+ *   mode the On / Off switch, Lift off and Scrap. A preview shows the size and "From Juniper's
+ *   workshop" instead of the name and power. The close button is always there.
+ * - The robot comes from viewModel.screenRobot: the state's robot, or the catalogue robot in a
+ *   preview, which isn't in the state, so a preview never dispatches an edit. Closing a preview
+ *   goes back to the workshop (the reducer's ui/closePanel).
  * - Tabs: Program, .MD, Looks, Stats and Log in that order, each shown only when its unlock is in
  *   `robots.unlocks` and the mode allows it (viewModel.visibleTabs), and only when this build has
  *   a view for it (TAB_FACTORIES). A view is built the first time its tab is shown and kept until
@@ -24,7 +29,6 @@
 import './robotScreen.css';
 import type { Store } from '../../core/store';
 import { ROBOT_TABS, type GameState, type Robot, type RobotTab } from '../../core/types';
-import { findRobot } from '../../robots/world';
 import { actions, type GameAction } from '../../state/actions';
 import { closestWithin, h, hudButton, iconHost, setAttr, setHidden, setText, setTitle } from '../dom';
 import { createBoltIcon, createCloseIcon } from '../icons';
@@ -40,14 +44,18 @@ import {
   PART_LABELS,
   TAB_LABELS,
   discardPrompt,
+  hasBenchActions,
   headerView,
   isEditTab,
   nextTab,
   phoneQuery,
   ruinedNote,
+  samePanel,
   scrapPrompt,
+  screenRobot,
   switchView,
   visibleTabs,
+  type RobotPanel,
   type RobotScreenMode,
 } from './viewModel';
 
@@ -69,7 +77,7 @@ const TAB_FACTORIES: Readonly<Record<RobotTab, TabFactory>> = {
 
 /** One robot shown, from open() to close(). */
 interface Session {
-  readonly robotId: number;
+  readonly panel: RobotPanel;
   readonly mode: RobotScreenMode;
   readonly abort: AbortController;
   readonly context: RobotTabContext;
@@ -211,11 +219,11 @@ export class RobotScreen {
     const panel = state.ui.panel;
     if (panel.kind !== 'robot') return;
     this.endSession();
-    const robot = findRobot(state, panel.robotId);
+    const robot = screenRobot(state, panel);
     if (robot === null) return;
     const abort = new AbortController();
     const context: RobotTabContext = {
-      robotId: panel.robotId,
+      robot: (current) => screenRobot(current, panel),
       mode: panel.mode,
       dispatch: (action) => {
         this.store.dispatch(action);
@@ -223,10 +231,10 @@ export class RobotScreen {
       getState: () => this.store.getState(),
       signal: abort.signal,
     };
-    this.session = { robotId: panel.robotId, mode: panel.mode, abort, context, views: new Map(), active: null, shown: null };
+    this.session = { panel, mode: panel.mode, abort, context, views: new Map(), active: null, shown: null };
     window.addEventListener('keydown', this.onKeyDown, { capture: true, signal: abort.signal });
     this.element.dataset.mode = panel.mode;
-    setHidden(this.benchActions, panel.mode !== 'bench');
+    setHidden(this.benchActions, !hasBenchActions(panel.mode));
     setHidden(this.element, false);
     this.syncHeader(robot);
     this.syncTabs(state);
@@ -237,11 +245,11 @@ export class RobotScreen {
     const session = this.session;
     const panel = state.ui.panel;
     if (session === null || panel.kind !== 'robot') return;
-    if (panel.robotId !== session.robotId || panel.mode !== session.mode) {
+    if (!samePanel(panel, session.panel)) {
       this.open(state);
       return;
     }
-    const robot = findRobot(state, session.robotId);
+    const robot = session.context.robot(state);
     if (robot === null) return;
     if (robot !== session.shown) this.syncHeader(robot);
     if (state.robots.unlocks !== prev.robots.unlocks) this.syncTabs(state);
@@ -275,7 +283,7 @@ export class RobotScreen {
 
   private robot(): Robot | null {
     const session = this.session;
-    return session === null ? null : findRobot(this.store.getState(), session.robotId);
+    return session === null ? null : session.context.robot(this.store.getState());
   }
 
   private isDirty(): boolean {
@@ -409,7 +417,7 @@ export class RobotScreen {
     const session = this.session;
     if (session === null) return;
     session.shown = robot;
-    const view = headerView(robot);
+    const view = headerView(robot, session.mode);
     setText(this.name, view.name);
     setText(this.size, view.sizeLabel);
     const partsKey = view.parts.join(' ');
@@ -429,7 +437,8 @@ export class RobotScreen {
       );
     }
     setText(this.tokensText, view.tokens);
-    setText(this.power, view.power);
+    setHidden(this.power, view.power === null);
+    setText(this.power, view.power ?? '');
     this.power.dataset.power = robot.power;
     setHidden(this.off, view.offText === null);
     setText(this.off, view.offText ?? '');

@@ -9,7 +9,6 @@
  */
 import { MD_CARD_KINDS, type GameState, type MdCard, type Robot, type RobotSize, type RobotUnlocks } from '../../../core/types';
 import { checkMd } from '../../../robots/check';
-import { findRobot } from '../../../robots/world';
 import { actions } from '../../../state/actions';
 import { isMdShape } from '../../../state/robotValidation';
 import { closestWithin, h, hudButton, setHidden, setText } from '../../dom';
@@ -29,6 +28,7 @@ import {
   type MdCardKind,
   type MdField,
 } from '../mdFields';
+import { isReadOnly } from '../viewModel';
 import type { RobotTabContext, RobotTabView } from './tabView';
 
 function isCardKind(value: string | undefined): value is MdCardKind {
@@ -92,9 +92,9 @@ export class MdTab implements RobotTabView {
   }
 
   open(state: GameState): void {
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null) return;
-    this.readOnly = robot.power === 'ruined';
+    this.readOnly = isReadOnly(robot, this.context.mode);
     this.cards = robot.md;
     this.baseline = robot.md;
     this.dirty = false;
@@ -103,7 +103,7 @@ export class MdTab implements RobotTabView {
   }
 
   sync(state: GameState): void {
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null) return;
     if (state.robots.unlocks !== this.shownUnlocks) this.syncAddMenu(state.robots.unlocks);
     if (robot === this.shownRobot) return;
@@ -135,7 +135,7 @@ export class MdTab implements RobotTabView {
   // -------------------------------------------------------------------------
 
   private robot(): Robot | null {
-    return findRobot(this.context.getState(), this.context.robotId);
+    return this.context.robot(this.context.getState());
   }
 
   private syncAddMenu(unlocks: RobotUnlocks): void {

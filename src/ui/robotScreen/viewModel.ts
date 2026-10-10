@@ -1,8 +1,8 @@
 /**
- * Pure view models for the robot screen (farmclaws part 3 spec §4): the header, the tabs each
- * mode shows, the switch, the Stats and Log rows, and the prompts. No DOM, so
- * tests/robotScreen.test.ts covers every rule here; RobotScreen.ts and the tabs only draw what
- * these return.
+ * Pure view models for the robot screen (farmclaws part 3 spec §4, part 4b spec §4.4): the robot
+ * shown, the header, the tabs each mode shows, the switch, the Stats and Log rows, and the
+ * prompts. No DOM, so tests/robotScreen.test.ts covers every rule here; RobotScreen.ts and the
+ * tabs only draw what these return.
  */
 import { ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN } from '../../config';
 import {
@@ -15,14 +15,23 @@ import {
   type RobotSize,
   type RobotTab,
   type RobotUnlocks,
+  type UiPanel,
 } from '../../core/types';
 import { getItem } from '../../items/items';
 import { robotSays, whatHappened } from '../../robots/logText';
 import { SWITCHABLE_POWERS, batteryFor, scrapValue } from '../../robots/stats';
+import { catalogueRobot } from '../../robots/workshop';
+import { findRobot } from '../../robots/world';
 import { formatClock } from '../../time/clock';
 
-/** Bench mode edits the robot; peek mode only reads its Stats and Log (spec §2.3). */
-export type RobotScreenMode = 'bench' | 'peek';
+/**
+ * Bench mode edits the robot; peek mode only reads its Stats and Log (spec §2.3); preview mode
+ * reads a workshop robot's Program and Looks before it's bought (part 4b spec §4.4).
+ */
+export type RobotScreenMode = 'bench' | 'peek' | 'preview';
+
+/** A robot screen's panel. */
+export type RobotPanel = Extract<UiPanel, { readonly kind: 'robot' }>;
 
 const numberFormat = new Intl.NumberFormat('en-US');
 const perCropFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
@@ -60,8 +69,37 @@ export const LOG_TEXT = {
 /** Tabs that edit the robot: read-only for a ruined robot (spec §3.2). */
 const EDIT_TABS: ReadonlySet<RobotTab> = new Set<RobotTab>(['program', 'md', 'looks']);
 
-/** Tabs a peek may show (spec §2.3). */
-const PEEK_TABS: ReadonlySet<RobotTab> = new Set<RobotTab>(['stats', 'log']);
+/** Tabs each read-only mode may show: a peek's (spec §2.3) and a workshop preview's (part 4b spec §4.4). */
+const READ_ONLY_TABS: Readonly<Record<Exclude<RobotScreenMode, 'bench'>, ReadonlySet<RobotTab>>> = {
+  peek: new Set<RobotTab>(['stats', 'log']),
+  preview: new Set<RobotTab>(['program', 'looks']),
+};
+
+/** The header's size tag in a workshop preview, where the name is the size. */
+export const PREVIEW_TAG = "From Juniper's workshop";
+
+/** Each size's catalogue robot, built once so the screen sees the same robot on every sync. */
+const previews = new Map<RobotSize, Robot>();
+
+/**
+ * The robot a panel shows: the state's robot for the bench or a peek (null when it's gone), or
+ * the size's catalogue robot for a workshop preview, which isn't in the state.
+ */
+export function screenRobot(state: GameState, panel: RobotPanel): Robot | null {
+  if (panel.mode !== 'preview') return findRobot(state, panel.robotId);
+  let robot = previews.get(panel.size);
+  if (robot === undefined) {
+    robot = catalogueRobot(panel.size);
+    previews.set(panel.size, robot);
+  }
+  return robot;
+}
+
+/** True when two robot panels show the same robot in the same mode. */
+export function samePanel(a: RobotPanel, b: RobotPanel): boolean {
+  if (a.mode === 'preview') return b.mode === 'preview' && a.size === b.size;
+  return b.mode !== 'preview' && a.mode === b.mode && a.robotId === b.robotId;
+}
 
 export interface HeaderView {
   readonly name: string;
@@ -69,7 +107,8 @@ export interface HeaderView {
   readonly parts: readonly RobotPartId[];
   /** "{tokens} / {battery} tokens". */
   readonly tokens: string;
-  readonly power: string;
+  /** Null in a workshop preview, where the robot isn't running yet. */
+  readonly power: string | null;
   /** "Switched off", "Off until morning", or null while the robot isn't off. */
   readonly offText: string | null;
 }
@@ -86,15 +125,30 @@ function offText(off: Robot['off']): string | null {
   }
 }
 
-export function headerView(robot: Robot): HeaderView {
+/**
+ * The header. A workshop preview shows the size and "From Juniper's workshop" in place of the
+ * name and the size tag, and no power or off text (part 4b spec §4.4).
+ */
+export function headerView(robot: Robot, mode: RobotScreenMode): HeaderView {
+  const preview = mode === 'preview';
   return {
-    name: robot.name,
-    sizeLabel: SIZE_LABELS[robot.size],
+    name: preview ? SIZE_LABELS[robot.size] : robot.name,
+    sizeLabel: preview ? PREVIEW_TAG : SIZE_LABELS[robot.size],
     parts: robot.parts,
     tokens: `${numberFormat.format(robot.tokens)} / ${numberFormat.format(batteryFor(robot.size))} tokens`,
-    power: POWER_LABELS[robot.power],
-    offText: offText(robot.off),
+    power: preview ? null : POWER_LABELS[robot.power],
+    offText: preview ? null : offText(robot.off),
   };
+}
+
+/** The On / Off switch, Lift off and Scrap belong to the bench alone. */
+export function hasBenchActions(mode: RobotScreenMode): boolean {
+  return mode === 'bench';
+}
+
+/** True when the editing tabs only read: always in a preview, and for a ruined robot (spec §3.2). */
+export function isReadOnly(robot: Robot, mode: RobotScreenMode): boolean {
+  return mode === 'preview' || robot.power === 'ruined';
 }
 
 export interface SwitchView {
@@ -115,9 +169,12 @@ export function switchView(robot: Robot, mode: RobotScreenMode): SwitchView | nu
   return SWITCHABLE_POWERS.has(robot.power) ? { label: 'Off', on: false } : null;
 }
 
-/** The tabs a mode shows, in ROBOT_TABS order: each needs its unlock; peek shows only Stats and Log. */
+/**
+ * The tabs a mode shows, in ROBOT_TABS order: each needs its unlock; peek shows only Stats and
+ * Log, and a preview only Program and Looks.
+ */
 export function visibleTabs(mode: RobotScreenMode, unlocks: RobotUnlocks): readonly RobotTab[] {
-  return ROBOT_TABS.filter((tab) => unlocks.tabs.includes(tab) && (mode === 'bench' || PEEK_TABS.has(tab)));
+  return ROBOT_TABS.filter((tab) => unlocks.tabs.includes(tab) && (mode === 'bench' || READ_ONLY_TABS[mode].has(tab)));
 }
 
 /**

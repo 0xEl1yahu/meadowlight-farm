@@ -6,7 +6,8 @@
  *   failed import says "The editor couldn't load. Close and try again.".
  * - The saved program is loaded with events disabled (loading is not an edit), rendered, and
  *   its top-level blocks re-spaced ROBOT_SCREEN.stackGap apart in program order. A part 1 script
- *   opens an empty workspace under a note. A ruined robot's workspace is read-only.
+ *   opens an empty workspace under a note. A ruined robot's workspace is read-only, and so is a
+ *   workshop preview's (part 4b spec §4.4).
  * - The toolbar shows "{used} / {limit} blocks" (countWorkspaceBlocks, mid-edit) and
  *   "{n} / {limit} variables", red over the limit; "Make a variable" (with `var` unlocked);
  *   Revert and Save. Under the phone width the category column is hidden and "Blocks" opens a
@@ -22,7 +23,6 @@ import type * as Blockly from 'blockly/core';
 import { ROBOTS, ROBOT_SCREEN } from '../../../config';
 import { VALUE_TYPES, type GameState, type Robot, type RobotProgram, type RobotUnlocks, type ValueType } from '../../../core/types';
 import { checkProgram } from '../../../robots/check';
-import { findRobot } from '../../../robots/world';
 import { actions } from '../../../state/actions';
 import { isProgramShape } from '../../../state/robotValidation';
 import { closestWithin, h, hudButton, setHidden, setText } from '../../dom';
@@ -43,7 +43,7 @@ import {
   type ToolboxJson,
 } from '../blockly/toolbox';
 import { countWorkspaceBlocks, programToWorkspace, workspaceMatchesProgram, workspaceToProgram, type BlocklyWorkspaceJson } from '../translate';
-import { phoneQuery } from '../viewModel';
+import { isReadOnly, phoneQuery } from '../viewModel';
 import type { RobotTabContext, RobotTabView } from './tabView';
 
 type BlocklyApi = typeof Blockly;
@@ -166,9 +166,9 @@ export class ProgramTab implements RobotTabView {
   }
 
   open(state: GameState): void {
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null) return;
-    this.readOnly = robot.power === 'ruined';
+    this.readOnly = isReadOnly(robot, this.context.mode);
     this.unlocks = state.robots.unlocks;
     for (const button of [this.blocksButton, this.revertButton, this.saveButton]) setHidden(button, this.readOnly);
     this.syncVariableButton();
@@ -177,7 +177,7 @@ export class ProgramTab implements RobotTabView {
   }
 
   sync(state: GameState): void {
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null) return;
     if (state.robots.unlocks !== this.unlocks) this.syncUnlocks(state.robots.unlocks, robot);
     if (this.saving || robot.program === this.baseline || this.dirty) return;
@@ -268,7 +268,7 @@ export class ProgramTab implements RobotTabView {
   // -------------------------------------------------------------------------
 
   private robot(): Robot | null {
-    return findRobot(this.context.getState(), this.context.robotId);
+    return this.context.robot(this.context.getState());
   }
 
   private requestEditor(): void {
@@ -294,7 +294,7 @@ export class ProgramTab implements RobotTabView {
 
   private build(api: BlocklyApi): void {
     const state = this.context.getState();
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null) return;
     setHidden(this.status, true);
     setHidden(this.editor, false);

@@ -5,8 +5,9 @@
  * first download.
  *
  * - While the module loads, a card says "Opening…".
- * - When the import fails, the panel closes with a warning toast and the robot is untouched.
- *   The failed attempt is forgotten, so the next robot panel tries again.
+ * - When the import fails, the panel closes (a workshop preview goes back to the workshop, as
+ *   ui/closePanel does) with a warning toast and the robot is untouched. The failed attempt is
+ *   forgotten, so the next robot panel tries again.
  * - While the card shows, Escape closes the panel, so a stalled import can't trap the player (the
  *   input controller leaves every key alone while a robot panel is open). The listener lives only
  *   while the card shows.

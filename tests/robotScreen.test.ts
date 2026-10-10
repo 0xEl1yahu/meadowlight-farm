@@ -7,13 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROBOTS, ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, TIME, UNLOCKS } from '../src/config';
 import { createStore, type Store } from '../src/core/store';
 import { mulberry32 } from '../src/core/hash';
-import { MD_CARD_KINDS, type GameState, type MdCard, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';
+import { MD_CARD_KINDS, ROBOT_SIZES, type GameState, type MdCard, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';
 import { InputController } from '../src/input/InputController';
 import type { CameraRig } from '../src/render/CameraRig';
 import { b } from '../src/robots/blocks';
 import { checkMd } from '../src/robots/check';
 import { batteryFor } from '../src/robots/stats';
 import { ALL_UNLOCKS } from '../src/robots/unlocks';
+import { catalogueRobot } from '../src/robots/workshop';
 import { actions, type GameAction } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
 import { BLOCK_DEFINITIONS, type BlockDefinitionJson } from '../src/ui/robotScreen/blockly/blockDefs';
@@ -41,8 +42,10 @@ import {
   countText,
   discardPrompt,
   formatClockMinute,
+  hasBenchActions,
   headerView,
   isEditTab,
+  isReadOnly,
   logRows,
   nextTab,
   paintButtonText,
@@ -50,7 +53,9 @@ import {
   paintName,
   phoneQuery,
   ruinedNote,
+  samePanel,
   scrapPrompt,
+  screenRobot,
   statsRows,
   switchView,
   visibleTabs,
@@ -80,7 +85,7 @@ function withPanel(state: GameState, panel: GameState['ui']['panel']): GameState
 describe('headerView', () => {
   it('names the robot, its size, parts and tokens', () => {
     const robot = robotOf({ name: 'Bolt', size: 'standard', parts: ['claw', 'sensorEye'], tokens: 42 });
-    expect(headerView(robot)).toEqual({
+    expect(headerView(robot, 'bench')).toEqual({
       name: 'Bolt',
       sizeLabel: 'Standard',
       parts: ['claw', 'sensorEye'],
@@ -91,13 +96,13 @@ describe('headerView', () => {
   });
 
   it('gives the off text for each reason', () => {
-    expect(headerView(robotOf({ off: 'player' })).offText).toBe('Switched off');
-    expect(headerView(robotOf({ off: 'dizzy' })).offText).toBe('Off until morning');
-    expect(headerView(robotOf({ off: 'done' })).offText).toBe('Off until morning');
+    expect(headerView(robotOf({ off: 'player' }), 'bench').offText).toBe('Switched off');
+    expect(headerView(robotOf({ off: 'dizzy' }), 'bench').offText).toBe('Off until morning');
+    expect(headerView(robotOf({ off: 'done' }), 'bench').offText).toBe('Off until morning');
   });
 
   it('names every power', () => {
-    const power = (p: Parameters<typeof robotOf>[0]) => headerView(robotOf(p)).power;
+    const power = (p: Parameters<typeof robotOf>[0]) => headerView(robotOf(p), 'bench').power;
     expect(power({ power: 'standby' })).toBe('Standing by');
     expect(power({ power: 'flat', tokens: 0 })).toBe('Flat');
     expect(power({ power: 'broken' })).toBe('Shorted out');
@@ -106,7 +111,7 @@ describe('headerView', () => {
   });
 
   it("uses the size's battery", () => {
-    expect(headerView(robotOf({ size: 'big', tokens: 500 })).tokens).toBe('500 / 500 tokens');
+    expect(headerView(robotOf({ size: 'big', tokens: 500 }), 'bench').tokens).toBe('500 / 500 tokens');
   });
 });
 
@@ -147,6 +152,91 @@ describe('visibleTabs', () => {
 
   it('marks Program, .MD and Looks as the editing tabs', () => {
     expect((['program', 'md', 'looks', 'stats', 'log'] as const).filter(isEditTab)).toEqual(['program', 'md', 'looks']);
+  });
+});
+
+describe('the workshop preview (part 4b spec §4.4)', () => {
+  const WORKSHOP = withPanel(BASE, { kind: 'workshop' });
+  const preview = (size: (typeof ROBOT_SIZES)[number]) => ({ kind: 'robot', mode: 'preview', size }) as const;
+
+  it('shows the size and "From Juniper\'s workshop" in the header, with no power or off text', () => {
+    expect(headerView(catalogueRobot('standard'), 'preview')).toEqual({
+      name: 'Standard',
+      sizeLabel: "From Juniper's workshop",
+      parts: ['claw'],
+      tokens: `${ROBOTS.sizes.standard.battery} / ${ROBOTS.sizes.standard.battery} tokens`,
+      power: null,
+      offText: null,
+    });
+  });
+
+  it('has no On / Off switch, Lift off or Scrap', () => {
+    expect(switchView(catalogueRobot('mini'), 'preview')).toBeNull();
+    expect(hasBenchActions('preview')).toBe(false);
+    expect(hasBenchActions('peek')).toBe(false);
+    expect(hasBenchActions('bench')).toBe(true);
+  });
+
+  it('shows Program and Looks only', () => {
+    expect(visibleTabs('preview', UNLOCKS.job1)).toEqual(['program', 'looks']);
+    expect(visibleTabs('preview', ALL_UNLOCKS)).toEqual(['program', 'looks']);
+  });
+
+  it('is read-only, as a ruined robot is on the bench', () => {
+    expect(isReadOnly(catalogueRobot('big'), 'preview')).toBe(true);
+    expect(isReadOnly(robotOf(), 'bench')).toBe(false);
+    expect(isReadOnly(robotOf({ power: 'ruined' }), 'bench')).toBe(true);
+  });
+
+  it("shows the size's catalogue robot, the same one on every sync, never the state's", () => {
+    const state = withRobots(BASE, [robotOf({ id: 1, name: 'Bolt' })]);
+    for (const size of ROBOT_SIZES) {
+      const robot = screenRobot(state, preview(size));
+      expect(robot).toEqual(catalogueRobot(size));
+      expect(screenRobot(BASE, preview(size))).toBe(robot);
+    }
+    expect(screenRobot(state, { kind: 'robot', robotId: 1, mode: 'bench' })).toBe(state.robots.list[0]);
+    expect(screenRobot(state, { kind: 'robot', robotId: 2, mode: 'peek' })).toBeNull();
+  });
+
+  it('tells a new preview from the one shown', () => {
+    expect(samePanel(preview('mini'), preview('mini'))).toBe(true);
+    expect(samePanel(preview('mini'), preview('big'))).toBe(false);
+    expect(samePanel(preview('mini'), { kind: 'robot', robotId: 1, mode: 'bench' })).toBe(false);
+    expect(samePanel({ kind: 'robot', robotId: 1, mode: 'bench' }, { kind: 'robot', robotId: 1, mode: 'bench' })).toBe(true);
+    expect(samePanel({ kind: 'robot', robotId: 1, mode: 'bench' }, { kind: 'robot', robotId: 1, mode: 'peek' })).toBe(false);
+  });
+
+  it('opens from the workshop on Read program', () => {
+    expect(gameReducer(WORKSHOP, actions.previewRobot('big')).ui.panel).toEqual(preview('big'));
+  });
+
+  it('opens only from the open workshop, unpaused, for a real size', () => {
+    expect(gameReducer(BASE, actions.previewRobot('mini'))).toBe(BASE);
+    const shop = withPanel(BASE, { kind: 'partsShop' });
+    expect(gameReducer(shop, actions.previewRobot('mini'))).toBe(shop);
+    const paused = { ...WORKSHOP, ui: { ...WORKSHOP.ui, paused: true } };
+    expect(gameReducer(paused, actions.previewRobot('mini'))).toBe(paused);
+    expect(gameReducer(WORKSHOP, { type: 'workshop/preview', size: 'huge' as 'mini' })).toBe(WORKSHOP);
+  });
+
+  it('returns to the workshop on close, where other robot panels close', () => {
+    expect(gameReducer(withPanel(BASE, preview('standard')), actions.closePanel()).ui.panel).toEqual({ kind: 'workshop' });
+    expect(gameReducer(withPanel(BASE, { kind: 'robot', robotId: 1, mode: 'bench' }), actions.closePanel()).ui.panel).toEqual({ kind: 'none' });
+    expect(gameReducer(WORKSHOP, actions.closePanel()).ui.panel).toEqual({ kind: 'none' });
+  });
+
+  it('changes nothing but ui.panel: opening, reading and closing', () => {
+    const start = withRobots(withPanel(BASE, { kind: 'workshop' }), [robotOf({ id: 1 })]);
+    const opened = gameReducer(start, actions.previewRobot('mini'));
+    const closed = gameReducer(opened, actions.closePanel());
+    for (const state of [opened, closed]) {
+      const { ui, ...rest } = state;
+      const { ui: startUi, ...startRest } = start;
+      expect({ ...ui, panel: null }).toEqual({ ...startUi, panel: null });
+      for (const [key, value] of Object.entries(rest)) expect(value, key).toBe(startRest[key as keyof typeof startRest]);
+    }
+    expect(closed).toEqual(start);
   });
 });
 
@@ -344,23 +434,28 @@ describe('InputController while a robot screen is open (spec §4.1)', () => {
     return { press, dispatched, dispose: () => input.dispose() };
   }
 
-  it('neither dispatches nor prevents the default for any key', () => {
-    const { press, dispatched, dispose } = harness(withPanel(BASE, { kind: 'robot', robotId: 1, mode: 'bench' }));
-    for (const [code, key] of [
-      ['KeyW', 'w'],
-      ['Space', ' '],
-      ['KeyE', 'e'],
-      ['Enter', 'Enter'],
-      ['Escape', 'Escape'],
-      ['KeyI', 'i'],
-      ['KeyP', 'p'],
-      ['Digit1', '1'],
-      ['Tab', 'Tab'],
+  it('neither dispatches nor prevents the default for any key, at the bench or in a workshop preview', () => {
+    for (const panel of [
+      { kind: 'robot', robotId: 1, mode: 'bench' },
+      { kind: 'robot', mode: 'preview', size: 'mini' },
     ] as const) {
-      expect(press(code, key).defaultPrevented).toBe(false);
+      const { press, dispatched, dispose } = harness(withPanel(BASE, panel));
+      for (const [code, key] of [
+        ['KeyW', 'w'],
+        ['Space', ' '],
+        ['KeyE', 'e'],
+        ['Enter', 'Enter'],
+        ['Escape', 'Escape'],
+        ['KeyI', 'i'],
+        ['KeyP', 'p'],
+        ['Digit1', '1'],
+        ['Tab', 'Tab'],
+      ] as const) {
+        expect(press(code, key).defaultPrevented).toBe(false);
+      }
+      expect(dispatched).toEqual([]);
+      dispose();
     }
-    expect(dispatched).toEqual([]);
-    dispose();
   });
 
   it('still handles keys with no panel open', () => {

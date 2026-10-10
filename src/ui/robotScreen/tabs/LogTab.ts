@@ -11,10 +11,10 @@ import type { RobotTabContext, RobotTabView } from './tabView';
 export class LogTab implements RobotTabView {
   readonly element = h('div', 'rs-log');
   private readonly list = h('ol', 'rs-log__list');
-  private readonly robotId: number;
+  private readonly context: RobotTabContext;
 
   constructor(context: RobotTabContext) {
-    this.robotId = context.robotId;
+    this.context = context;
     const head = h('div', 'rs-log__head');
     head.setAttribute('aria-hidden', 'true');
     head.append(h('span', '', 'Time'), h('span', '', 'Robot says'), h('span', '', 'What happened'));
@@ -49,7 +49,8 @@ export class LogTab implements RobotTabView {
   dispose(): void {}
 
   private render(state: GameState): void {
-    const rows = logRows(state, this.robotId);
+    const robot = this.context.robot(state);
+    const rows = robot === null ? [] : logRows(state, robot.id);
     const today = rows.filter((row) => !row.yesterday);
     const yesterday = rows.filter((row) => row.yesterday);
     const items: HTMLElement[] = [];

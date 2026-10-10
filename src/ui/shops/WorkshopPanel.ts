@@ -1,9 +1,10 @@
 /**
  * Juniper's robot workshop (farmclaws part 4b spec §4.3), in the shops' modal style: the title
- * with the player's gold and the robot count under it, and one card per size. Buy turns a card
- * into the checkout: "Name your robot", a field holding the suggested name, Buy for {price}g and
- * Cancel. It draws workshopView and dispatches `workshop/order`; the reducer gives every
- * refusal's toast, so the buttons stay enabled.
+ * with the player's gold and the robot count under it, and one card per size. Read program
+ * opens the robot screen's preview (`workshop/preview`), and closing it comes back here with
+ * focus on that button. Buy turns a card into the checkout: "Name your robot", a field holding
+ * the suggested name, Buy for {price}g and Cancel. It draws workshopView and dispatches
+ * `workshop/order`; the reducer gives every refusal's toast, so the buttons stay enabled.
  *
  * - The cards never change; the gold, the count and the suggested name follow the state.
  * - The checkout closes when an order lands (the deliveries grow), on Cancel, on Escape in the
@@ -12,7 +13,7 @@
  * - Buttons blur after mouse clicks but keep focus on keyboard activation (releasePointerFocus).
  */
 import { PROFILE } from '../../config';
-import type { GameState } from '../../core/types';
+import type { GameState, RobotSize } from '../../core/types';
 import { actions } from '../../state/actions';
 import { closestWithin, h, hudButton, iconHost, releasePointerFocus, setHidden, setText } from '../dom';
 import { createCloseIcon, createCoinIcon } from '../icons';
@@ -28,7 +29,13 @@ interface CardParts {
   readonly element: HTMLElement;
   /** The card's own buttons, hidden while its checkout is open. */
   readonly buttons: HTMLElement;
+  readonly read: HTMLButtonElement;
   readonly buy: HTMLButtonElement;
+}
+
+/** The size a workshop preview showed, or null for any other panel. */
+function previewedSize(panel: GameState['ui']['panel']): RobotSize | null {
+  return panel.kind === 'robot' && panel.mode === 'preview' ? panel.size : null;
 }
 
 export class WorkshopPanel {
@@ -103,7 +110,8 @@ export class WorkshopPanel {
         const parts = this.cards.find((entry) => entry.card.size === button?.dataset.size);
         if (button === null || parts === undefined) return;
         releasePointerFocus(button, event);
-        this.openCheckout(parts);
+        if (button === parts.read) context.dispatch(actions.previewRobot(parts.card.size));
+        else this.openCheckout(parts);
       },
       { signal: context.signal },
     );
@@ -138,8 +146,11 @@ export class WorkshopPanel {
     setHidden(this.element, !open);
     if (!open) return;
     const opened = prev === null || prev.ui.panel.kind !== 'workshop';
-    if (opened) this.closeCheckout(false);
-    else if (state.robots.deliveries.length > prev.robots.deliveries.length) this.closeCheckout(true);
+    if (opened) {
+      this.closeCheckout(false);
+      const previewed = prev === null ? null : previewedSize(prev.ui.panel);
+      this.cards.find((entry) => entry.card.size === previewed)?.read.focus();
+    } else if (state.robots.deliveries.length > prev.robots.deliveries.length) this.closeCheckout(true);
     if (!opened && state.player.gold === prev.player.gold && state.robots === prev.robots && state.seed === prev.seed) return;
     const view = workshopView(state);
     setText(this.goldValue, numberFormat.format(view.gold));
@@ -154,12 +165,15 @@ export class WorkshopPanel {
     nameRow.append(h('span', 'hud-shop__name', card.title), h('span', 'hud-shop__price', gold(card.price)));
     info.append(nameRow, h('p', 'hud-parts__line', card.specs), h('p', 'hud-parts__line', card.line));
     const buttons = h('div', 'hud-shop__buy');
+    const read = hudButton('hud-btn', 'Read program');
+    read.dataset.size = card.size;
+    read.setAttribute('aria-label', `Read the ${card.title} robot's program`);
     const buy = hudButton('hud-btn hud-btn--buy', 'Buy');
     buy.dataset.size = card.size;
     buy.setAttribute('aria-label', `Buy a ${card.title} robot for ${gold(card.price)}`);
-    buttons.append(buy);
+    buttons.append(read, buy);
     element.append(iconHost('hud-shop__icon', this.context.icons.get('claw')), info, buttons);
-    return { card, element, buttons, buy };
+    return { card, element, buttons, read, buy };
   }
 
   /** Turns `parts` into the checkout, with the suggested name selected in the field. */

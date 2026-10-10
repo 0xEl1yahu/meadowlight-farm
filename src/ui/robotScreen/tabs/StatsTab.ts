@@ -3,7 +3,6 @@
  * tokens per crop, Today beside This week.
  */
 import type { GameState, Robot } from '../../../core/types';
-import { findRobot } from '../../../robots/world';
 import { h } from '../../dom';
 import { statsRows } from '../viewModel';
 import type { RobotTabContext, RobotTabView } from './tabView';
@@ -11,11 +10,11 @@ import type { RobotTabContext, RobotTabView } from './tabView';
 export class StatsTab implements RobotTabView {
   readonly element = h('div', 'rs-stats');
   private readonly rows = h('tbody', '');
-  private readonly robotId: number;
+  private readonly context: RobotTabContext;
   private shown: Robot['stats'] | null = null;
 
   constructor(context: RobotTabContext) {
-    this.robotId = context.robotId;
+    this.context = context;
     const table = h('table', 'rs-stats__table');
     const head = h('thead', '');
     const headRow = h('tr', '');
@@ -36,7 +35,7 @@ export class StatsTab implements RobotTabView {
   }
 
   sync(state: GameState): void {
-    const robot = findRobot(state, this.robotId);
+    const robot = this.context.robot(state);
     if (robot === null || robot.stats === this.shown) return;
     this.shown = robot.stats;
     this.rows.replaceChildren(

@@ -1,15 +1,15 @@
 /**
  * The Looks tab (farmclaws part 3 spec §3.4, §4.4): 16 paint swatches, a preview of the chosen
  * colour on a small robot, and "Paint · {cost}g". The reducer decides the job (it refuses the
- * same colour and short gold with a toast). A ruined robot's swatches are read-only.
+ * same colour and short gold with a toast). A ruined robot's swatches are read-only, and so are a
+ * workshop preview's, with no Paint button (part 4b spec §4.4).
  */
 import { ROBOT_PAINTS } from '../../../config';
 import type { GameState, Robot } from '../../../core/types';
-import { findRobot } from '../../../robots/world';
 import { actions } from '../../../state/actions';
 import { closestWithin, h, hudButton, setAttr, setHidden, setText } from '../../dom';
 import { createRobotPreview } from '../partIcons';
-import { paintButtonText, paintHex, paintName } from '../viewModel';
+import { isReadOnly, paintButtonText, paintHex, paintName } from '../viewModel';
 import type { RobotTabContext, RobotTabView } from './tabView';
 
 export class LooksTab implements RobotTabView {
@@ -59,21 +59,21 @@ export class LooksTab implements RobotTabView {
     this.paintButton.addEventListener(
       'click',
       () => {
-        this.context.dispatch(actions.paintRobot(this.context.robotId, this.selected));
+        if (this.shown !== null) this.context.dispatch(actions.paintRobot(this.shown.id, this.selected));
       },
       { signal },
     );
   }
 
   open(state: GameState): void {
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null) return;
     this.render(robot);
     this.select(robot.paint);
   }
 
   sync(state: GameState): void {
-    const robot = findRobot(state, this.context.robotId);
+    const robot = this.context.robot(state);
     if (robot === null || robot === this.shown) return;
     if (this.shown !== null && robot.paint === this.shown.paint && robot.power === this.shown.power && robot.name === this.shown.name) {
       this.shown = robot;
@@ -96,7 +96,7 @@ export class LooksTab implements RobotTabView {
 
   private render(robot: Robot): void {
     this.shown = robot;
-    const readOnly = robot.power === 'ruined';
+    const readOnly = isReadOnly(robot, this.context.mode);
     for (const swatch of this.swatches) {
       if (swatch.disabled !== readOnly) swatch.disabled = readOnly;
       swatch.classList.toggle('is-current', Number(swatch.dataset.paint) === robot.paint);

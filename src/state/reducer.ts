@@ -41,6 +41,7 @@ import {
   type SlotRef,
   type Tile,
   type TileCoord,
+  type UiPanel,
 } from '../core/types';
 import { CROPS, createCropInstance } from '../farming/crops';
 import { harvestedTile } from '../farming/harvest';
@@ -133,7 +134,7 @@ function reduceAction(state: GameState, action: GameAction): GameState {
     case 'ui/setInventoryOpen':
       return setPanelOpen(state, { kind: 'inventory' }, action.open);
     case 'ui/closePanel':
-      return state.ui.panel.kind === 'none' ? state : { ...state, ui: { ...state.ui, panel: { kind: 'none' } } };
+      return closePanel(state);
     case 'ui/notify':
       return pushMessage(state, action.text, action.tone);
     case 'shop/buy':
@@ -144,6 +145,8 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return sellPart(state, action.part);
     case 'workshop/order':
       return orderRobot(state, action.size, action.name);
+    case 'workshop/preview':
+      return previewRobot(state, action.size);
     case 'crafting/craft':
       return craft(state, action.recipe);
     case 'game/setPaused':
@@ -646,6 +649,14 @@ function cycleSlot(state: GameState, delta: number): GameState {
   return selectSlot(state, selected);
 }
 
+/** `ui/closePanel`: closes whichever panel is open, but a workshop preview goes back to the workshop (part 4b spec §4.4). */
+function closePanel(state: GameState): GameState {
+  const panel = state.ui.panel;
+  if (panel.kind === 'none') return state;
+  const next: UiPanel = panel.kind === 'robot' && panel.mode === 'preview' ? { kind: 'workshop' } : { kind: 'none' };
+  return { ...state, ui: { ...state.ui, panel: next } };
+}
+
 /**
  * Opens `panel` only when no panel is open and the game isn't paused; closes it only when that
  * kind of panel is the one open. Anything else is a no-op.
@@ -772,6 +783,15 @@ function partName(part: RobotPartId): string {
 }
 
 /**
+ * `workshop/preview` (part 4b spec §4.4): Read program swaps the workshop for the robot screen
+ * on that size's catalogue robot. Only `ui.panel` changes; closing the preview comes back.
+ */
+function previewRobot(state: GameState, size: RobotSize): GameState {
+  if (state.ui.panel.kind !== 'workshop' || state.ui.paused || !ROBOT_SIZES.includes(size)) return state;
+  return { ...state, ui: { ...state.ui, panel: { kind: 'robot', mode: 'preview', size } } };
+}
+
+/**
  * `workshop/order` (part 4b spec §4.5): pays for a robot from Juniper's workshop and queues its
  * delivery for the morning, or says why not. Only while the workshop is open and the game runs.
  */
@@ -871,7 +891,9 @@ function liftOffBench(state: GameState, robotId: number): GameState {
     { ...robot, onBench: false, carried: true },
   );
   const panel = lifted.ui.panel;
-  return panel.kind === 'robot' && panel.robotId === robot.id ? { ...lifted, ui: { ...lifted.ui, panel: { kind: 'none' } } } : lifted;
+  return panel.kind === 'robot' && panel.mode !== 'preview' && panel.robotId === robot.id
+    ? { ...lifted, ui: { ...lifted.ui, panel: { kind: 'none' } } }
+    : lifted;
 }
 
 /**

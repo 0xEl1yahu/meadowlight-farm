@@ -1,12 +1,13 @@
 /**
  * What the robot screen gives each tab, and what each tab gives back (farmclaws part 3 spec §4).
  */
-import type { GameState } from '../../../core/types';
+import type { GameState, Robot } from '../../../core/types';
 import type { GameAction } from '../../../state/actions';
 import type { RobotScreenMode } from '../viewModel';
 
 export interface RobotTabContext {
-  readonly robotId: number;
+  /** The robot shown in `state`: the panel's robot, or the catalogue robot in a preview (null when it's gone). */
+  readonly robot: (state: GameState) => Robot | null;
   readonly mode: RobotScreenMode;
   readonly dispatch: (action: GameAction) => void;
   /** The store's current state, for click handlers. */

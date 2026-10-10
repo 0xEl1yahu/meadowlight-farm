@@ -45,6 +45,8 @@ export type GameAction =
   | { readonly type: 'parts/sell'; readonly part: RobotPartId }
   /** Orders a robot from Juniper's workshop, delivered the next morning (farmclaws part 4b spec §4.5). */
   | { readonly type: 'workshop/order'; readonly size: RobotSize; readonly name: string }
+  /** Read program: opens the robot screen on a workshop robot, read-only (part 4b spec §4.4). */
+  | { readonly type: 'workshop/preview'; readonly size: RobotSize }
   /** Crafts one batch of a known recipe from the player's inventory. */
   | { readonly type: 'crafting/craft'; readonly recipe: CraftingRecipeId }
   | { readonly type: 'game/setPaused'; readonly paused: boolean }
@@ -95,6 +97,7 @@ export const actions = {
   buyPart: (part: RobotPartId): GameAction => ({ type: 'parts/buy', part }),
   sellPart: (part: RobotPartId): GameAction => ({ type: 'parts/sell', part }),
   orderRobot: (size: RobotSize, name: string): GameAction => ({ type: 'workshop/order', size, name }),
+  previewRobot: (size: RobotSize): GameAction => ({ type: 'workshop/preview', size }),
   craft: (recipe: CraftingRecipeId): GameAction => ({ type: 'crafting/craft', recipe }),
   setPaused: (paused: boolean): GameAction => ({ type: 'game/setPaused', paused }),
   setTimeScale: (timeScale: number): GameAction => ({ type: 'game/setTimeScale', timeScale }),
