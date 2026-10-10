@@ -8,16 +8,22 @@
  * cottage under each farmer's roof colour) and Cosmo's chicken coop, which with the hedges fill
  * that band (z 0–4), so they too can hide only more back band.
  *
+ * Shopfronts (farmclaws part 4b spec §7): the parts exchange's display stand, and Juniper's Mini
+ * on its stand and her crate, stand in front of the wall in the front inset; the FarmClaw posters
+ * hang on the wall. All of it stays inside the building's rect. Poster quads go into the
+ * PartSet's `posters` (one atlas mesh per map).
+ *
  * Occlusion: the camera looks from +X/+Z, so a point at height h hides the ground h units further
  * along −X and −Z. Everything stays inside its structure rect: the shops, the parts exchange and
  * the hedges fill the back band (z 0–6), so all they can hide is more back band, however tall they
  * stand; the well stays ≤ 0.9 tall and the lamp posts ≤ 0.15 wide, as the town layout allows.
  */
 import * as THREE from 'three';
-import { NEIGHBOUR_ROOFS } from '../config';
+import { NEIGHBOUR_ROOFS, ROBOT_PAINTS } from '../config';
 import { Salt, hashFloat } from '../core/hash';
 import { assertNever } from '../core/invariant';
 import type { GridSpec, StructureKind, TileCoord, TileRect } from '../core/types';
+import { WORKSHOP_ROBOTS } from '../robots/workshop';
 import { tileCenterX, tileMinX, tileMinZ } from '../world/grid';
 import type { MapDefinition, StructurePlacement } from '../world/maps';
 import { HEIGHTS } from './constants';
@@ -43,6 +49,9 @@ import {
   type WindowStyle,
 } from './geometryParts';
 import { PALETTE } from './palette';
+import { POSTER_ASPECT, posterQuad, type PosterId } from './posters';
+import { SHELL_MESHES, createRobotMeshGeometry } from './robotGeometry';
+import { EYE_COLORS, SIZE_SCALE, robotMeshes, type RobotMeshId } from './robotLayout';
 import { createFarmhouseGeometry, farmhousePlacement } from './structureGeometry';
 
 /** Integer offset added to cosmetic hash coordinates (a map's `cosmeticOffset`). */
@@ -73,6 +82,14 @@ function rectBounds(grid: GridSpec, rect: TileRect): RectBounds {
     minZ: tileMinZ(grid, rect.z0),
     maxZ: tileMinZ(grid, rect.z0 + rect.depth),
   };
+}
+
+/** Moves a building's local parts (body, glass and posters) to `origin` and appends them to `out`. */
+function placeParts(local: PartSet, origin: THREE.Vector3, out: PartSet): void {
+  const move = new THREE.Matrix4().makeTranslation(origin.x, origin.y, origin.z);
+  transformParts(local.body, move, out.body);
+  transformParts(local.glass, move, out.glass);
+  transformParts(local.posters, move, out.posters);
 }
 
 // ---------------------------------------------------------------------------
@@ -463,13 +480,12 @@ export function shopPlacement(grid: GridSpec, rect: TileRect, door: TileCoord | 
   };
 }
 
-function shopParts(grid: GridSpec, kind: ShopKind, s: StructurePlacement, out: PartSet): void {
+function shopParts(grid: GridSpec, offset: Offset, kind: ShopKind, s: StructurePlacement, out: PartSet): void {
   const { spec, origin } = shopPlacement(grid, s.rect, s.door);
   const local = createPartSet();
   createShopParts(spec, SHOP_STYLES[kind], local);
-  const move = new THREE.Matrix4().makeTranslation(origin.x, origin.y, origin.z);
-  transformParts(local.body, move, out.body);
-  transformParts(local.glass, move, out.glass);
+  if (kind === 'carpenter') workshopFrontParts(shopFrame(spec, SHOP_STYLES[kind]), (i, k) => cosmetic(offset, FEATURE.crate, s.rect.x0, i, k), local);
+  placeParts(local, origin, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -541,21 +557,74 @@ export const PARTS_EXCHANGE_SHAPE = {
   partJitter: 0.04,
   partTilt: 0.5,
   cogSides: 8,
+  /** The FarmClaw posters either side of the door: height (POSTER_ASPECT sets the width) and centre above the floor. */
+  posterHeight: 0.4,
+  posterCenterHeight: 0.95,
+  /** The display stand stands this far west of the door step, and far enough out from the wall that its parts clear the display window's sill. */
+  standGap: 0.04,
+  standWallGap: 0.18,
+  standWidth: 0.6,
+  standDepth: 0.3,
+  standHeight: 0.3,
+  standTop: 0.04,
+  /** How far the top board overhangs the stand. */
+  standLip: 0.03,
 } as const;
+
+/** The parts on the display stand, west to east: a claw, a watering head and a sensor eye, as the robot wears them, scaled up. */
+const DISPLAY_STAND_PARTS: readonly (readonly [RobotMeshId, number])[] = [['claw', 2.4], ['spout', 1.5], ['lens', 3]];
 
 const PARTS_EXCHANGE_COLORS = {
   crate: STRUCTURE_COLORS.binPlank,
   crateSlat: PALETTE.binLid,
   crateInside: 0x4a3a30,
   metals: [0xa7b0ba, 0xc98b5a, 0x7d8794] as const,
+  stand: PARTS_EXCHANGE_STYLE.trim,
+  standTop: PARTS_EXCHANGE_STYLE.roof.roof,
 } as const;
+
+/** What sticks out of a crate between its cogs: bolts at the parts exchange, planks at Juniper's. */
+type CrateFiller = 'bolt' | 'plank';
+
+/** Posters stand off the wall (clear of lap siding) on a thin board a little bigger than the poster. */
+const POSTER_SHAPE = { wallGap: 0.025, board: 0.02, border: 0.02, lift: 0.002 } as const;
+
+/** A poster on a board on the wall face at `front`, centred on (x, y). */
+function wallPosterParts(id: PosterId, x: number, y: number, front: number, height: number, board: number, out: PartSet): void {
+  const P = POSTER_SHAPE;
+  const z = front + P.wallGap;
+  out.body.push(box(height * POSTER_ASPECT + 2 * P.border, height + 2 * P.border, P.board, { x, y, z: z + P.board / 2 }, board));
+  out.posters.push(posterQuad(id, height, { x, y, z: z + P.board + P.lift }));
+}
+
+/** A robot part off its robot, recentred and scaled, standing on (x, y, z). */
+function loosePart(id: RobotMeshId, scale: number, x: number, y: number, z: number): THREE.BufferGeometry {
+  const part = createRobotMeshGeometry(id).center();
+  const lift = -(part.boundingBox?.min.y ?? 0) * scale;
+  // Turned round, so the watering head's spout points out at the street.
+  return pose(part.scale(scale, scale, scale), { x, y: y + lift, z, ry: Math.PI });
+}
+
+/** The display stand by the door: a slate plinth under a mustard top, with DISPLAY_STAND_PARTS on it. */
+function displayStandParts(x: number, front: number, out: PartSet): void {
+  const P = PARTS_EXCHANGE_SHAPE;
+  const C = PARTS_EXCHANGE_COLORS;
+  const z = front + P.standWallGap + P.standDepth / 2;
+  out.body.push(box(P.standWidth, P.standHeight, P.standDepth, { x, y: P.standHeight / 2, z }, C.stand));
+  const top = P.standHeight + P.standTop;
+  out.body.push(box(P.standWidth + 2 * P.standLip, P.standTop, P.standDepth + 2 * P.standLip, { x, y: top - P.standTop / 2, z }, C.standTop));
+  const spacing = P.standWidth / DISPLAY_STAND_PARTS.length;
+  DISPLAY_STAND_PARTS.forEach(([id, scale], i) => {
+    out.body.push(loosePart(id, scale, x + (i - (DISPLAY_STAND_PARTS.length - 1) / 2) * spacing, top, z));
+  });
+}
 
 /**
  * A crate of spare parts centred on `x` in front of the wall face at `front`: planks with two
- * slats, a dark inside and cogs and bolts poking out of it. `unit(i, k)` is a cosmetic [0, 1)
- * value for part i.
+ * slats, a dark inside and cogs and bolts (or planks) poking out of it. `unit(i, k)` is a
+ * cosmetic [0, 1) value for part i.
  */
-function partsCrateParts(x: number, front: number, unit: (i: number, k: number) => number, out: PartSet): void {
+function crateParts(x: number, front: number, filler: CrateFiller, unit: (i: number, k: number) => number, out: PartSet): void {
   const P = PARTS_EXCHANGE_SHAPE;
   const C = PARTS_EXCHANGE_COLORS;
   const z = front + P.crateWallGap + P.crateDepth / 2;
@@ -577,8 +646,13 @@ function partsCrateParts(x: number, front: number, unit: (i: number, k: number) 
       const r = P.partSize / 2;
       const cog = new THREE.CylinderGeometry(r, r, P.partThickness, P.cogSides);
       out.body.push(paint(pose(cog, { x: px, y: P.crateHeight + P.partHeight - r, z: pz, rx: Math.PI / 2, ry: tilt }), color));
-    } else {
+    } else if (filler === 'bolt') {
       out.body.push(box(P.partThickness, 2 * P.partHeight, P.partThickness, { x: px, y: P.crateHeight, z: pz, rz: tilt }, color));
+    } else {
+      // A plank standing up out of the crate, leaning.
+      const W = WORKSHOP_FRONT_SHAPE;
+      const plank = { x: px, y: P.crateHeight + W.plankRise - W.plankLength / 2, z: pz, rz: tilt };
+      out.body.push(box(W.plankWidth, W.plankLength, W.plankThickness, plank, pick(WORKSHOP_FRONT_COLORS.planks, unit(i, 3))));
     }
   }
 }
@@ -588,7 +662,8 @@ function partsCrateParts(x: number, front: number, unit: (i: number, k: number) 
  * tall with a trim band between them, the door with its awning and step, the cog-and-claw sign
  * above it, a big display window on the door's −X side, a wall lantern and a crate of parts on its
  * +X side, two shuttered windows upstairs, a window on each storey of the +X wall either side of
- * its middle, and one in the +X gable.
+ * its middle, and one in the +X gable. Its shopfront: a FarmClaw poster either side of the door
+ * and a display stand with a claw, a watering head and a sensor eye.
  */
 function createPartsExchangeParts(spec: ShopSpec, unit: (i: number, k: number) => number, out: PartSet): void {
   const S = SHOP_SHAPE;
@@ -620,7 +695,15 @@ function createPartsExchangeParts(spec: ShopSpec, unit: (i: number, k: number) =
   windowParts(display, style.window, placement.makeTranslation((displayEnd - postInner) / 2, f.base + P.displayCenterHeight, f.halfD), out);
   wallLanternParts(f.doorX + frameHalf + S.lanternGap / 2, f.base + P.lanternHeight, f.halfD, out);
   const crateX = Math.min(f.doorX + S.doorWidth / 2 + P.stepOverhang + P.crateGap + P.crateWidth / 2, postInner - P.crateWidth / 2);
-  partsCrateParts(crateX, f.halfD, unit, out);
+  crateParts(crateX, f.halfD, 'bolt', unit, out);
+
+  // The shopfront: a FarmClaw poster either side of the door (between the display window and the
+  // door frame, and below the lantern), and the display stand west of the door step.
+  const posterY = f.base + P.posterCenterHeight;
+  const displayEast = (displayEnd - postInner) / 2 + P.displayWidth / 2 + WINDOW_FRAME.frameWidth;
+  wallPosterParts('farmclawFarm', (displayEast + f.doorX - frameHalf) / 2, posterY, f.halfD, P.posterHeight, style.trim, out);
+  wallPosterParts('farmclawParts', (f.doorX + frameHalf + postInner) / 2, posterY, f.halfD, P.posterHeight, style.trim, out);
+  displayStandParts(f.doorX - S.doorWidth / 2 - P.stepOverhang - P.standGap - P.standWidth / 2, f.halfD, out);
 
   // Upstairs: two shuttered windows over the shopfront.
   const upper = { width: P.upperWindowWidth, height: P.upperWindowHeight, shutters: true, planter: false };
@@ -649,9 +732,68 @@ function partsExchangeParts(grid: GridSpec, offset: Offset, s: StructurePlacemen
   const { spec, origin } = shopPlacement(grid, s.rect, s.door);
   const local = createPartSet();
   createPartsExchangeParts(spec, (i, k) => cosmetic(offset, FEATURE.crate, s.rect.x0, i, k), local);
-  const move = new THREE.Matrix4().makeTranslation(origin.x, origin.y, origin.z);
-  transformParts(local.body, move, out.body);
-  transformParts(local.glass, move, out.glass);
+  placeParts(local, origin, out);
+}
+
+// ---------------------------------------------------------------------------
+// Juniper's workshop front
+// ---------------------------------------------------------------------------
+
+/** Juniper's shopfront on the carpenter (world units): the Mini's stand, the poster and the crate's planks. */
+export const WORKSHOP_FRONT_SHAPE = {
+  /** The Mini's low stand, this far east of the door step and this far out from the wall. */
+  standGap: 0.06,
+  standWallGap: 0.08,
+  standWidth: 0.44,
+  standDepth: 0.4,
+  standHeight: 0.1,
+  /** The poster's height and centre above the floor; it hangs between the door frame and the corner post, below the lantern. */
+  posterHeight: 0.66,
+  posterCenterHeight: 1,
+  /** The crate stands this far from the −X corner post. */
+  crateGap: 0.06,
+  plankWidth: 0.06,
+  plankLength: 0.4,
+  plankThickness: 0.018,
+  /** How far the planks rise above the crate's rim. */
+  plankRise: 0.24,
+} as const;
+
+const WORKSHOP_FRONT_COLORS = {
+  stand: 0x7a5236,
+  planks: [0xe0b27a, 0xcf9f68, 0xd9a35f] as const,
+} as const;
+
+/**
+ * Juniper's ready-made Mini, standing still on (x, y, z) facing the street: the robot model's
+ * meshes merged, the shells in the factory paint and the eyes dark (no lights, no sway).
+ */
+function displayRobotParts(x: number, y: number, z: number, out: PartSet): void {
+  const scale = SIZE_SCALE.mini;
+  for (const id of robotMeshes(WORKSHOP_ROBOTS.mini)) {
+    const mesh = createRobotMeshGeometry(id);
+    const painted = SHELL_MESHES.has(id) ? paint(mesh, ROBOT_PAINTS[0].color) : id === 'eyes' ? paint(mesh, EYE_COLORS.off) : mesh;
+    out.body.push(painted.scale(scale.width, scale.height, scale.width).translate(x, y, z));
+  }
+}
+
+/**
+ * Juniper's shopfront, in the carpenter's own space: the Mini on its low stand just east of the
+ * door step, the made-to-order poster on the wall beyond the door frame and a crate of planks and
+ * cogs by the −X corner post. All of it stays inside the front inset, as the door step does.
+ */
+function workshopFrontParts(f: ShopFrame, unit: (i: number, k: number) => number, out: PartSet): void {
+  const S = SHOP_SHAPE;
+  const W = WORKSHOP_FRONT_SHAPE;
+  const style = SHOP_STYLES.carpenter;
+  const standX = f.doorX + S.doorWidth / 2 + PARTS_EXCHANGE_SHAPE.stepOverhang + W.standGap + W.standWidth / 2;
+  const standZ = f.halfD + W.standWallGap + W.standDepth / 2;
+  out.body.push(box(W.standWidth, W.standHeight, W.standDepth, { x: standX, y: W.standHeight / 2, z: standZ }, WORKSHOP_FRONT_COLORS.stand));
+  displayRobotParts(standX, W.standHeight, standZ, out);
+  const postInner = f.halfW - S.cornerPost / 2;
+  const frameEast = f.doorX + S.doorWidth / 2 + PARTS_EXCHANGE_SHAPE.doorFrame;
+  wallPosterParts('farmclawOrder', (frameEast + postInner) / 2, f.base + W.posterCenterHeight, f.halfD, W.posterHeight, style.trim, out);
+  crateParts(-postInner + W.crateGap + PARTS_EXCHANGE_SHAPE.crateWidth / 2, f.halfD, 'plank', unit, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -910,9 +1052,7 @@ function coopParts(grid: GridSpec, s: StructurePlacement, out: PartSet): void {
   const maxZ = b.maxZ - COOP_INSET.front;
   const local = createPartSet();
   createCoopParts({ width: maxX - minX, depth: maxZ - minZ }, local);
-  const move = new THREE.Matrix4().makeTranslation((minX + maxX) / 2, HEIGHTS.grassTop, (minZ + maxZ) / 2);
-  transformParts(local.body, move, out.body);
-  transformParts(local.glass, move, out.glass);
+  placeParts(local, new THREE.Vector3((minX + maxX) / 2, HEIGHTS.grassTop, (minZ + maxZ) / 2), out);
 }
 
 // ---------------------------------------------------------------------------
@@ -923,7 +1063,7 @@ function coopParts(grid: GridSpec, s: StructurePlacement, out: PartSet): void {
 export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
   const kind = s.kind;
   if (isShopKind(kind)) {
-    shopParts(grid, kind, s, out);
+    shopParts(grid, offset, kind, s, out);
     return;
   }
   switch (kind) {

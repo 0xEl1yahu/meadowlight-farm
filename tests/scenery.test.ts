@@ -6,12 +6,15 @@
  * - nothing outside a grid hides one of its tiles (the occlusion rule);
  * - the town's structures stay inside their rects (shops, the parts exchange and hedges), low
  *   (well) or thin (lamps), and the parts exchange is a two-storey workshop;
- * - StructureRenderer keeps one scenery per map, shows only the active one and shares one
- *   glow-glass material across every map.
+ * - the parts exchange's and Juniper's shopfronts (part 4b spec §7): a display stand, a Mini on a
+ *   stand, a crate and FarmClaw posters, all inside their buildings' rects in the back band;
+ * - StructureRenderer keeps one scenery per map, shows only the active one, shares one
+ *   glow-glass material across every map and draws a map's posters in one mesh.
  */
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { Direction, MAP_IDS, Weather, type GameState, type MapId } from '../src/core/types';
+import { ROBOT_PAINTS } from '../src/config';
 import { createPartSet, type PartSet } from '../src/render/geometryParts';
 import { getSharedGlowGlassMaterial } from '../src/render/materials';
 import type { SceneContext } from '../src/render/SceneContext';
@@ -41,6 +44,8 @@ import {
   wouldBoxOccludeFarm,
   wouldOccludeFarm,
 } from '../src/render/structureGeometry';
+import { ROBOT_COLORS } from '../src/render/robotGeometry';
+import { EYE_COLORS } from '../src/render/robotLayout';
 import { StructureRenderer } from '../src/render/StructureRenderer';
 import {
   LAMP_POST_SHAPE,
@@ -57,6 +62,7 @@ import {
 import type { FrameContext } from '../src/render/types';
 import { tileCenterX, tileMinX, tileMinZ, worldRect } from '../src/world/grid';
 import { MAPS, type StructurePlacement } from '../src/world/maps';
+import { TOWN_BACK_BAND_DEPTH } from '../src/world/maps/town';
 import { BASE, withPlayer } from './testUtils';
 
 const EPS = 1e-6;
@@ -311,6 +317,24 @@ function structureBox(s: StructurePlacement): { body: THREE.Box3; glass: THREE.B
   return { body, glass, parts };
 }
 
+function boxOf(part: THREE.BufferGeometry): THREE.Box3 {
+  return new THREE.Box3().setFromBufferAttribute(part.getAttribute('position') as THREE.BufferAttribute);
+}
+
+/** Whether a painted part is `hex` all over (paint fills every vertex with one colour). */
+function paintedIn(part: THREE.BufferGeometry, hex: number): boolean {
+  const color = part.getAttribute('color');
+  if (color === undefined) return false;
+  const want = new THREE.Color(hex);
+  return Math.abs(color.getX(0) - want.r) < 1e-4 && Math.abs(color.getY(0) - want.g) < 1e-4 && Math.abs(color.getZ(0) - want.b) < 1e-4;
+}
+
+/** A shop's door and the z of its wall face, from the shop placement rule (SHOP_INSET). */
+function frontOf(s: StructurePlacement): { readonly front: number; readonly doorX: number } {
+  if (s.door === null) throw new Error(`${s.kind} has no door`);
+  return { front: tileMinZ(MAPS.town.grid, s.rect.z0 + s.rect.depth) - SHOP_INSET.front, doorX: tileCenterX(MAPS.town.grid, s.door.tx) };
+}
+
 describe('town structures', () => {
   const grid = MAPS.town.grid;
   const structures = MAPS.town.structures;
@@ -399,6 +423,62 @@ describe('town structures', () => {
     expect(crate.length).toBeGreaterThan(0);
   });
 
+  it('stands a display stand by the parts exchange door, with a claw, a watering head and a sensor eye on it', () => {
+    const s = structures.find((st) => st.kind === 'partsExchange');
+    if (s === undefined) throw new Error('no parts exchange');
+    const { front, doorX } = frontOf(s);
+    const stepWest = doorX - SHOP_SHAPE.doorWidth / 2 - PARTS_EXCHANGE_SHAPE.stepOverhang;
+    // Out in front of the wall on the door step's −X side, low, inside the rect (checked above).
+    const stand = structureBox(s).parts.body.filter((part) => {
+      const b = boxOf(part);
+      return b.min.z > front + 0.05 && b.max.x < stepWest && b.max.y < 0.8;
+    });
+    expect(stand.length).toBeGreaterThan(3);
+    for (const color of [ROBOT_COLORS.metalDark, ROBOT_COLORS.copper, ROBOT_COLORS.lens]) {
+      expect(stand.some((part) => paintedIn(part, color))).toBe(true);
+    }
+  });
+
+  it("stands a still, unlit Mini on a low stand by Juniper's door, and a crate of planks and cogs", () => {
+    const s = structures.find((st) => st.kind === 'carpenter');
+    if (s === undefined) throw new Error('no carpenter');
+    const { front, doorX } = frontOf(s);
+    const { parts } = structureBox(s);
+    const outside = parts.body.filter((part) => boxOf(part).min.z > front + 0.05);
+    // The Mini, in the factory Sunflower, beside the door step on its +X side, under 0.6 tall.
+    const shells = outside.filter((part) => paintedIn(part, ROBOT_PAINTS[0].color));
+    expect(shells).toHaveLength(2);
+    const stepEast = doorX + SHOP_SHAPE.doorWidth / 2 + PARTS_EXCHANGE_SHAPE.stepOverhang;
+    for (const shell of shells) {
+      expect(boxOf(shell).min.x).toBeGreaterThan(stepEast);
+      expect(boxOf(shell).max.y).toBeLessThan(0.6);
+    }
+    // No lights: its eyes are painted out, and nothing out front is glow glass.
+    expect(outside.some((part) => paintedIn(part, EYE_COLORS.off))).toBe(true);
+    for (const glass of parts.glass) expect(boxOf(glass).max.z).toBeLessThan(front + 0.3);
+    // The crate stands on the door's other side, low.
+    const crate = outside.filter((part) => boxOf(part).max.x < doorX - SHOP_SHAPE.doorWidth && boxOf(part).max.y < 0.7);
+    expect(crate.length).toBeGreaterThan(4);
+  });
+
+  it('keeps the posters inside their buildings, on the wall in the back band, so they hide nothing walkable', () => {
+    const backBand = tileMinZ(grid, TOWN_BACK_BAND_DEPTH);
+    for (const s of structures.filter((st) => st.kind === 'partsExchange' || st.kind === 'carpenter')) {
+      const { front } = frontOf(s);
+      const { parts } = structureBox(s);
+      expect(parts.posters.length).toBeGreaterThan(0);
+      for (const poster of parts.posters) {
+        const b = boxOf(poster);
+        expect(b.min.x).toBeGreaterThanOrEqual(tileMinX(grid, s.rect.x0) - EPS);
+        expect(b.max.x).toBeLessThanOrEqual(tileMinX(grid, s.rect.x0 + s.rect.width) + EPS);
+        expect(b.min.z).toBeGreaterThan(front);
+        expect(b.max.z).toBeLessThan(front + 0.1);
+        expect(b.max.z).toBeLessThan(backBand);
+        expect(b.min.y).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
   it('keeps the well low and the lamp posts thin, with glowing lamps', () => {
     const well = structures.find((s) => s.kind === 'well');
     if (well === undefined) throw new Error('no well');
@@ -441,12 +521,17 @@ describe('StructureRenderer', () => {
   const FOREST = withPlayer(sunny, { tx: 34, tz: 15 }, Direction.West, 'forest');
   const TOWN = withPlayer(sunny, { tx: 1, tz: 16 }, Direction.East, 'town');
 
-  function setup(): { scene: THREE.Scene; renderer: StructureRenderer; root: THREE.Object3D } {
+  function setup(): { scene: THREE.Scene; renderer: StructureRenderer; root: THREE.Object3D; atlases: THREE.Texture[] } {
     const scene = new THREE.Scene();
-    const renderer = new StructureRenderer({ scene } as unknown as SceneContext);
+    const atlases: THREE.Texture[] = [];
+    const renderer = new StructureRenderer({ scene } as unknown as SceneContext, () => {
+      const atlas = new THREE.Texture();
+      atlases.push(atlas);
+      return atlas;
+    });
     const root = scene.getObjectByName('StructureRenderer');
     if (root === undefined) throw new Error('no root group');
-    return { scene, renderer, root };
+    return { scene, renderer, root, atlases };
   }
 
   it('builds each map once, shows only the active one and stays within the draw-call budget', () => {
@@ -480,6 +565,36 @@ describe('StructureRenderer', () => {
     renderer.update(frameAt(TOWN, 23 * 60));
     expect(shared.emissiveIntensity).toBeGreaterThan(1);
     renderer.dispose();
+  });
+
+  it("draws the town's posters as one mesh with the atlas, drawing the atlas once and only for the town", () => {
+    const { renderer, root, atlases } = setup();
+    const postersOn = (id: MapId): THREE.Mesh[] => {
+      const found: THREE.Mesh[] = [];
+      root.getObjectByName(`scenery-${id}`)?.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.name === 'posters') found.push(object);
+      });
+      return found;
+    };
+    renderer.sync(FARM, null);
+    expect(atlases).toHaveLength(0);
+    renderer.sync(TOWN, null);
+    renderer.sync(FARM, null);
+    renderer.sync(TOWN, null);
+    expect(atlases).toHaveLength(1);
+    expect(postersOn('farm')).toHaveLength(0);
+    const [posters, ...others] = postersOn('town');
+    expect(others).toHaveLength(0);
+    const material = posters?.material;
+    expect(material instanceof THREE.MeshStandardMaterial && material.map === atlases[0]).toBe(true);
+    // Three quads, two triangles each.
+    expect(posters?.geometry.getAttribute('position').count).toBe(3 * 6);
+    let disposed = false;
+    atlases[0]?.addEventListener('dispose', () => {
+      disposed = true;
+    });
+    renderer.dispose();
+    expect(disposed).toBe(true);
   });
 
   it('ignores shipping off the farm and releases everything, the shared glass once, on dispose', () => {

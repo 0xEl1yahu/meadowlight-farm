@@ -9,7 +9,8 @@
  *   caller owns (and must dispose) what it receives.
  * - "Painted" parts bake linear-space colours into a `color` attribute: render them with a white
  *   material and `vertexColors: true`. {@link shade} bakes a grey instead, which multiplies an
- *   instance colour. Glass parts are unpainted and use the shared glow-glass material.
+ *   instance colour. Glass parts are unpainted and use the shared glow-glass material. Poster
+ *   parts are the exception to "no UVs": unpainted quads UV'd into the poster atlas (posters.ts).
  * - Buildings are authored facing +Z (the side the camera sees), origin on the ground at the
  *   centre of their wall footprint.
  */
@@ -56,14 +57,15 @@ export interface Pose {
   readonly rz?: number;
 }
 
-/** Body parts are painted and opaque; glass parts are unpainted and use the glow material. */
+/** Body parts are painted and opaque; glass parts are unpainted and use the glow material; posters sample the poster atlas. */
 export interface PartSet {
   readonly body: THREE.BufferGeometry[];
   readonly glass: THREE.BufferGeometry[];
+  readonly posters: THREE.BufferGeometry[];
 }
 
 export function createPartSet(): PartSet {
-  return { body: [], glass: [] };
+  return { body: [], glass: [], posters: [] };
 }
 
 export function at<T>(list: ArrayLike<T>, index: number): T {

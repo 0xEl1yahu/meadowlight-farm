@@ -19,11 +19,14 @@
  *   puffs, the lid while it is animating and the coin while it is shown.
  * - The shared glow-glass material (materials.ts) is never disposed per map; dispose() releases
  *   it once, with every cached map's resources.
+ * - A map's posters (the town's FarmClaw ads) are merged into one mesh with one material over
+ *   the poster atlas (posters.ts). The atlas is drawn once, for the first map with posters, and
+ *   shared; dispose() releases it.
  *
  * Draw calls on the active map: painted body (farmstead or town structures and wall, merged,
- * vertex-coloured), glow glass, meadow (with its trails), trunks, two canopy species, bushes,
- * flower leaves and blossoms; plus fence posts and rails, bin lid, coin and smoke on the farm —
- * at most fourteen, whatever the size of the woodland.
+ * vertex-coloured), glow glass, posters, meadow (with its trails), trunks, two canopy species,
+ * bushes, flower leaves and blossoms; plus fence posts and rails, bin lid, coin and smoke on the
+ * farm — at most fourteen, whatever the size of the woodland.
  */
 import * as THREE from 'three';
 import { TIME, type FarmLayout } from '../config';
@@ -42,6 +45,7 @@ import {
   sharedUniforms,
 } from './materials';
 import { PALETTE } from './palette';
+import { createPosterAtlas } from './posters';
 import type { SceneContext } from './SceneContext';
 import { createTrailGeometry, layoutWall, planScenery, wallParts, type SceneryPlan } from './sceneryGeometry';
 import {
@@ -504,8 +508,8 @@ function buildSurroundings(
   if (plan.wall) wallParts(layoutWall(meadow.bounds, meadow.topY, plan.gaps, def.cosmeticOffset), parts.body);
 }
 
-/** Everything static on one map, in a group of its own. */
-function buildScenery(def: MapDefinition): StaticScenery {
+/** Everything static on one map, in a group of its own. `posterMaterial` is asked for only when the map has posters. */
+function buildScenery(def: MapDefinition, posterMaterial: () => THREE.Material): StaticScenery {
   const bag = new ResourceBag();
   const group = new THREE.Group();
   group.name = `scenery-${def.id}`;
@@ -530,6 +534,12 @@ function buildScenery(def: MapDefinition): StaticScenery {
     glass.name = 'glow-glass';
     group.add(glass);
   }
+  if (parts.posters.length > 0) {
+    const posters = new THREE.Mesh(bag.geometry(mergeParts(parts.posters, `${def.id} posters`)), posterMaterial());
+    posters.name = 'posters';
+    posters.receiveShadow = true;
+    group.add(posters);
+  }
   return { mapId: def.id, group, bag, farmstead };
 }
 
@@ -537,8 +547,14 @@ function buildScenery(def: MapDefinition): StaticScenery {
 // Render system
 // ---------------------------------------------------------------------------
 
+/** Draws the poster atlas; StructureRenderer calls it once, for the first map with posters. */
+export type PosterAtlasFactory = () => THREE.Texture;
+
 export class StructureRenderer implements RenderSystem {
   private readonly ctx: SceneContext;
+  private readonly makePosterAtlas: PosterAtlasFactory;
+  /** The atlas and its material, shared by every map's posters (null until a map has posters). */
+  private posterMaterial: THREE.MeshStandardMaterial | null = null;
   private readonly root: THREE.Group;
   /** Every visited map's scenery, built on the first visit and kept (hidden) while elsewhere. */
   private readonly sceneries = new Map<MapId, StaticScenery>();
@@ -555,8 +571,10 @@ export class StructureRenderer implements RenderSystem {
   /** Smoothed window glow; −1 snaps to the target on the next frame. */
   private glow = -1;
 
-  constructor(ctx: SceneContext) {
+  /** `makePosterAtlas` draws the posters; tests pass a stand-in, as node has no canvas. */
+  constructor(ctx: SceneContext, makePosterAtlas: PosterAtlasFactory = createPosterAtlas) {
     this.ctx = ctx;
+    this.makePosterAtlas = makePosterAtlas;
     this.root = new THREE.Group();
     this.root.name = 'StructureRenderer';
     ctx.scene.add(this.root);
@@ -598,6 +616,9 @@ export class StructureRenderer implements RenderSystem {
     }
     this.sceneries.clear();
     this.active = null;
+    this.posterMaterial?.map?.dispose();
+    this.posterMaterial?.dispose();
+    this.posterMaterial = null;
     disposeSharedGlowGlassMaterial();
     this.ctx.scene.remove(this.root);
   }
@@ -619,7 +640,7 @@ export class StructureRenderer implements RenderSystem {
 
     let scenery = this.sceneries.get(def.id);
     if (scenery === undefined) {
-      scenery = buildScenery(def);
+      scenery = buildScenery(def, () => (this.posterMaterial ??= createFlatMaterial(0xffffff, { map: this.makePosterAtlas() })));
       this.sceneries.set(def.id, scenery);
       this.root.add(scenery.group);
     }
