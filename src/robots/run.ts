@@ -70,9 +70,9 @@ function choose(state: GameState, robot: Robot): Choice | null {
 }
 
 /**
- * One minute (state.time.minuteOfDay is the minute being processed): every due robot chooses
- * against the state at the start of the minute; robots that can't pay go flat; successful
- * tile actions on a shared tile bicker; successful moves that bump (findBumps, from the
+ * One minute (state.time.minuteOfDay is the minute being processed): every due robot, on
+ * either map, chooses against the state at the start of the minute; robots that can't pay go
+ * flat; successful tile actions on a tile of the same map bicker; successful moves that bump (findBumps, from the
  * start-of-minute positions, part 3 spec §3.1) are applied as bumps; the rest are re-planned
  * (with the same kept items) and applied in id order, block-program turns with no tile action
  * among them. Re-planning never turns a move into a bump or out of one.
@@ -93,7 +93,8 @@ export function runRobotsMinute(state: GameState): GameState {
   const byTile = new Map<string, number[]>();
   for (const choice of chosen) {
     if (choice.kind !== 'act' || !choice.plan.ok || !BICKER_ACTIONS.has(choice.plan.action.kind)) continue;
-    const key = `${choice.plan.target.tx},${choice.plan.target.tz}`;
+    // Robots only bicker over a tile of the map they share (part 4c spec §5.1).
+    const key = `${requireRobot(state, choice.id).mapId},${choice.plan.target.tx},${choice.plan.target.tz}`;
     byTile.set(key, [...(byTile.get(key) ?? []), choice.id]);
   }
   const rivals = new Map<number, readonly number[]>();
@@ -106,7 +107,7 @@ export function runRobotsMinute(state: GameState): GameState {
   for (const choice of chosen) {
     if (choice.kind !== 'act' || !choice.plan.ok || choice.plan.action.kind !== 'move') continue;
     const robot = requireRobot(state, choice.id);
-    moves.push({ id: choice.id, from: { tx: robot.tx, tz: robot.tz }, to: choice.plan.target });
+    moves.push({ id: choice.id, mapId: robot.mapId, from: { tx: robot.tx, tz: robot.tz }, to: choice.plan.target });
   }
   const bumps = findBumps(state, moves);
 

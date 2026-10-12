@@ -16,6 +16,7 @@ import {
   type SeedItemId,
 } from '../../core/types';
 import { getItem, sellBackPrice } from '../../items/items';
+import { playerRobotCount } from '../../robots/create';
 import { suggestedName } from '../../robots/workshop';
 import { countItem } from '../../state/inventory';
 import { partsLeft, robotsLeft, seedsLeft } from '../../state/selectors';
@@ -98,7 +99,7 @@ export interface WorkshopCard {
 
 export interface WorkshopView {
   readonly gold: number;
-  /** "{n} / 12 robots": robots on the farm plus deliveries due. */
+  /** "{n} / 12 robots": the player's robots plus deliveries due. */
   readonly count: string;
   /** One card per size, with how many Juniper has left to build today. */
   readonly cards: readonly (WorkshopCard & StockLabel)[];
@@ -124,7 +125,7 @@ export function workshopView(state: GameState): WorkshopView {
   const { list, deliveries } = state.robots;
   return {
     gold: state.player.gold,
-    count: `${list.length + deliveries.length} / ${ROBOTS.maxRobots} robots`,
+    count: `${playerRobotCount(list) + deliveries.length} / ${ROBOTS.maxRobots} robots`,
     cards: WORKSHOP_CARDS.map((card) => ({ ...card, ...stockLabel(robotsLeft(state, card.size), 'Sold out today') })),
     suggestedName: suggestedName(state),
   };

@@ -2,9 +2,9 @@
  * Expression evaluation and sensors (farmclaws part 2 spec §5.1 "Expressions"). Pure.
  *
  * Expressions are read against `state` and the robot as they are at the start of the minute.
- * Sensors read the robot's own tile unless they say "ahead". The program has passed
- * `checkProgram`, so every expression has the type its socket needs; a mismatch here is an
- * invariant failure, never a player-facing error.
+ * Sensors read the robot's own tile, on its own map, unless they say "ahead". The program has
+ * passed `checkProgram`, so every expression has the type its socket needs; a mismatch here is
+ * an invariant failure, never a player-facing error.
  */
 import { ROBOTS } from '../config';
 import { invariant } from '../core/invariant';
@@ -22,12 +22,12 @@ import {
   type Value,
 } from '../core/types';
 import { isMature } from '../farming/crops';
-import { stepTile } from '../world/grid';
+import { inBounds, stepTile } from '../world/grid';
 import { getTile, isSoil, isWalkable, requireTile } from '../world/tiles';
 import { bagCount } from './bag';
-import { farmContains, literalValue } from './program';
+import { literalValue } from './program';
 import { bagStacks } from './stats';
-import { robotsOnTile } from './world';
+import { robotWorld, robotsOnTile } from './world';
 import { inZone, tileAheadOf, zoneOf } from './zones';
 
 export interface EvalContext {
@@ -62,12 +62,14 @@ function sameValue(a: Value, b: Value): boolean {
 }
 
 /**
- * The tile ahead as a Tile value. Values only ever hold farm tiles, so a robot facing off the
- * farm's edge gets its own tile (the tile ahead clamped onto the farm).
+ * The tile ahead as a Tile value. Values only ever hold tiles of the robot's map, so a robot
+ * facing off its map's edge gets its own tile (the tile ahead clamped onto the map). The
+ * Neighbours map fits inside the farm's grid, so every such tile is also a farm tile, which is
+ * what tile values are checked against.
  */
-function tileAheadValue(robot: Robot): TileCoord {
+function tileAheadValue(state: GameState, robot: Robot): TileCoord {
   const ahead = tileAheadOf(robot);
-  return farmContains(ahead.tx, ahead.tz) ? ahead : { tx: robot.tx, tz: robot.tz };
+  return inBounds(robotWorld(state, robot).grid, ahead.tx, ahead.tz) ? ahead : { tx: robot.tx, tz: robot.tz };
 }
 
 const number = (value: number): Value => ({ type: 'number', value });
@@ -75,7 +77,7 @@ const yesNo = (value: boolean): Value => ({ type: 'yesNo', value });
 
 export function evaluate(expr: Expr, ctx: EvalContext): Value {
   const { state, robot } = ctx;
-  const own = (): Tile => requireTile(state.maps.farm, robot.tx, robot.tz);
+  const own = (): Tile => requireTile(robotWorld(state, robot), robot.tx, robot.tz);
   switch (expr.kind) {
     case 'num':
     case 'text':
@@ -92,7 +94,7 @@ export function evaluate(expr: Expr, ctx: EvalContext): Value {
     case 'myTile':
       return { type: 'tile', value: { tx: robot.tx, tz: robot.tz } };
     case 'tileAhead':
-      return { type: 'tile', value: tileAheadValue(robot) };
+      return { type: 'tile', value: tileAheadValue(state, robot) };
     case 'tokensLeft':
       return number(robot.tokens);
     case 'countInBag':
@@ -143,11 +145,11 @@ export function evaluate(expr: Expr, ctx: EvalContext): Value {
       return yesNo(robot.tokens < numberOf(expr.n, ctx));
     case 'tileAheadIs': {
       const ahead = tileAheadOf(robot);
-      const tile = getTile(state.maps.farm, ahead.tx, ahead.tz);
+      const tile = getTile(robotWorld(state, robot), ahead.tx, ahead.tz);
       const water = tile !== null && tile.blocker === Blocker.Water;
       const clear = tile !== null && isWalkable(tile);
       // A standing robot ahead blocks the tile (part 3 spec §3.1), so a program can look before it moves.
-      const robotAhead = robotsOnTile(state, ahead.tx, ahead.tz).length > 0;
+      const robotAhead = robotsOnTile(state, robot.mapId, ahead.tx, ahead.tz).length > 0;
       if (expr.what === 'water') return yesNo(water);
       if (expr.what === 'clear') return yesNo(clear && !robotAhead);
       return yesNo(robotAhead || (!water && !clear));

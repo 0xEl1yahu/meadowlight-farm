@@ -21,6 +21,8 @@ import {
   type PlaceableItemId,
   type PlacedObject,
   type Quality,
+  type Robot,
+  type RobotOwner,
   type TileCoord,
   type ZoneId,
   type ZoneRect,
@@ -36,7 +38,7 @@ import { isReservedTile, mapSeed } from '../world/maps';
 import { isFenceTile } from '../world/maps/neighbours';
 import { getTile, isSoil, isWalkable } from '../world/tiles';
 import { capacityFor, hasTool, selectedStack } from './inventory';
-import { isZoneMarkerSelected, selectActiveMap, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
+import { isZoneMarkerSelected, selectActiveMap, selectActiveRobotMapId, selectActiveWorld, selectScatterPatch, selectTargetTile } from './selectors';
 
 export type Intent =
   | { readonly kind: 'till' }
@@ -302,6 +304,17 @@ const PART_OF_THE_FARM = "It's part of the farm.";
 /** The pickaxe's and the axe's answer at the neighbours' fences (part 4a plan refinement R9). */
 const THE_NEIGHBOURS = 'That belongs to the neighbours.';
 
+/** The answer for a neighbour's robot the player can't carry or bench (part 4c spec §5.2). */
+export function othersRobot(owner: Exclude<RobotOwner, 'player'>): string {
+  return `That's ${CAST[owner].name}'s robot.`;
+}
+
+/** The robots standing on `target` of the active map, lowest id first: none off the robots' maps. */
+function robotsAhead(state: GameState, target: TileCoord): readonly Robot[] {
+  const mapId = selectActiveRobotMapId(state);
+  return mapId === null ? [] : robotsOnTile(state, mapId, target.tx, target.tz);
+}
+
 /** The empty workbench's hint and toast (part 3 spec §2.2). */
 const EMPTY_BENCH = 'Bring a robot here to work on it';
 
@@ -356,7 +369,7 @@ export function placementProblem(state: GameState, itemId: PlaceableItemId, targ
   if (isFarmOnlyPlaceable(itemId) && state.player.mapId !== 'farm') return `The ${getItem(itemId).name.toLowerCase()} belongs on your farm.`;
   if (npcAt(state.player.mapId, target.tx, target.tz) !== null) return "Someone's standing there.";
   if (isReservedTile(selectActiveMap(state), target.tx, target.tz)) return 'Keep this spot clear.';
-  if (state.player.mapId === 'farm' && robotsOnTile(state, target.tx, target.tz).length > 0) return "There's a robot in the way.";
+  if (robotsAhead(state, target).length > 0) return "There's a robot in the way.";
   if (tile.object !== null || tile.state === TileState.Blocked || tile.crop !== null) return "There's something in the way.";
   if (itemId === 'woodPath' || itemId === 'stonePath') {
     return tile.state === TileState.Unplowed ? null : 'Paths go on grass.';
@@ -448,20 +461,24 @@ function planCarry(state: GameState, robotId: number): ActionPlan {
   }
   if (isWalkable(tile) && !isReservedTile(selectActiveMap(state), target.tx, target.tz)) {
     // No new shared tiles (part 3 spec §3.1).
-    if (state.player.mapId === 'farm' && robotsOnTile(state, target.tx, target.tz).length > 0) return blocked(target, 'place', "There's a robot there.");
+    if (robotsAhead(state, target).length > 0) return blocked(target, 'place', "There's a robot there.");
     return plan(target, { kind: 'putDownRobot', robotId, name: robot.name }, 'place');
   }
   return blocked(target, 'place', openGround);
 }
 
-/** A robot on the target tile (lowest id): pick it up for carry energy. Null when there's none. */
+/**
+ * A robot on the target tile (lowest id): pick it up for carry energy. Null when there's none. A
+ * neighbour's robot is theirs: it can't be picked up, so it can't be carried, benched or sent
+ * for repair either (part 4c spec §5.2).
+ */
 function planPickUpRobot(state: GameState, target: TileCoord): ActionPlan | null {
-  if (state.player.mapId !== 'farm') return null;
-  const robot = robotsOnTile(state, target.tx, target.tz)[0];
+  const robot = robotsAhead(state, target)[0];
   if (robot === undefined) return null;
+  if (robot.owner !== 'player') return blocked(target, 'none', othersRobot(robot.owner));
   const energy = carryEnergyFor(robot);
   if (state.player.energy < energy) return blocked(target, 'harvest', `You're too tired to carry ${robot.name}.`);
-  const fromWater = getTile(state.maps.farm, target.tx, target.tz)?.blocker === Blocker.Water;
+  const fromWater = getTile(selectActiveWorld(state), target.tx, target.tz)?.blocker === Blocker.Water;
   return plan(target, { kind: 'pickUpRobot', robotId: robot.id, name: robot.name, fromWater }, 'harvest', energy);
 }
 
@@ -564,8 +581,9 @@ export function planPrimaryAction(state: GameState): ActionPlan {
  * Plan for Shift + an interact key (part 3 spec §2.3), decided in this order:
  *   1. a character ahead: talk, as E does (part 4a spec §3.1);
  *   2. the workbench ahead: exactly what E does there;
- *   3. a standing robot ahead (on the farm, not carried, at repairs or on the bench): peek at
- *      it, which costs nothing and changes nothing but the open panel;
+ *   3. a standing robot ahead (on the active map, not carried, at repairs or on the bench, a
+ *      neighbour's too): peek at it, which costs nothing and changes nothing but the open
+ *      panel;
  *   4. the zone marker selected: clear the current letter's zone (spec §8);
  *   5. otherwise nothing, silently.
  */
@@ -575,8 +593,8 @@ export function planShiftInteraction(state: GameState): ActionPlan {
   const target = selectTargetTile(state);
   const tile = target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile?.object?.kind === 'workbench') return planInteraction(state);
-  if (target !== null && state.player.mapId === 'farm') {
-    const robot = robotsOnTile(state, target.tx, target.tz)[0];
+  if (target !== null) {
+    const robot = robotsAhead(state, target)[0];
     if (robot !== undefined) return plan(target, { kind: 'peekRobot', robotId: robot.id, name: robot.name }, 'none');
   }
   if (isZoneMarkerSelected(state)) return planClearZone(state, target);

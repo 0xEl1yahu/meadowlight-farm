@@ -28,6 +28,7 @@ import { getTile, isWalkable } from '../world/tiles';
 import { clampNumber, evaluate, type EvalContext } from './eval';
 import { resolveList } from './program';
 import { canEnter, nextRouteAction, planRoute, reachableFrom } from './route';
+import { robotWorld } from './world';
 import { snakeTiles, zoneOf } from './zones';
 
 /** A route the interpreter abandoned this turn, for the caller to log as `gaveUp`. */
@@ -166,7 +167,7 @@ export function stepProgram(state: GameState, robot: Robot): Step {
     let reach: ReadonlySet<string> | null = null;
     for (let i = from; i < tiles.length; i++) {
       const coord = tiles[i];
-      const tile = coord === undefined ? null : getTile(state.maps.farm, coord.tx, coord.tz);
+      const tile = coord === undefined ? null : getTile(robotWorld(state, robot), coord.tx, coord.tz);
       if (coord === undefined || tile === null || !isWalkable(tile)) continue;
       reach ??= reachableFrom(state, robot);
       if (reach.has(`${coord.tx},${coord.tz}`)) return i;

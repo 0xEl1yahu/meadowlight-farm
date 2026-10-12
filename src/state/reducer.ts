@@ -55,7 +55,7 @@ import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
 import { npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
-import { ROBOT_CAP_RULE, ROBOT_NAME_RULE } from '../robots/create';
+import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
 import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runRobotsThrough } from '../robots/run';
@@ -853,7 +853,7 @@ function orderRobot(state: GameState, size: RobotSize, name: string): GameState 
   if (robotsLeft(state, size) === 0) return pushMessage(state, 'Sold out today. Juniper builds another tomorrow.', 'warn');
   if (!isValidName(name)) return pushMessage(state, ROBOT_NAME_RULE, 'warn');
   if (state.player.gold < price) return pushMessage(state, `You need ${price}g.`, 'warn');
-  if (robots.list.length + robots.deliveries.length >= ROBOTS.maxRobots) return pushMessage(state, ROBOT_CAP_RULE, 'warn');
+  if (playerRobotCount(robots.list) + robots.deliveries.length >= ROBOTS.maxRobots) return pushMessage(state, ROBOT_CAP_RULE, 'warn');
   const sold = state.shopsSoldToday;
   const next: GameState = {
     ...state,

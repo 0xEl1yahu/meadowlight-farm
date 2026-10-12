@@ -3,17 +3,18 @@
  * minute from the positions at the start of the minute, whatever the robots' ids. Pure.
  */
 import { invariant } from '../core/invariant';
-import type { GameState, Robot, TileCoord, Trigger } from '../core/types';
+import type { GameState, Robot, RobotMapId, TileCoord, Trigger } from '../core/types';
 import { robotsOnTile } from './world';
 
-/** A chosen move this minute whose plan is ok: robot `id` from `from` onto `to`. */
+/** A chosen move this minute whose plan is ok: robot `id` from `from` onto `to`, both on `mapId`. */
 export interface MoveIntent {
   readonly id: number;
+  readonly mapId: RobotMapId;
   readonly from: TileCoord;
   readonly to: TileCoord;
 }
 
-const keyOf = (c: TileCoord): string => `${c.tx},${c.tz}`;
+const keyOf = (mapId: RobotMapId, c: TileCoord): string => `${mapId},${c.tx},${c.tz}`;
 const same = (a: TileCoord, b: TileCoord): boolean => a.tx === b.tx && a.tz === b.tz;
 
 /**
@@ -22,19 +23,23 @@ const same = (a: TileCoord, b: TileCoord): boolean => a.tx === b.tx && a.tz === 
  * - Swap: two moves that would trade tiles, into each other.
  * - Into a robot that stays, repeated until nothing changes: a move onto a tile where a standing
  *   robot has no move left that hasn't bumped, into the lowest such id.
- * Every other move goes ahead, so a line of robots moving the same way all move.
+ * Every other move goes ahead, so a line of robots moving the same way all move. Robots only
+ * bump robots on their own map (part 4c spec §5.1).
  */
 export function findBumps(state: GameState, moves: readonly MoveIntent[]): ReadonlyMap<number, number> {
   const bumped = new Map<number, number>();
   const byTarget = new Map<string, MoveIntent[]>();
-  for (const move of moves) byTarget.set(keyOf(move.to), [...(byTarget.get(keyOf(move.to)) ?? []), move]);
+  for (const move of moves) {
+    const key = keyOf(move.mapId, move.to);
+    byTarget.set(key, [...(byTarget.get(key) ?? []), move]);
+  }
   for (const group of byTarget.values()) {
     if (group.length < 2) continue;
     for (const move of group) bumped.set(move.id, Math.min(...group.filter((m) => m.id !== move.id).map((m) => m.id)));
   }
   for (const move of moves) {
     if (bumped.has(move.id)) continue;
-    const swap = moves.find((m) => m.id !== move.id && same(m.from, move.to) && same(m.to, move.from));
+    const swap = moves.find((m) => m.id !== move.id && m.mapId === move.mapId && same(m.from, move.to) && same(m.to, move.from));
     if (swap !== undefined) bumped.set(move.id, swap.id);
   }
   const moving = new Set(moves.map((m) => m.id));
@@ -44,7 +49,7 @@ export function findBumps(state: GameState, moves: readonly MoveIntent[]): Reado
     for (const move of moves) {
       if (bumped.has(move.id)) continue;
       // robotsOnTile lists the standing robots lowest id first.
-      const stays = robotsOnTile(state, move.to.tx, move.to.tz).find((r) => !moving.has(r.id) || bumped.has(r.id));
+      const stays = robotsOnTile(state, move.mapId, move.to.tx, move.to.tz).find((r) => !moving.has(r.id) || bumped.has(r.id));
       if (stays === undefined) continue;
       bumped.set(move.id, stays.id);
       changed = true;

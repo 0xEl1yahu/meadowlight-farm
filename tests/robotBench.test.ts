@@ -127,7 +127,7 @@ describe('putting a robot on the bench', () => {
     });
     expect(next.ui.panel).toEqual({ kind: 'robot', robotId: 1, mode: 'bench' });
     expect(robotOnBench(next)?.id).toBe(1);
-    expect(robotsOnTile(next, HOME.tx, HOME.tz)).toEqual([]);
+    expect(robotsOnTile(next, 'farm', HOME.tx, HOME.tz)).toEqual([]);
   });
 
   it('works with Space too', () => {

@@ -135,12 +135,12 @@ describe('who bumps', () => {
   it('findBumps reads the start-of-minute positions and repeats the rule until nothing changes', () => {
     const state = farmWith([bot(1, 4, Direction.East), bot(2, 5, Direction.East), bot(3, 7, Direction.West)]);
     const convoy = [
-      { id: 1, from: { tx: 4, tz: ROW }, to: { tx: 5, tz: ROW } },
-      { id: 2, from: { tx: 5, tz: ROW }, to: { tx: 6, tz: ROW } },
+      { id: 1, mapId: 'farm' as const, from: { tx: 4, tz: ROW }, to: { tx: 5, tz: ROW } },
+      { id: 2, mapId: 'farm' as const, from: { tx: 5, tz: ROW }, to: { tx: 6, tz: ROW } },
     ];
     expect(findBumps(state, convoy).size).toBe(0);
     // Robot 3 heads for the same tile as robot 2: both bump, and then robot 1 bumps into robot 2.
-    const meeting = [...convoy, { id: 3, from: { tx: 7, tz: ROW }, to: { tx: 6, tz: ROW } }];
+    const meeting = [...convoy, { id: 3, mapId: 'farm' as const, from: { tx: 7, tz: ROW }, to: { tx: 6, tz: ROW } }];
     expect([...findBumps(state, meeting)]).toEqual([
       [2, 3],
       [3, 2],
@@ -308,8 +308,8 @@ describe('seeing and avoiding robots', () => {
 
   it('nearestFreeWalkable counts the robot itself as no obstacle', () => {
     const state = farmWith([robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', tx: TARGET.tx + 1 })]);
-    expect(nearestFreeWalkable(state, TARGET, 1)).toEqual(TARGET);
-    expect(nearestFreeWalkable(state, TARGET, 2)).toEqual({ tx: TARGET.tx, tz: TARGET.tz - 1 });
+    expect(nearestFreeWalkable(state, 'farm', TARGET, 1)).toEqual(TARGET);
+    expect(nearestFreeWalkable(state, 'farm', TARGET, 2)).toEqual({ tx: TARGET.tx, tz: TARGET.tz - 1 });
   });
 
   it('keeps the pair preset bickering without ever bumping', () => {

@@ -9,6 +9,7 @@ import { hash32 } from '../core/hash';
 import { defined } from '../core/invariant';
 import { NPC_IDS, SEASON_NAMES, type GameState, type NpcId, type Robot, type RobotPower } from '../core/types';
 import { getItem } from '../items/items';
+import { playerRobotCount } from '../robots/create';
 import { robotOnBench } from '../robots/workbench';
 import { countItem } from '../state/inventory';
 import { weatherWaters } from '../time/weather';
@@ -164,9 +165,9 @@ export function reactiveFill(state: GameState, when: ReactiveKind): LineFill | n
         ? HOLDS
         : null;
     case 'noRobots':
-      return state.robots.list.length === 0 ? HOLDS : null;
+      return playerRobotCount(state.robots.list) === 0 ? HOLDS : null;
     case 'manyRobots':
-      return state.robots.list.length >= PEOPLE.manyRobots ? HOLDS : null;
+      return playerRobotCount(state.robots.list) >= PEOPLE.manyRobots ? HOLDS : null;
     case 'noSeeds':
       return state.inventory.slots.some((slot) => slot !== null && getItem(slot.itemId).kind === 'seed')
         ? null
@@ -196,11 +197,14 @@ export function lineFor(state: GameState, npc: NpcId): string {
   return defined(bank.everyday[index], `${npc} has an everyday line ${index}`);
 }
 
-/** The robot with `power` and the lowest id. The list is kept in id order, but this doesn't rely on it. */
+/**
+ * The player's robot with `power` and the lowest id (the neighbours look after their own). The
+ * list is kept in id order, but this doesn't rely on it.
+ */
 function lowestIdWith(state: GameState, power: RobotPower): Robot | null {
   let lowest: Robot | null = null;
   for (const robot of state.robots.list) {
-    if (robot.power === power && (lowest === null || robot.id < lowest.id)) lowest = robot;
+    if (robot.owner === 'player' && robot.power === power && (lowest === null || robot.id < lowest.id)) lowest = robot;
   }
   return lowest;
 }

@@ -7,6 +7,7 @@ import type {
   ChestSlots,
   GameState,
   MapId,
+  RobotMapId,
   RobotSize,
   SeedItemId,
   Tile,
@@ -26,6 +27,12 @@ import { selectedStack } from './inventory';
 /** The map the player stands on. */
 export function selectActiveMapId(state: GameState): MapId {
   return state.player.mapId;
+}
+
+/** The map the player stands on when robots live there (the farm or the Neighbours), else null. */
+export function selectActiveRobotMapId(state: GameState): RobotMapId | null {
+  const mapId = state.player.mapId;
+  return mapId === 'farm' || mapId === 'neighbours' ? mapId : null;
 }
 
 /** The world of the map the player stands on. */

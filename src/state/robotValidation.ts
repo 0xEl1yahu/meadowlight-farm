@@ -29,13 +29,13 @@ import {
   type Robot,
   type RobotAction,
   type RobotExec,
+  type RobotMapId,
   type RobotPartId,
   type RobotProgram,
   type RobotStatCounts,
   type TileCoord,
   type Trigger,
   type ValueType,
-  type WorldState,
 } from '../core/types';
 import { isItemId } from '../items/items';
 import { BLOCK_KINDS } from '../robots/blockKinds';
@@ -594,7 +594,17 @@ function isValidLogEvent(v: unknown): boolean {
   }
 }
 
-function isValidLog(v: unknown, farm: WorldState): boolean {
+/** The map a log entry's tile is on: its robot's, or the farm for a robot no longer in the list. */
+function logMapOf(robotMaps: ReadonlyMap<number, RobotMapId>, robotId: number): RobotMapId {
+  return robotMaps.get(robotId) ?? 'farm';
+}
+
+/**
+ * The log: ids ascending below nextId, each entry well formed, its tile on the map of the robot
+ * it names (`robotMaps`), or on the farm for a robot no longer in the list (only the player's
+ * robots are scrapped).
+ */
+function isValidLog(v: unknown, maps: GameState['maps'], robotMaps: ReadonlyMap<number, RobotMapId>): boolean {
   if (!isObj(v) || !hasExactKeys(v, ['nextId', 'entries']) || !isCount(v.nextId) || !Array.isArray(v.entries)) return false;
   if (v.entries.length > ROBOTS.logCapacity) return false;
   let previous = -1;
@@ -608,7 +618,7 @@ function isValidLog(v: unknown, farm: WorldState): boolean {
       !isIntIn(entry.robotId, 1, MAX) ||
       !isInt(entry.tx) ||
       !isInt(entry.tz) ||
-      !inBounds(farm.grid, entry.tx, entry.tz) ||
+      !inBounds(maps[logMapOf(robotMaps, entry.robotId)].grid, entry.tx, entry.tz) ||
       !isIntIn(entry.count, 1, MAX) ||
       !isValidLogEvent(entry.event)
     ) {
@@ -720,5 +730,6 @@ export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player
   if (players + v.deliveries.length > ROBOTS.maxRobots) return false;
   const fuel = v.lastNightFuel;
   if (!isCount(v.pool) || !isObj(fuel) || !hasExactKeys(fuel, ['wood', 'tokens']) || !isCount(fuel.wood) || !isCount(fuel.tokens)) return false;
-  return isValidLog(v.log, maps.farm) && burnersOnlyOnFarm(maps) && oneWorkbench(maps);
+  const robotMaps = new Map((v.list as readonly Robot[]).map((robot) => [robot.id, robot.mapId] as const));
+  return isValidLog(v.log, maps, robotMaps) && burnersOnlyOnFarm(maps) && oneWorkbench(maps);
 }

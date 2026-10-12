@@ -10,9 +10,10 @@ import { getItem } from '../items/items';
 import { formatClock } from '../time/clock';
 import { weatherWaters } from '../time/weather';
 import { chebyshevDistance } from '../world/grid';
-import { forEachTile, getTile } from '../world/tiles';
+import { getTile } from '../world/tiles';
 import { reachableInOrder } from './route';
 import { bagStacks } from './stats';
+import { generatorTiles, robotWorld } from './world';
 import { inZone, tileAheadOf, zoneOf } from './zones';
 
 /** The first card that forbids one step from `from` to `to` (`dontLeave`, `dontGoIntoWater`), or null. */
@@ -22,7 +23,7 @@ export function moveForbiddenBy(robot: Robot, from: TileCoord, to: TileCoord, st
       const rect = zoneOf(state, card.zone);
       if (rect !== null && inZone(rect, from.tx, from.tz) && !inZone(rect, to.tx, to.tz)) return card;
     } else if (card.kind === 'dontGoIntoWater') {
-      if (getTile(state.maps.farm, to.tx, to.tz)?.blocker === Blocker.Water) return card;
+      if (getTile(robotWorld(state, robot), to.tx, to.tz)?.blocker === Blocker.Water) return card;
     }
   }
   return null;
@@ -45,7 +46,7 @@ export function dontForbids(state: GameState, robot: Robot, action: RobotAction)
     case 'move':
       return moveForbiddenBy(robot, { tx: robot.tx, tz: robot.tz }, tileAheadOf(robot), state);
     case 'harvest': {
-      const crop = getTile(state.maps.farm, robot.tx, robot.tz)?.crop ?? null;
+      const crop = getTile(robotWorld(state, robot), robot.tx, robot.tz)?.crop ?? null;
       if (crop === null) return null;
       return robot.md.find((card) => card.kind === 'dontHarvest' && card.cropId === crop.cropId) ?? null;
     }
@@ -101,24 +102,16 @@ export function dueReturnCard(state: GameState, robot: Robot): { readonly card: 
   return best === null ? null : { card: best.card, index: best.index };
 }
 
-/** The farm's wood burners in tile order: by row (tz), then column (tx). */
-function burnerTiles(state: GameState): readonly TileCoord[] {
-  const burners: TileCoord[] = [];
-  forEachTile(state.maps.farm, (tile, tx, tz) => {
-    if (tile.object?.kind === 'woodBurner') burners.push({ tx, tz });
-  });
-  return burners.sort((a, b) => a.tz - b.tz || a.tx - b.tx);
-}
-
 /**
  * Where a DO return card sends the robot (spec §6.1 step 2): its tile, or for `generator` the
- * first tile within ROBOTS.chargeRadius of the wood burner nearest by route length (ties: the
- * burner first in tile order). Null when the farm has no burner or none can be reached.
+ * first tile within ROBOTS.chargeRadius of the generator nearest by route length (ties: the
+ * one first in tile order), among those the robot charges from (generatorTiles). Null when it
+ * has no generator or none can be reached.
  */
 export function returnTarget(state: GameState, robot: Robot, card: MdCard): TileCoord | null {
   invariant(card.kind === 'doReturn', `returnTarget: a ${card.kind} card is not a DO return`);
   if (card.to.kind === 'tile') return { tx: card.to.tx, tz: card.to.tz };
-  const burners = burnerTiles(state);
+  const burners = generatorTiles(state, robot);
   if (burners.length === 0) return null;
   const reached = reachableInOrder(state, robot);
   let best: { readonly tile: TileCoord; readonly steps: number } | null = null;

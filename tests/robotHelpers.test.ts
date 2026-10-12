@@ -28,7 +28,7 @@ describe('harvestedTile', () => {
 describe('robot world helpers', () => {
   it('finds robots on a tile, skipping carried and repairing ones', () => {
     const state = withRobots(BASE, [robotOf({ id: 1 }), robotOf({ id: 2, carried: true }), robotOf({ id: 3, power: 'repairing', repairReadyDay: 1 }), robotOf({ id: 4 })]);
-    expect(robotsOnTile(state, TARGET.tx, TARGET.tz).map((r) => r.id)).toEqual([1, 4]);
+    expect(robotsOnTile(state, 'farm', TARGET.tx, TARGET.tz).map((r) => r.id)).toEqual([1, 4]);
   });
 
   it('keeps the state when a robot is replaced by itself or an identical copy', () => {

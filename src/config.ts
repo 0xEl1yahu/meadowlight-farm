@@ -7,6 +7,7 @@ import {
   EVERY_CHOICES,
   type ItemStack,
   type RobotActionKind,
+  type RobotOwner,
   type RobotPartId,
   type RobotSize,
   type RobotUnlocks,
@@ -474,4 +475,12 @@ export const PARTS = {
 export const JOBS = {
   /** Job 1's bed is a square block of farm tiles this many tiles a side. */
   bedSize: 3,
+  /**
+   * Each neighbour's generator, a wood burner on the Neighbours map (spec §3.2, §3.3): their
+   * robots charge overnight within ROBOTS.chargeRadius of it, and only of it (spec §5.1).
+   */
+  generators: {
+    cosmo: { tx: 10, tz: 13 },
+    barnaby: { tx: 27, tz: 6 },
+  } satisfies Readonly<Record<Exclude<RobotOwner, 'player'>, TileCoord>>,
 } as const;

@@ -1,9 +1,10 @@
 /**
  * The robots' night, run inside startNextDay after the maps grow (farmclaws part 1 spec §5.7):
  * generators burn, a carried robot is set down, repairs come back, broken robots left in the
- * water are ruined (part 3 spec §3.2), robots near a generator recharge, robots ordered from
- * Juniper arrive by the workbench (part 4b spec §4.6), and every robot is reset for the morning
- * where it stands. Pure.
+ * water are ruined (part 3 spec §3.2), robots near a generator recharge and the neighbours take
+ * what their robots harvested (part 4c spec §5.1), robots ordered from Juniper arrive by the
+ * workbench (part 4b spec §4.6), and every robot is reset for the morning where it stands, on
+ * its own map. Pure.
  */
 import { GENERATORS, PLAYER, ROBOTS, TIME, WORKBENCH } from '../config';
 import { joinWithAnd } from '../core/text';
@@ -27,7 +28,7 @@ import { logRobotEvent, pruneRobotLog } from './log';
 import { ZERO_ROBOT_STATS, batteryFor, isWeekStart, periodFor, resumedPower } from './stats';
 import { freeSpotNear } from './workbench';
 import { WORKSHOP_ROBOTS } from './workshop';
-import { nearestFreeWalkable, withFarm, withRobot } from './world';
+import { generatorTiles, nearestFreeWalkable, robotWorld, withFarm, withRobot } from './world';
 
 /** A morning toast the night produced. */
 export interface RobotNote {
@@ -72,7 +73,7 @@ function setDownCarried(state: GameState): GameState {
   const id = state.player.carrying;
   const robot = state.robots.list.find((r) => r.id === id);
   if (id === null || robot === undefined) return state;
-  const at = nearestFreeWalkable(state, PLAYER.spawn, robot.id);
+  const at = nearestFreeWalkable(state, robot.mapId, PLAYER.spawn, robot.id);
   const down: Robot = { ...robot, carried: false, tx: at.tx, tz: at.tz, facing: PLAYER.spawnFacing, teleportSeq: robot.teleportSeq + 1 };
   return withRobot({ ...state, player: { ...state.player, carrying: null } }, down);
 }
@@ -86,7 +87,7 @@ function returnRepaired(state: GameState, notes: RobotNote[]): { readonly state:
   const returned = new Set<number>();
   for (const robot of state.robots.list) {
     if (robot.power !== 'repairing' || robot.repairReadyDay === null || robot.repairReadyDay > state.time.absoluteDay) continue;
-    const at = nearestFreeWalkable(next, ROBOTS.repairDropOff, robot.id);
+    const at = nearestFreeWalkable(next, robot.mapId, ROBOTS.repairDropOff, robot.id);
     next = withRobot(next, {
       ...robot,
       tx: at.tx,
@@ -113,7 +114,7 @@ function ruinSoaked(state: GameState, notes: RobotNote[]): GameState {
   let next = state;
   for (const robot of state.robots.list) {
     if (robot.power !== 'broken' || robot.carried || robot.onBench) continue;
-    if (getTile(state.maps.farm, robot.tx, robot.tz)?.blocker !== Blocker.Water) continue;
+    if (getTile(robotWorld(state, robot), robot.tx, robot.tz)?.blocker !== Blocker.Water) continue;
     next = logRobotEvent(withRobot(next, { ...robot, power: 'ruined' }), robot.id, { kind: 'ruined' });
     notes.push({ text: `${robot.name} spent the night in the water and is ruined. Scrap it at the workbench.`, tone: 'warn' });
   }
@@ -121,9 +122,12 @@ function ruinSoaked(state: GameState, notes: RobotNote[]): GameState {
 }
 
 /**
- * In id order, robots within chargeRadius of a burner fill up from the pool. Every other robot
- * that isn't broken, ruined or away at repairs (even a full one) is named as having missed out. A robot
- * just back from repairs spent the day at the shop, so it's never named.
+ * In id order, the player's robots within chargeRadius of a farm burner fill up from the pool.
+ * Every other robot of the player's that isn't broken, ruined or away at repairs (even a full
+ * one) is named as having missed out. A robot just back from repairs spent the day at the shop,
+ * so it's never named. A neighbour's robot within chargeRadius of its owner's generator fills up
+ * for free, and one away from it stays as it is, unnamed: the pool and the toasts are the
+ * player's (part 4c spec §5.1).
  */
 function recharge(state: GameState, burners: readonly TileCoord[], returned: ReadonlySet<number>, notes: RobotNote[]): GameState {
   let next = state;
@@ -131,6 +135,11 @@ function recharge(state: GameState, burners: readonly TileCoord[], returned: Rea
   const away: Robot[] = [];
   for (const robot of state.robots.list) {
     if (robot.power === 'broken' || robot.power === 'ruined' || robot.power === 'repairing' || returned.has(robot.id)) continue;
+    if (robot.owner !== 'player') {
+      const near = generatorTiles(state, robot).some((g) => chebyshevDistance(g, robot) <= ROBOTS.chargeRadius);
+      if (near) next = withRobot(next, { ...robot, tokens: batteryFor(robot.size) });
+      continue;
+    }
     if (!burners.some((b) => chebyshevDistance(b, robot) <= ROBOTS.chargeRadius)) {
       away.push(robot);
       continue;
@@ -146,12 +155,22 @@ function recharge(state: GameState, burners: readonly TileCoord[], returned: Rea
   return next;
 }
 
+/** The neighbours take what their robots harvested: every neighbour's robot's bag empties (part 4c spec §5.1). */
+function emptyNeighbourBags(state: GameState): GameState {
+  let next = state;
+  for (const robot of state.robots.list) {
+    if (robot.owner !== 'player' && robot.bag.length > 0) next = withRobot(next, { ...robot, bag: [] });
+  }
+  return next;
+}
+
 /**
  * Every delivery due becomes a robot, in order (part 4b spec §4.6): the workshop's parts and
  * program for its size, its name, facing South, on the free tile nearest the workbench's home
- * that isn't the spawn or under a robot (one delivered tonight included). Built with newRobot,
- * not addRobot: the order checked the name and the cap (deliveries counted), the save validator
- * holds both, the catalogue passes the program checks, and freeSpotNear only gives open ground.
+ * that isn't the spawn or under a farm robot (one delivered tonight included). Built with
+ * newRobot, not addRobot: the order checked the name and the cap (deliveries counted), the save
+ * validator holds both, the catalogue passes the program checks, and freeSpotNear only gives
+ * open ground.
  * Runs after recharging, so a new robot is never named as missing a generator, and before the
  * morning reset, which starts its morning stack.
  */
@@ -160,7 +179,7 @@ function deliverRobots(state: GameState, notes: RobotNote[]): GameState {
   if (due.length === 0) return state;
   let next: GameState = { ...state, robots: { ...state.robots, deliveries: [] } };
   for (const { size, name } of due) {
-    const taken = [PLAYER.spawn, ...next.robots.list.filter((robot) => robot.power !== 'repairing')];
+    const taken = [PLAYER.spawn, ...next.robots.list.filter((robot) => robot.mapId === 'farm' && robot.power !== 'repairing')];
     const at = freeSpotNear(next.maps.farm, WORKBENCH.home, taken);
     const id = next.robots.nextId;
     const robot = newRobot({ ...WORKSHOP_ROBOTS[size], name, size, place: { ...at, facing: Direction.South } }, id, next.time.minuteOfDay);
@@ -216,18 +235,17 @@ function morningStats(stats: RobotStats, weekStart: boolean): RobotStats {
  */
 function resetForMorning(state: GameState): GameState {
   let next = state;
-  const farm = state.maps.farm;
   const weekStart = isWeekStart(state.time.dayOfSeason);
   for (const robot of state.robots.list) {
     if (robot.power === 'repairing') continue;
-    const tile = getTile(farm, robot.tx, robot.tz);
+    const tile = getTile(robotWorld(state, robot), robot.tx, robot.tz);
     const inWater = tile !== null && tile.blocker === Blocker.Water;
     // A broken or ruined robot may stay sunk in the water (part 3 spec §3.2).
     const sunk = robot.power === 'broken' || robot.power === 'ruined';
     // A robot on the workbench stays on it (part 3 spec §2.2); the bench tile itself isn't walkable.
     const standable = robot.onBench || (tile !== null && (isWalkable(tile) || (sunk && inWater)));
     // Off an unwalkable tile, onto the nearest walkable one with no robot on it (part 3 spec §3.1).
-    const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestFreeWalkable(next, robot, robot.id);
+    const at = standable ? { tx: robot.tx, tz: robot.tz } : nearestFreeWalkable(next, robot.mapId, robot, robot.id);
     const moved = at.tx !== robot.tx || at.tz !== robot.tz;
     const exec = morningExecOf(robot);
     const resumed = resumedPower(robot);
@@ -265,7 +283,7 @@ export function runRobotsOvernight(state: GameState): { readonly state: GameStat
   const notes: RobotNote[] = [];
   const burned = burnGenerators(state, notes);
   const repaired = returnRepaired(setDownCarried(burned.state), notes);
-  let next = recharge(ruinSoaked(repaired.state, notes), burned.burners, repaired.returned, notes);
+  let next = emptyNeighbourBags(recharge(ruinSoaked(repaired.state, notes), burned.burners, repaired.returned, notes));
   next = deliverPendingMarker(resetForMorning(deliverRobots(next, notes)), notes);
   return { state: pruneRobotLog(next), notes };
 }

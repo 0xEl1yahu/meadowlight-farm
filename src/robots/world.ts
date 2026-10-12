@@ -1,11 +1,14 @@
 /**
- * Finding, replacing and placing robots. Robots always live on the farm map.
+ * Finding, replacing and placing robots. Each robot lives on its own map, the farm or the
+ * Neighbours map (farmclaws part 4c spec §5.1), and every robot rule reads that map through
+ * robotWorld.
  */
+import { JOBS } from '../config';
 import { invariant } from '../core/invariant';
-import { Blocker, DIRECTIONS, type GameState, type Robot, type Tile, type TileCoord, type WorldState } from '../core/types';
+import { Blocker, DIRECTIONS, type GameState, type Robot, type RobotMapId, type Tile, type TileCoord, type WorldState } from '../core/types';
 import { withMap } from '../state/selectors';
 import { inBounds, stepTile } from '../world/grid';
-import { getTile, isWalkable } from '../world/tiles';
+import { forEachTile, getTile, isWalkable } from '../world/tiles';
 import type { Slots } from './bag';
 
 export function findRobot(state: GameState, id: number): Robot | null {
@@ -44,9 +47,37 @@ export function withFarm(state: GameState, world: WorldState): GameState {
   return withMap(state, 'farm', world);
 }
 
-/** Robots standing on a farm tile (not carried, not on the workbench, not away for repair), lowest id first. */
-export function robotsOnTile(state: GameState, tx: number, tz: number): readonly Robot[] {
-  return state.robots.list.filter((r) => !r.carried && !r.onBench && r.power !== 'repairing' && r.tx === tx && r.tz === tz);
+/** The world of the map the robot lives on. */
+export function robotWorld(state: GameState, robot: Pick<Robot, 'mapId'>): WorldState {
+  return state.maps[robot.mapId];
+}
+
+/** `state` with the world of the robot's map replaced; `state` itself when the world is unchanged. */
+export function withRobotWorld(state: GameState, robot: Pick<Robot, 'mapId'>, world: WorldState): GameState {
+  return withMap(state, robot.mapId, world);
+}
+
+/** Robots standing on a tile of `mapId` (not carried, not on the workbench, not away for repair), lowest id first. */
+export function robotsOnTile(state: GameState, mapId: RobotMapId, tx: number, tz: number): readonly Robot[] {
+  return state.robots.list.filter((r) => r.mapId === mapId && !r.carried && !r.onBench && r.power !== 'repairing' && r.tx === tx && r.tz === tz);
+}
+
+/**
+ * The generators a robot charges from and a DO return heads for, in tile order (by row, then
+ * column): the farm's wood burners for the player's robots; for a neighbour's robot, its owner's
+ * wood burner at JOBS.generators when one stands there (part 4c spec §5.1).
+ */
+export function generatorTiles(state: GameState, robot: Pick<Robot, 'mapId' | 'owner'>): readonly TileCoord[] {
+  const world = robotWorld(state, robot);
+  if (robot.owner !== 'player') {
+    const at = JOBS.generators[robot.owner];
+    return getTile(world, at.tx, at.tz)?.object?.kind === 'woodBurner' ? [at] : [];
+  }
+  const burners: TileCoord[] = [];
+  forEachTile(world, (tile, tx, tz) => {
+    if (tile.object?.kind === 'woodBurner') burners.push({ tx, tz });
+  });
+  return burners.sort((a, b) => a.tz - b.tz || a.tx - b.tx);
 }
 
 export type ContainerKind = 'chest' | 'bin';
@@ -90,11 +121,11 @@ export function nearestWalkable(world: WorldState, from: TileCoord): TileCoord {
 }
 
 /**
- * The nearest walkable farm tile to `from` with no standing robot on it but `selfId` (part 3
- * spec §3.1): where a repaired robot is dropped off, and where the morning reset moves a robot
+ * The nearest walkable tile of `mapId` to `from` with no standing robot on it but `selfId` (part
+ * 3 spec §3.1): where a repaired robot is dropped off, and where the morning reset moves a robot
  * whose tile stopped being walkable.
  */
-export function nearestFreeWalkable(state: GameState, from: TileCoord, selfId: number): TileCoord {
-  const free = (tile: Tile, at: TileCoord): boolean => isWalkable(tile) && robotsOnTile(state, at.tx, at.tz).every((r) => r.id === selfId);
-  return nearestFitting(state.maps.farm, from, free, 'nearestFreeWalkable: the farm has no free walkable tile');
+export function nearestFreeWalkable(state: GameState, mapId: RobotMapId, from: TileCoord, selfId: number): TileCoord {
+  const free = (tile: Tile, at: TileCoord): boolean => isWalkable(tile) && robotsOnTile(state, mapId, at.tx, at.tz).every((r) => r.id === selfId);
+  return nearestFitting(state.maps[mapId], from, free, 'nearestFreeWalkable: the map has no free walkable tile');
 }

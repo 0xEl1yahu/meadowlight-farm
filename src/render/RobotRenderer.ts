@@ -1,10 +1,11 @@
 /**
- * RobotRenderer: the farm's robots (farmclaws part 1 spec §7).
+ * RobotRenderer: the robots of the map the player is on (farmclaws part 1 spec §7, part 4c spec §5.1).
  *
  * - One InstancedMesh per robot mesh id (robotGeometry.ts), capacity ROBOTS.maxRobots, keyed by
  *   robot id. Robots move every frame, so these meshes skip frustum culling instead of
  *   recomputing bounds; at 12 robots that's cheap.
- * - Robots are drawn only while the player is on the farm.
+ * - Only the active map's robots are drawn: the farm's or the Neighbours'. Elsewhere none are, and
+ *   arriving on a robot map rebuilds them, so they snap into place.
  * - A new moveSeq lerps to the new tile; a new teleportSeq, a rebuild or a new robot snaps.
  * - A new actionSeq plays a clip (robotLayout.clipFor); water and till clips spray particles,
  *   bickers show a red badge; broken robots spark (ruined ones don't); working robots bob gently.
@@ -18,7 +19,7 @@
 import * as THREE from 'three';
 import { ROBOTS } from '../config';
 import { Blocker, type GameState, type Robot } from '../core/types';
-import { selectActiveMapId } from '../state/selectors';
+import { selectActiveRobotMapId } from '../state/selectors';
 import { directionYaw, tileCenterX, tileCenterZ } from '../world/grid';
 import { getTile, isSoil } from '../world/tiles';
 import { CAMERA, HEIGHTS } from './constants';
@@ -124,7 +125,7 @@ const color = new THREE.Color();
 function groundOf(state: GameState, robot: Robot): number {
   // The workbench stands on plain grass; a robot on it stands on its top.
   if (robot.onBench) return HEIGHTS.grassTop + benchLift(robot);
-  const tile = getTile(state.maps.farm, robot.tx, robot.tz);
+  const tile = getTile(state.maps[robot.mapId], robot.tx, robot.tz);
   if (tile === null) return HEIGHTS.grassTop;
   if (tile.blocker === Blocker.Water) return HEIGHTS.waterSurface;
   return isSoil(tile) ? HEIGHTS.soilTop : HEIGHTS.grassTop;
@@ -180,16 +181,27 @@ export class RobotRenderer implements RenderSystem {
 
   sync(state: GameState, prev: GameState | null): void {
     this.state = state;
-    if (selectActiveMapId(state) !== 'farm') {
+    const mapId = selectActiveRobotMapId(state);
+    if (mapId === null) {
       this.clearAll();
       return;
     }
-    if (prev !== null && state.robots.list === prev.robots.list && state.maps.farm === prev.maps.farm && state.ui.timeScale === prev.ui.timeScale) return;
-    const offsets = sharedTileOffsets(state.robots.list);
-    const grid = state.maps.farm.grid;
+    if (prev !== null && selectActiveRobotMapId(prev) !== mapId) {
+      this.clearAll();
+    } else if (
+      prev !== null &&
+      state.robots.list === prev.robots.list &&
+      state.maps[mapId] === prev.maps[mapId] &&
+      state.ui.timeScale === prev.ui.timeScale
+    ) {
+      return;
+    }
+    const robots = state.robots.list.filter((robot) => robot.mapId === mapId);
+    const offsets = sharedTileOffsets(robots);
+    const grid = state.maps[mapId].grid;
     const seen = new Set<number>();
     if (prev === null) this.resetEffects();
-    for (const robot of state.robots.list) {
+    for (const robot of robots) {
       seen.add(robot.id);
       const toX = tileCenterX(grid, robot.tx);
       const toZ = tileCenterZ(grid, robot.tz);
@@ -239,7 +251,7 @@ export class RobotRenderer implements RenderSystem {
 
   update(frame: FrameContext): void {
     const state = this.state;
-    if (state === null || selectActiveMapId(state) !== 'farm') return;
+    if (state === null || selectActiveRobotMapId(state) === null) return;
     const dt = frame.dt;
     for (const visual of this.visuals.values()) this.animate(visual, dt, frame.elapsed, state);
     this.updateParticles(dt);

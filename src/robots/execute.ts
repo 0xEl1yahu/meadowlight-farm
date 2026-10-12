@@ -38,7 +38,7 @@ import { triggerText } from './logText';
 import { canDo } from './parts';
 import { actionCost, addRobotStats, bagStacks, periodFor } from './stats';
 import type { Turn } from './turn';
-import { chestSlots, containerOf, requireRobot, withFarm, withRobot } from './world';
+import { chestSlots, containerOf, requireRobot, robotWorld, withRobot, withRobotWorld } from './world';
 
 /** `keep`: items a deposit leaves in the bag (the .MD's DON'T deposit cards, plan R3). */
 export type RobotPlan =
@@ -65,8 +65,10 @@ function turned(facing: Direction, side: 'left' | 'right'): Direction {
 }
 
 /**
- * What `action` would do for `robot` now, and what it costs. Reads only the farm, time, shipping
- * and the robot. A deposit offers only the bag's stacks whose item isn't in `keep`.
+ * What `action` would do for `robot` now, and what it costs. Reads only the robot's map, time,
+ * shipping and the robot. A deposit offers only the bag's stacks whose item isn't in `keep`. A
+ * neighbour's robot finds nothing to deposit into or take from: the bin and chests are the
+ * player's (part 4c spec §5.1).
  */
 export function planRobotAction(state: GameState, robot: Robot, action: RobotAction, keep: ReadonlySet<ItemId> = NO_KEEP): RobotPlan {
   const own: TileCoord = { tx: robot.tx, tz: robot.tz };
@@ -75,7 +77,8 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
   const ok: RobotPlan = { ok: true, action, target, cost, keep };
   const no = (reason: RobotBlockReason): RobotPlan => ({ ok: false, action, target, reason, cost: reason === 'noPart' ? 0 : cost, keep });
   if (!canDo(robot, action.kind)) return no('noPart');
-  const tile = getTile(state.maps.farm, target.tx, target.tz);
+  const tile = getTile(robotWorld(state, robot), target.tx, target.tz);
+  const container = robot.owner === 'player' ? containerOf(tile) : null;
 
   switch (action.kind) {
     case 'move':
@@ -92,8 +95,8 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
     case 'harvest': {
       const crop = tile?.crop ?? null;
       if (crop === null || crop.dead || !isMature(crop)) return no('nothingToHarvest');
-      const quantity = harvestQuantity(state, target, crop, 'farm');
-      const quality = harvestQuality(state, target, crop, 'farm');
+      const quantity = harvestQuantity(state, target, crop, robot.mapId);
+      const quality = harvestQuality(state, target, crop, robot.mapId);
       return bagRoom(robot.bag, bagStacks(robot), crop.cropId, quality) >= quantity ? ok : no('bagFull');
     }
     case 'till':
@@ -109,7 +112,7 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
       if (tile === null || tile.blocker !== Blocker.Water) return no('noWaterAhead');
       return robot.tank < ROBOTS.tankCapacity ? ok : no('tankFull');
     case 'deposit': {
-      const kind = containerOf(tile);
+      const kind = container;
       if (kind === null) return no('nothingAhead');
       const offered = robot.bag.filter((s) => !keep.has(s.itemId));
       if (offered.length === 0) return no('bagEmpty');
@@ -121,7 +124,7 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
       return fits ? ok : no('containerFull');
     }
     case 'take': {
-      if (containerOf(tile) !== 'chest') return no('nothingAhead');
+      if (container !== 'chest') return no('nothingAhead');
       // Tools are never taken: a robot's bag can't hold the zone marker, so scrapping can't lose it.
       if (getItem(action.itemId).kind === 'tool') return no('itemNotFound');
       const slots = chestSlots(tile);
@@ -274,14 +277,14 @@ export function applyTurn(state: GameState, robotId: number, turn: Exclude<Turn,
 
 function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next: GameState; readonly event: RobotLogEvent } {
   const { action, target } = plan;
-  const farm = state.maps.farm;
+  const world = robotWorld(state, robot);
   const did = (detail: RobotDidDetail): RobotLogEvent => ({ kind: 'did', action: action.kind, detail });
   const none = did({ kind: 'none' });
 
   switch (action.kind) {
     case 'move': {
       const moved: Robot = { ...robot, tx: target.tx, tz: target.tz, moveSeq: robot.moveSeq + 1 };
-      if (requireTile(farm, target.tx, target.tz).blocker === Blocker.Water) {
+      if (requireTile(world, target.tx, target.tz).blocker === Blocker.Water) {
         const broken = withRobot(state, { ...moved, power: 'broken' });
         return { next: pushMessage(broken, `${robot.name} drove into the water and shorted out.`, 'warn'), event: { kind: 'shortedOut' } };
       }
@@ -290,28 +293,28 @@ function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next:
     case 'turn':
       return { next: withRobot(state, { ...robot, facing: turned(robot.facing, action.side) }), event: none };
     case 'water': {
-      const tile = requireTile(farm, target.tx, target.tz);
-      const wet = withFarm(state, setTile(farm, target.tx, target.tz, { ...tile, state: TileState.Watered }));
+      const tile = requireTile(world, target.tx, target.tz);
+      const wet = withRobotWorld(state, robot, setTile(world, target.tx, target.tz, { ...tile, state: TileState.Watered }));
       return { next: withRobot(wet, { ...robot, tank: robot.tank - 1 }), event: did({ kind: 'tile' }) };
     }
     case 'harvest': {
-      const tile = requireTile(farm, target.tx, target.tz);
+      const tile = requireTile(world, target.tx, target.tz);
       const crop = tile.crop;
       invariant(crop !== null, 'harvest plan without a crop');
-      const quantity = harvestQuantity(state, target, crop, 'farm');
-      const quality = harvestQuality(state, target, crop, 'farm');
+      const quantity = harvestQuantity(state, target, crop, robot.mapId);
+      const quality = harvestQuality(state, target, crop, robot.mapId);
       const { bag } = addToBag(robot.bag, bagStacks(robot), crop.cropId, quantity, quality);
-      const next = withRobot(withFarm(state, setTile(farm, target.tx, target.tz, harvestedTile(tile))), { ...robot, bag });
+      const next = withRobot(withRobotWorld(state, robot, setTile(world, target.tx, target.tz, harvestedTile(tile))), { ...robot, bag });
       return { next, event: did({ kind: 'crop', cropId: crop.cropId, quantity, quality }) };
     }
     case 'till': {
-      const tile = requireTile(farm, target.tx, target.tz);
-      return { next: withFarm(state, setTile(farm, target.tx, target.tz, { ...tile, state: TileState.Plowed })), event: did({ kind: 'tile' }) };
+      const tile = requireTile(world, target.tx, target.tz);
+      return { next: withRobotWorld(state, robot, setTile(world, target.tx, target.tz, { ...tile, state: TileState.Plowed })), event: did({ kind: 'tile' }) };
     }
     case 'plant': {
-      const tile = requireTile(farm, target.tx, target.tz);
+      const tile = requireTile(world, target.tx, target.tz);
       const crop = createCropInstance(action.cropId, state.time.absoluteDay);
-      const planted = withFarm(state, setTile(farm, target.tx, target.tz, { ...tile, crop }));
+      const planted = withRobotWorld(state, robot, setTile(world, target.tx, target.tz, { ...tile, crop }));
       const bag = removeFromBag(robot.bag, seedItemId(action.cropId), 1);
       return { next: withRobot(planted, { ...robot, bag }), event: did({ kind: 'planted', cropId: action.cropId }) };
     }
@@ -320,9 +323,9 @@ function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next:
     case 'deposit':
       return deposit(state, robot, target, plan.keep);
     case 'take': {
-      const tile = requireTile(farm, target.tx, target.tz);
+      const tile = requireTile(world, target.tx, target.tz);
       const taken = takeIntoBag(chestSlots(tile), robot.bag, bagStacks(robot), action.itemId);
-      const chest = withFarm(state, setTile(farm, target.tx, target.tz, { ...tile, object: { kind: 'chest', slots: taken.slots } }));
+      const chest = withRobotWorld(state, robot, setTile(world, target.tx, target.tz, { ...tile, object: { kind: 'chest', slots: taken.slots } }));
       return {
         next: withRobot(chest, { ...robot, bag: taken.bag }),
         event: did({ kind: 'items', into: 'bag', stacks: taken.stacks, quantity: taken.moved }),
@@ -338,8 +341,8 @@ function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next:
 
 /** Empties the bag into the bin or chest ahead, leaving the `keep` items (and whatever didn't fit) in the bag. */
 function deposit(state: GameState, robot: Robot, target: TileCoord, keep: ReadonlySet<ItemId>): { readonly next: GameState; readonly event: RobotLogEvent } {
-  const farm = state.maps.farm;
-  const tile = requireTile(farm, target.tx, target.tz);
+  const world = robotWorld(state, robot);
+  const tile = requireTile(world, target.tx, target.tz);
   const kept: ItemStack[] = [];
   let stacks = 0;
   let quantity = 0;
@@ -371,7 +374,7 @@ function deposit(state: GameState, robot: Robot, target: TileCoord, keep: Readon
     }
     if (result.added < s.quantity) kept.push({ ...s, quantity: s.quantity - result.added });
   }
-  const chest = withFarm(state, setTile(farm, target.tx, target.tz, { ...tile, object: { kind: 'chest', slots } }));
+  const chest = withRobotWorld(state, robot, setTile(world, target.tx, target.tz, { ...tile, object: { kind: 'chest', slots } }));
   return {
     next: withRobot(chest, { ...robot, bag: kept }),
     event: { kind: 'did', action: 'deposit', detail: { kind: 'items', into: 'chest', stacks, quantity } },
