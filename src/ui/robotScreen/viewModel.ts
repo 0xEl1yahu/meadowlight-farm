@@ -28,9 +28,10 @@ import { formatClock } from '../../time/clock';
 
 /**
  * Bench mode edits the robot; peek mode only reads its Stats and Log (spec §2.3); preview mode
- * reads a workshop robot's Program and Looks before it's bought (part 4b spec §4.4).
+ * reads a workshop robot's Program and Looks before it's bought (part 4b spec §4.4); job mode
+ * edits a neighbour's robot's Program and .MD where it stands (part 4c spec §5.2).
  */
-export type RobotScreenMode = 'bench' | 'peek' | 'preview';
+export type RobotScreenMode = 'bench' | 'peek' | 'preview' | 'job';
 
 /** A robot screen's panel. */
 export type RobotPanel = Extract<UiPanel, { readonly kind: 'robot' }>;
@@ -71,8 +72,13 @@ export const LOG_TEXT = {
 /** Tabs that edit the robot: read-only for a ruined robot (spec §3.2). */
 const EDIT_TABS: ReadonlySet<RobotTab> = new Set<RobotTab>(['program', 'md', 'looks']);
 
-/** Tabs each read-only mode may show: a peek's (spec §2.3) and a workshop preview's (part 4b spec §4.4). */
-const READ_ONLY_TABS: Readonly<Record<Exclude<RobotScreenMode, 'bench'>, ReadonlySet<RobotTab>>> = {
+/**
+ * Tabs each mode may show: every tab on the bench and in job mode, only Stats and Log in a peek
+ * (spec §2.3), and only Program and Looks in a workshop preview (part 4b spec §4.4).
+ */
+const MODE_TABS: Readonly<Record<RobotScreenMode, ReadonlySet<RobotTab>>> = {
+  bench: new Set<RobotTab>(ROBOT_TABS),
+  job: new Set<RobotTab>(ROBOT_TABS),
   peek: new Set<RobotTab>(['stats', 'log']),
   preview: new Set<RobotTab>(['program', 'looks']),
 };
@@ -143,14 +149,25 @@ export function headerView(robot: Robot, mode: RobotScreenMode): HeaderView {
   };
 }
 
-/** The On / Off switch, Lift off and Scrap belong to the bench alone. */
+/** The On / Off switch, Lift off and Scrap belong to the bench alone (not job mode, part 4c spec §5.2). */
 export function hasBenchActions(mode: RobotScreenMode): boolean {
   return mode === 'bench';
 }
 
-/** True when the editing tabs only read: always in a preview, and for a ruined robot (spec §3.2). */
+/**
+ * True when the Program and .MD tabs only read: always in a preview, and for a ruined robot (spec
+ * §3.2). Job mode edits them as the bench does (part 4c spec §5.2).
+ */
 export function isReadOnly(robot: Robot, mode: RobotScreenMode): boolean {
   return mode === 'preview' || robot.power === 'ruined';
+}
+
+/**
+ * True when the Looks tab paints and fits parts: on the bench, for a robot that isn't ruined. A
+ * neighbour's robot in job mode shows its looks and parts read-only (part 4c spec §5.2).
+ */
+export function looksEditable(robot: Robot, mode: RobotScreenMode): boolean {
+  return hasBenchActions(mode) && !isReadOnly(robot, mode);
 }
 
 export interface SwitchView {
@@ -176,7 +193,7 @@ export function switchView(robot: Robot, mode: RobotScreenMode): SwitchView | nu
  * Log, and a preview only Program and Looks.
  */
 export function visibleTabs(mode: RobotScreenMode, unlocks: RobotUnlocks): readonly RobotTab[] {
-  return ROBOT_TABS.filter((tab) => unlocks.tabs.includes(tab) && (mode === 'bench' || READ_ONLY_TABS[mode].has(tab)));
+  return ROBOT_TABS.filter((tab) => unlocks.tabs.includes(tab) && MODE_TABS[mode].has(tab));
 }
 
 /**
@@ -308,7 +325,7 @@ export interface PartRow {
 }
 
 export interface PartsSectionView {
-  /** True when the section has its Take off and Fit buttons: on the bench, for a robot that isn't ruined. */
+  /** True when the section has its Take off and Fit buttons (looksEditable). */
   readonly editable: boolean;
   /** One per part slot: its fitted part, or null for an empty slot. */
   readonly slots: readonly (PartRow | null)[];
@@ -319,10 +336,10 @@ export interface PartsSectionView {
 /**
  * The Parts section (part 4b spec §5.1): every slot, and on the bench the backpack's parts that
  * aren't fitted yet, one row per part (its stacks together, as the parts shop's Sell list). A
- * preview, a peek or a ruined robot shows the fitted parts only, with no buttons.
+ * preview, a peek, job mode or a ruined robot shows the fitted parts only, with no buttons.
  */
 export function partsSectionView(robot: Robot, mode: RobotScreenMode, inventory: InventoryState): PartsSectionView {
-  const editable = mode === 'bench' && !isReadOnly(robot, mode);
+  const editable = looksEditable(robot, mode);
   const row = (part: RobotPartId): PartRow => ({ part, name: PART_LABELS[part] });
   const slots = Array.from({ length: ROBOTS.sizes[robot.size].partSlots }, (_, i) => {
     const part = robot.parts[i];

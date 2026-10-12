@@ -2,10 +2,11 @@
  * The Looks tab (farmclaws part 3 spec §3.4, §4.4): 16 paint swatches, a preview of the chosen
  * colour on a small robot, and "Paint · {cost}g". The reducer decides the job (it refuses the
  * same colour and short gold with a toast). A ruined robot's swatches are read-only, and so are a
- * workshop preview's, with no Paint button (part 4b spec §4.4).
+ * workshop preview's and a neighbour's robot's in job mode, with no Paint button (part 4b spec
+ * §4.4, part 4c spec §5.2).
  *
  * Under the paint, the Parts section (part 4b spec §5.1): the fitted parts with Take off, and the
- * backpack's parts with Fit. A preview or a ruined robot shows the fitted parts without buttons.
+ * backpack's parts with Fit. Wherever it can't paint, it shows the fitted parts without buttons.
  */
 import { ROBOT_PAINTS } from '../../../config';
 import type { GameState, InventoryState, Robot, RobotPartId } from '../../../core/types';
@@ -14,7 +15,7 @@ import { isPartItemId } from '../../../items/items';
 import { actions } from '../../../state/actions';
 import { closestWithin, h, hudButton, setAttr, setHidden, setText } from '../../dom';
 import { createPartIcon, createRobotPreview } from '../partIcons';
-import { PARTS_TEXT, isReadOnly, paintButtonText, paintHex, paintName, partsSectionView, type PartRow, type PartsSectionView } from '../viewModel';
+import { PARTS_TEXT, looksEditable, paintButtonText, paintHex, paintName, partsSectionView, type PartRow, type PartsSectionView } from '../viewModel';
 import type { RobotTabContext, RobotTabView } from './tabView';
 
 export class LooksTab implements RobotTabView {
@@ -120,7 +121,7 @@ export class LooksTab implements RobotTabView {
 
   private render(robot: Robot): void {
     this.shown = robot;
-    const readOnly = isReadOnly(robot, this.context.mode);
+    const readOnly = !looksEditable(robot, this.context.mode);
     for (const swatch of this.swatches) {
       if (swatch.disabled !== readOnly) swatch.disabled = readOnly;
       swatch.classList.toggle('is-current', Number(swatch.dataset.paint) === robot.paint);

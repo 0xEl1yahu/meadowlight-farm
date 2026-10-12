@@ -1,7 +1,9 @@
 /**
  * The robot screen (farmclaws part 3 spec §4): a full-screen panel for one robot, in bench mode
- * (editable), peek mode (Stats and Log only) or preview mode (a workshop robot's Program and
- * Looks, read-only, part 4b spec §4.4). It is loaded lazily by RobotScreenHost.
+ * (editable), peek mode (Stats and Log only), preview mode (a workshop robot's Program and
+ * Looks, read-only, part 4b spec §4.4) or job mode (a neighbour's robot where it stands: Program
+ * and .MD edit, Looks reads, no bench actions, part 4c spec §5.2). It is loaded lazily by
+ * RobotScreenHost.
  *
  * - Header: the robot's name, size, part icons, tokens / battery, power and off text; in bench
  *   mode the On / Off switch, Lift off and Scrap. A preview shows the size and "From Juniper's

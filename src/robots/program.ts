@@ -100,6 +100,21 @@ export function childLists(statement: Statement): readonly (readonly Statement[]
   }
 }
 
+/** Every statement of a list and of the lists nested in it, depth first, in order. */
+export function allStatements(list: readonly Statement[]): Statement[] {
+  return list.flatMap((statement) => [statement, ...childLists(statement).flatMap(allStatements)]);
+}
+
+/** Every expression node of an expression, depth first, in order. */
+export function allExprNodes(expr: Expr): Expr[] {
+  return [expr, ...exprChildren(expr).flatMap(allExprNodes)];
+}
+
+/** Every statement of a program, its stacks' then its helpers', depth first, in order. */
+export function programStatements(program: BlockProgram): Statement[] {
+  return [...program.stacks.flatMap((stack) => allStatements(stack.body)), ...program.helpers.flatMap((helper) => allStatements(helper.body))];
+}
+
 /** The statement list `ref` names, or null when it doesn't resolve (a missing root, index or branch). */
 export function resolveList(program: BlockProgram, ref: ListRef): readonly Statement[] | null {
   const root = ref.root === 'stack' ? program.stacks[ref.index] : program.helpers[ref.index];

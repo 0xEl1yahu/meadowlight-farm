@@ -1,11 +1,12 @@
 /**
- * Robots on the Neighbours map (farmclaws part 4c spec §5.1–5.2): each robot works its own map,
- * bumps and bickers stay within a map, the neighbours' robots charge only near their owner's
- * generator and hand their bag over overnight, the player can't carry them, and the cap counts
+ * Robots on the Neighbours map (farmclaws part 4c spec §5.1–5.2, §5.4): each robot works its own
+ * map, bumps and bickers stay within a map, the neighbours' robots charge only near their owner's
+ * generator and hand their bag over overnight, the player can't carry them but works on one in
+ * job mode while its job is active, the neighbours' generators are theirs, and the cap counts
  * only the player's robots. A farm-only run stays byte-identical to the one before maps.
  */
 import { describe, expect, it } from 'vitest';
-import { JOBS, ROBOTS, TIME } from '../src/config';
+import { GENERATORS, JOBS, ROBOTS, TIME, UNLOCKS } from '../src/config';
 import { mulberry32 } from '../src/core/hash';
 import { Blocker, DIRECTIONS, Direction, TileState, type BlockProgram, type GameState, type Robot, type TileCoord } from '../src/core/types';
 import { b } from '../src/robots/blocks';
@@ -15,14 +16,16 @@ import { returnTarget } from '../src/robots/md';
 import { runRobotsThrough } from '../src/robots/run';
 import { requireRobot, robotsOnTile, withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
-import { planInteraction, planShiftInteraction, placementProblem } from '../src/state/intents';
+import { describeIntent, planInteraction, planPrimaryAction, planShiftInteraction, placementProblem } from '../src/state/intents';
 import { isValidGameState, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
+import { ALL_UNLOCKS } from '../src/robots/unlocks';
 import { workshopView } from '../src/ui/shops/viewModel';
+import { hasBenchActions, isReadOnly, looksEditable, partsSectionView, switchView, visibleTabs } from '../src/ui/robotScreen/viewModel';
 import { chebyshevDistance } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import { addBlockRobot, programmed } from './programGen';
-import { BASE, atDay, matureCrop, must, robotOf, soilTile, stack, tileAt, withGold, withPlayer, withRobots, withTile, withZones } from './testUtils';
+import { BASE, atDay, holding, matureCrop, must, robotOf, soilTile, stack, tileAt, withGold, withPlayer, withRobots, withTile, withZones } from './testUtils';
 
 const MORNING = atDay(BASE, 0, TIME.dayStartMinute);
 const sleep = (state: GameState): GameState => gameReducer(state, actions.sleep());
@@ -92,6 +95,13 @@ function busyFarm(): GameState {
       helpers: [b.helper('look', b.if(b.cropIsReady(), [b.harvest()]), b.turn('right'))],
     }),
   });
+}
+
+/** `state` with `job`'s status set, the jobs before it done and the ones after it locked. */
+function withJob(state: GameState, job: 'showHim' | 'knowTheLimits', status: 'active' | 'done'): GameState {
+  const knowTheLimits = job === 'knowTheLimits' ? status : status === 'done' ? 'offered' : 'locked';
+  const showHim = job === 'showHim' ? status : 'done';
+  return { ...state, jobs: { ...state.jobs, status: { spinningRobot: 'done', showHim, knowTheLimits } } };
 }
 
 /** A fixed session: the player wanders, works and sleeps while the robots run. */
@@ -319,5 +329,108 @@ describe('the farm-only rules', () => {
     const end = session().reduce(gameReducer, busyFarm());
     expect(end.robots.list.reduce((sum, robot) => sum + robot.actionSeq, 0)).toBeGreaterThan(100);
     expect(fingerprint(serializeGame(end))).toBe('467836:d463f83');
+  });
+});
+
+describe("working on a neighbour's robot (job mode)", () => {
+  const hello = b.program({ stacks: [b.when(b.morning(), b.forever(b.say('hello chickens')))] });
+  const wave = programmed(neighbourBot({ id: 1, name: 'Wave', size: 'big', parts: ['claw', 'basket', 'sensorEye'], tx: 8, tz: 13 }), hello);
+  const facing = (state: GameState): GameState => withPlayer(withRobots(state, [wave]), { tx: 8, tz: 14 }, Direction.North, 'neighbours');
+  const ACTIVE = facing(withJob(BASE, 'showHim', 'active'));
+  const jobPanel = { kind: 'robot', robotId: 1, mode: 'job' } as const;
+  const OPEN = gameReducer(ACTIVE, actions.interact());
+  const program = b.program({ stacks: [b.when(b.morning(), b.if(b.cropIsReady(), [b.harvest()]))] });
+  const md = [{ kind: 'dontGoIntoWater' as const }];
+
+  it("shows Work on {name} for E while its owner's job is active, and opens its screen in job mode where it stands", () => {
+    const plan = planInteraction(ACTIVE);
+    expect(plan.intent).toEqual({ kind: 'workOnRobot', robotId: 1, name: 'Wave' });
+    expect(describeIntent(plan.intent)).toBe('Work on Wave');
+    expect(OPEN.ui.panel).toEqual(jobPanel);
+    expect(requireRobot(OPEN, 1)).toBe(requireRobot(ACTIVE, 1));
+    expect(OPEN.player.carrying).toBeNull();
+    // Shift + E still peeks.
+    expect(planShiftInteraction(ACTIVE).intent).toEqual({ kind: 'peekRobot', robotId: 1, name: 'Wave' });
+  });
+
+  it("refuses E on another neighbour's robot, and on its robot once the job is done", () => {
+    const barnabys = facing(withJob(BASE, 'showHim', 'active'));
+    const other = withRobots(barnabys, [{ ...wave, owner: 'barnaby' }]);
+    expect(planInteraction(other).intent).toEqual({ kind: 'blocked', reason: "That's Barnaby's robot." });
+    expect(planInteraction(facing(withJob(BASE, 'showHim', 'done'))).intent).toEqual({ kind: 'blocked', reason: "That's Cosmo's robot." });
+    expect(planInteraction(facing(withJob(BASE, 'knowTheLimits', 'active'))).intent).toEqual({ kind: 'blocked', reason: "That's Cosmo's robot." });
+  });
+
+  it('edits its Program and .MD in job mode', () => {
+    const programmedWave = gameReducer(OPEN, actions.programRobot(1, program));
+    expect(requireRobot(programmedWave, 1).program).toEqual(program);
+    expect(texts(programmedWave).at(-1)).toBe('Programmed Wave.');
+    const carded = gameReducer(OPEN, actions.setRobotMd(1, md));
+    expect(requireRobot(carded, 1).md).toEqual(md);
+    expect(texts(carded).at(-1)).toBe("Set Wave's .MD.");
+  });
+
+  it("refuses those edits outside job mode, or once the job is done, with \"That's {owner}'s robot.\"", () => {
+    const peeking = { ...ACTIVE, ui: { ...ACTIVE.ui, panel: { kind: 'robot' as const, robotId: 1, mode: 'peek' as const } } };
+    const done = withJob(OPEN, 'showHim', 'done');
+    const otherRobot = withRobots(OPEN, [wave, neighbourBot({ id: 2, name: 'Spare', tx: 20, tz: 14 })]);
+    for (const [state, robotId] of [[ACTIVE, 1], [peeking, 1], [done, 1], [otherRobot, 2]] as const) {
+      for (const action of [actions.programRobot(robotId, program), actions.setRobotMd(robotId, md)]) {
+        const next = gameReducer(state, action);
+        expect(next.robots).toBe(state.robots);
+        expect(texts(next).at(-1)).toBe("That's Cosmo's robot.");
+      }
+    }
+  });
+
+  it('has no parts, switch, paint or scrap in job mode, and the reducer refuses them', () => {
+    const withClaw = holding({ ...OPEN, player: { ...OPEN.player, gold: 5000 } }, 'tiller');
+    for (const action of [actions.fitPart(1, 'tiller'), actions.unfitPart(1, 'claw'), actions.switchRobot(1, false), actions.paintRobot(1, 3), actions.scrapRobot(1)]) {
+      const next = gameReducer(withClaw, action);
+      expect(next.robots, action.type).toBe(withClaw.robots);
+      expect(next.player.gold).toBe(withClaw.player.gold);
+      expect(texts(next).at(-1)).toBe("That's Cosmo's robot.");
+    }
+    expect(gameReducer(withClaw, actions.liftOffBench(1)).player.carrying).toBeNull();
+  });
+
+  it('shows every unlocked tab, edits Program and .MD, and shows Looks and parts read-only, with no bench actions', () => {
+    expect(visibleTabs('job', UNLOCKS.job1)).toEqual(['program', 'md', 'looks', 'log']);
+    expect(visibleTabs('job', ALL_UNLOCKS)).toEqual(['program', 'md', 'looks', 'stats', 'log']);
+    expect(isReadOnly(wave, 'job')).toBe(false);
+    expect(isReadOnly({ ...wave, power: 'ruined' }, 'job')).toBe(true);
+    expect(looksEditable(wave, 'job')).toBe(false);
+    expect(looksEditable(wave, 'bench')).toBe(true);
+    expect(hasBenchActions('job')).toBe(false);
+    expect(switchView(wave, 'job')).toBeNull();
+    const parts = partsSectionView(wave, 'job', holding(BASE, 'tiller').inventory);
+    expect(parts.editable).toBe(false);
+    expect(parts.fittable).toEqual([]);
+    expect(parts.slots.slice(0, 3).map((slot) => slot?.part)).toEqual(['claw', 'basket', 'sensorEye']);
+  });
+});
+
+describe("the neighbours' generators", () => {
+  const gen = JOBS.generators.cosmo;
+  const full = { ...EMPTY_TILE, object: { kind: 'woodBurner' as const, fuel: GENERATORS.woodBurner.hopper } };
+  const facingGen = (state: GameState): GameState => withPlayer(withTile(state, gen, full, 'neighbours'), { tx: gen.tx, tz: gen.tz + 1 }, Direction.North, 'neighbours');
+
+  it("belong to the neighbours: they can't be picked up and take no wood", () => {
+    const state = facingGen(BASE);
+    expect(planPrimaryAction(holding(state, 'axe')).intent).toEqual({ kind: 'blocked', reason: 'That belongs to the neighbours.' });
+    expect(planInteraction(holding(state, 'wood', 5)).intent).toEqual({ kind: 'blocked', reason: 'That belongs to the neighbours.' });
+  });
+
+  it("keep their tiles clear of the player's things before they arrive", () => {
+    const state = withPlayer(BASE, { tx: gen.tx, tz: gen.tz + 1 }, Direction.North, 'neighbours');
+    expect(placementProblem(state, 'chest', gen)).toBe('Keep this spot clear.');
+    expect(placementProblem(state, 'chest', JOBS.generators.barnaby)).toBe('Keep this spot clear.');
+    expect(placementProblem(state, 'chest', { tx: gen.tx + 1, tz: gen.tz })).toBeNull();
+  });
+
+  it('load from a save on their own tiles only', () => {
+    expect(isValidGameState(withTile(withTile(BASE, gen, full, 'neighbours'), JOBS.generators.barnaby, full, 'neighbours'))).toBe(true);
+    expect(isValidGameState(withTile(BASE, { tx: gen.tx + 1, tz: gen.tz }, full, 'neighbours'))).toBe(false);
+    expect(isValidGameState(withTile(BASE, gen, full, 'town'))).toBe(false);
   });
 });

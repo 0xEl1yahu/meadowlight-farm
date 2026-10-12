@@ -5,10 +5,10 @@
  * and the toasts.
  */
 import { JOBS, UNLOCKS } from '../config';
-import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type RobotUnlocks } from '../core/types';
+import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotUnlocks } from '../core/types';
 import { withUnlocks } from '../robots/unlocks';
-import { spinningRobotDone, spinningRobotProgress } from './checks';
-import { setUpSpinningRobot } from './setup';
+import { showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress } from './checks';
+import { setUpCosmoField, setUpShowHim, setUpSpinningRobot } from './setup';
 
 /** What a job says and pays, verbatim from spec §3 and §4. */
 export interface JobDef {
@@ -80,11 +80,21 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
  */
 export const JOB_PLAYS: Partial<Readonly<Record<JobId, JobPlay>>> = {
   spinningRobot: { setup: setUpSpinningRobot, morning: null, check: spinningRobotDone, progress: spinningRobotProgress },
+  showHim: { setup: setUpShowHim, morning: setUpCosmoField, check: showHimDone, progress: showHimProgress },
 };
 
 /** The active job, or null (at most one is active). */
 export function activeJob(state: GameState): JobId | null {
   return JOB_IDS.find((id) => state.jobs.status[id] === 'active') ?? null;
+}
+
+/**
+ * True when the player may work on `robot` where it stands (spec §5.2): it's a neighbour's robot
+ * and its owner's job is active.
+ */
+export function isJobRobot(state: GameState, robot: Robot): boolean {
+  const id = activeJob(state);
+  return robot.owner !== 'player' && id !== null && JOBS_TABLE[id].giver === robot.owner;
 }
 
 /** `npc`'s job while it's offered or active and has a play, or null: what the Job button opens. */

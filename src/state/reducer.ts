@@ -54,7 +54,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
-import { JOBS_TABLE, activeJob, finishJob, jobMorning, passedJob, takeJob } from '../jobs/jobs';
+import { JOBS_TABLE, activeJob, finishJob, isJobRobot, jobMorning, passedJob, takeJob } from '../jobs/jobs';
 import { CAST, npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
@@ -69,7 +69,7 @@ import { inBounds, stepTile } from '../world/grid';
 import { findWarp, getMap, mapSeed, type Warp } from '../world/maps';
 import { EMPTY_TILE, blockedTile, getTile, isWalkable, requireTile, setTile, setTiles } from '../world/tiles';
 import type { GameAction } from './actions';
-import { planInteraction, planPrimaryAction, planShiftInteraction, type ActionPlan, type Intent } from './intents';
+import { othersRobot, planInteraction, planPrimaryAction, planShiftInteraction, type ActionPlan, type Intent } from './intents';
 import {
   addItem,
   capacityFor,
@@ -167,9 +167,9 @@ function reduceAction(state: GameState, action: GameAction): GameState {
     case 'game/load':
       return loadState(state, action.state);
     case 'robot/program':
-      return editRobot(state, action.robotId, (robot) => programmedRobot(robot, action.program, state.time.minuteOfDay), (name) => `Programmed ${name}.`);
+      return editRobot(state, action.robotId, (robot) => programmedRobot(robot, action.program, state.time.minuteOfDay), (name) => `Programmed ${name}.`, { inJob: true });
     case 'robot/md':
-      return editRobot(state, action.robotId, (robot) => withMd(robot, action.md), (name) => `Set ${name}'s .MD.`);
+      return editRobot(state, action.robotId, (robot) => withMd(robot, action.md), (name) => `Set ${name}'s .MD.`, { inJob: true });
     case 'robot/liftOff':
       return liftOffBench(state, action.robotId);
     case 'robot/switch':
@@ -550,6 +550,9 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
     case 'peekRobot':
       return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'peek' } } };
 
+    case 'workOnRobot':
+      return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'job' } } };
+
     case 'talkTo': {
       // Talking to the active job's giver checks the job once more (part 4c spec §2.1), so a job
       // done by now is finished before the line is picked.
@@ -910,29 +913,45 @@ function ruinedRefusal(state: GameState, robot: Robot): GameState | null {
   return robot.power === 'ruined' ? pushMessage(state, `${robot.name} is ruined. It can only be scrapped.`, 'warn') : null;
 }
 
+/** What an edit moves into the backpack, and whether job mode may make it. */
+interface EditReach {
+  /** `inventory` after the edit, when it moves a part; the state's own otherwise. */
+  readonly inventory?: InventoryState;
+  /** True for the edits job mode makes (Program and .MD, part 4c spec §5.2). */
+  readonly inJob?: boolean;
+}
+
 /**
- * Applies a program, .MD or parts edit to robot `robotId`: the edited robot (with `inventory`, when
- * the edit moves a part) and a success toast, or the edit's refusal as a warn toast with nothing
- * else changed. The robot must be on the workbench (part 3 spec §4.7); the dev hooks call the
- * edits directly and aren't limited to it. An unknown id changes nothing. Edits aren't frozen
- * with the game: the robot screen that sends them is a panel.
+ * Applies a program, .MD or parts edit to robot `robotId`: the edited robot (with `reach.inventory`,
+ * when the edit moves a part) and a success toast, or the edit's refusal as a warn toast with
+ * nothing else changed. The player's robot must be on the workbench (part 3 spec §4.7); a
+ * neighbour's robot takes only a job-mode edit, from its own robot screen in job mode while its
+ * job is active (part 4c spec §5.2). The dev hooks call the edits directly and aren't limited to
+ * either. An unknown id changes nothing. Edits aren't frozen with the game: the robot screen that
+ * sends them is a panel.
  */
 function editRobot(
   state: GameState,
   robotId: number,
   edit: (robot: Robot) => Robot | string,
   done: (name: string) => string,
-  inventory: InventoryState = state.inventory,
+  reach: EditReach = {},
 ): GameState {
   const robot = findRobot(state, robotId);
   if (robot === null) return state;
-  const away = offBenchRefusal(robot);
+  const away = reach.inJob === true && inJobMode(state, robot) ? null : offBenchRefusal(robot);
   if (away !== null) return pushMessage(state, away, 'warn');
   const ruined = ruinedRefusal(state, robot);
   if (ruined !== null) return ruined;
   const edited = edit(robot);
   if (typeof edited === 'string') return pushMessage(state, edited, 'warn');
-  return pushMessage(withRobot({ ...state, inventory }, edited), done(robot.name), 'success');
+  return pushMessage(withRobot({ ...state, inventory: reach.inventory ?? state.inventory }, edited), done(robot.name), 'success');
+}
+
+/** True when the open robot screen is `robot`'s in job mode and its job is active (part 4c spec §5.2). */
+function inJobMode(state: GameState, robot: Robot): boolean {
+  const panel = state.ui.panel;
+  return panel.kind === 'robot' && panel.mode === 'job' && panel.robotId === robot.id && isJobRobot(state, robot);
 }
 
 /**
@@ -946,7 +965,7 @@ function fitPart(state: GameState, robotId: number, part: RobotPartId): GameStat
     robotId,
     (robot) => withPartFitted(robot, part),
     (name) => `Fitted ${partName(part)} to ${name}.`,
-    removeItem(state.inventory, part, 1),
+    { inventory: removeItem(state.inventory, part, 1) },
   );
 }
 
@@ -963,7 +982,7 @@ function unfitPart(state: GameState, robotId: number, part: RobotPartId): GameSt
     robotId,
     (on) => (added < 1 ? 'Your inventory is full.' : withPartRemoved(on, part)),
     (name) => `Took the ${partNoun(part)} off ${name}.`,
-    inventory,
+    { inventory },
   );
 }
 
@@ -971,8 +990,12 @@ function unfitPart(state: GameState, robotId: number, part: RobotPartId): GameSt
 // The workbench (farmclaws part 3 spec §2.2, §2.4)
 // ---------------------------------------------------------------------------
 
-/** The robot screen's refusal for a robot that isn't on the workbench, or null when it is. */
+/**
+ * The robot screen's refusal for a robot that isn't on the workbench, or null when it is. A
+ * neighbour's robot never is: "That's {owner}'s robot." (part 4c spec §5.2).
+ */
 function offBenchRefusal(robot: Robot): string | null {
+  if (robot.owner !== 'player') return othersRobot(robot.owner);
   return robot.onBench ? null : `Put ${robot.name} on the workbench first.`;
 }
 

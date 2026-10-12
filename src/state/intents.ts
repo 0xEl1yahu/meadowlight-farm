@@ -4,7 +4,7 @@
  * HUD use the same plans to show whether an action is possible and what it will do, so the
  * preview and the outcome can never disagree.
  */
-import { FARMING, GENERATORS } from '../config';
+import { FARMING, GENERATORS, JOBS } from '../config';
 import { Salt, hashFloat, hashRange } from '../core/hash';
 import {
   Blocker,
@@ -29,6 +29,7 @@ import {
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
+import { isJobRobot } from '../jobs/jobs';
 import { CAST, npcAt } from '../people/cast';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
@@ -78,6 +79,8 @@ export type Intent =
   | { readonly kind: 'openBench'; readonly robotId: number; readonly name: string }
   /** Shift + E on a standing robot: its screen opens read-only, for free (part 3 spec §2.3). */
   | { readonly kind: 'peekRobot'; readonly robotId: number; readonly name: string }
+  /** E on a neighbour's robot while its job is active: its screen opens in job mode where it stands (part 4c spec §5.2). */
+  | { readonly kind: 'workOnRobot'; readonly robotId: number; readonly name: string }
   /** Talk to the character ahead: their chat box opens with today's line, for free (part 4a spec §3.1). */
   | { readonly kind: 'talkTo'; readonly npc: NpcId }
   /** The zone marker's first press: the draft's corner (part 3 spec §8). */
@@ -305,8 +308,21 @@ function planClearZone(state: GameState, target: TileCoord | null): ActionPlan {
 /** The pickaxe's and the axe's answer at the workbench, which is built into the farm (part 3 spec §2.1). */
 const PART_OF_THE_FARM = "It's part of the farm.";
 
-/** The pickaxe's and the axe's answer at the neighbours' fences (part 4a plan refinement R9). */
+/** The pickaxe's and the axe's answer at the neighbours' fences (part 4a plan refinement R9) and generators. */
 const THE_NEIGHBOURS = 'That belongs to the neighbours.';
+
+/** True on the tile of a neighbour's generator on the Neighbours map (part 4c spec §5.4), there or still to come. */
+function isGeneratorTile(state: GameState, target: TileCoord): boolean {
+  return state.player.mapId === 'neighbours' && Object.values(JOBS.generators).some((at) => at.tx === target.tx && at.tz === target.tz);
+}
+
+/**
+ * True for the neighbours' fences and generators on the Neighbours map: the player can't pick
+ * them up, and the generators need no wood (part 4c spec §5.4).
+ */
+function isTheNeighbours(state: GameState, target: TileCoord): boolean {
+  return (state.player.mapId === 'neighbours' && isFenceTile(target.tx, target.tz)) || isGeneratorTile(state, target);
+}
 
 /** The answer for a neighbour's robot the player can't carry or bench (part 4c spec §5.2). */
 export function othersRobot(owner: Exclude<RobotOwner, 'player'>): string {
@@ -345,7 +361,7 @@ function isPlaceableKind(kind: PlacedObject['kind']): kind is PlaceableItemId {
 /** Picking a placed object up with the pickaxe or axe; free, but it must fit and a chest must be empty. */
 function planPickUp(state: GameState, target: TileCoord, object: PlacedObject, tool: 'pickaxe' | 'axe'): ActionPlan {
   if (object.kind === 'workbench') return blocked(target, tool, PART_OF_THE_FARM);
-  if (state.player.mapId === 'neighbours' && isFenceTile(target.tx, target.tz)) return blocked(target, tool, THE_NEIGHBOURS);
+  if (isTheNeighbours(state, target)) return blocked(target, tool, THE_NEIGHBOURS);
   if (!isPlaceableKind(object.kind) || PICKUP_TOOL[object.kind] !== tool) return blocked(target, tool);
   if (object.kind === 'chest' && object.slots.some((slot) => slot !== null)) {
     return blocked(target, tool, 'Empty the chest first.');
@@ -362,9 +378,10 @@ export function isFarmOnlyPlaceable(itemId: PlaceableItemId): boolean {
 
 /**
  * Why `itemId` can't be placed on `target` of the active map, or null when it can. The tile must
- * be free walkable ground (no object, blocker or crop), not a character's spot and not a reserved
- * tile; paths go on grass only, everything else on grass or unfertilised soil; sprinklers and
- * scarecrows only on the farm. An empty string means "no, silently" (out of bounds).
+ * be free walkable ground (no object, blocker or crop), not a character's spot, a reserved tile
+ * or a neighbour's generator's tile; paths go on grass only, everything else on grass or
+ * unfertilised soil; sprinklers and scarecrows only on the farm. An empty string means "no,
+ * silently" (out of bounds).
  */
 export function placementProblem(state: GameState, itemId: PlaceableItemId, target: TileCoord | null): string | null {
   if (target === null) return '';
@@ -372,7 +389,8 @@ export function placementProblem(state: GameState, itemId: PlaceableItemId, targ
   if (tile === null) return '';
   if (isFarmOnlyPlaceable(itemId) && state.player.mapId !== 'farm') return `The ${getItem(itemId).name.toLowerCase()} belongs on your farm.`;
   if (npcAt(state.player.mapId, target.tx, target.tz) !== null) return "Someone's standing there.";
-  if (isReservedTile(selectActiveMap(state), target.tx, target.tz)) return 'Keep this spot clear.';
+  // A neighbour's generator goes on its own tile when its job is taken (part 4c spec §5.4).
+  if (isReservedTile(selectActiveMap(state), target.tx, target.tz) || isGeneratorTile(state, target)) return 'Keep this spot clear.';
   if (robotsAhead(state, target).length > 0) return "There's a robot in the way.";
   if (tile.object !== null || tile.state === TileState.Blocked || tile.crop !== null) return "There's something in the way.";
   if (itemId === 'woodPath' || itemId === 'stonePath') {
@@ -473,13 +491,16 @@ function planCarry(state: GameState, robotId: number): ActionPlan {
 
 /**
  * A robot on the target tile (lowest id): pick it up for carry energy. Null when there's none. A
- * neighbour's robot is theirs: it can't be picked up, so it can't be carried, benched or sent
- * for repair either (part 4c spec §5.2).
+ * neighbour's robot is theirs (part 4c spec §5.2): while its job is active it's worked on where
+ * it stands; it can never be picked up, so it can't be carried, benched or sent for repair.
  */
 function planPickUpRobot(state: GameState, target: TileCoord): ActionPlan | null {
   const robot = robotsAhead(state, target)[0];
   if (robot === undefined) return null;
-  if (robot.owner !== 'player') return blocked(target, 'none', othersRobot(robot.owner));
+  if (robot.owner !== 'player') {
+    if (isJobRobot(state, robot)) return plan(target, { kind: 'workOnRobot', robotId: robot.id, name: robot.name }, 'none');
+    return blocked(target, 'none', othersRobot(robot.owner));
+  }
   const energy = carryEnergyFor(robot);
   if (state.player.energy < energy) return blocked(target, 'harvest', `You're too tired to carry ${robot.name}.`);
   const fromWater = getTile(selectActiveWorld(state), target.tx, target.tz)?.blocker === Blocker.Water;
@@ -521,7 +542,7 @@ export function planInteraction(state: GameState): ActionPlan {
 
   // A chest opens and a wood burner takes wood; the other placed objects have nothing to interact with yet.
   if (tile.object !== null) {
-    if (tile.object.kind === 'woodBurner') return planFuel(state, target, tile.object.fuel);
+    if (tile.object.kind === 'woodBurner') return isTheNeighbours(state, target) ? blocked(target, 'none', THE_NEIGHBOURS) : planFuel(state, target, tile.object.fuel);
     return tile.object.kind === 'chest' ? plan(target, { kind: 'openChest' }, 'openChest') : blocked(target, 'none');
   }
 
@@ -654,6 +675,8 @@ export function describeIntent(intent: Intent): string | null {
       return `Work on ${intent.name}`;
     case 'peekRobot':
       return `Look at ${intent.name}`;
+    case 'workOnRobot':
+      return `Work on ${intent.name}`;
     case 'talkTo':
       return `Talk to ${CAST[intent.npc].name}`;
     case 'zoneCorner':

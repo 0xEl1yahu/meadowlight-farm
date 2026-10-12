@@ -2,7 +2,7 @@
  * Save validation for the robots section (farmclaws part 1 spec §6.2, part 2 spec §10.2).
  * Every check is a type guard that returns false on any unexpected shape and never throws.
  */
-import { ROBOT_PAINTS, ROBOTS, TIME } from '../config';
+import { JOBS, ROBOT_PAINTS, ROBOTS, TIME } from '../config';
 import {
   Blocker,
   CROP_IDS,
@@ -55,12 +55,17 @@ const ROBOT_KEYS = [
   'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction', 'paint',
 ] as const;
 
-/** Wood burners work the farm's robots, so a burner on another map means a corrupt save. */
-function burnersOnlyOnFarm(maps: GameState['maps']): boolean {
+/**
+ * Wood burners work the farm's robots, and the neighbours' generators theirs (part 4c spec §5.4),
+ * so any other burner off the farm means a corrupt save.
+ */
+function burnersInPlace(maps: GameState['maps']): boolean {
+  const generators = Object.values(JOBS.generators);
   let stray = false;
   for (const id of MAP_IDS.filter((mapId) => mapId !== 'farm')) {
-    forEachTile(maps[id], (tile) => {
-      if (tile.object?.kind === 'woodBurner') stray = true;
+    forEachTile(maps[id], (tile, tx, tz) => {
+      if (tile.object?.kind !== 'woodBurner') return;
+      if (id !== 'neighbours' || !generators.some((at) => at.tx === tx && at.tz === tz)) stray = true;
     });
   }
   return !stray;
@@ -731,5 +736,5 @@ export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player
   const fuel = v.lastNightFuel;
   if (!isCount(v.pool) || !isObj(fuel) || !hasExactKeys(fuel, ['wood', 'tokens']) || !isCount(fuel.wood) || !isCount(fuel.tokens)) return false;
   const robotMaps = new Map((v.list as readonly Robot[]).map((robot) => [robot.id, robot.mapId] as const));
-  return isValidLog(v.log, maps, robotMaps) && burnersOnlyOnFarm(maps) && oneWorkbench(maps);
+  return isValidLog(v.log, maps, robotMaps) && burnersInPlace(maps) && oneWorkbench(maps);
 }

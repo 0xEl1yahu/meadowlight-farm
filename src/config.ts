@@ -522,4 +522,8 @@ export const JOBS = {
     cosmo: { tx: 10, tz: 13 },
     barnaby: { tx: 27, tz: 6 },
   } satisfies Readonly<Record<Exclude<RobotOwner, 'player'>, TileCoord>>,
+  /** Where Cosmo's Wave stands on the lane when job 2 is taken, facing North (spec §3.2). */
+  waveAt: { tx: 8, tz: 13 } satisfies TileCoord,
+  /** Cosmo's field (spec §3.2): the parsnips on odd tiles, (tx + tz) odd, are this many days from ripe. */
+  unripeDaysLeft: 2,
 } as const;

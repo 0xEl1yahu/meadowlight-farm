@@ -483,8 +483,11 @@ export type UiPanel =
   | { readonly kind: 'workshop' }
   | { readonly kind: 'inventory' }
   | { readonly kind: 'chest'; readonly mapId: MapId; readonly tx: number; readonly tz: number }
-  /** The robot screen (farmclaws part 3 spec §4): editable at the workbench, read-only when peeking. */
-  | { readonly kind: 'robot'; readonly robotId: number; readonly mode: 'bench' | 'peek' }
+  /**
+   * The robot screen (farmclaws part 3 spec §4): editable at the workbench, read-only when peeking,
+   * and in job mode a neighbour's robot's Program and .MD edit where it stands (part 4c spec §5.2).
+   */
+  | { readonly kind: 'robot'; readonly robotId: number; readonly mode: 'bench' | 'peek' | 'job' }
   /**
    * The robot screen previewing a workshop robot, which isn't in the state (part 4b spec §4.4):
    * read-only, and closing it returns to the workshop.

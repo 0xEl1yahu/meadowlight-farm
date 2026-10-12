@@ -22,7 +22,7 @@ import {
 import { isValidRobotAction } from '../state/robotValidation';
 import { inBounds } from '../world/grid';
 import { MAPS } from '../world/maps';
-import { blockCount, childLists, exprChildren, farmContains, isLiteral, statementDepth, statementExprs } from './program';
+import { allExprNodes, allStatements, blockCount, exprChildren, farmContains, isLiteral, programStatements, statementDepth, statementExprs } from './program';
 import { batteryFor, hasPart } from './stats';
 
 const SIZE_NAMES: Readonly<Record<RobotSize, string>> = { mini: 'Mini', standard: 'Standard', big: 'Big' };
@@ -90,20 +90,6 @@ function firstProblem<T>(items: readonly T[], check: (item: T) => string | null)
     if (problem !== null) return problem;
   }
   return null;
-}
-
-/** Every statement of a list and of the lists nested in it, depth first, in order. */
-function allStatements(list: readonly Statement[]): Statement[] {
-  return list.flatMap((statement) => [statement, ...childLists(statement).flatMap(allStatements)]);
-}
-
-/** Every expression node of an expression, depth first, in order. */
-function allExprNodes(expr: Expr): Expr[] {
-  return [expr, ...exprChildren(expr).flatMap(allExprNodes)];
-}
-
-function programStatements(program: BlockProgram): Statement[] {
-  return [...program.stacks.flatMap((stack) => allStatements(stack.body)), ...program.helpers.flatMap((helper) => allStatements(helper.body))];
 }
 
 // --- 1. Shape ------------------------------------------------------------------------------
