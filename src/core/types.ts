@@ -769,7 +769,7 @@ export interface RobotsState {
   readonly log: { readonly nextId: number; readonly entries: readonly RobotLogEntry[] };
   /** What generators burned last night. */
   readonly lastNightFuel: { readonly wood: number; readonly tokens: number };
-  /** Named farm rectangles for programs and .MDs; null is an empty zone. */
+  /** Named rectangles on the farm or the Neighbours map for programs and .MDs; null is an empty zone. */
   readonly zones: Readonly<Record<ZoneId, ZoneRect | null>>;
   /** True while the zone marker owed to a migrated save waits for a free backpack slot (part 3 spec §8). */
   readonly pendingMarker: boolean;

@@ -1,24 +1,25 @@
 /**
- * ZoneRenderer — zones A–H drawn on the farm (farmclaws part 3 spec §8).
+ * ZoneRenderer — zones A–H drawn on the map they lie on (farmclaws part 3 spec §8, part 4c spec
+ * §5.3).
  *
- * - When: on the farm, while the zone marker is the selected hotbar item or a robot screen is
- *   open. Hidden everywhere else.
- * - Each set zone: a thin outline in its colour (ZONE_MARKER.colors, A … H) along every outer
+ * - When: on the farm or the Neighbours map, while the zone marker is the selected hotbar item or
+ *   a robot screen is open; only the zones on that map show. Hidden everywhere else.
+ * - Each set zone on the map: a thin outline in its colour (ZONE_MARKER.colors, A … H) along every outer
  *   tile edge, ZONE_MARKER.outlineHeight above the ground of the zone tile the edge borders and
  *   inset by half a stroke so neighbouring zones stay apart; and its letter floating over its
  *   north-west tile.
  * - The draft: the same outline, paler, from the draft's corner to the highlighted tile
  *   (selectTargetTile, the tile the next press would mark), so it follows the player.
  * - Two InstancedMeshes of one flat quad (set zones, draft), each sized once for every edge the
- *   farm can hold, and eight letter sprites cut from one canvas atlas drawn in the constructor.
- *   Matrices are written in sync only, when the zones, the draft, the target or the farm's
- *   ground change. update() only bobs the letters, without allocating.
+ *   largest robot map can hold, and eight letter sprites cut from one canvas atlas drawn in the
+ *   constructor. Matrices are written in sync only, when the zones, the draft, the target, the
+ *   map or its ground change. update() only bobs the letters, without allocating.
  */
 import * as THREE from 'three';
 import { ZONE_MARKER } from '../config';
-import { ZONE_IDS, type GameState, type WorldState, type ZoneId, type ZoneRect } from '../core/types';
-import { zoneRectBetween } from '../robots/zones';
-import { isZoneMarkerSelected, selectTargetTile } from '../state/selectors';
+import { ROBOT_MAP_IDS, ZONE_IDS, type GameState, type RobotMapId, type WorldState, type ZoneId, type ZoneRect } from '../core/types';
+import { zoneOnMap, zoneRectBetween } from '../robots/zones';
+import { isZoneMarkerSelected, selectActiveRobotMapId, selectTargetTile } from '../state/selectors';
 import { tileCenterX, tileCenterZ } from '../world/grid';
 import { MAPS } from '../world/maps';
 import { getTile } from '../world/tiles';
@@ -41,12 +42,21 @@ const ATLAS_FONT = `700 ${Math.round(ATLAS_CELL * 0.7)}px "Trebuchet MS", "Segoe
 const ATLAS_INK = '#5a3d2b';
 const ATLAS_OUTLINE = 8;
 
-/** Outer tile edges of the largest rectangle the farm holds: the most one outline ever needs. */
-const MAX_EDGES = 2 * (MAPS.farm.grid.width + MAPS.farm.grid.depth);
+/** Outer tile edges of the largest rectangle a robot map holds: the most one outline ever needs. */
+const MAX_EDGES = Math.max(...ROBOT_MAP_IDS.map((id) => 2 * (MAPS[id].grid.width + MAPS[id].grid.depth)));
 
 const scratchMatrix = new THREE.Matrix4();
 const scratchColor = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
+
+/**
+ * The map whose zones the overlay shows: the player's, while the marker is in hand or a robot
+ * screen is open, on the farm or the Neighbours map; null when it is hidden.
+ */
+export function overlayMapId(state: GameState): RobotMapId | null {
+  if (!isZoneMarkerSelected(state) && state.ui.panel.kind !== 'robot') return null;
+  return selectActiveRobotMapId(state);
+}
 
 function zoneColor(id: ZoneId): number {
   return ZONE_MARKER.colors[ZONE_IDS.indexOf(id)] ?? 0xffffff;
@@ -96,9 +106,9 @@ export class ZoneRenderer implements RenderSystem {
   private readonly letters: readonly THREE.Sprite[];
   /** Resting height of each letter, for the bob. */
   private readonly letterY = new Float32Array(ZONE_IDS.length);
-  /** What is drawn now: the zones and farm it was laid out from (null when hidden), and the draft. */
+  /** What is drawn now: the zones and map world it was laid out from (null when hidden), and the draft. */
   private zones: GameState['robots']['zones'] | null = null;
-  private farm: WorldState | null = null;
+  private world: WorldState | null = null;
   private draftRect: ZoneRect | null = null;
   private draftZone: ZoneId | null = null;
 
@@ -149,21 +159,22 @@ export class ZoneRenderer implements RenderSystem {
   }
 
   sync(state: GameState, prev: GameState | null): void {
-    const shown = state.player.mapId === 'farm' && (isZoneMarkerSelected(state) || state.ui.panel.kind === 'robot');
-    this.group.visible = shown;
-    if (!shown) {
+    const mapId = overlayMapId(state);
+    this.group.visible = mapId !== null;
+    if (mapId === null) {
       this.zones = null;
-      this.farm = null;
+      this.world = null;
       this.draftRect = null;
       this.draftZone = null;
       return;
     }
-    const farm = state.maps.farm;
-    const groundChanged = prev === null || farm !== this.farm;
-    if (groundChanged || state.robots.zones !== this.zones) this.layoutZones(state.robots.zones, farm);
-    this.layoutDraft(state, farm, groundChanged);
+    // Each map has its own world object, so a change of map also counts as a change of ground.
+    const world = state.maps[mapId];
+    const groundChanged = prev === null || world !== this.world;
+    if (groundChanged || state.robots.zones !== this.zones) this.layoutZones(state.robots.zones, mapId, world);
+    this.layoutDraft(state, mapId, world, groundChanged);
     this.zones = state.robots.zones;
-    this.farm = farm;
+    this.world = world;
   }
 
   update(frame: FrameContext): void {
@@ -188,28 +199,28 @@ export class ZoneRenderer implements RenderSystem {
     this.atlas.dispose();
   }
 
-  /** Outlines and letters for every set zone. */
-  private layoutZones(zones: GameState['robots']['zones'], farm: WorldState): void {
+  /** Outlines and letters for every zone set on `mapId`. */
+  private layoutZones(zones: GameState['robots']['zones'], mapId: RobotMapId, world: WorldState): void {
     let used = 0;
     ZONE_IDS.forEach((id, i) => {
-      const rect = zones[id];
+      const rect = zoneOnMap(zones[id], mapId);
       const letter = this.letters[i];
       if (letter === undefined) return;
       letter.visible = rect !== null;
       if (rect === null) return;
-      used = this.layoutOutline(this.outlines, used, rect, farm, scratchColor.setHex(zoneColor(id)));
-      const corner = getTile(farm, rect.x0, rect.z0);
+      used = this.layoutOutline(this.outlines, used, rect, world, scratchColor.setHex(zoneColor(id)));
+      const corner = getTile(world, rect.x0, rect.z0);
       const y = (corner === null ? 0 : highlightGroundHeight(corner)) + LETTER_LIFT;
       this.letterY[i] = y;
-      letter.position.set(tileCenterX(farm.grid, rect.x0), y, tileCenterZ(farm.grid, rect.z0));
+      letter.position.set(tileCenterX(world.grid, rect.x0), y, tileCenterZ(world.grid, rect.z0));
     });
     this.commit(this.outlines, used);
   }
 
   /** The draft's outline, from its corner to the tile the next press would mark. */
-  private layoutDraft(state: GameState, farm: WorldState, force: boolean): void {
+  private layoutDraft(state: GameState, mapId: RobotMapId, world: WorldState, force: boolean): void {
     const draft = state.ui.zoneDraft;
-    const rect = draft === null ? null : zoneRectBetween('farm', draft.corner, selectTargetTile(state) ?? draft.corner);
+    const rect = draft === null ? null : zoneRectBetween(mapId, draft.corner, selectTargetTile(state) ?? draft.corner);
     const zone = draft === null ? null : draft.zone;
     if (!force && zone === this.draftZone && sameRect(rect, this.draftRect)) return;
     this.draftRect = rect;
@@ -219,15 +230,15 @@ export class ZoneRenderer implements RenderSystem {
       return;
     }
     this.draftMaterial.color.setHex(zoneColor(zone)).lerp(WHITE, DRAFT_PALENESS);
-    this.commit(this.draft, this.layoutOutline(this.draft, 0, rect, farm, null));
+    this.commit(this.draft, this.layoutOutline(this.draft, 0, rect, world, null));
   }
 
   /**
    * One quad per outer tile edge of `rect`, written into `mesh` from slot `start` (with `color`
    * as the instance colour when given). Returns the next free slot.
    */
-  private layoutOutline(mesh: THREE.InstancedMesh, start: number, rect: ZoneRect, farm: WorldState, color: THREE.Color | null): number {
-    const grid = farm.grid;
+  private layoutOutline(mesh: THREE.InstancedMesh, start: number, rect: ZoneRect, world: WorldState, color: THREE.Color | null): number {
+    const grid = world.grid;
     const ts = grid.tileSize;
     const half = (STROKE * ts) / 2;
     const north = grid.originZ + rect.z0 * ts + half;
@@ -237,13 +248,13 @@ export class ZoneRenderer implements RenderSystem {
     let slot = start;
     for (let tx = rect.x0; tx < rect.x0 + rect.w; tx++) {
       const x = tileCenterX(grid, tx);
-      slot = this.edge(mesh, slot, farm, tx, rect.z0, x, north, true, color);
-      slot = this.edge(mesh, slot, farm, tx, rect.z0 + rect.d - 1, x, south, true, color);
+      slot = this.edge(mesh, slot, world, tx, rect.z0, x, north, true, color);
+      slot = this.edge(mesh, slot, world, tx, rect.z0 + rect.d - 1, x, south, true, color);
     }
     for (let tz = rect.z0; tz < rect.z0 + rect.d; tz++) {
       const z = tileCenterZ(grid, tz);
-      slot = this.edge(mesh, slot, farm, rect.x0, tz, west, z, false, color);
-      slot = this.edge(mesh, slot, farm, rect.x0 + rect.w - 1, tz, east, z, false, color);
+      slot = this.edge(mesh, slot, world, rect.x0, tz, west, z, false, color);
+      slot = this.edge(mesh, slot, world, rect.x0 + rect.w - 1, tz, east, z, false, color);
     }
     return slot;
   }
@@ -252,7 +263,7 @@ export class ZoneRenderer implements RenderSystem {
   private edge(
     mesh: THREE.InstancedMesh,
     slot: number,
-    farm: WorldState,
+    world: WorldState,
     tx: number,
     tz: number,
     x: number,
@@ -260,9 +271,9 @@ export class ZoneRenderer implements RenderSystem {
     alongX: boolean,
     color: THREE.Color | null,
   ): number {
-    const ts = farm.grid.tileSize;
+    const ts = world.grid.tileSize;
     const stroke = STROKE * ts;
-    const tile = getTile(farm, tx, tz);
+    const tile = getTile(world, tx, tz);
     const y = (tile === null ? 0 : highlightGroundHeight(tile)) + ZONE_MARKER.outlineHeight;
     scratchMatrix.makeScale(alongX ? ts : stroke, 1, alongX ? stroke : ts).setPosition(x, y, z);
     mesh.setMatrixAt(slot, scratchMatrix);

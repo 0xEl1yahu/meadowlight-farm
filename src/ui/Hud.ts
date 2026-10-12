@@ -589,7 +589,13 @@ class ZoneChip {
   }
 
   sync(state: GameState, prev: GameState | null): void {
-    if (prev !== null && state.inventory === prev.inventory && state.ui === prev.ui && state.robots.zones === prev.robots.zones) {
+    if (
+      prev !== null &&
+      state.inventory === prev.inventory &&
+      state.ui === prev.ui &&
+      state.robots.zones === prev.robots.zones &&
+      state.player.mapId === prev.player.mapId
+    ) {
       return;
     }
     const text = zoneChipText(state);

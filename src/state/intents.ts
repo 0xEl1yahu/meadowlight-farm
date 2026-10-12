@@ -33,7 +33,7 @@ import { CAST, npcAt } from '../people/cast';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
-import { zoneRectBetween } from '../robots/zones';
+import { zoneOf, zoneRectBetween } from '../robots/zones';
 import { isReservedTile, mapSeed } from '../world/maps';
 import { isFenceTile } from '../world/maps/neighbours';
 import { getTile, isSoil, isWalkable } from '../world/tiles';
@@ -270,31 +270,35 @@ function planTool(state: GameState, item: ToolItem, target: TileCoord | null): A
   }
 }
 
-/** Why the zone marker does nothing off the farm (part 3 spec §8). */
-export const ZONES_FARM_ONLY = 'Zones are only on the farm.';
+/** Why the zone marker does nothing off the farm and the Neighbours map (part 4c spec §5.3). */
+export const ZONES_ON_ROBOT_MAPS = "Zones go on your farm or the neighbours' fields.";
 
 /**
- * The zone marker on the tile ahead (part 3 spec §8): with no draft the press sets the draft's
- * corner; with one it paints the rectangle from that corner to this tile as the draft's zone.
- * Free, on any farm tile, and only on the farm.
+ * The zone marker on the tile ahead (part 3 spec §8, part 4c spec §5.3): with no draft the press
+ * sets the draft's corner; with one it paints the rectangle from that corner to this tile as the
+ * draft's zone, on the player's map, so a letter painted on one map moves there. Free, on any
+ * tile of the farm or the Neighbours map, and only there.
  */
 function planMarker(state: GameState, target: TileCoord): ActionPlan {
-  if (state.player.mapId !== 'farm') return blocked(target, 'zoneMarker', ZONES_FARM_ONLY);
+  const mapId = selectActiveRobotMapId(state);
+  if (mapId === null) return blocked(target, 'zoneMarker', ZONES_ON_ROBOT_MAPS);
   const draft = state.ui.zoneDraft;
   if (draft === null) return plan(target, { kind: 'zoneCorner', corner: target }, 'zoneMarker');
-  return plan(target, { kind: 'markZone', zone: draft.zone, rect: zoneRectBetween('farm', draft.corner, target) }, 'zoneMarker');
+  return plan(target, { kind: 'markZone', zone: draft.zone, rect: zoneRectBetween(mapId, draft.corner, target) }, 'zoneMarker');
 }
 
 /**
  * Shift + E with the zone marker (part 3 spec §8): clears the current letter's zone. An empty
- * zone has nothing to clear (silent); off the farm it is refused like painting. Facing the edge
- * of the world, the player's own tile stands in for the target.
+ * zone, or one on the other map, has nothing to clear here (silent); off the farm and the
+ * Neighbours map it is refused like painting. Facing the edge of the world, the player's own
+ * tile stands in for the target.
  */
 function planClearZone(state: GameState, target: TileCoord | null): ActionPlan {
   const at = target ?? { tx: state.player.tx, tz: state.player.tz };
-  if (state.player.mapId !== 'farm') return blocked(at, 'zoneMarker', ZONES_FARM_ONLY);
+  const mapId = selectActiveRobotMapId(state);
+  if (mapId === null) return blocked(at, 'zoneMarker', ZONES_ON_ROBOT_MAPS);
   const zone = state.ui.zoneLetter;
-  if (state.robots.zones[zone] === null) return blocked(at, 'none');
+  if (zoneOf(state, zone, mapId) === null) return blocked(at, 'none');
   return plan(at, { kind: 'clearZone', zone }, 'zoneMarker');
 }
 

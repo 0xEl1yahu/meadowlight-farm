@@ -8,7 +8,7 @@ import { Direction, type GameState, type MdCard, type RobotAction, type RobotPla
 import { b } from '../src/robots/blocks';
 import { checkMd, checkProgram } from '../src/robots/check';
 import { addRobot } from '../src/robots/create';
-import { MD_SCRIPT, MD_SHAPE, PROGRAM_SHAPE, ZONE_OFF_FARM, ZONE_SHAPE, programmedRobot, withMd, withZone } from '../src/robots/edits';
+import { MD_SCRIPT, MD_SHAPE, PROGRAM_SHAPE, ZONE_OFF_MAP, ZONE_SHAPE, programmedRobot, withMd, withZone } from '../src/robots/edits';
 import { freshExec, morningExec } from '../src/robots/exec';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
@@ -165,10 +165,10 @@ describe('withZone', () => {
   });
 
   it('refuses a rectangle that is empty or leaves the farm', () => {
-    expect(withZone(BASE, 'A', { ...RECT, w: 0 })).toBe(ZONE_OFF_FARM);
-    expect(withZone(BASE, 'A', { ...RECT, d: 0 })).toBe(ZONE_OFF_FARM);
-    expect(withZone(BASE, 'A', { ...RECT, x0: -1 })).toBe(ZONE_OFF_FARM);
-    expect(withZone(BASE, 'A', { mapId: 'farm', x0: 46, z0: 9, w: 5, d: 1 })).toBe(ZONE_OFF_FARM);
+    expect(withZone(BASE, 'A', { ...RECT, w: 0 })).toBe(ZONE_OFF_MAP);
+    expect(withZone(BASE, 'A', { ...RECT, d: 0 })).toBe(ZONE_OFF_MAP);
+    expect(withZone(BASE, 'A', { ...RECT, x0: -1 })).toBe(ZONE_OFF_MAP);
+    expect(withZone(BASE, 'A', { mapId: 'farm', x0: 46, z0: 9, w: 5, d: 1 })).toBe(ZONE_OFF_MAP);
   });
 });
 

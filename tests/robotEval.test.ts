@@ -34,8 +34,8 @@ const chest = { ...EMPTY_TILE, object: { kind: 'chest' as const, slots: Array.fr
 describe('zones', () => {
   it('reads a zone from the save, null when empty', () => {
     const rect: ZoneRect = { mapId: 'farm', x0: 2, z0: 3, w: 3, d: 2 };
-    expect(zoneOf(withZones(BASE, { A: rect }), 'A')).toEqual(rect);
-    expect(zoneOf(BASE, 'B')).toBeNull();
+    expect(zoneOf(withZones(BASE, { A: rect }), 'A', 'farm')).toEqual(rect);
+    expect(zoneOf(BASE, 'B', 'farm')).toBeNull();
   });
 
   it('knows which tiles are inside a rectangle, edges included', () => {

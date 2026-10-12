@@ -1,12 +1,21 @@
 /**
- * Zones A–H: named farm rectangles (farmclaws part 2 spec §2.1), and the tile ahead of a robot. Pure.
+ * Zones A–H: named rectangles on the farm or the Neighbours map (farmclaws part 2 spec §2.1, part
+ * 4c spec §5.3), and the tile ahead of a robot. Pure.
  */
 import type { GameState, Robot, RobotMapId, TileCoord, ZoneId, ZoneRect } from '../core/types';
 import { stepTile } from '../world/grid';
 
-/** The zone's rectangle, or null when the zone is empty. */
-export function zoneOf(state: GameState, id: ZoneId): ZoneRect | null {
-  return state.robots.zones[id];
+/**
+ * The zone's rectangle on `mapId`, or null when the zone is empty or on the other map: seen from
+ * one map, a zone on the other counts as empty (part 4c spec §5.3).
+ */
+export function zoneOf(state: GameState, id: ZoneId, mapId: RobotMapId): ZoneRect | null {
+  return zoneOnMap(state.robots.zones[id], mapId);
+}
+
+/** `rect` when it lies on `mapId`, else null. */
+export function zoneOnMap(rect: ZoneRect | null, mapId: RobotMapId): ZoneRect | null {
+  return rect !== null && rect.mapId === mapId ? rect : null;
 }
 
 export function inZone(rect: ZoneRect, tx: number, tz: number): boolean {

@@ -136,7 +136,7 @@ export function evaluate(expr: Expr, ctx: EvalContext): Value {
     case 'bagHas':
       return yesNo(bagCount(robot.bag, expr.itemId) > 0);
     case 'atEdgeOf': {
-      const rect = zoneOf(state, expr.zone);
+      const rect = zoneOf(state, expr.zone, robot.mapId);
       if (rect === null || !inZone(rect, robot.tx, robot.tz)) return yesNo(false);
       const neighbours = DIRECTIONS.map((d) => stepTile({ tx: robot.tx, tz: robot.tz }, d));
       return yesNo(neighbours.some((n) => !inZone(rect, n.tx, n.tz)));

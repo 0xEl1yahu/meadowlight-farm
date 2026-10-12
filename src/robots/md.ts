@@ -20,7 +20,7 @@ import { inZone, tileAheadOf, zoneOf } from './zones';
 export function moveForbiddenBy(robot: Robot, from: TileCoord, to: TileCoord, state: GameState): MdCard | null {
   for (const card of robot.md) {
     if (card.kind === 'dontLeave') {
-      const rect = zoneOf(state, card.zone);
+      const rect = zoneOf(state, card.zone, robot.mapId);
       if (rect !== null && inZone(rect, from.tx, from.tz) && !inZone(rect, to.tx, to.tz)) return card;
     } else if (card.kind === 'dontGoIntoWater') {
       if (getTile(robotWorld(state, robot), to.tx, to.tz)?.blocker === Blocker.Water) return card;

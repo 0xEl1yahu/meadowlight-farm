@@ -12,7 +12,7 @@ import { applyRobotPlan, planRobotAction } from '../src/robots/execute';
 import { chestSlots, requireRobot } from '../src/robots/world';
 import { zoneRectBetween } from '../src/robots/zones';
 import { actions } from '../src/state/actions';
-import { ZONES_FARM_ONLY, describeIntent, planInteraction, planPrimaryAction, planShiftInteraction } from '../src/state/intents';
+import { ZONES_ON_ROBOT_MAPS, describeIntent, planInteraction, planPrimaryAction, planShiftInteraction } from '../src/state/intents';
 import { countItem } from '../src/state/inventory';
 import { gameReducer, startNextDay } from '../src/state/reducer';
 import { isZoneMarkerSelected } from '../src/state/selectors';
@@ -123,13 +123,13 @@ describe('painting a zone', () => {
     }
   });
 
-  it('refuses off the farm, and does nothing facing the edge of the world', () => {
+  it('refuses off the farm and the Neighbours map, and does nothing facing the edge of the world', () => {
     const tree = { tx: 10, tz: 10 };
     const ahead = { tx: 10, tz: 11 };
     const forest = withPlayer(withTile(withTile(MARKING, tree, EMPTY_TILE, 'forest'), ahead, EMPTY_TILE, 'forest'), tree, Direction.South, 'forest');
-    expect(ZONES_FARM_ONLY).toBe('Zones are only on the farm.');
-    expect(planPrimaryAction(forest)).toEqual({ target: ahead, intent: { kind: 'blocked', reason: 'Zones are only on the farm.' }, feedback: 'zoneMarker', energyCost: 0 });
-    expect(lastText(use(forest))).toBe('Zones are only on the farm.');
+    expect(ZONES_ON_ROBOT_MAPS).toBe("Zones go on your farm or the neighbours' fields.");
+    expect(planPrimaryAction(forest)).toEqual({ target: ahead, intent: { kind: 'blocked', reason: ZONES_ON_ROBOT_MAPS }, feedback: 'zoneMarker', energyCost: 0 });
+    expect(lastText(use(forest))).toBe(ZONES_ON_ROBOT_MAPS);
     expect(use(forest).ui.zoneDraft).toBeNull();
     const edge = at(MARKING, { tx: 5, tz: 0 }, Direction.North);
     expect(planPrimaryAction(edge)).toEqual({ target: null, intent: { kind: 'blocked', reason: null }, feedback: 'zoneMarker', energyCost: 0 });

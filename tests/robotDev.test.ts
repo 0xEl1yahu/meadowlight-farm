@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Direction, type RobotAction, type RobotPlace } from '../src/core/types';
 import { consoleText, scriptedRobotSpec } from '../src/dev/robotDev';
 import { addRobot } from '../src/robots/create';
-import { MD_SCRIPT, MD_SHAPE, PROGRAM_SHAPE, ZONE_OFF_FARM, ZONE_SHAPE } from '../src/robots/edits';
+import { MD_SCRIPT, MD_SHAPE, PROGRAM_SHAPE, ZONE_OFF_MAP, ZONE_SHAPE } from '../src/robots/edits';
 import { BASE, TARGET } from './testUtils';
 
 const AT: RobotPlace = { tx: TARGET.tx, tz: TARGET.tz, facing: Direction.South };
@@ -70,7 +70,7 @@ describe('consoleText', () => {
 
   it('prints every other refusal as it is', () => {
     expect(consoleText(MD_SCRIPT)).toBe('.MD cards only apply to block programs.');
-    expect(consoleText(ZONE_OFF_FARM)).toBe('A zone is at least 1 × 1 tile and lies wholly inside the farm.');
+    expect(consoleText(ZONE_OFF_MAP)).toBe('A zone is at least 1 × 1 tile and lies wholly inside its map.');
     expect(consoleText('Mini robots hold 12 blocks; this program has 13.')).toBe('Mini robots hold 12 blocks; this program has 13.');
   });
 });

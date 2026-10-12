@@ -270,7 +270,7 @@ export function stepProgram(state: GameState, robot: Robot): Step {
         else if (statement.else !== null) frames.push(bodyFrame(top.list, top.next, 'else', null));
         break;
       case 'forEachTile': {
-        const rect = zoneOf(state, statement.zone);
+        const rect = zoneOf(state, statement.zone, robot.mapId);
         const tiles = rect === null ? [] : snakeTiles(rect);
         const i = nextReachable(tiles, 0);
         const first = tiles[i];

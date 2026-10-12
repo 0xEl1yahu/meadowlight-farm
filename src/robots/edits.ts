@@ -1,5 +1,5 @@
 /**
- * Editing a robot's program, .MD and parts and the farm's zones (farmclaws part 2 spec §12, part 3
+ * Editing a robot's program, .MD and parts and the zones (farmclaws part 2 spec §12, part 3
  * spec §4.7, part 4b spec §5.2). The workbench's reducer actions and the dev hooks make every edit
  * through these, after the same gate: isProgramShape → checkProgram and isMdShape → checkMd. Pure.
  *
@@ -19,7 +19,7 @@ import { bagStacks, hasPart, periodFor } from './stats';
 export const PROGRAM_SHAPE = 'That program is not a script or a block program.';
 export const MD_SHAPE = 'That .MD is not a list of cards.';
 export const ZONE_SHAPE = 'Zones are A to H, and a zone is { mapId, x0, z0, w, d } or null.';
-export const ZONE_OFF_FARM = 'A zone is at least 1 × 1 tile and lies wholly inside the farm.';
+export const ZONE_OFF_MAP = 'A zone is at least 1 × 1 tile and lies wholly inside its map.';
 export const MD_SCRIPT = '.MD cards only apply to block programs.';
 
 /** Powers a new program doesn't change: the robot needs charging, rescuing or repairing first, or can only be scrapped (ruined). */
@@ -110,12 +110,12 @@ function isZoneRectShape(v: unknown): v is ZoneRect {
 
 /**
  * `state` with zone `id` set to `rect` (only its map and four numbers) or cleared with null. Returns
- * ZONE_OFF_FARM for a rectangle that is empty or leaves the farm, and ZONE_SHAPE for an unknown
+ * ZONE_OFF_MAP for a rectangle that is empty or leaves its map, and ZONE_SHAPE for an unknown
  * zone or something that isn't a rectangle.
  */
 export function withZone(state: GameState, id: ZoneId, rect: ZoneRect | null): GameState | string {
   if (!isOneOf(id, ZONE_IDS) || (rect !== null && !isZoneRectShape(rect))) return ZONE_SHAPE;
-  if (rect !== null && !isValidZoneRect(rect)) return ZONE_OFF_FARM;
+  if (rect !== null && !isValidZoneRect(rect)) return ZONE_OFF_MAP;
   const zone: ZoneRect | null = rect === null ? null : { mapId: rect.mapId, x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d };
   return { ...state, robots: { ...state.robots, zones: { ...state.robots.zones, [id]: zone } } };
 }
