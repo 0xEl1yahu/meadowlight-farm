@@ -88,7 +88,7 @@ function isScriptedInput(v: unknown): v is ScriptedRobotInput {
 
 const PROGRAM_USAGE = 'Usage: setProgram(name, blocks.program({ stacks: [blocks.when(blocks.morning(), blocks.move())] }))';
 const MD_USAGE = "Usage: setMd(name, [{ kind: 'dontGoIntoWater' }, { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 }])";
-const ZONE_USAGE = "Usage: setZone('A', { x0, z0, w, d }) sets a zone and setZone('A', null) clears it. Zones are A to H.";
+const ZONE_USAGE = "Usage: setZone('A', { x0, z0, w, d }) sets a zone on the farm (add mapId: 'neighbours' for the Neighbours map) and setZone('A', null) clears it. Zones are A to H.";
 
 /** Each malformed-input refusal of the edits, and the usage line its hook prints instead. */
 const USAGE_FOR: ReadonlyMap<string, string> = new Map([
@@ -114,6 +114,9 @@ function withBurnerKnown(state: GameState): GameState {
   return { ...state, crafting: { known } };
 }
 
+/** A zone as the console gives it: its map may be left out, for the farm. */
+type DevZoneRect = Omit<ZoneRect, 'mapId'> & { readonly mapId?: ZoneRect['mapId'] };
+
 /** The dev handle once these hooks are attached. Declared here, not in main.ts, so no hook names reach the production source maps. */
 type RobotDevHandle = {
   readonly addRobot: (preset: RobotPresetId, place?: RobotPlace) => string;
@@ -121,7 +124,7 @@ type RobotDevHandle = {
   readonly robotLog: () => void;
   readonly setProgram: (name: string, program: RobotProgram) => string;
   readonly setMd: (name: string, cards: readonly MdCard[]) => string;
-  readonly setZone: (id: ZoneId, rect: ZoneRect | null) => string;
+  readonly setZone: (id: ZoneId, rect: DevZoneRect | null) => string;
   readonly blocks: typeof b;
   readonly unlockAll: () => string;
 };
@@ -167,8 +170,9 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
 
   const setMd = (name: string, cards: readonly MdCard[]): string => reprogram(name, (robot) => withMd(robot, cards), `Set ${name}'s .MD.`);
 
-  const setZone = (id: ZoneId, rect: ZoneRect | null): string => {
-    const next = withZone(store.getState(), id, rect);
+  const setZone = (id: ZoneId, rect: DevZoneRect | null): string => {
+    const zone: unknown = typeof rect === 'object' && rect !== null ? { mapId: 'farm', ...rect } : rect;
+    const next = withZone(store.getState(), id, zone as ZoneRect | null);
     if (typeof next === 'string') return consoleText(next);
     store.dispatch(actions.load(next));
     return rect === null ? `Cleared Zone ${id}.` : `Set Zone ${id}.`;

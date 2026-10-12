@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROBOTS, TIME } from '../src/config';
-import { Blocker, Direction, TileState, Weather, type Expr, type GameState, type Robot, type Value } from '../src/core/types';
+import { Blocker, Direction, TileState, Weather, type Expr, type GameState, type Robot, type Value, type ZoneRect } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { clampNumber, evaluate, type EvalContext } from '../src/robots/eval';
 import { freshExec } from '../src/robots/exec';
@@ -33,13 +33,13 @@ const chest = { ...EMPTY_TILE, object: { kind: 'chest' as const, slots: Array.fr
 
 describe('zones', () => {
   it('reads a zone from the save, null when empty', () => {
-    const rect = { x0: 2, z0: 3, w: 3, d: 2 };
+    const rect: ZoneRect = { mapId: 'farm', x0: 2, z0: 3, w: 3, d: 2 };
     expect(zoneOf(withZones(BASE, { A: rect }), 'A')).toEqual(rect);
     expect(zoneOf(BASE, 'B')).toBeNull();
   });
 
   it('knows which tiles are inside a rectangle, edges included', () => {
-    const rect = { x0: 2, z0: 3, w: 3, d: 2 };
+    const rect: ZoneRect = { mapId: 'farm', x0: 2, z0: 3, w: 3, d: 2 };
     expect([inZone(rect, 2, 3), inZone(rect, 4, 4), inZone(rect, 5, 3), inZone(rect, 2, 5), inZone(rect, 1, 3), inZone(rect, 2, 2)]).toEqual([
       true,
       true,
@@ -51,7 +51,7 @@ describe('zones', () => {
   });
 
   it('walks a 3×2 zone in snake order and a 1×1 zone as its one tile', () => {
-    expect(snakeTiles({ x0: 2, z0: 3, w: 3, d: 2 })).toEqual([
+    expect(snakeTiles({ mapId: 'farm', x0: 2, z0: 3, w: 3, d: 2 })).toEqual([
       { tx: 2, tz: 3 },
       { tx: 3, tz: 3 },
       { tx: 4, tz: 3 },
@@ -59,7 +59,7 @@ describe('zones', () => {
       { tx: 3, tz: 4 },
       { tx: 2, tz: 4 },
     ]);
-    expect(snakeTiles({ x0: 7, z0: 9, w: 1, d: 1 })).toEqual([{ tx: 7, tz: 9 }]);
+    expect(snakeTiles({ mapId: 'farm', x0: 7, z0: 9, w: 1, d: 1 })).toEqual([{ tx: 7, tz: 9 }]);
   });
 
   it('finds the tile ahead for each facing', () => {
@@ -190,7 +190,7 @@ describe('sensors', () => {
   });
 
   it("at edge of: inside the zone with a neighbour outside it", () => {
-    const state = withZones(BASE, { A: { x0: 4, z0: 9, w: 3, d: 3 } });
+    const state = withZones(BASE, { A: { mapId: 'farm', x0: 4, z0: 9, w: 3, d: 3 } });
     expect(ev(b.atEdgeOf('A'), state, robotOf({ tx: 5, tz: 10 }))).toEqual(yes(false));
     expect(ev(b.atEdgeOf('A'), state, robotOf({ tx: 4, tz: 10 }))).toEqual(yes(true));
     expect(ev(b.atEdgeOf('A'), state, robotOf({ tx: 6, tz: 11 }))).toEqual(yes(true));

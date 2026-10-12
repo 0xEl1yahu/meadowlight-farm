@@ -25,7 +25,7 @@ import { BASE, atDay, matureCrop, robotOf, soilTile, tileAt, withRobots, withTil
 const MORNING = atDay(BASE, 0, TIME.dayStartMinute);
 const SIX_PM = 18 * 60;
 /** Zone A in most rows: three tiles in a row, walked west to east. */
-const ROW_A = { x0: 4, z0: 12, w: 3, d: 1 } as const;
+const ROW_A = { mapId: 'farm', x0: 4, z0: 12, w: 3, d: 1 } as const;
 
 const tick = (state: GameState, minutes: number): GameState => gameReducer(state, actions.tick(minutes));
 
@@ -56,7 +56,7 @@ describe('faithful to a fault', () => {
       { tx: 5, tz: 13 },
       { tx: 4, tz: 13 },
     ]; // snake order
-    let state = withZones(MORNING, { A: { x0: 4, z0: 12, w: 3, d: 2 } });
+    let state = withZones(MORNING, { A: { mapId: 'farm', x0: 4, z0: 12, w: 3, d: 2 } });
     for (const at of bed) state = withTile(state, at, soilTile(TileState.Plowed), 'farm');
     state = withTile(state, pond, blockedTile(Blocker.Water), 'farm');
     const program = b.program({
@@ -135,7 +135,7 @@ describe('faithful to a fault', () => {
     const card: MdCard = { kind: 'doReturn', to: { kind: 'generator' }, minute: SIX_PM };
     const burner: TileCoord = { tx: 6, tz: 15 };
     const row: TileCoord[] = [4, 5, 6, 7, 8, 9].map((tx) => ({ tx, tz: 12 }));
-    let state = withZones(atDay(BASE, 0, SIX_PM - 24), { A: { x0: 4, z0: 12, w: 6, d: 1 } });
+    let state = withZones(atDay(BASE, 0, SIX_PM - 24), { A: { mapId: 'farm', x0: 4, z0: 12, w: 6, d: 1 } });
     for (const at of row) state = withTile(state, at, soilTile(TileState.Watered, matureCrop('parsnip')), 'farm');
     state = withTile(state, burner, { ...EMPTY_TILE, object: { kind: 'woodBurner', fuel: 0 } }, 'farm');
     // Programmed at 6:00 and still at it in the evening: it harvests at 17:40, 17:48 and 17:56.

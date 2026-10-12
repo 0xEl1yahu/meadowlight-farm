@@ -1,9 +1,9 @@
 /**
  * Save validation for the GameState sections later workstreams fill in (profile, tools,
- * crafting, cooking, buildings, NPCs, quests, stats, festival, shop stock). Phase 0 only stores them, so
- * these checks pin down exactly the shapes and ranges the section types document.
+ * crafting, cooking, buildings, NPCs, quests, stats, festival, shop stock, jobs). Phase 0 only
+ * stores them, so these checks pin down exactly the shapes and ranges the section types document.
  */
-import { APPEARANCE, LAYOUT, PROFILE, SHOP_STOCK } from '../config';
+import { APPEARANCE, JOBS, LAYOUT, PROFILE, SHOP_STOCK } from '../config';
 import {
   ANIMAL_KINDS,
   BASIC_PART_IDS,
@@ -11,6 +11,8 @@ import {
   CROP_IDS,
   DISH_IDS,
   FARM_BUILDING_KINDS,
+  JOB_IDS,
+  JOB_STATUSES,
   NPC_IDS,
   ROBOT_SIZES,
   STORY_QUEST_IDS,
@@ -21,11 +23,14 @@ import {
 } from '../core/types';
 import { seedItemId } from '../farming/crops';
 import { isItemId } from '../items/items';
+import { inBounds } from '../world/grid';
+import { MAPS } from '../world/maps';
 import {
   hasExactKeys,
   isBool,
   isCanonicalSubset,
   isCount,
+  isInt,
   isIntIn,
   isObj,
   isOneOf,
@@ -200,6 +205,31 @@ function isValidShopsSoldToday(v: unknown): boolean {
   );
 }
 
+/**
+ * The jobs (farmclaws part 4c spec §7): exactly a status per job, in order every job done, then
+ * the next one offered or active (none once all are done), then the rest locked, so at most one
+ * job is active and a job is only reached when the one before it is done. The bed is null or the
+ * corner of a 3 × 3 block on the farm; the field day is -1 or an absolute day.
+ */
+function isValidJobs(v: unknown): boolean {
+  if (!isObj(v) || !hasExactKeys(v, ['status', 'bed', 'rescued', 'fieldDay'])) return false;
+  const status = v.status;
+  if (!isObj(status) || !hasExactKeys(status, JOB_IDS) || !JOB_IDS.every((id) => isOneOf(status[id], JOB_STATUSES))) return false;
+  const statuses = JOB_IDS.map((id) => status[id]);
+  const next = statuses.findIndex((s) => s !== 'done');
+  if (next !== -1 && (!isOneOf(statuses[next], ['offered', 'active']) || statuses.slice(next + 1).some((s) => s !== 'locked'))) return false;
+  const bed = v.bed;
+  const bedOk =
+    bed === null ||
+    (isObj(bed) &&
+      hasExactKeys(bed, ['tx', 'tz']) &&
+      isInt(bed.tx) &&
+      isInt(bed.tz) &&
+      inBounds(MAPS.farm.grid, bed.tx, bed.tz) &&
+      inBounds(MAPS.farm.grid, bed.tx + JOBS.bedSize - 1, bed.tz + JOBS.bedSize - 1));
+  return bedOk && isBool(v.rescued) && isIntIn(v.fieldDay, -1, Number.MAX_SAFE_INTEGER);
+}
+
 /** Every section `createDefaultSections()` produces, read from an untrusted save object. */
 export function isValidSections(v: Obj): v is Obj & GameSections {
   return (
@@ -212,6 +242,7 @@ export function isValidSections(v: Obj): v is Obj & GameSections {
     isValidQuests(v.quests) &&
     isValidStats(v.stats) &&
     isValidFestival(v.festival) &&
-    isValidShopsSoldToday(v.shopsSoldToday)
+    isValidShopsSoldToday(v.shopsSoldToday) &&
+    isValidJobs(v.jobs)
   );
 }

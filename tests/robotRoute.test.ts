@@ -3,7 +3,7 @@
  * the cards that shape them, and what each DON'T card forbids.
  */
 import { describe, expect, it } from 'vitest';
-import { Blocker, Direction, TileState, type GameState, type MdCard, type TileCoord } from '../src/core/types';
+import { Blocker, Direction, TileState, type GameState, type MdCard, type TileCoord, type ZoneRect } from '../src/core/types';
 import { dontForbids, keptItems, moveForbiddenBy } from '../src/robots/md';
 import { nextRouteAction, planRoute, reachableFrom, reachableInOrder } from '../src/robots/route';
 import { blockedTile } from '../src/world/tiles';
@@ -18,7 +18,7 @@ const tiles = (...coords: [number, number][]): TileCoord[] => coords.map(([tx, t
 const WATER: MdCard = { kind: 'dontGoIntoWater' };
 const LEAVE_A: MdCard = { kind: 'dontLeave', zone: 'A' };
 /** Zone A: x 4…6, z 9…11, around TARGET (5, 10). */
-const ZONE_A = { x0: 4, z0: 9, w: 3, d: 3 };
+const ZONE_A: ZoneRect = { mapId: 'farm', x0: 4, z0: 9, w: 3, d: 3 };
 
 describe('reachableFrom', () => {
   it('holds the start and every tile planRoute can reach, and none behind a wall', () => {
@@ -75,7 +75,7 @@ describe('planRoute', () => {
   });
 
   it('is null when the only way inside the zone leads out of it', () => {
-    const row = withZones(rockAt(BASE, { tx: 5, tz: 10 }), { A: { x0: 4, z0: 10, w: 3, d: 1 } });
+    const row = withZones(rockAt(BASE, { tx: 5, tz: 10 }), { A: { mapId: 'farm', x0: 4, z0: 10, w: 3, d: 1 } });
     const robot = robotOf({ tx: 4, tz: 10, md: [LEAVE_A] });
     expect(planRoute(row, robot, { tx: 6, tz: 10 })).toBeNull();
     expect(planRoute(row, robotOf({ tx: 4, tz: 10 }), { tx: 6, tz: 10 })).toEqual(tiles([4, 9], [5, 9], [6, 9], [6, 10]));

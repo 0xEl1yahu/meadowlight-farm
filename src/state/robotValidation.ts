@@ -11,7 +11,10 @@ import {
   MD_CARD_KINDS,
   QUALITIES,
   ROBOT_BLOCK_REASONS,
+  ROBOT_HOME_MAPS,
   ROBOT_LOG_EVENT_KINDS,
+  ROBOT_MAP_IDS,
+  ROBOT_OWNERS,
   ROBOT_PART_IDS,
   ROBOT_POWERS,
   ROBOT_SIZES,
@@ -48,7 +51,7 @@ import { hasExactKeys, isBool, isCanonicalSubset, isCount, isInt, isIntIn, isObj
 const MAX = Number.MAX_SAFE_INTEGER;
 
 const ROBOT_KEYS = [
-  'id', 'name', 'size', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'onBench', 'program', 'pc',
+  'id', 'name', 'size', 'mapId', 'owner', 'parts', 'tx', 'tz', 'facing', 'bag', 'tank', 'tokens', 'power', 'carried', 'onBench', 'program', 'pc',
   'exec', 'md', 'off', 'nextActMinute', 'repairReadyDay', 'stats', 'moveSeq', 'teleportSeq', 'actionSeq', 'lastAction', 'paint',
 ] as const;
 
@@ -476,12 +479,22 @@ function isValidMind(v: Obj, body: Pick<Robot, 'size' | 'parts'>): boolean {
   return pc === 0 && isValidExec(exec, program) && exec.doneCards.every((i) => isDoCard(md[i]));
 }
 
+/** Each zone null or a rectangle wholly on its own map (part 4c spec §7). */
 function isValidZones(v: unknown): boolean {
   if (!isObj(v) || !hasExactKeys(v, ZONE_IDS)) return false;
   return ZONE_IDS.every((id) => {
     const rect = v[id];
     if (rect === null) return true;
-    return isObj(rect) && hasExactKeys(rect, ['x0', 'z0', 'w', 'd']) && isInt(rect.x0) && isInt(rect.z0) && isInt(rect.w) && isInt(rect.d) && isValidZoneRect({ x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d });
+    return (
+      isObj(rect) &&
+      hasExactKeys(rect, ['mapId', 'x0', 'z0', 'w', 'd']) &&
+      isOneOf(rect.mapId, ROBOT_MAP_IDS) &&
+      isInt(rect.x0) &&
+      isInt(rect.z0) &&
+      isInt(rect.w) &&
+      isInt(rect.d) &&
+      isValidZoneRect({ mapId: rect.mapId, x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d })
+    );
   });
 }
 
@@ -631,12 +644,18 @@ function isValidRobotStats(v: unknown): boolean {
   return today.tokens <= week.tokens && today.actions <= week.actions && today.crops <= week.crops;
 }
 
-function isValidRobot(v: unknown, farm: WorldState): boolean {
+function isValidRobot(v: unknown, maps: GameState['maps']): boolean {
   if (!isObj(v) || !hasExactKeys(v, ROBOT_KEYS)) return false;
   if (!isIntIn(v.id, 1, MAX) || !isValidName(v.name) || !isOneOf(v.size, ROBOT_SIZES)) return false;
+  if (!isOneOf(v.owner, ROBOT_OWNERS)) return false;
+  const mapId = ROBOT_HOME_MAPS[v.owner];
+  if (v.mapId !== mapId) return false;
+  // Only the player carries robots, and only their own (part 4c spec §5.2).
+  if (v.carried === true && v.owner !== 'player') return false;
+  const world = maps[mapId];
   if (!isCanonicalSubset(v.parts, ROBOT_PART_IDS) || v.parts.length > ROBOTS.sizes[v.size].partSlots) return false;
   const parts: readonly RobotPartId[] = v.parts;
-  if (!isInt(v.tx) || !isInt(v.tz) || !inBounds(farm.grid, v.tx, v.tz) || !isIntIn(v.facing, 0, 3)) return false;
+  if (!isInt(v.tx) || !isInt(v.tz) || !inBounds(world.grid, v.tx, v.tz) || !isIntIn(v.facing, 0, 3)) return false;
   if (!Array.isArray(v.bag) || v.bag.length > bagStacks({ size: v.size, parts }) || !v.bag.every((s: unknown) => isValidStack(s, true))) return false;
   if (!isIntIn(v.tank, 0, ROBOTS.tankCapacity) || (v.tank > 0 && !parts.includes('wateringHead'))) return false;
   if (!isIntIn(v.tokens, 0, batteryFor(v.size)) || !isValidRobotStats(v.stats)) return false;
@@ -653,7 +672,7 @@ function isValidRobot(v: unknown, farm: WorldState): boolean {
   if (v.power === 'repairing') return isCount(v.repairReadyDay) && !v.carried;
   if (v.repairReadyDay !== null) return false;
   if (v.carried) return true;
-  const tile = getTile(farm, v.tx, v.tz);
+  const tile = getTile(world, v.tx, v.tz);
   if (tile === null) return false;
   // On the bench means on the workbench tile, where part 1's walkable rule doesn't apply; no other robot stands there.
   const onWorkbench = tile.object !== null && tile.object.kind === 'workbench';
@@ -669,11 +688,11 @@ function isValidDelivery(v: unknown): boolean {
 }
 
 /**
- * The robots section: ids unique, ascending and below nextId; at most maxRobots, counting the
- * deliveries due; every robot valid on the farm and every delivery well formed; the carried robot
- * (if any) matches `player.carrying` and the player is on the farm; at most one robot is on the
- * bench; exactly one workbench stands on the farm; the pool, last night's fuel, the log and the
- * zones valid.
+ * The robots section: ids unique, ascending and below nextId; at most maxRobots of the player's
+ * robots, counting the deliveries due; every robot valid on its map and every delivery well
+ * formed; the carried robot (if any) matches `player.carrying` and the player is on the farm; at
+ * most one robot is on the bench; exactly one workbench stands on the farm; the pool, last
+ * night's fuel, the log and the zones valid.
  */
 export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player: unknown): boolean {
   const keys = ['nextId', 'list', 'pool', 'log', 'lastNightFuel', 'zones', 'unlocks', 'pendingMarker', 'deliveries'];
@@ -681,12 +700,14 @@ export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player
   if (!isBool(v.pendingMarker)) return false;
   if (!isValidZones(v.zones) || !isValidUnlocks(v.unlocks)) return false;
   if (!isIntIn(v.nextId, 1, MAX) || !Array.isArray(v.list) || !Array.isArray(v.deliveries)) return false;
-  if (v.list.length + v.deliveries.length > ROBOTS.maxRobots || !v.deliveries.every(isValidDelivery)) return false;
+  if (!v.deliveries.every(isValidDelivery)) return false;
   let previous = 0;
   let carried = 0;
   let benched = 0;
+  let players = 0;
   for (const robot of v.list as readonly unknown[]) {
-    if (!isValidRobot(robot, maps.farm) || !isObj(robot) || !isInt(robot.id)) return false;
+    if (!isValidRobot(robot, maps) || !isObj(robot) || !isInt(robot.id)) return false;
+    if (robot.owner === 'player') players++;
     if (robot.id <= previous || robot.id >= v.nextId) return false;
     previous = robot.id;
     if (robot.onBench === true) benched++;
@@ -696,6 +717,7 @@ export function isValidRobotsSection(v: unknown, maps: GameState['maps'], player
     }
   }
   if (carried !== (player.carrying === null ? 0 : 1) || benched > 1) return false;
+  if (players + v.deliveries.length > ROBOTS.maxRobots) return false;
   const fuel = v.lastNightFuel;
   if (!isCount(v.pool) || !isObj(fuel) || !hasExactKeys(fuel, ['wood', 'tokens']) || !isCount(fuel.wood) || !isCount(fuel.tokens)) return false;
   return isValidLog(v.log, maps.farm) && burnersOnlyOnFarm(maps) && oneWorkbench(maps);

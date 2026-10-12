@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, TOOLS, WORKBENCH, ZONE_MARKER } from '../src/config';
-import { Blocker, Direction, TOOL_TYPES, UPGRADABLE_TOOLS, ZONE_IDS, type GameState, type TileCoord } from '../src/core/types';
+import { Blocker, Direction, TOOL_TYPES, UPGRADABLE_TOOLS, ZONE_IDS, type GameState, type TileCoord, type ZoneRect } from '../src/core/types';
 import { IGNORED, markerToolCommand, panelKeyCommand } from '../src/input/panelKeys';
 import { getItem } from '../src/items/items';
 import { applyRobotPlan, planRobotAction } from '../src/robots/execute';
@@ -25,7 +25,7 @@ import { BASE, STAND, TARGET, holding, must, robotOf, scenario, stack, withPlaye
 const MARKING = holding(scenario(EMPTY_TILE), 'zoneMarker');
 /** Standing here facing South, the player marks (7, 12): with TARGET it spans a 3×3 zone. */
 const FAR: TileCoord = { tx: 7, tz: 11 };
-const RECT_3X3 = { x0: 5, z0: 10, w: 3, d: 3 };
+const RECT_3X3: ZoneRect = { mapId: 'farm', x0: 5, z0: 10, w: 3, d: 3 };
 
 const use = (state: GameState): GameState => gameReducer(state, actions.useTool());
 const cycle = (state: GameState): GameState => gameReducer(state, actions.cycleZoneLetter());
@@ -67,10 +67,10 @@ describe('the zone marker tool', () => {
 
 describe('painting a zone', () => {
   it('spans the rectangle between two corners, whichever comes first', () => {
-    expect(zoneRectBetween({ tx: 5, tz: 10 }, { tx: 7, tz: 12 })).toEqual(RECT_3X3);
-    expect(zoneRectBetween({ tx: 7, tz: 12 }, { tx: 5, tz: 10 })).toEqual(RECT_3X3);
-    expect(zoneRectBetween({ tx: 7, tz: 10 }, { tx: 5, tz: 12 })).toEqual(RECT_3X3);
-    expect(zoneRectBetween({ tx: 4, tz: 4 }, { tx: 4, tz: 4 })).toEqual({ x0: 4, z0: 4, w: 1, d: 1 });
+    expect(zoneRectBetween('farm', { tx: 5, tz: 10 }, { tx: 7, tz: 12 })).toEqual(RECT_3X3);
+    expect(zoneRectBetween('farm', { tx: 7, tz: 12 }, { tx: 5, tz: 10 })).toEqual(RECT_3X3);
+    expect(zoneRectBetween('farm', { tx: 7, tz: 10 }, { tx: 5, tz: 12 })).toEqual(RECT_3X3);
+    expect(zoneRectBetween('farm', { tx: 4, tz: 4 }, { tx: 4, tz: 4 })).toEqual({ mapId: 'farm', x0: 4, z0: 4, w: 1, d: 1 });
   });
 
   it('sets the corner on the first press and paints Zone A on the second, in either order', () => {
@@ -95,16 +95,16 @@ describe('painting a zone', () => {
     expect(planPrimaryAction(MARKING)).toEqual({ target: TARGET, intent: { kind: 'zoneCorner', corner: TARGET }, feedback: 'zoneMarker', energyCost: 0 });
     expect(describeIntent(planPrimaryAction(MARKING).intent)).toBe('Mark corner');
     const cornered = use(MARKING);
-    expect(planPrimaryAction(cornered).intent).toEqual({ kind: 'markZone', zone: 'A', rect: { x0: 5, z0: 10, w: 1, d: 1 } });
+    expect(planPrimaryAction(cornered).intent).toEqual({ kind: 'markZone', zone: 'A', rect: { mapId: 'farm', x0: 5, z0: 10, w: 1, d: 1 } });
     expect(describeIntent(planPrimaryAction(cornered).intent)).toBe('Mark Zone A');
     expect(lastText(use(cornered))).toBe('Zone A · 1×1.');
   });
 
   it('repaints a zone that is already set, and leaves the other zones alone', () => {
-    const set = withZones(MARKING, { A: { x0: 1, z0: 9, w: 2, d: 2 }, B: { x0: 1, z0: 9, w: 2, d: 2 } });
+    const set = withZones(MARKING, { A: { mapId: 'farm', x0: 1, z0: 9, w: 2, d: 2 }, B: { mapId: 'farm', x0: 1, z0: 9, w: 2, d: 2 } });
     const painted = use(at(use(set), FAR));
     expect(painted.robots.zones.A).toEqual(RECT_3X3);
-    expect(painted.robots.zones.B).toEqual({ x0: 1, z0: 9, w: 2, d: 2 });
+    expect(painted.robots.zones.B).toEqual({ mapId: 'farm', x0: 1, z0: 9, w: 2, d: 2 });
   });
 
   it('acts on fresh presses only, and Shift + a press picks the zone', () => {
@@ -151,7 +151,7 @@ describe('picking the zone', () => {
 
   it('paints the picked letter', () => {
     const painted = use(use(cycle(cycle(MARKING))));
-    expect(painted.robots.zones.C).toEqual({ x0: 5, z0: 10, w: 1, d: 1 });
+    expect(painted.robots.zones.C).toEqual({ mapId: 'farm', x0: 5, z0: 10, w: 1, d: 1 });
     expect(painted.robots.zones.A).toBeNull();
     expect(lastText(painted)).toBe('Zone C · 1×1.');
   });
@@ -163,14 +163,14 @@ describe('picking the zone', () => {
 });
 
 describe('clearing a zone with Shift + E', () => {
-  const SET = withZones(MARKING, { A: RECT_3X3, B: { x0: 1, z0: 9, w: 2, d: 2 } });
+  const SET = withZones(MARKING, { A: RECT_3X3, B: { mapId: 'farm', x0: 1, z0: 9, w: 2, d: 2 } });
 
   it('clears the current letter only', () => {
     expect(planShiftInteraction(SET)).toEqual({ target: TARGET, intent: { kind: 'clearZone', zone: 'A' }, feedback: 'zoneMarker', energyCost: 0 });
     expect(describeIntent(planShiftInteraction(SET).intent)).toBe('Clear Zone A');
     const cleared = gameReducer(SET, actions.peek());
     expect(cleared.robots.zones.A).toBeNull();
-    expect(cleared.robots.zones.B).toEqual({ x0: 1, z0: 9, w: 2, d: 2 });
+    expect(cleared.robots.zones.B).toEqual({ mapId: 'farm', x0: 1, z0: 9, w: 2, d: 2 });
     expect(lastText(cleared)).toBe('Cleared Zone A.');
   });
 
@@ -243,7 +243,7 @@ describe('the HUD chip', () => {
   it('names the letter, its size or "not set", and a set corner, while the marker is selected', () => {
     expect(zoneChipText(MARKING)).toBe('Zone A · not set');
     expect(zoneChipText(use(MARKING))).toBe('Zone A · not set · corner set');
-    expect(zoneChipText(withZones(MARKING, { A: { x0: 5, z0: 10, w: 3, d: 2 } }))).toBe('Zone A · 3×2');
+    expect(zoneChipText(withZones(MARKING, { A: { mapId: 'farm', x0: 5, z0: 10, w: 3, d: 2 } }))).toBe('Zone A · 3×2');
     expect(zoneChipText(use(withZones(MARKING, { A: RECT_3X3 })))).toBe('Zone A · 3×3 · corner set');
     expect(zoneChipText(cycle(MARKING))).toBe('Zone B · not set');
     expect(zoneChipText(holding(MARKING, 'hoe'))).toBeNull();

@@ -69,6 +69,13 @@ export function createDefaultSections(): GameSections {
       deliveries: [],
     },
     shopsSoldToday: { parts: zeroCounts(BASIC_PART_IDS), robots: zeroCounts(ROBOT_SIZES), seeds: zeroCounts(CROP_IDS.map(seedItemId)) },
+    // Job 1 is offered from the start; each later job is offered when the one before it is done (part 4c spec §2.1).
+    jobs: {
+      status: { spinningRobot: 'offered', showHim: 'locked', knowTheLimits: 'locked' },
+      bed: null,
+      rescued: false,
+      fieldDay: -1,
+    },
   };
 }
 

@@ -12,7 +12,7 @@
 
 import type { BlockKind } from '../robots/blockKinds';
 
-export const SAVE_VERSION = 8 as const;
+export const SAVE_VERSION = 9 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -530,6 +530,17 @@ export interface MessageLog {
 export const ROBOT_SIZES = ['mini', 'standard', 'big'] as const;
 export type RobotSize = (typeof ROBOT_SIZES)[number];
 
+/** The maps robots live on (farmclaws part 4c spec §5.1): the player's on the farm, the neighbours' on the Neighbours map. */
+export const ROBOT_MAP_IDS = ['farm', 'neighbours'] as const satisfies readonly MapId[];
+export type RobotMapId = (typeof ROBOT_MAP_IDS)[number];
+
+/** Whose robot it is (part 4c spec §5.1). Only the player's count towards the cap and draw on the token pool. */
+export const ROBOT_OWNERS = ['player', 'cosmo', 'barnaby'] as const;
+export type RobotOwner = (typeof ROBOT_OWNERS)[number];
+
+/** The map each owner's robots live on; nothing carries a robot between maps (part 4c spec §5.1). */
+export const ROBOT_HOME_MAPS = { player: 'farm', cosmo: 'neighbours', barnaby: 'neighbours' } as const satisfies Readonly<Record<RobotOwner, RobotMapId>>;
+
 export const ROBOT_PART_IDS = [
   'claw',
   'wateringHead',
@@ -619,9 +630,12 @@ export interface Robot {
   readonly id: number;
   readonly name: string;
   readonly size: RobotSize;
+  /** The map it lives on: the farm for the player's robots, the Neighbours map for the neighbours' (part 4c spec §5.1). */
+  readonly mapId: RobotMapId;
+  readonly owner: RobotOwner;
   /** Canonical ROBOT_PART_IDS order, no repeats, at most the size's part slots. */
   readonly parts: readonly RobotPartId[];
-  /** Farm tile it stands on. While carried or repairing, the tile it left from. */
+  /** Tile of its map it stands on. While carried or repairing, the tile it left from. */
   readonly tx: number;
   readonly tz: number;
   readonly facing: Direction;
@@ -778,8 +792,9 @@ export interface RobotDelivery {
 export const ZONE_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
 export type ZoneId = (typeof ZONE_IDS)[number];
 
-/** A rectangle of farm tiles: x0 … x0+w-1, z0 … z0+d-1. w, d ≥ 1; wholly inside the farm. */
+/** A rectangle of tiles on `mapId`: x0 … x0+w-1, z0 … z0+d-1. w, d ≥ 1; wholly inside that map (part 4c spec §5.3). */
 export interface ZoneRect {
+  readonly mapId: RobotMapId;
   readonly x0: number;
   readonly z0: number;
   readonly w: number;
@@ -1107,6 +1122,29 @@ export interface ShopsSoldToday {
   readonly seeds: Readonly<Record<SeedItemId, number>>;
 }
 
+// ---------------------------------------------------------------------------
+// Farmclaws: jobs (docs/superpowers/specs/2026-10-11-farmclaws-part4c-jobs-design.md)
+// ---------------------------------------------------------------------------
+
+/** The jobs, in the order they are offered (part 4c spec §2.1). */
+export const JOB_IDS = ['spinningRobot', 'showHim', 'knowTheLimits'] as const;
+export type JobId = (typeof JOB_IDS)[number];
+
+export const JOB_STATUSES = ['locked', 'offered', 'active', 'done'] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+/** Where the jobs stand (part 4c spec §7). */
+export interface JobsState {
+  /** One status per job; a job is offered, active or done only once the one before it is done. */
+  readonly status: Readonly<Record<JobId, JobStatus>>;
+  /** Job 1's bed: the corner (lowest tx and tz) of its 3 × 3 block of farm tiles; null until job 1 is taken. */
+  readonly bed: TileCoord | null;
+  /** True once Sol has fished Sprinkle out of the pond (job 1's free rescue, once only). */
+  readonly rescued: boolean;
+  /** The absolute day the active job's field was last set up; -1 when none. */
+  readonly fieldDay: number;
+}
+
 /** Every §2.7 section of GameState, as produced by `createDefaultSections()`. */
 export interface GameSections {
   readonly profile: ProfileState;
@@ -1122,6 +1160,7 @@ export interface GameSections {
   readonly festival: FestivalState;
   readonly robots: RobotsState;
   readonly shopsSoldToday: ShopsSoldToday;
+  readonly jobs: JobsState;
 }
 
 export interface GameState extends GameSections {

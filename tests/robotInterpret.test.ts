@@ -18,6 +18,7 @@ import {
   type Statement,
   type TileCoord,
   type VarDecl,
+  type ZoneRect,
 } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
@@ -343,7 +344,7 @@ describe('Go to', () => {
 
 describe('For each tile', () => {
   /** Zone A: x 4…6, z 12…13, south of TARGET (5, 10). */
-  const ZONE = { x0: 4, z0: 12, w: 3, d: 2 };
+  const ZONE: ZoneRect = { mapId: 'farm', x0: 4, z0: 12, w: 3, d: 2 };
   const zoned = withZones(BASE, { A: ZONE });
   const waterer = (state: GameState, md: MdCard[] = [], start: Partial<Robot> = {}) =>
     play(state, running(prog([b.forEach('A', b.water()), b.say('Done')]), { parts: ['wateringHead'], tank: 20, md, ...start }));
@@ -391,15 +392,15 @@ describe('For each tile', () => {
   });
 
   it("gives up on a tile it could only reach by leaving its DON'T leave zone, never dizzy (review focus 5)", () => {
-    const row = withZones(rockAt(BASE, { tx: 5, tz: 10 }), { A: { x0: 4, z0: 10, w: 3, d: 1 } });
+    const row = withZones(rockAt(BASE, { tx: 5, tz: 10 }), { A: { mapId: 'farm', x0: 4, z0: 10, w: 3, d: 1 } });
     const result = waterer(row, [{ kind: 'dontLeave', zone: 'A' }], { tx: 4, tz: 10 });
     expect(result.outcomes).toEqual([{ kind: 'water' }, say('Done'), 'idle']);
     expect(result.gaveUp).toEqual([{ target: { tx: 6, tz: 10 }, why: 'forEach' }]);
   });
 
   it('logs every unreachable tile as a free give-up, never dizzy, behind a DON\'T leave (review focus 5)', () => {
-    const far = { x0: 10, z0: 14, w: 8, d: 7 };
-    const state = withZones(BASE, { A: far, B: { x0: 4, z0: 9, w: 3, d: 3 } });
+    const far: ZoneRect = { mapId: 'farm', x0: 10, z0: 14, w: 8, d: 7 };
+    const state = withZones(BASE, { A: far, B: { mapId: 'farm', x0: 4, z0: 9, w: 3, d: 3 } });
     const robot = running(prog([b.forEach('A', b.water()), b.say('Done')]), { parts: ['wateringHead'], tank: 20, md: [{ kind: 'dontLeave', zone: 'B' }] });
     const step = stepProgram(state, robot);
     expect(step.kind).toBe('act');
@@ -413,7 +414,7 @@ describe('For each tile', () => {
   });
 
   it('logs every tile of a zone it is boxed in from, in snake order, when rocks surround it', () => {
-    const big = { x0: 4, z0: 12, w: 10, d: 6 };
+    const big: ZoneRect = { mapId: 'farm', x0: 4, z0: 12, w: 10, d: 6 };
     const state = rockAt(withZones(BASE, { A: big }), { tx: 5, tz: 9 }, { tx: 6, tz: 10 }, { tx: 5, tz: 11 }, { tx: 4, tz: 10 });
     const step = stepProgram(state, running(prog([b.forEach('A', b.water()), b.say('Done')])));
     expect(step.kind).toBe('act');

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, PLAYER, UNLOCKS, WORKBENCH } from '../src/config';
-import { Blocker, Direction, type GameState, type RobotStats } from '../src/core/types';
+import { Blocker, Direction, type GameState, type Robot, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
 import { freeSpotNear } from '../src/robots/workbench';
@@ -18,7 +18,10 @@ import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, TARGET, benchedRobotOf, must, robotOf, stack, v5Save, withPlayer, withRobots, withSlots, withTile, withZones, type SaveJson } from './testUtils';
+import { BASE, TARGET, benchedRobotOf, must, robotOf, stack, v5Save, withMigratedJobs, withPlayer, withRobots as withRobotList, withSlots, withTile, withZones, type SaveJson } from './testUtils';
+
+/** withRobots for a farm a v5 save can hold: with robots, job 1 is done, as the v8 → v9 migration gives it (part 4c spec §4.3). */
+const withRobots = (state: GameState, robots: readonly Robot[]): GameState => withMigratedJobs(withRobotList(state, robots));
 
 const WALK = b.program({ stacks: [b.when(b.morning(), b.move())] });
 
@@ -28,7 +31,7 @@ function v5Farm(): GameState {
     robotOf({ id: 1 }),
     robotOf({ id: 2, name: 'Bolt', tx: 4, tz: 10, power: 'standby', program: WALK, exec: freshExec(WALK), md: [{ kind: 'dontGoIntoWater' }] }),
   ];
-  return withZones(withRobots(BASE, robots), { A: { x0: 3, z0: 9, w: 4, d: 3 } });
+  return withZones(withRobots(BASE, robots), { A: { mapId: 'farm', x0: 3, z0: 9, w: 4, d: 3 } });
 }
 
 /** `state` as deserializeGame returns it: no panel open, unpaused. */
@@ -53,8 +56,8 @@ describe('save version 6', () => {
 });
 
 describe('v5 → v6', () => {
-  it('carries a v5 save on through versions 6 and 7 to 8', () => {
-    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(8);
+  it('carries a v5 save on through versions 6, 7 and 8 to 9', () => {
+    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(9);
   });
 
   it('loads a v5 save as the state it was taken from', () => {
@@ -62,14 +65,14 @@ describe('v5 → v6', () => {
     expect(must(deserializeGame(JSON.stringify(v5Save(state))))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through every version to 8', () => {
+  it('migrates the version-2 fixture through every version to 9', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(8);
+    expect(loaded.version).toBe(9);
     expect(loaded.robots.list).toEqual([]);
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v5Save(BASE), version: 8 };
+    const save = { ...v5Save(BASE), version: 10 };
     expect(migrateSave(save)).toBe(save);
     expect(deserializeGame(JSON.stringify(save))).toBeNull();
   });

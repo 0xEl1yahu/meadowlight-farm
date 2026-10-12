@@ -17,7 +17,7 @@ import { describeIntent, planInteraction } from '../src/state/intents';
 import { deserializeGame, isValidGameState, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
-import { BASE, benchedRobotOf, must, robotOf, v5Save, withGold, withPlayer, withRobots, withTile } from './testUtils';
+import { BASE, benchedRobotOf, must, robotOf, v5Save, withGold, withMigratedJobs, withPlayer, withRobots, withTile } from './testUtils';
 
 const POND = { tx: 6, tz: 12 };
 const SHORE = { tx: 6, tz: 11 };
@@ -72,7 +72,7 @@ describe('ruin overnight', () => {
   });
 
   it('ruins a migrated broken robot only at the next morning (review focus 5)', () => {
-    const state = withRobots(wet(), [sunk()]);
+    const state = withMigratedJobs(withRobots(wet(), [sunk()]));
     const loaded = must(deserializeGame(JSON.stringify(v5Save(state))));
     expect(requireRobot(loaded, 1)).toMatchObject({ power: 'broken', paint: 0, tx: POND.tx, tz: POND.tz });
     expect(loaded.robots.log.entries).toEqual([]);

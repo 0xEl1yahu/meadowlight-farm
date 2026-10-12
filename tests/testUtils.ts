@@ -315,13 +315,49 @@ const V7_NPC_IDS: ReadonlyMap<string, string> = new Map([
 const v7NpcId = (id: unknown): unknown => (typeof id === 'string' ? (V7_NPC_IDS.get(id) ?? id) : id);
 
 /**
- * Hand-transforms a current (version 8) state back into the JSON of a version-7 save (farmclaws
- * part 4b spec §9): no deliveries, no stock counts, and Berlioz and Tallulah back to Bram and Tess
- * in `npcs`, the board and the festival gift target. The state must not hold anything a version-7
- * save cannot express. v6Save starts from this, so every older-save builder inherits it.
+ * Hand-transforms a current (version 9) state back into the JSON of a version-8 save (farmclaws
+ * part 4c spec §7): robots without a map or an owner, zones without a map, and no jobs. Every
+ * robot must be the player's and every zone on the farm, and the jobs must be what the migration
+ * gives back: job 1 done and job 2 offered when there is any robot or delivery, else a new game's.
+ * v7Save starts from this, so every older-save builder inherits it.
+ */
+export function v8Save(state: GameState): SaveJson {
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 8;
+  const robots = save.robots as { list: SaveJson[]; zones: Record<string, SaveJson | null> };
+  for (const robot of robots.list) {
+    if (robot.owner !== 'player' || robot.mapId !== 'farm') throw new Error(`v8Save: a version-8 save has only the player's robots, on the farm (robot ${String(robot.id)})`);
+    delete robot.mapId;
+    delete robot.owner;
+  }
+  for (const [id, rect] of Object.entries(robots.zones)) {
+    if (rect === null) continue;
+    if (rect.mapId !== 'farm') throw new Error(`v8Save: a version-8 save has zones only on the farm (Zone ${id})`);
+    delete rect.mapId;
+  }
+  if (!deepEqual(state.jobs, withMigratedJobs(state).jobs)) throw new Error('v8Save: a version-8 save has no jobs, so they must be what the migration gives it');
+  delete save.jobs;
+  return save;
+}
+
+/**
+ * `state` with the jobs a save migrated from version 8 gets (farmclaws part 4c spec §4.3): job 1
+ * done and job 2 offered when there is any robot or delivery, else a new game's.
+ */
+export function withMigratedJobs(state: GameState): GameState {
+  const fresh = createDefaultSections().jobs;
+  if (state.robots.list.length === 0 && state.robots.deliveries.length === 0) return { ...state, jobs: fresh };
+  return { ...state, jobs: { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } };
+}
+
+/**
+ * Hand-transforms a state back into the JSON of a version-7 save (farmclaws part 4b spec §9): it
+ * starts from v8Save, with no deliveries, no stock counts, and Berlioz and Tallulah back to Bram
+ * and Tess in `npcs`, the board and the festival gift target. The state must not hold anything a
+ * version-7 save cannot express. v6Save starts from this, so every older-save builder inherits it.
  */
 export function v7Save(state: GameState): SaveJson {
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const save = v8Save(state);
   save.version = 7;
   if (state.robots.deliveries.length > 0) throw new Error('v7Save: a version-7 save has no robot deliveries');
   delete (save.robots as SaveJson).deliveries;
@@ -507,6 +543,7 @@ export function livelySections(): GameSections {
     },
     robots: createDefaultSections().robots,
     shopsSoldToday: createDefaultSections().shopsSoldToday,
+    jobs: createDefaultSections().jobs,
   };
 }
 
@@ -516,6 +553,8 @@ export function robotOf(overrides: Partial<Robot> = {}): Robot {
     id: 1,
     name: 'Sprocket',
     size: 'mini',
+    mapId: 'farm',
+    owner: 'player',
     parts: ['claw'],
     tx: TARGET.tx,
     tz: TARGET.tz,

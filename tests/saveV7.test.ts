@@ -1,7 +1,7 @@
 /**
  * Save version 7 (farmclaws part 4a spec §6): the v6 → v7 migration, round trips of the part 4a
  * state, and one corrupted field per validation rule. A v6 save now carries on through v7 to
- * version 8, where Bram and Tess are Berlioz and Tallulah (part 4b spec §8).
+ * version 8, where Bram and Tess are Berlioz and Tallulah (part 4b spec §8), and on to version 9.
  */
 import { describe, expect, it } from 'vitest';
 import { Direction, MAP_IDS, NPC_IDS, SAVE_VERSION, type GameState, type NpcId, type NpcTalk } from '../src/core/types';
@@ -53,8 +53,8 @@ const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringif
 
 describe('the cast in saves', () => {
   it('is in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(8);
-    expect(BASE.version).toBe(8);
+    expect(SAVE_VERSION).toBe(9);
+    expect(BASE.version).toBe(9);
   });
 
   it('starts every character at no chats', () => {
@@ -75,8 +75,8 @@ describe('the cast in saves', () => {
 });
 
 describe('v6 → v7', () => {
-  it('carries on to version 8', () => {
-    expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(8);
+  it('carries on to version 9', () => {
+    expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(9);
   });
 
   it('loads a v6 save as the state it was taken from', () => {
@@ -145,9 +145,9 @@ describe('v6 → v7', () => {
     expect(must(load(save))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through every version to 8', () => {
+  it('migrates the version-2 fixture through every version to 9', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(8);
+    expect(loaded.version).toBe(9);
     expect(loaded.npcs).toEqual(BASE.npcs);
     expect(loaded.quests.board).toBeNull();
     expect(loaded.festival.giftTarget).toBeNull();
@@ -168,7 +168,7 @@ describe('v6 → v7', () => {
     ];
     for (const [label, edit] of corrupt) {
       const save = v6With(chatted(), edit);
-      expect((migrateSave(save) as SaveJson).version, label).toBe(8);
+      expect((migrateSave(save) as SaveJson).version, label).toBe(9);
       expect(load(save), label).toBeNull();
     }
   });
@@ -181,7 +181,7 @@ describe('v6 → v7', () => {
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v6Save(BASE), version: 9 };
+    const save = { ...v6Save(BASE), version: 10 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });

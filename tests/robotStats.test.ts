@@ -183,7 +183,7 @@ describe('robot stats today and this week (part 3)', () => {
   it('adds nothing for a skipped action', () => {
     const mover = b.program({ stacks: [b.when(b.morning(), b.forever(b.move()))] });
     const robot = robotOf({ tz: 12, program: mover, exec: morningExec(mover), md: [{ kind: 'dontLeave', zone: 'A' }] });
-    const next = tick(withZones(withRobots(BASE, [robot]), { A: { x0: 3, z0: 9, w: 5, d: 4 } }), 4);
+    const next = tick(withZones(withRobots(BASE, [robot]), { A: { mapId: 'farm', x0: 3, z0: 9, w: 5, d: 4 } }), 4);
     expect(next.robots.log.entries.map((e) => e.event.kind)).toEqual(['skipped']);
     expect(statsOf(next)).toBe(ZERO_ROBOT_STATS);
   });

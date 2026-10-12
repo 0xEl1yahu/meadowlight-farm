@@ -8,7 +8,7 @@
  */
 import { ROBOTS, TIME } from '../config';
 import { withArticle } from '../core/text';
-import { ROBOT_PART_IDS, ZONE_IDS, type GameState, type MdCard, type Robot, type RobotPartId, type RobotProgram, type ZoneId, type ZoneRect } from '../core/types';
+import { ROBOT_MAP_IDS, ROBOT_PART_IDS, ZONE_IDS, type GameState, type MdCard, type Robot, type RobotPartId, type RobotProgram, type ZoneId, type ZoneRect } from '../core/types';
 import { partNoun } from '../items/items';
 import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { isInt, isObj, isOneOf } from '../state/validation';
@@ -18,7 +18,7 @@ import { bagStacks, hasPart, periodFor } from './stats';
 
 export const PROGRAM_SHAPE = 'That program is not a script or a block program.';
 export const MD_SHAPE = 'That .MD is not a list of cards.';
-export const ZONE_SHAPE = 'Zones are A to H, and a zone is { x0, z0, w, d } or null.';
+export const ZONE_SHAPE = 'Zones are A to H, and a zone is { mapId, x0, z0, w, d } or null.';
 export const ZONE_OFF_FARM = 'A zone is at least 1 × 1 tile and lies wholly inside the farm.';
 export const MD_SCRIPT = '.MD cards only apply to block programs.';
 
@@ -105,17 +105,17 @@ export function withPartRemoved(robot: Robot, part: RobotPartId): Robot | string
 }
 
 function isZoneRectShape(v: unknown): v is ZoneRect {
-  return isObj(v) && isInt(v.x0) && isInt(v.z0) && isInt(v.w) && isInt(v.d);
+  return isObj(v) && isOneOf(v.mapId, ROBOT_MAP_IDS) && isInt(v.x0) && isInt(v.z0) && isInt(v.w) && isInt(v.d);
 }
 
 /**
- * `state` with zone `id` set to `rect` (only its four fields) or cleared with null. Returns
+ * `state` with zone `id` set to `rect` (only its map and four numbers) or cleared with null. Returns
  * ZONE_OFF_FARM for a rectangle that is empty or leaves the farm, and ZONE_SHAPE for an unknown
  * zone or something that isn't a rectangle.
  */
 export function withZone(state: GameState, id: ZoneId, rect: ZoneRect | null): GameState | string {
   if (!isOneOf(id, ZONE_IDS) || (rect !== null && !isZoneRectShape(rect))) return ZONE_SHAPE;
   if (rect !== null && !isValidZoneRect(rect)) return ZONE_OFF_FARM;
-  const zone: ZoneRect | null = rect === null ? null : { x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d };
+  const zone: ZoneRect | null = rect === null ? null : { mapId: rect.mapId, x0: rect.x0, z0: rect.z0, w: rect.w, d: rect.d };
   return { ...state, robots: { ...state.robots, zones: { ...state.robots.zones, [id]: zone } } };
 }

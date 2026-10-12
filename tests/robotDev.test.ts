@@ -63,7 +63,9 @@ describe('consoleText', () => {
   it("prints each hook's usage line for input that is not shaped right", () => {
     expect(consoleText(PROGRAM_SHAPE)).toBe('Usage: setProgram(name, blocks.program({ stacks: [blocks.when(blocks.morning(), blocks.move())] }))');
     expect(consoleText(MD_SHAPE)).toBe("Usage: setMd(name, [{ kind: 'dontGoIntoWater' }, { kind: 'doReturn', to: { kind: 'generator' }, minute: 1080 }])");
-    expect(consoleText(ZONE_SHAPE)).toBe("Usage: setZone('A', { x0, z0, w, d }) sets a zone and setZone('A', null) clears it. Zones are A to H.");
+    expect(consoleText(ZONE_SHAPE)).toBe(
+      "Usage: setZone('A', { x0, z0, w, d }) sets a zone on the farm (add mapId: 'neighbours' for the Neighbours map) and setZone('A', null) clears it. Zones are A to H.",
+    );
   });
 
   it('prints every other refusal as it is', () => {

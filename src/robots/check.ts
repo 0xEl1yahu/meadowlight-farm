@@ -5,6 +5,7 @@
  */
 import { ROBOTS, TIME } from '../config';
 import {
+  ROBOT_MAP_IDS,
   ZONE_IDS,
   type BlockProgram,
   type Expr,
@@ -19,6 +20,8 @@ import {
   type ZoneRect,
 } from '../core/types';
 import { isValidRobotAction } from '../state/robotValidation';
+import { inBounds } from '../world/grid';
+import { MAPS } from '../world/maps';
 import { blockCount, childLists, exprChildren, farmContains, isLiteral, statementDepth, statementExprs } from './program';
 import { batteryFor, hasPart } from './stats';
 
@@ -411,8 +414,10 @@ export function checkMd(md: readonly MdCard[], robot: Pick<Robot, 'size'>): stri
   return new Set(md.map(cardKey)).size === md.length ? null : MD_DUPLICATE;
 }
 
-/** Whether `rect` is a zone: whole numbers, w and d at least 1, every tile on the farm. */
+/** Whether `rect` is a zone: on a robot map, whole numbers, w and d at least 1, every tile on that map (part 4c spec §5.3). */
 export function isValidZoneRect(rect: ZoneRect): boolean {
-  const { x0, z0, w, d } = rect;
-  return Number.isInteger(w) && Number.isInteger(d) && w >= 1 && d >= 1 && farmContains(x0, z0) && farmContains(x0 + w - 1, z0 + d - 1);
+  const { mapId, x0, z0, w, d } = rect;
+  if (!(ROBOT_MAP_IDS as readonly unknown[]).includes(mapId)) return false;
+  const grid = MAPS[mapId].grid;
+  return Number.isInteger(w) && Number.isInteger(d) && w >= 1 && d >= 1 && inBounds(grid, x0, z0) && inBounds(grid, x0 + w - 1, z0 + d - 1);
 }

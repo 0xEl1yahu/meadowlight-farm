@@ -86,7 +86,7 @@ const evening = (rng: () => number): number => SIX_PM + 1 + Math.floor(rng() * 4
  */
 function blockFarm(seed: number): GameState {
   const rng = mulberry32(seed);
-  let state = withZones(atDay(BASE, 0, TIME.dayStartMinute), { A: { x0: 2, z0: 10, w: 4, d: 3 }, B: { x0: 9, z0: 10, w: 5, d: 2 } });
+  let state = withZones(atDay(BASE, 0, TIME.dayStartMinute), { A: { mapId: 'farm', x0: 2, z0: 10, w: 4, d: 3 }, B: { mapId: 'farm', x0: 9, z0: 10, w: 5, d: 2 } });
   for (let tx = 2; tx <= 5; tx++) for (let tz = 10; tz <= 12; tz++) state = withTile(state, { tx, tz }, soilTile(TileState.Plowed), 'farm');
   for (let tx = 9; tx <= 13; tx++) {
     for (let tz = 10; tz <= 11; tz++) state = withTile(state, { tx, tz }, soilTile(TileState.Watered, matureCrop(pick(rng, ['parsnip', 'potato'] as const))), 'farm');

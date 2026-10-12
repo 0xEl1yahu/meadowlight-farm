@@ -1,7 +1,7 @@
 /**
  * Zones A–H: named farm rectangles (farmclaws part 2 spec §2.1), and the tile ahead of a robot. Pure.
  */
-import type { GameState, Robot, TileCoord, ZoneId, ZoneRect } from '../core/types';
+import type { GameState, Robot, RobotMapId, TileCoord, ZoneId, ZoneRect } from '../core/types';
 import { stepTile } from '../world/grid';
 
 /** The zone's rectangle, or null when the zone is empty. */
@@ -28,9 +28,10 @@ export function snakeTiles(rect: ZoneRect): readonly TileCoord[] {
   return tiles;
 }
 
-/** The rectangle with corners `a` and `b`, both included, whichever is given first (part 3 spec §8). */
-export function zoneRectBetween(a: TileCoord, b: TileCoord): ZoneRect {
+/** The rectangle on `mapId` with corners `a` and `b`, both included, whichever is given first (part 3 spec §8). */
+export function zoneRectBetween(mapId: RobotMapId, a: TileCoord, b: TileCoord): ZoneRect {
   return {
+    mapId,
     x0: Math.min(a.tx, b.tx),
     z0: Math.min(a.tz, b.tz),
     w: Math.abs(a.tx - b.tx) + 1,

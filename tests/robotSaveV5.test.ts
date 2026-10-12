@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROBOTS, TIME } from '../src/config';
-import { ZONE_IDS, type BlockProgram, type Frame, type GameState, type MdCard, type Robot, type RobotExec } from '../src/core/types';
+import { ZONE_IDS, type BlockProgram, type Frame, type GameState, type MdCard, type Robot, type RobotExec, type ZoneRect } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { addRobot } from '../src/robots/create';
 import { freshExec } from '../src/robots/exec';
@@ -13,7 +13,7 @@ import { requireRobot } from '../src/robots/world';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { isValidExec } from '../src/state/robotValidation';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, must, robotOf, v5Save, withRobots, withZones, type SaveJson } from './testUtils';
+import { BASE, must, robotOf, v5Save, withMigratedJobs, withRobots, withZones, type SaveJson } from './testUtils';
 
 /** A Standard waterer and harvester: four stacks, a helper, two variables. 21 blocks. */
 const PROGRAM: BlockProgram = b.program({
@@ -33,7 +33,7 @@ const MD: readonly MdCard[] = [
   { kind: 'doPowerDown', when: { kind: 'tokensBelow', n: 10 } },
 ];
 
-const ZONE_A = { x0: 3, z0: 9, w: 4, d: 3 };
+const ZONE_A: ZoneRect = { mapId: 'farm', x0: 3, z0: 9, w: 4, d: 3 };
 const SNAKE_A = [
   { tx: 3, tz: 9 },
   { tx: 4, tz: 9 },
@@ -76,7 +76,7 @@ function lively(): GameState {
   list = list.map((r) => (r.id === 2 ? { ...r, off: 'dizzy' as const } : r));
   list = list.map((r) => (r.id === 8 ? { ...r, power: 'standby' as const, off: 'done' as const } : r));
   list = [...list, robotOf({ id: 9, name: 'Scripty', tx: 2, tz: 12 })];
-  return withZones(withRobots(BASE, list), { A: ZONE_A, C: { x0: 0, z0: 0, w: 48, d: 40 } });
+  return withZones(withRobots(BASE, list), { A: ZONE_A, C: { mapId: 'farm', x0: 0, z0: 0, w: 48, d: 40 } });
 }
 
 const loadedFrom = (state: GameState): GameState => ({ ...state, ui: { ...state.ui, panel: { kind: 'none' }, paused: false } });
@@ -120,7 +120,7 @@ describe('save version 5', () => {
   });
 
   it('migrates a version-4 save: robots gain exec, md and off, and every zone is empty', () => {
-    const state = withRobots(BASE, [robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', power: 'standby', tx: 4, tz: 10 })]);
+    const state = withMigratedJobs(withRobots(BASE, [robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', power: 'standby', tx: 4, tz: 10 })]));
     const save = v5Save(state);
     for (const r of robotsOf(save).list as SaveJson[]) {
       delete r.exec;
@@ -130,7 +130,7 @@ describe('save version 5', () => {
     delete (save.robots as SaveJson).zones;
     save.version = 4;
     const migrated = migrateSave(save) as SaveJson;
-    expect(migrated.version).toBe(8);
+    expect(migrated.version).toBe(9);
     expect(robotsOf(migrated).list.map((r) => [r.exec, r.md, r.off])).toEqual([
       [null, [], null],
       [null, [], null],
@@ -139,9 +139,9 @@ describe('save version 5', () => {
     expect(must(deserializeGame(JSON.stringify(save)))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through six steps to 8', () => {
+  it('migrates the version-2 fixture through seven steps to 9', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(8);
+    expect(loaded.version).toBe(9);
     expect(loaded.robots.list).toEqual([]);
     expect(loaded.robots.zones).toEqual(BASE.robots.zones);
   });
@@ -176,8 +176,8 @@ describe('save version 5', () => {
     ['a repeated done card', (s) => void (robot(s, 8).exec.doneCards = [1, 1])],
     ['a done card that is a DON\'T', (s) => void (robot(s, 8).exec.doneCards = [0])],
     ['a done card past the .MD', (s) => void (robot(s, 8).exec.doneCards = [3])],
-    ['a zone off the farm', (s) => void (robotsOf(s).zones.A = { x0: 45, z0: 0, w: 4, d: 1 })],
-    ['a zone of width 0', (s) => void (robotsOf(s).zones.A = { x0: 3, z0: 9, w: 0, d: 3 })],
+    ['a zone off the farm', (s) => void (robotsOf(s).zones.A = { mapId: 'farm', x0: 45, z0: 0, w: 4, d: 1 })],
+    ['a zone of width 0', (s) => void (robotsOf(s).zones.A = { mapId: 'farm', x0: 3, z0: 9, w: 0, d: 3 })],
     ['an unknown zone id', (s) => void (robotsOf(s).zones.I = null)],
     ['a missing zone id', (s) => void delete robotsOf(s).zones.H],
     ['an off flag on a broken robot', (s) => void (robot(s, 2).power = 'broken')],

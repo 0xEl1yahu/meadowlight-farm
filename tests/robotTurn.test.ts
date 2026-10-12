@@ -4,7 +4,7 @@
  * new log events' text and their save validation.
  */
 import { describe, expect, it } from 'vitest';
-import { Blocker, TileState, Weather, type BlockProgram, type GameState, type MdCard, type Robot, type RobotExec, type RobotLogEntry, type RobotLogEvent, type Tile, type TileCoord, type Trigger } from '../src/core/types';
+import { Blocker, TileState, Weather, type BlockProgram, type GameState, type MdCard, type Robot, type RobotExec, type RobotLogEntry, type RobotLogEvent, type Tile, type TileCoord, type Trigger, type ZoneRect } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec, morningExec } from '../src/robots/exec';
 import { startStack, stepProgram } from '../src/robots/interpret';
@@ -17,7 +17,7 @@ import { blockedTile, EMPTY_TILE } from '../src/world/tiles';
 import { BASE, TARGET, matureCrop, must, robotOf, soilTile, stack, withRobots, withTile, withZones } from './testUtils';
 
 /** Zone A: x 3 … 7, z 9 … 12, around TARGET (5, 10) inside the clear zone. */
-const ZONE_A = { x0: 3, z0: 9, w: 5, d: 4 };
+const ZONE_A: ZoneRect = { mapId: 'farm', x0: 3, z0: 9, w: 5, d: 4 };
 const LEAVE_A: MdCard = { kind: 'dontLeave', zone: 'A' };
 const NO_WATER: MdCard = { kind: 'dontGoIntoWater' };
 const SPARE_PARSNIPS: MdCard = { kind: 'dontHarvest', cropId: 'parsnip' };

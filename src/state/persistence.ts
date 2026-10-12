@@ -564,6 +564,23 @@ function migrateV7toV8(save: Obj): Obj {
 }
 
 /**
+ * Version 8 predates the jobs (farmclaws part 4c spec §7): every robot lives on the farm and is
+ * the player's, every zone is on the farm, and `jobs` starts as a new game's, except that a farm
+ * with any robot or delivery has job 1 done (with no reward and no Sprinkle) and job 2 offered
+ * (spec §4.3). A malformed robots section passes through for the validator to reject.
+ */
+function migrateV8toV9(save: Obj): Obj {
+  const { robots } = save;
+  if (!isObj(robots) || !Array.isArray(robots.list) || !Array.isArray(robots.deliveries) || !isObj(robots.zones)) return save;
+  const list = (robots.list as readonly unknown[]).map((robot) => (isObj(robot) ? { ...robot, mapId: 'farm', owner: 'player' } : robot));
+  const zones = Object.fromEntries(Object.entries(robots.zones).map(([id, rect]) => [id, isObj(rect) ? { ...rect, mapId: 'farm' } : rect]));
+  const fresh = createDefaultSections().jobs;
+  const hasRobots = robots.list.length > 0 || robots.deliveries.length > 0;
+  const jobs = hasRobots ? { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } : fresh;
+  return { ...save, version: 9, robots: { ...robots, list, zones }, jobs };
+}
+
+/**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
  * validator.
@@ -577,6 +594,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 5) v = migrateZoneMarker(migrateV5toV6(v));
   if (isObj(v) && v.version === 6) v = migrateV6toV7(v);
   if (isObj(v) && v.version === 7) v = migrateV7toV8(v);
+  if (isObj(v) && v.version === 8) v = migrateV8toV9(v);
   return v;
 }
 

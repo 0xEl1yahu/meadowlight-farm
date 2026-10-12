@@ -38,7 +38,7 @@ const TILES: readonly ((rng: Rng) => Tile)[] = [
 function randomRect(rng: Rng): ZoneRect {
   const w = int(rng, 1, 4);
   const d = int(rng, 1, 3);
-  return { x0: int(rng, SAFE_AREA.x0, SAFE_AREA.x0 + SAFE_AREA.w - w), z0: int(rng, SAFE_AREA.z0, SAFE_AREA.z0 + SAFE_AREA.d - d), w, d };
+  return { mapId: 'farm', x0: int(rng, SAFE_AREA.x0, SAFE_AREA.x0 + SAFE_AREA.w - w), z0: int(rng, SAFE_AREA.z0, SAFE_AREA.z0 + SAFE_AREA.d - d), w, d };
 }
 
 /** A farm at 6:00 with random zones, weather and tiles, and robot 1 running `program` from START. */

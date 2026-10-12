@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
-import { Blocker, TileState, Weather, type BlockProgram, type GameState, type MdCard, type Robot, type RobotLogEvent, type Tile } from '../src/core/types';
+import { Blocker, TileState, Weather, type BlockProgram, type GameState, type MdCard, type Robot, type RobotLogEvent, type Tile, type ZoneRect } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { morningExec } from '../src/robots/exec';
 import { decideTurn } from '../src/robots/turn';
@@ -15,7 +15,7 @@ import { gameReducer } from '../src/state/reducer';
 import { blockedTile, EMPTY_TILE } from '../src/world/tiles';
 import { BASE, TARGET, matureCrop, robotOf, soilTile, stack, tileAt, withRobots, withTile, withZones } from './testUtils';
 
-const ZONE_A = { x0: 3, z0: 9, w: 5, d: 4 };
+const ZONE_A: ZoneRect = { mapId: 'farm', x0: 3, z0: 9, w: 5, d: 4 };
 const LEAVE_A: MdCard = { kind: 'dontLeave', zone: 'A' };
 const NO_WATER: MdCard = { kind: 'dontGoIntoWater' };
 const KEEP_PARSNIPS: MdCard = { kind: 'dontDeposit', itemId: 'parsnip' };

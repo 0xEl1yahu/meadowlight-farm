@@ -36,7 +36,7 @@ const SCRIPT_STEPS: readonly RobotProgram[] = [
 function randomRect(rng: Rng): ZoneRect {
   const w = int(rng, 2, 5);
   const d = int(rng, 2, 4);
-  return { x0: int(rng, SAFE_AREA.x0, SAFE_AREA.x0 + SAFE_AREA.w - w), z0: int(rng, SAFE_AREA.z0, SAFE_AREA.z0 + SAFE_AREA.d - d), w, d };
+  return { mapId: 'farm', x0: int(rng, SAFE_AREA.x0, SAFE_AREA.x0 + SAFE_AREA.w - w), z0: int(rng, SAFE_AREA.z0, SAFE_AREA.z0 + SAFE_AREA.d - d), w, d };
 }
 
 /** A farm at 6:00 with six field robots on distinct tiles, hazards and crops around them, and a switched-off robot on the bench. */

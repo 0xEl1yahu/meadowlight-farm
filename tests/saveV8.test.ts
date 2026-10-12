@@ -1,7 +1,7 @@
 /**
  * Save version 8 (farmclaws part 4b spec §9): the v7 → v8 migration, round trips of the part 4b
- * state, and one corrupted field per validation rule. Each part 4b task that adds a saved field
- * adds its cases here.
+ * state, and one corrupted field per validation rule. A v7 save now carries on through v8 to
+ * version 9 (part 4c spec §7).
  */
 import { describe, expect, it } from 'vitest';
 import { ROBOTS, SHOP_STOCK } from '../src/config';
@@ -9,7 +9,7 @@ import { Direction, NPC_IDS, SAVE_VERSION, type GameState, type RobotDelivery, t
 import { createDefaultSections } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, atDay, livelySections, must, robotOf, v7Save, withPlayer, withRobots, type SaveJson } from './testUtils';
+import { BASE, atDay, livelySections, must, robotOf, v7Save, withMigratedJobs, withPlayer, withRobots, type SaveJson } from './testUtils';
 
 /** `state` with these robots ordered from Juniper's workshop. */
 function withDeliveries(state: GameState, deliveries: readonly RobotDelivery[]): GameState {
@@ -67,10 +67,10 @@ const festivalOf = (save: SaveJson) => save.festival as SaveJson;
 /** Loads raw save JSON as the game would. */
 const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringify(save));
 
-describe('save version 8', () => {
-  it('is the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(8);
-    expect(BASE.version).toBe(8);
+describe('the shops in saves', () => {
+  it('are in the current version, and new games start in it', () => {
+    expect(SAVE_VERSION).toBe(9);
+    expect(BASE.version).toBe(9);
   });
 
   it('starts a new game with no deliveries, nothing sold and the renamed cast', () => {
@@ -101,8 +101,8 @@ describe('save version 8', () => {
 });
 
 describe('v7 → v8', () => {
-  it('writes version 8', () => {
-    expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(8);
+  it('carries on to version 9', () => {
+    expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(9);
   });
 
   it('loads a v7 save as the state it was taken from', () => {
@@ -150,9 +150,9 @@ describe('v7 → v8', () => {
     expect(must(load(v7Save(none)))).toEqual(none);
   });
 
-  it('migrates the version-2 fixture through every version to 8', () => {
+  it('migrates the version-2 fixture through every version to 9', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(8);
+    expect(loaded.version).toBe(9);
     expect(loaded.npcs).toEqual(BASE.npcs);
     expect(loaded.robots.deliveries).toEqual([]);
     expect(loaded.shopsSoldToday).toEqual(BASE.shopsSoldToday);
@@ -174,14 +174,14 @@ describe('v7 → v8', () => {
   });
 
   it('v7Save refuses deliveries due or stock sold', () => {
-    expect(() => v7Save(withDeliveries(BASE, minis(1)))).toThrow('v7Save');
+    expect(() => v7Save(withMigratedJobs(withDeliveries(BASE, minis(1))))).toThrow('v7Save');
     expect(() => v7Save(withSold(BASE, { parts: { tiller: 1 } }))).toThrow('v7Save');
     expect(() => v7Save(withSold(BASE, { robots: { big: 1 } }))).toThrow('v7Save');
     expect(() => v7Save(withSold(BASE, { seeds: { corn_seeds: 1 } }))).toThrow('v7Save');
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v7Save(BASE), version: 9 };
+    const save = { ...v7Save(BASE), version: 10 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });

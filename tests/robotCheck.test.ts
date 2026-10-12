@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROBOTS, TIME } from '../src/config';
-import { ZONE_IDS, type BlockProgram, type MdCard, type RobotPartId, type RobotScript, type RobotSize, type Statement, type VarDecl } from '../src/core/types';
+import { ZONE_IDS, type BlockProgram, type MdCard, type RobotPartId, type RobotScript, type RobotSize, type Statement, type VarDecl, type ZoneRect } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { checkMd, checkProgram, isValidZoneRect, typeOf } from '../src/robots/check';
 import { blockCount, farmContains, isLiteral, literalValue, resolveList, statementDepth } from '../src/robots/program';
@@ -408,18 +408,25 @@ describe('checkMd', () => {
 });
 
 describe('isValidZoneRect', () => {
-  it.each([
-    [{ x0: 0, z0: 0, w: 48, d: 40 }, true],
-    [{ x0: 47, z0: 39, w: 1, d: 1 }, true],
-    [{ x0: 3, z0: 9, w: 3, d: 3 }, true],
-    [{ x0: 0, z0: 0, w: 49, d: 40 }, false],
-    [{ x0: 0, z0: 0, w: 48, d: 41 }, false],
-    [{ x0: 46, z0: 0, w: 3, d: 1 }, false],
-    [{ x0: -1, z0: 0, w: 2, d: 2 }, false],
-    [{ x0: 0, z0: 0, w: 0, d: 3 }, false],
-    [{ x0: 0, z0: 0, w: 3, d: 0 }, false],
-    [{ x0: 1.5, z0: 0, w: 2, d: 2 }, false],
-    [{ x0: 0, z0: 0, w: 2.5, d: 2 }, false],
+  it.each<[ZoneRect, boolean]>([
+    [{ mapId: 'farm', x0: 0, z0: 0, w: 48, d: 40 }, true],
+    [{ mapId: 'farm', x0: 47, z0: 39, w: 1, d: 1 }, true],
+    [{ mapId: 'farm', x0: 3, z0: 9, w: 3, d: 3 }, true],
+    [{ mapId: 'farm', x0: 0, z0: 0, w: 49, d: 40 }, false],
+    [{ mapId: 'farm', x0: 0, z0: 0, w: 48, d: 41 }, false],
+    [{ mapId: 'farm', x0: 46, z0: 0, w: 3, d: 1 }, false],
+    [{ mapId: 'farm', x0: -1, z0: 0, w: 2, d: 2 }, false],
+    [{ mapId: 'farm', x0: 0, z0: 0, w: 0, d: 3 }, false],
+    [{ mapId: 'farm', x0: 0, z0: 0, w: 3, d: 0 }, false],
+    [{ mapId: 'farm', x0: 1.5, z0: 0, w: 2, d: 2 }, false],
+    [{ mapId: 'farm', x0: 0, z0: 0, w: 2.5, d: 2 }, false],
+    // A zone on the Neighbours map (40 × 28) lies wholly on that map (part 4c spec §5.3).
+    [{ mapId: 'neighbours', x0: 0, z0: 0, w: 40, d: 28 }, true],
+    [{ mapId: 'neighbours', x0: 21, z0: 17, w: 8, d: 8 }, true],
+    [{ mapId: 'neighbours', x0: 0, z0: 0, w: 41, d: 28 }, false],
+    [{ mapId: 'neighbours', x0: 0, z0: 20, w: 3, d: 9 }, false],
+    [{ mapId: 'neighbours', x0: 30, z0: 30, w: 1, d: 1 }, false],
+    [{ mapId: 'town', x0: 3, z0: 9, w: 3, d: 3 } as never, false],
   ])('%j is %s', (rect, valid) => {
     expect(isValidZoneRect(rect)).toBe(valid);
   });

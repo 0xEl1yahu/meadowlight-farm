@@ -137,7 +137,7 @@ describe('withMd', () => {
 });
 
 describe('withZone', () => {
-  const RECT: ZoneRect = { x0: 4, z0: 9, w: 3, d: 3 };
+  const RECT: ZoneRect = { mapId: 'farm', x0: 4, z0: 9, w: 3, d: 3 };
 
   it('sets a zone and leaves the others alone', () => {
     const next = withZone(BASE, 'A', RECT);
@@ -168,7 +168,7 @@ describe('withZone', () => {
     expect(withZone(BASE, 'A', { ...RECT, w: 0 })).toBe(ZONE_OFF_FARM);
     expect(withZone(BASE, 'A', { ...RECT, d: 0 })).toBe(ZONE_OFF_FARM);
     expect(withZone(BASE, 'A', { ...RECT, x0: -1 })).toBe(ZONE_OFF_FARM);
-    expect(withZone(BASE, 'A', { x0: 46, z0: 9, w: 5, d: 1 })).toBe(ZONE_OFF_FARM);
+    expect(withZone(BASE, 'A', { mapId: 'farm', x0: 46, z0: 9, w: 5, d: 1 })).toBe(ZONE_OFF_FARM);
   });
 });
 

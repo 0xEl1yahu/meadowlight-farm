@@ -38,7 +38,7 @@ function withPresetRobots(): GameState {
  * wood burner at 18:00, and a poller that runs a helper every 15 minutes.
  */
 function withBlockRobots(): GameState {
-  let state = withZones(atDay(BASE, 0, TIME.dayStartMinute), { A: { x0: 3, z0: 12, w: 3, d: 3 }, B: { x0: 9, z0: 12, w: 4, d: 2 } });
+  let state = withZones(atDay(BASE, 0, TIME.dayStartMinute), { A: { mapId: 'farm', x0: 3, z0: 12, w: 3, d: 3 }, B: { mapId: 'farm', x0: 9, z0: 12, w: 4, d: 2 } });
   for (let tx = 3; tx <= 5; tx++) for (let tz = 12; tz <= 14; tz++) state = withTile(state, { tx, tz }, soilTile(TileState.Plowed), 'farm');
   for (let tx = 9; tx <= 12; tx++) for (let tz = 12; tz <= 13; tz++) state = withTile(state, { tx, tz }, soilTile(TileState.Watered, matureCrop('parsnip')), 'farm');
   state = withTile(state, { tx: 14, tz: 15 }, { ...EMPTY_TILE, object: { kind: 'woodBurner', fuel: 10 } }, 'farm');

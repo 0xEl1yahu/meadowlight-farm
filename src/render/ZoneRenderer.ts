@@ -54,7 +54,7 @@ function zoneColor(id: ZoneId): number {
 
 function sameRect(a: ZoneRect | null, b: ZoneRect | null): boolean {
   if (a === null || b === null) return a === b;
-  return a.x0 === b.x0 && a.z0 === b.z0 && a.w === b.w && a.d === b.d;
+  return a.mapId === b.mapId && a.x0 === b.x0 && a.z0 === b.z0 && a.w === b.w && a.d === b.d;
 }
 
 /** A canvas holding the letters A … H side by side, one ATLAS_CELL square each. */
@@ -209,7 +209,7 @@ export class ZoneRenderer implements RenderSystem {
   /** The draft's outline, from its corner to the tile the next press would mark. */
   private layoutDraft(state: GameState, farm: WorldState, force: boolean): void {
     const draft = state.ui.zoneDraft;
-    const rect = draft === null ? null : zoneRectBetween(draft.corner, selectTargetTile(state) ?? draft.corner);
+    const rect = draft === null ? null : zoneRectBetween('farm', draft.corner, selectTargetTile(state) ?? draft.corner);
     const zone = draft === null ? null : draft.zone;
     if (!force && zone === this.draftZone && sameRect(rect, this.draftRect)) return;
     this.draftRect = rect;

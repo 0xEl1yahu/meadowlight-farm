@@ -181,6 +181,7 @@ describe('createDefaultSections', () => {
       robots: { mini: 0, standard: 0, big: 0 },
       seeds: Object.fromEntries(CROP_IDS.map((id) => [`${id}_seeds`, 0])) as Record<SeedItemId, number>,
     },
+    jobs: { status: { spinningRobot: 'offered', showHim: 'locked', knowTheLimits: 'locked' }, bed: null, rescued: false, fieldDay: -1 },
   };
 
   it('matches the spec exactly', () => {

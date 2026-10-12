@@ -469,3 +469,9 @@ export const PARTS = {
   } satisfies Readonly<Record<RobotPartId, number>>,
   sellBackShare: 0.5,
 } as const;
+
+/** The jobs (farmclaws part 4c spec §3). */
+export const JOBS = {
+  /** Job 1's bed is a square block of farm tiles this many tiles a side. */
+  bedSize: 3,
+} as const;

@@ -280,7 +280,7 @@ function planMarker(state: GameState, target: TileCoord): ActionPlan {
   if (state.player.mapId !== 'farm') return blocked(target, 'zoneMarker', ZONES_FARM_ONLY);
   const draft = state.ui.zoneDraft;
   if (draft === null) return plan(target, { kind: 'zoneCorner', corner: target }, 'zoneMarker');
-  return plan(target, { kind: 'markZone', zone: draft.zone, rect: zoneRectBetween(draft.corner, target) }, 'zoneMarker');
+  return plan(target, { kind: 'markZone', zone: draft.zone, rect: zoneRectBetween('farm', draft.corner, target) }, 'zoneMarker');
 }
 
 /**
