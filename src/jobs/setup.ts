@@ -12,9 +12,9 @@ import { findFreeBlock, freeSpotNear } from '../robots/workbench';
 import { nearestFreeWalkable, robotsOnTile, withFarm, withRobot } from '../robots/world';
 import { pushMessage } from '../state/messages';
 import { withMap } from '../state/selectors';
-import { BARNABY_FIELD, COSMO_FIELD } from '../world/maps/neighbours';
+import { COSMO_FIELD } from '../world/maps/neighbours';
 import { EMPTY_TILE, requireTile, setTiles, type TileEdit } from '../world/tiles';
-import { BARNABY_TEAM, SPRINKLE, WAVE, bedTiles } from './checks';
+import { BARNABY_SOWN, BARNABY_TEAM, SPRINKLE, WAVE, bedTiles } from './checks';
 
 /** Sprinkle's program as Sol hands it over: when morning comes, repeat forever, turn right. */
 const SPINNING: BlockProgram = {
@@ -163,11 +163,12 @@ export function setUpShowHim(state: GameState): GameState | string {
 
 /**
  * Barnaby's field set up (spec §3.3), when job 3 is taken and every morning while it's active:
- * tilled soil with a ripe parsnip on every tile. A tile under a placed object keeps it.
+ * its first JOBS.barnabyRows rows (BARNABY_SOWN) become tilled soil with a ripe parsnip on every
+ * tile, and the rest stays bare. A tile under a placed object keeps it.
  */
 export function setUpBarnabyField(state: GameState): GameState {
   const ripe = parsnipDaysFromRipe(state.time.absoluteDay, 0);
-  return sowField(state, BARNABY_FIELD, () => ripe);
+  return sowField(state, BARNABY_SOWN, () => ripe);
 }
 
 /** B-1's program as Barnaby hands it over: every 10 minutes, for each tile in H, harvest. */
@@ -188,14 +189,14 @@ const BARNABY_MD: readonly MdCard[] = [{ kind: 'doReturn', to: { kind: 'generato
 export const ZONE_H_TOAST = 'Barnaby marked his field as Zone H.';
 
 /**
- * Job 3's set-up (spec §3.3): Barnaby's generator, his field, Zone H set to the field on the
- * Neighbours map whatever it was ("Barnaby marked his field as Zone H."), and his Minis B-1 to
- * B-4 (a Claw each, Barnaby's .MD, fully charged, Barnaby's) on JOBS.barnabyRobots: B-1 with the
- * polling program, the rest idle. A Mini whose tile is taken by a robot or an object stands on
+ * Job 3's set-up (spec §3.3): Barnaby's generator on the lane by his gate, his field, Zone H set
+ * to the field's sown rows on the Neighbours map whatever it was ("Barnaby marked his field as
+ * Zone H."), and his Minis B-1 to B-4 (a Claw each, Barnaby's .MD, fully charged, Barnaby's) on
+ * JOBS.barnabyRobots: B-1 with the polling program, the rest idle. A Mini whose tile is taken by a robot or an object stands on
  * the nearest free walkable tile instead.
  */
 export function setUpKnowTheLimits(state: GameState): GameState {
-  const { x0, z0, width, depth } = BARNABY_FIELD;
+  const { x0, z0, width, depth } = BARNABY_SOWN;
   const zoned = withZone(setUpBarnabyField(withGenerator(state, 'barnaby')), 'H', { mapId: 'neighbours', x0, z0, w: width, d: depth });
   invariant(typeof zoned !== 'string', "Barnaby's field is a zone on the Neighbours map");
   let next = pushMessage(zoned, ZONE_H_TOAST, 'info');

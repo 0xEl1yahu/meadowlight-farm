@@ -67,6 +67,20 @@ describe('robot actions that succeed', () => {
     expect(next.messages).toBe(state.messages);
   });
 
+  it("harvests at normal quality for a neighbour, where the player's robot would roll silver or gold", () => {
+    const tiles = Array.from({ length: 6 * 6 }, (_, i) => ({ tx: 4 + (i % 6), tz: 6 + Math.floor(i / 6) }));
+    const field = tiles.reduce((s, tile) => withTile(s, tile, soilTile(TileState.Watered, matureCrop('parsnip')), 'neighbours'), atDay(BASE, 3));
+    const target = must(tiles.find((tile) => harvestQuality(field, tile, must(tileAt(field, tile, 'neighbours').crop), 'neighbours') > 0));
+    const neighbour = robotOf({ mapId: 'neighbours', owner: 'cosmo', tx: target.tx, tz: target.tz, parts: ['claw'] });
+    const { next, robot } = act(field, neighbour, { kind: 'harvest' });
+    expect(robot.bag.map((s) => s.quality)).toEqual([0]);
+    expect(lastEvent(next)).toMatchObject({ kind: 'did', action: 'harvest', detail: { kind: 'crop', quality: 0 } });
+    // A Mini's one stack of parsnips takes the next one, whatever the player's roll would be.
+    const full = act(field, { ...neighbour, bag: [stack('parsnip', 5)] }, { kind: 'harvest' });
+    expect(full.robot.bag).toHaveLength(1);
+    expect(must(full.robot.bag[0]).quantity).toBeGreaterThan(5);
+  });
+
   it('tills grass and plants one seed from the bag', () => {
     const tilled = act(BASE, robotOf({ parts: ['tiller'] }), { kind: 'till' });
     expect(tileAt(tilled.next, TARGET, 'farm').state).toBe(TileState.Plowed);

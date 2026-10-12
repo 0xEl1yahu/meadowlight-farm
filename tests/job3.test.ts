@@ -1,7 +1,7 @@
 /**
  * Job 3, know the limits (farmclaws part 4c spec §3.3): Barnaby's generator, his field and its
  * morning reset, Zone H and its toast, B-1 to B-4 with their programs and .MD; the check (every
- * crop harvested by his robots before 6:00 pm, at 5 tokens a crop or less) and its progress
+ * crop harvested by his robots before 6:00 pm, at 6 tokens a crop or less) and its progress
  * line; the reward and its toasts.
  */
 import { describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import { deepFreeze } from '../src/core/store';
 import { Direction, TileState, type GameState, type Robot, type RobotLogEntry, type RobotLogEvent, type TileCoord } from '../src/core/types';
 import { isMature } from '../src/farming/crops';
 import {
+  BARNABY_SOWN,
   BARNABY_TEAM,
   barnabyBudget,
   barnabyCropsHarvested,
@@ -20,14 +21,15 @@ import {
 } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, jobProgress } from '../src/jobs/jobs';
 import { ZONE_H_TOAST } from '../src/jobs/setup';
-import { npcActions } from '../src/people/cast';
+import { npcActions, npcSpot } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
 import { withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
-import { BARNABY_FIELD } from '../src/world/maps/neighbours';
+import { rectContains } from '../src/world/grid';
+import { BARNABY_FENCE, BARNABY_FIELD, NEIGHBOURS_LANE, NEIGHBOURS_MAP } from '../src/world/maps/neighbours';
 import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withZones } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
@@ -92,6 +94,7 @@ describe('taking job 3', () => {
     expect(TAKEN.jobs.status).toEqual({ spinningRobot: 'done', showHim: 'done', knowTheLimits: 'active' });
     expect(texts(TAKEN).slice(-2)).toEqual([ZONE_H_TOAST, 'Know the limits: job taken.']);
     expect(ZONE_H_TOAST).toBe('Barnaby marked his field as Zone H.');
+    expect(JOBS_TABLE.knowTheLimits.goal).toBe("Harvest Barnaby's whole field by 6:00 pm in one day, at 6 tokens a crop or less.");
     expect(TAKEN.jobs.fieldDay).toBe(TAKEN.time.absoluteDay);
     for (const kind of UNLOCKS.job3.blocks) expect(TAKEN.robots.unlocks.blocks).toContain(kind);
     for (const kind of UNLOCKS.job3.cards) expect(TAKEN.robots.unlocks.cards).toContain(kind);
@@ -99,21 +102,36 @@ describe('taking job 3', () => {
     expect(isValidGameState(TAKEN)).toBe(true);
   });
 
-  it("puts Barnaby's generator by his house: a wood burner with a full hopper", () => {
-    expect(tileAt(TAKEN, JOBS.generators.barnaby, 'neighbours').object).toEqual({ kind: 'woodBurner', fuel: GENERATORS.woodBurner.hopper });
+  it("puts Barnaby's generator on the lane by his gate: a wood burner with a full hopper", () => {
+    const gen = JOBS.generators.barnaby;
+    expect(tileAt(TAKEN, gen, 'neighbours').object).toEqual({ kind: 'woodBurner', fuel: GENERATORS.woodBurner.hopper });
+    const reach = (tile: TileCoord): number => Math.max(Math.abs(tile.tx - gen.tx), Math.abs(tile.tz - gen.tz));
+    expect(rectContains(NEIGHBOURS_LANE, gen.tx, gen.tz)).toBe(true);
+    expect(reach(BARNABY_FENCE.gap)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+    expect(reach({ tx: BARNABY_FENCE.gap.tx, tz: BARNABY_FIELD.z0 })).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+    // Not the gate, the tile in front of it, a character's spot or a reserved tile.
+    const { placement } = npcSpot('barnaby');
+    for (const tile of [BARNABY_FENCE.gap, { tx: BARNABY_FENCE.gap.tx, tz: BARNABY_FENCE.gap.tz - 1 }, placement, ...NEIGHBOURS_MAP.reserved]) {
+      expect({ tx: tile.tx, tz: tile.tz }).not.toEqual(gen);
+    }
   });
 
   it('sets Zone H to his field on the Neighbours map, whatever it was before', () => {
     const elsewhere = take(withZones(OFFERED, { H: { mapId: 'farm', x0: 2, z0: 2, w: 2, d: 2 } }));
-    const field = { mapId: 'neighbours', x0: BARNABY_FIELD.x0, z0: BARNABY_FIELD.z0, w: BARNABY_FIELD.width, d: BARNABY_FIELD.depth };
+    const field = { mapId: 'neighbours', x0: BARNABY_SOWN.x0, z0: BARNABY_SOWN.z0, w: BARNABY_SOWN.width, d: BARNABY_SOWN.depth };
     expect(TAKEN.robots.zones.H).toEqual(field);
     expect(elsewhere.robots.zones.H).toEqual(field);
   });
 });
 
 describe("Barnaby's field", () => {
-  it('becomes tilled soil with a ripe parsnip on every one of its 64 tiles', () => {
-    expect(FIELD).toHaveLength(64);
+  it('has its first 6 rows, 48 tiles from the gate side, sown with ripe parsnips, and the rest left bare', () => {
+    expect(BARNABY_SOWN).toEqual({ ...BARNABY_FIELD, depth: JOBS.barnabyRows });
+    expect(JOBS.barnabyRows).toBe(6);
+    expect(FIELD).toHaveLength(48);
+    for (let tz = BARNABY_SOWN.z0 + BARNABY_SOWN.depth; tz < BARNABY_FIELD.z0 + BARNABY_FIELD.depth; tz++) {
+      for (let tx = BARNABY_FIELD.x0; tx < BARNABY_FIELD.x0 + BARNABY_FIELD.width; tx++) expect(tileAt(TAKEN, { tx, tz }, 'neighbours')).toEqual(tileAt(OFFERED, { tx, tz }, 'neighbours'));
+    }
     for (const tile of FIELD) {
       const t = tileAt(TAKEN, tile, 'neighbours');
       expect(t.state, `${tile.tx},${tile.tz}`).toBe(TileState.Plowed);
@@ -132,7 +150,7 @@ describe("Barnaby's field", () => {
   });
 
   it('leaves a tile under a placed object alone', () => {
-    const corner = { tx: BARNABY_FIELD.x0 + BARNABY_FIELD.width - 1, tz: BARNABY_FIELD.z0 + BARNABY_FIELD.depth - 1 };
+    const corner = { tx: BARNABY_SOWN.x0 + BARNABY_SOWN.width - 1, tz: BARNABY_SOWN.z0 + BARNABY_SOWN.depth - 1 };
     const chest = { ...tileAt(OFFERED, corner, 'neighbours'), object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
     const taken = take(withTile(OFFERED, corner, chest, 'neighbours'));
     expect(tileAt(taken, corner, 'neighbours')).toEqual(chest);
@@ -195,15 +213,15 @@ describe("Barnaby's team", () => {
 
 describe('the check', () => {
   it("passes before 6:00 pm once Barnaby's robots harvested every tile today within the budget", () => {
-    expect(barnabyBudget()).toBe(320);
-    const ready = withSpent(withHarvests(at(TAKEN, 17 * 60 + 59), FIELD), 320);
+    expect(barnabyBudget()).toBe(288);
+    const ready = withSpent(withHarvests(at(TAKEN, 17 * 60 + 59), FIELD), 288);
     expect(knowTheLimitsDone(ready)).toBe(true);
   });
 
   it('fails at 6:00 pm, over the budget or with a tile left', () => {
     const harvested = withHarvests(TAKEN, FIELD);
     expect(knowTheLimitsDone(at(withSpent(harvested, 100), 18 * 60))).toBe(false);
-    expect(knowTheLimitsDone(at(withSpent(harvested, 321), 12 * 60))).toBe(false);
+    expect(knowTheLimitsDone(at(withSpent(harvested, 289), 12 * 60))).toBe(false);
     expect(knowTheLimitsDone(at(withSpent(withHarvests(TAKEN, FIELD.slice(1)), 100), 12 * 60))).toBe(false);
   });
 
@@ -212,7 +230,7 @@ describe('the check', () => {
     const today = withHarvests(TAKEN, FIELD);
     const old = { ...today, robots: { ...today.robots, log: { ...today.robots.log, entries: today.robots.log.entries.map((e) => ({ ...e, day: e.day - 1 })) } } };
     expect(barnabyCropsHarvested(old)).toBe(0);
-    expect(barnabyCropsHarvested(today)).toBe(64);
+    expect(barnabyCropsHarvested(today)).toBe(48);
   });
 
   it('adds up the tokens his robots spent today', () => {
@@ -240,7 +258,7 @@ describe('the check', () => {
 
 describe('the progress line', () => {
   it("counts the crops his robots harvested today and the tokens they spent", () => {
-    expect(knowTheLimitsProgress(TAKEN)).toBe('0 / 64 crops harvested today · 0 tokens spent.');
-    expect(jobProgress(withSpent(withHarvests(TAKEN, FIELD.slice(0, 10)), 37), 'knowTheLimits')).toBe('10 / 64 crops harvested today · 37 tokens spent.');
+    expect(knowTheLimitsProgress(TAKEN)).toBe('0 / 48 crops harvested today · 0 tokens spent.');
+    expect(jobProgress(withSpent(withHarvests(TAKEN, FIELD.slice(0, 10)), 37), 'knowTheLimits')).toBe('10 / 48 crops harvested today · 37 tokens spent.');
   });
 });

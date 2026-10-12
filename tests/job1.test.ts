@@ -8,7 +8,7 @@ import { JOBS, PLAYER, ROBOTS, WORKBENCH } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import { Blocker, Direction, TileState, type BlockProgram, type GameState, type RobotLogEntry, type RobotLogEvent, type TileCoord } from '../src/core/types';
 import { SPRINKLE, bedTiles, bedTilesWatered, spinningRobotDone, spinningRobotProgress, sprinkleOf } from '../src/jobs/checks';
-import { JOBS_TABLE, takeJob } from '../src/jobs/jobs';
+import { JOBS_TABLE, SPRINKLE_KEPT, takeJob } from '../src/jobs/jobs';
 import { NO_ROOM_FOR_BED } from '../src/jobs/setup';
 import { npcSpot } from '../src/people/cast';
 import { b } from '../src/robots/blocks';
@@ -20,6 +20,7 @@ import { actions, type GameAction } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { blockedTile } from '../src/world/tiles';
+import { spinningRobotReference, withoutPowerDown } from './jobSolutions';
 import { BASE, holding, must, robotOf, soilTile, tileAt, withPlayer, withRobots, withTile, withZones } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
@@ -35,8 +36,8 @@ function take(state: GameState): GameState {
 const TAKEN: GameState = deepFreeze(take(BASE));
 const SPRINKLE_ROBOT = must(sprinkleOf(TAKEN));
 
-/** The reference solution (spec §6): when morning comes, for each tile in A, water; then power down. */
-const REFERENCE = b.program({ stacks: [b.when(b.morning(), b.forEach('A', b.water()), b.powerDown())] });
+/** The reference solution (spec §6, with job 1's blocks): round the bed's edge, the middle, then power down. */
+const REFERENCE = spinningRobotReference(must(TAKEN.jobs.bed));
 
 /** `state` with Sprinkle given `program` now. */
 function programmed(state: GameState, program: BlockProgram): GameState {
@@ -99,6 +100,38 @@ describe('Sprinkle', () => {
   });
 });
 
+describe('scrapping Sprinkle', () => {
+  /** `state` with Sprinkle on the workbench and its robot screen open there. */
+  const benched = (state: GameState): GameState => {
+    const sprinkle = must(sprinkleOf(state));
+    const onBench = withRobot(state, { ...sprinkle, onBench: true, tx: WORKBENCH.home.tx, tz: WORKBENCH.home.tz });
+    return { ...onBench, ui: { ...onBench.ui, panel: { kind: 'robot', robotId: sprinkle.id, mode: 'bench' } } };
+  };
+
+  it('is refused while job 1 is active: Sol wants it back whole', () => {
+    const before = benched(TAKEN);
+    const refused = act(before, actions.scrapRobot(SPRINKLE_ROBOT.id));
+    expect(texts(refused).at(-1)).toBe('Sol wants Sprinkle back in one piece.');
+    expect(SPRINKLE_KEPT).toBe('Sol wants Sprinkle back in one piece.');
+    expect(sprinkleOf(refused)).toEqual(sprinkleOf(before));
+    expect(refused.player.gold).toBe(before.player.gold);
+  });
+
+  it('goes ahead once job 1 is done, like any robot', () => {
+    const done = benched({ ...TAKEN, jobs: { ...TAKEN.jobs, status: { ...TAKEN.jobs.status, spinningRobot: 'done', showHim: 'offered' } } });
+    const scrapped = act(done, actions.scrapRobot(SPRINKLE_ROBOT.id));
+    expect(sprinkleOf(scrapped)).toBeNull();
+    expect(texts(scrapped).at(-1)).toMatch(/^Scrapped Sprinkle for \d+g\.$/);
+  });
+
+  it("doesn't refuse another robot while job 1 is active", () => {
+    const other = { ...robotOf({ id: TAKEN.robots.nextId, name: 'Bolt' }), onBench: true, tx: WORKBENCH.home.tx, tz: WORKBENCH.home.tz };
+    const state = withRobots(TAKEN, [SPRINKLE_ROBOT, other]);
+    const scrapped = act({ ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: other.id, mode: 'bench' } } }, actions.scrapRobot(other.id));
+    expect(scrapped.robots.list.map((r) => r.name)).toEqual([SPRINKLE]);
+  });
+});
+
 describe('the bed', () => {
   it('is the 3 × 3 block of free grass nearest JOBS.bedSearchFrom, tilled and sown with parsnips', () => {
     expect(TAKEN.jobs.bed).toEqual(JOBS.bedSearchFrom);
@@ -152,8 +185,7 @@ describe('the check', () => {
   it('fails for the spinning program and for a program without Power down', () => {
     const spinning = runDay(act(TAKEN, actions.sleep()));
     expect(isDone(spinning)).toBe(false);
-    const noPowerDown = b.program({ stacks: [b.when(b.morning(), b.forEach('A', b.water()))] });
-    const watered = runDay(act(programmed(TAKEN, noPowerDown), actions.sleep()));
+    const watered = runDay(act(programmed(TAKEN, withoutPowerDown(REFERENCE)), actions.sleep()));
     expect(bedTilesWatered(watered)).toBe(9);
     expect(isDone(watered)).toBe(false);
   });

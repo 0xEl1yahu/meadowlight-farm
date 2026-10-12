@@ -518,10 +518,12 @@ export const JOBS = {
   /**
    * Each neighbour's generator, a wood burner on the Neighbours map (spec §3.2, §3.3): their
    * robots charge overnight within ROBOTS.chargeRadius of it, and only of it (spec §5.1).
+   * Barnaby's stands on the lane two tiles east of his field's gate, so the gate and the field's
+   * top row are in reach of it but his Minis' starting tiles aren't.
    */
   generators: {
     cosmo: { tx: 10, tz: 13 },
-    barnaby: { tx: 27, tz: 6 },
+    barnaby: { tx: 26, tz: 15 },
   } satisfies Readonly<Record<Exclude<RobotOwner, 'player'>, TileCoord>>,
   /** Where Cosmo's Wave stands on the lane when job 2 is taken, facing North (spec §3.2). */
   waveAt: { tx: 8, tz: 13 } satisfies TileCoord,
@@ -539,6 +541,11 @@ export const JOBS = {
   ] satisfies readonly RobotPlace[],
   /** Job 3's deadline (spec §3.3), 6:00 pm: also when Barnaby's .MD sends his team back to his generator. */
   barnabyDeadline: 18 * 60,
-  /** Job 3's budget (spec §3.3): Barnaby's team may spend at most this many tokens a crop of his field in the day. */
-  tokensPerCrop: 5,
+  /**
+   * Job 3 sows this many rows of Barnaby's field, from its gate side (north) down, as Zone H: a
+   * quarter of them, 4 × 3, is a day's harvest for one of his Minis with tokens to spare.
+   */
+  barnabyRows: 6,
+  /** Job 3's budget (spec §3.3): Barnaby's team may spend at most this many tokens a sown crop of his field in the day. */
+  tokensPerCrop: 6,
 } as const;

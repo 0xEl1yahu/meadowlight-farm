@@ -54,7 +54,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
-import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, passedJob, sizeGate, takeJob } from '../jobs/jobs';
+import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, passedJob, scrapRefusal, sizeGate, takeJob } from '../jobs/jobs';
 import { CAST, npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
@@ -1059,12 +1059,13 @@ function withBagUnpacked(inventory: InventoryState, bag: readonly ItemStack[]): 
 /**
  * `robot/scrap`: the robot on the bench leaves the farm with its own log entries, its bag and its
  * parts go into the backpack (refused when they can't all fit, part 4b spec §5.3), the player gets
- * scrapValue in gold, and the open panel closes. Ids (and log ids) are never reused.
+ * scrapValue in gold, and the open panel closes. Ids (and log ids) are never reused. Sprinkle is
+ * refused while job 1 is active (scrapRefusal).
  */
 function scrapRobot(state: GameState, robotId: number): GameState {
   const robot = findRobot(state, robotId);
   if (robot === null) return state;
-  const away = offBenchRefusal(robot);
+  const away = offBenchRefusal(robot) ?? scrapRefusal(state, robot);
   if (away !== null) return pushMessage(state, away, 'warn');
   const parts = robot.parts.map((part): ItemStack => ({ itemId: part, quantity: 1, quality: 0 }));
   const inventory = withBagUnpacked(state.inventory, [...robot.bag, ...parts]);

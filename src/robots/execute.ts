@@ -9,10 +9,12 @@ import { invariant } from '../core/invariant';
 import {
   Blocker,
   TileState,
+  type CropInstance,
   type Direction,
   type GameState,
   type ItemId,
   type ItemStack,
+  type Quality,
   type Robot,
   type RobotAction,
   type RobotActionKind,
@@ -60,6 +62,15 @@ type OkPlan = Extract<RobotPlan, { readonly ok: true }>;
 /** Actions that work the tile ahead; the rest work the robot's own tile. */
 const AHEAD: ReadonlySet<RobotActionKind> = new Set<RobotActionKind>(['move', 'refill', 'deposit', 'take']);
 
+/**
+ * The quality of `robot`'s harvest of `crop` on `target`: a player's robot rolls it as the player
+ * would, and a neighbour's always harvests at normal quality, so mixed qualities never jam a
+ * Mini's one-stack bag on a neighbour's field.
+ */
+function robotHarvestQuality(state: GameState, robot: Robot, target: TileCoord, crop: CropInstance): Quality {
+  return robot.owner === 'player' ? harvestQuality(state, target, crop, robot.mapId) : 0;
+}
+
 function turned(facing: Direction, side: 'left' | 'right'): Direction {
   return ((facing + (side === 'left' ? 3 : 1)) % 4) as Direction;
 }
@@ -96,7 +107,7 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
       const crop = tile?.crop ?? null;
       if (crop === null || crop.dead || !isMature(crop)) return no('nothingToHarvest');
       const quantity = harvestQuantity(state, target, crop, robot.mapId);
-      const quality = harvestQuality(state, target, crop, robot.mapId);
+      const quality = robotHarvestQuality(state, robot, target, crop);
       return bagRoom(robot.bag, bagStacks(robot), crop.cropId, quality) >= quantity ? ok : no('bagFull');
     }
     case 'till':
@@ -302,7 +313,7 @@ function perform(state: GameState, robot: Robot, plan: OkPlan): { readonly next:
       const crop = tile.crop;
       invariant(crop !== null, 'harvest plan without a crop');
       const quantity = harvestQuantity(state, target, crop, robot.mapId);
-      const quality = harvestQuality(state, target, crop, robot.mapId);
+      const quality = robotHarvestQuality(state, robot, target, crop);
       const { bag } = addToBag(robot.bag, bagStacks(robot), crop.cropId, quantity, quality);
       const next = withRobot(withRobotWorld(state, robot, setTile(world, target.tx, target.tz, harvestedTile(tile))), { ...robot, bag });
       return { next, event: did({ kind: 'crop', cropId: crop.cropId, quantity, quality }) };

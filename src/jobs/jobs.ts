@@ -7,7 +7,7 @@
 import { JOBS, UNLOCKS } from '../config';
 import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotSize, type RobotUnlocks } from '../core/types';
 import { withUnlocks } from '../robots/unlocks';
-import { knowTheLimitsDone, knowTheLimitsProgress, showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress } from './checks';
+import { knowTheLimitsDone, knowTheLimitsProgress, showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress, sprinkleOf } from './checks';
 import { setUpBarnabyField, setUpCosmoField, setUpKnowTheLimits, setUpShowHim, setUpSpinningRobot } from './setup';
 
 /** What a job says and pays, verbatim from spec §3 and §4. */
@@ -66,7 +66,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     title: 'Know the limits',
     giver: 'barnaby',
     offer: 'Four robots, one field, zero effort. It just never gets finished. Sort my team out?',
-    goal: "Harvest Barnaby's whole field by 6:00 pm in one day, at 5 tokens a crop or less.",
+    goal: `Harvest Barnaby's whole field by 6:00 pm in one day, at ${JOBS.tokensPerCrop} tokens a crop or less.`,
     hook: 'My team needs a manager. Interested?',
     reward: JOBS.rewards.knowTheLimits,
     unlocksOnTake: UNLOCKS.job3,
@@ -112,6 +112,14 @@ export function activeJob(state: GameState): JobId | null {
 export function isJobRobot(state: GameState, robot: Robot): boolean {
   const id = activeJob(state);
   return robot.owner !== 'player' && id !== null && JOBS_TABLE[id].giver === robot.owner;
+}
+
+/** The refusal for scrapping Sprinkle while job 1 is active. */
+export const SPRINKLE_KEPT = 'Sol wants Sprinkle back in one piece.';
+
+/** SPRINKLE_KEPT when `robot` is Sprinkle and job 1 is active, else null: the job needs it whole. */
+export function scrapRefusal(state: GameState, robot: Robot): string | null {
+  return state.jobs.status.spinningRobot === 'active' && sprinkleOf(state)?.id === robot.id ? SPRINKLE_KEPT : null;
 }
 
 /** `npc`'s job while it's offered or active, or null: what the Job button opens. */

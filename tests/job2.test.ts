@@ -21,7 +21,8 @@ import { actions, type GameAction } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { COSMO_FIELD } from '../src/world/maps/neighbours';
-import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withZones } from './testUtils';
+import { SHOW_HIM_REFERENCE } from './jobSolutions';
+import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
@@ -54,11 +55,8 @@ function fieldTiles(): TileCoord[] {
   return tiles;
 }
 
-/** Zone H on Cosmo's field. */
-const COSMO_ZONE = { mapId: 'neighbours', x0: COSMO_FIELD.x0, z0: COSMO_FIELD.z0, w: COSMO_FIELD.width, d: COSMO_FIELD.depth } as const;
-
-/** The reference solution (spec §6): when morning comes, for each tile of Cosmo's field, if the crop is ready, harvest. */
-const REFERENCE = b.program({ stacks: [b.when(b.morning(), b.forEach('H', b.if(b.cropIsReady(), [b.harvest()])))] });
+/** The reference solution (spec §6, with the blocks unlocked by job 2): on every tile of Cosmo's field, if the crop is ready, harvest. */
+const REFERENCE = SHOW_HIM_REFERENCE;
 
 /** `state` with Wave given `program` now. */
 function programmed(state: GameState, program: BlockProgram): GameState {
@@ -230,7 +228,7 @@ describe('the check', () => {
   });
 
   it('passes with the reference program on its first day, and pays 1,000g with the toasts', () => {
-    const ready = act(programmed(withZones(TAKEN, { H: COSMO_ZONE }), REFERENCE), actions.sleep());
+    const ready = act(programmed(TAKEN, REFERENCE), actions.sleep());
     const done = runDay(ready, isDone);
     expect(isDone(done)).toBe(true);
     expect(done.time.absoluteDay).toBe(ready.time.absoluteDay);
@@ -241,7 +239,7 @@ describe('the check', () => {
   });
 
   it("isn't passed by the hello-chickens program", () => {
-    const day = runDay(act(withZones(TAKEN, { H: COSMO_ZONE }), actions.sleep()));
+    const day = runDay(act(TAKEN, actions.sleep()));
     expect(day.jobs.status.showHim).toBe('active');
     expect(ripeCropsHarvested(day)).toBe(0);
   });

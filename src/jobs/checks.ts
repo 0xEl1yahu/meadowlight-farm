@@ -4,7 +4,7 @@
  * counts towards a job.
  */
 import { JOBS } from '../config';
-import type { GameState, Robot, RobotOwner, RobotProgram, TileCoord } from '../core/types';
+import type { GameState, Robot, RobotOwner, RobotProgram, TileCoord, TileRect } from '../core/types';
 import { BLOCK_CATEGORY } from '../robots/blockKinds';
 import { allExprNodes, programStatements, statementExprs } from '../robots/program';
 import { BARNABY_FIELD, COSMO_FIELD } from '../world/maps/neighbours';
@@ -142,10 +142,13 @@ export function showHimProgress(state: GameState): string {
   return `${ripeCropsHarvested(state)} / ${cosmoRipeTiles().length} ripe crops harvested today.`;
 }
 
-/** The tiles of Barnaby's field (spec §3.3), row by row: every one has a ripe crop at the morning set-up. */
+/** The part of Barnaby's field job 3 sows (spec §3.3): its first JOBS.barnabyRows rows from the gate side. */
+export const BARNABY_SOWN: TileRect = { ...BARNABY_FIELD, depth: JOBS.barnabyRows };
+
+/** The tiles of Barnaby's field that job 3 sows, row by row: every one has a ripe crop at the morning set-up. */
 export function barnabyFieldTiles(): readonly TileCoord[] {
   const tiles: TileCoord[] = [];
-  const { x0, z0, width, depth } = BARNABY_FIELD;
+  const { x0, z0, width, depth } = BARNABY_SOWN;
   for (let tz = z0; tz < z0 + depth; tz++) {
     for (let tx = x0; tx < x0 + width; tx++) tiles.push({ tx, tz });
   }
@@ -158,7 +161,7 @@ function barnabyTeam(state: GameState): readonly Robot[] {
 }
 
 /**
- * How many tiles of Barnaby's field his robots' log shows them harvesting today. Each entry is
+ * How many sown tiles of Barnaby's field his robots' log shows them harvesting today. Each entry is
  * logged on the tile harvested, as for Wave.
  */
 export function barnabyCropsHarvested(state: GameState): number {
@@ -172,14 +175,14 @@ export function barnabyTokensSpent(state: GameState): number {
   return barnabyTeam(state).reduce((sum, robot) => sum + robot.stats.today.tokens, 0);
 }
 
-/** Job 3's budget: JOBS.tokensPerCrop for each crop of Barnaby's field. */
+/** Job 3's budget: JOBS.tokensPerCrop for each sown tile of Barnaby's field. */
 export function barnabyBudget(): number {
   return JOBS.tokensPerCrop * barnabyFieldTiles().length;
 }
 
 /**
  * Job 3's check (spec §3.3): before JOBS.barnabyDeadline (6:00 pm), Barnaby's robots have
- * harvested every tile of his field today, spending at most barnabyBudget tokens between them.
+ * harvested every sown tile of his field today, spending at most barnabyBudget tokens between them.
  */
 export function knowTheLimitsDone(state: GameState): boolean {
   return (
@@ -189,7 +192,7 @@ export function knowTheLimitsDone(state: GameState): boolean {
   );
 }
 
-/** Job 3's progress line: "{n} / 64 crops harvested today · {t} tokens spent." */
+/** Job 3's progress line: "{n} / {crops} crops harvested today · {t} tokens spent." */
 export function knowTheLimitsProgress(state: GameState): string {
   return `${barnabyCropsHarvested(state)} / ${barnabyFieldTiles().length} crops harvested today · ${barnabyTokensSpent(state)} tokens spent.`;
 }
