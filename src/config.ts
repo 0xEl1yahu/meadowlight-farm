@@ -6,6 +6,7 @@ import {
   Direction,
   EVERY_CHOICES,
   type ItemStack,
+  type JobId,
   type RobotActionKind,
   type RobotOwner,
   type RobotPartId,
@@ -369,7 +370,38 @@ export const UNLOCKS = {
     cards: ['dontLeave', 'dontGoIntoWater'],
     tabs: ['program', 'md', 'looks', 'log'],
   },
-} as const satisfies { readonly job1: RobotUnlocks };
+  /** Added when job 2 is taken, because Cosmo's harvest needs them (part 4c spec §4.1). */
+  job2: {
+    blocks: [
+      'bagFull',
+      'if',
+      'harvest',
+      'deposit',
+      'take',
+      'cropIsReady',
+      'soilIsDry',
+      'tileIsTilled',
+      'cropIs',
+      'bagIsFull',
+      'bagHas',
+      'atEdgeOf',
+      'tileAheadIs',
+      'itIsRaining',
+      'timeIsAfter',
+      'and',
+      'or',
+      'not',
+    ],
+    cards: ['dontHarvest', 'dontDeposit'],
+    tabs: [],
+  },
+  /** Added when job 3 is taken, for running Barnaby's team. */
+  job3: {
+    blocks: ['startsRaining', 'every', 'forEachTile', 'till', 'plant', 'tokensBelow', 'countInBag', 'arith'],
+    cards: ['doReturn', 'doPowerDown'],
+    tabs: ['stats'],
+  },
+} as const satisfies { readonly job1: RobotUnlocks; readonly job2: RobotUnlocks; readonly job3: RobotUnlocks };
 
 
 /** The workbench built into every farm (farmclaws part 3 spec §2.1). */
@@ -475,6 +507,13 @@ export const PARTS = {
 export const JOBS = {
   /** Job 1's bed is a square block of farm tiles this many tiles a side. */
   bedSize: 3,
+  /**
+   * Where the search for job 1's bed starts (spec §3.1): two tiles south of the workbench, so the
+   * bed sits in the yard clear of the bench, the door and the bin.
+   */
+  bedSearchFrom: { tx: 6, tz: 6 } satisfies TileCoord,
+  /** The gold each job pays when it's done (spec §3). */
+  rewards: { spinningRobot: 500, showHim: 1000, knowTheLimits: 2000 } satisfies Readonly<Record<JobId, number>>,
   /**
    * Each neighbour's generator, a wood burner on the Neighbours map (spec §3.2, §3.3): their
    * robots charge overnight within ROBOTS.chargeRadius of it, and only of it (spec §5.1).

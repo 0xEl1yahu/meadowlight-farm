@@ -9,6 +9,7 @@ import { hash32 } from '../core/hash';
 import { defined } from '../core/invariant';
 import { NPC_IDS, SEASON_NAMES, type GameState, type NpcId, type Robot, type RobotPower } from '../core/types';
 import { getItem } from '../items/items';
+import { JOBS_TABLE, giverJob } from '../jobs/jobs';
 import { playerRobotCount } from '../robots/create';
 import { robotOnBench } from '../robots/workbench';
 import { countItem } from '../state/inventory';
@@ -183,12 +184,15 @@ export function reactiveFill(state: GameState, when: ReactiveKind): LineFill | n
 
 /**
  * The line `npc` says today (spec §3.3): the introduction until the first chat is recorded, then
- * the first reactive line whose condition holds, else the day's everyday line. Pick it before the
- * chat is recorded, so the first chat shows the introduction.
+ * their job's hook while it's offered (part 4c spec §2.2), then the first reactive line whose
+ * condition holds, else the day's everyday line. Pick it before the chat is recorded, so the
+ * first chat shows the introduction.
  */
 export function lineFor(state: GameState, npc: NpcId): string {
   const bank = LINE_BANKS[npc];
   if (state.npcs[npc].talks === 0) return bank.introduction;
+  const job = giverJob(state, npc);
+  if (job !== null && state.jobs.status[job] === 'offered') return JOBS_TABLE[job].hook;
   for (const line of bank.reactive) {
     const fill = reactiveFill(state, line.when);
     if (fill !== null) return filledIn(line.text, fill);

@@ -226,7 +226,7 @@ describe('nameplateFor', () => {
   });
 
   it('shows nothing while the game is frozen: a chat, another panel or the pause menu', () => {
-    expect(nameplateFor(frozenBy(AT_SOL, { panel: { kind: 'talk', npc: 'sol', line: 'Hello.' } }))).toBeNull();
+    expect(nameplateFor(frozenBy(AT_SOL, { panel: { kind: 'talk', npc: 'sol', line: 'Hello.', card: 'line' } }))).toBeNull();
     expect(nameplateFor(frozenBy(AT_SOL, { panel: { kind: 'inventory' } }))).toBeNull();
     expect(nameplateFor(frozenBy(AT_SOL, { paused: true }))).toBeNull();
   });
@@ -311,7 +311,7 @@ describe('NpcRenderer', () => {
     for (const p of MAPS.town.npcs) expect(isShown(plate(p.id)), p.id).toBe(p.id === 'sol');
     expect(plate('sol').position.y).toBe(NPC_LOOKS.nameplateHeight);
     expect(plate('sol').scale.y).toBe(NPC_LOOKS.nameplateScale);
-    const chatting = frozenBy(AT_SOL, { panel: { kind: 'talk', npc: 'sol', line: 'Hello.' } });
+    const chatting = frozenBy(AT_SOL, { panel: { kind: 'talk', npc: 'sol', line: 'Hello.', card: 'line' } });
     renderer.sync(chatting, AT_SOL);
     expect(isShown(plate('sol'))).toBe(false);
     renderer.sync(AT_SOL, chatting);

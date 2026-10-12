@@ -46,7 +46,7 @@ const POWER_DOWN = b.program({ stacks: [b.when(b.morning(), b.powerDown())] });
 
 describe("Juniper's Workshop action", () => {
   it('gives Juniper a Workshop button', () => {
-    expect(npcActions('juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
+    expect(npcActions(BASE, 'juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
   });
 
   it("swaps Juniper's chat for the workshop, from a real chat", () => {

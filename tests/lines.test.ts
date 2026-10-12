@@ -25,10 +25,13 @@ function talkedTo(state: GameState, talks = 1): GameState {
 
 /**
  * A farm where no reactive line holds, on `day` at `minute`: everyone talked to once, one working
- * robot off the bench, the starter kit's parsnip seeds and no copper, sunny, and an empty log.
+ * robot off the bench, the starter kit's parsnip seeds and no copper, sunny, an empty log, and
+ * every job done, so no giver has a hook to say (part 4c spec §2.2).
  */
 function quiet(day = DAY, minute = 600): GameState {
-  return { ...talkedTo(withRobots(atDay(BASE, day, minute), [robotOf()])), weather: Weather.Sunny };
+  const state = talkedTo(withRobots(atDay(BASE, day, minute), [robotOf()]));
+  const jobs = { ...state.jobs, status: { spinningRobot: 'done', showHim: 'done', knowTheLimits: 'done' } } as const;
+  return { ...state, weather: Weather.Sunny, jobs };
 }
 
 /** `state` whose robot log holds one entry by robot 1 per `[day, event]`. */

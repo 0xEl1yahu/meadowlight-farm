@@ -64,7 +64,7 @@ describe('the talkTo intent', () => {
       const state = withPlayer(BASE, stand, facing, mapId);
       expect(planInteraction(state).intent, npc).toEqual({ kind: 'talkTo', npc });
       expect(describeIntent(planInteraction(state).intent)).toBe(`Talk to ${name}`);
-      expect(interact(state).ui.panel).toEqual({ kind: 'talk', npc, line: LINE_BANKS[npc].introduction });
+      expect(interact(state).ui.panel).toEqual({ kind: 'talk', npc, line: LINE_BANKS[npc].introduction, card: 'line' });
     }
   });
 
@@ -92,7 +92,7 @@ describe('the talkTo intent', () => {
     expect(planInteraction(CARRYING)).toEqual(TALK_PLAN);
     expect(planPrimaryAction(CARRYING)).toEqual(TALK_PLAN);
     const next = useTool(CARRYING);
-    expect(next.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: INTRODUCTION });
+    expect(next.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: INTRODUCTION, card: 'line' });
     expect(next.player.carrying).toBe(1);
     expect(next.robots).toBe(CARRYING.robots);
     // Facing open ground instead, planCarry's own rules still apply.
@@ -110,7 +110,7 @@ describe('the talkTo intent', () => {
     expect(planPrimaryAction(AT_MARIGOLD)).toEqual(TALK_PLAN);
     expect(planPrimaryAction(holding(AT_MARIGOLD, 'stone', 3))).toEqual(TALK_PLAN);
     expect(planPrimaryAction(holding(AT_MARIGOLD, 'parsnip', 2))).toEqual(TALK_PLAN);
-    expect(useTool(AT_MARIGOLD).ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: INTRODUCTION });
+    expect(useTool(AT_MARIGOLD).ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: INTRODUCTION, card: 'line' });
 
     const placing = holding(AT_MARIGOLD, 'chest');
     expect(planPrimaryAction(placing)).toEqual({
@@ -130,11 +130,11 @@ describe('the talkTo intent', () => {
 describe('a chat', () => {
   it('opens the talk panel with the introduction first, then an everyday line', () => {
     const first = interact(AT_MARIGOLD);
-    expect(first.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: INTRODUCTION });
+    expect(first.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: INTRODUCTION, card: 'line' });
     const closed = gameReducer(first, actions.closePanel());
     const second = interact(closed);
     const line = lineFor(closed, 'marigold');
-    expect(second.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line });
+    expect(second.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line, card: 'line' });
     expect(line).not.toBe(INTRODUCTION);
     expect(LINE_BANKS.marigold.everyday).toContain(line);
   });
@@ -232,7 +232,7 @@ describe("the chat box's actions (talk/act)", () => {
   /** BASE with the talk panel open on `npc`, paused or not. */
   const talkingTo = (npc: NpcId, paused = false): GameState => ({
     ...BASE,
-    ui: { ...BASE.ui, panel: { kind: 'talk', npc, line: 'Lovely weather.' }, paused },
+    ui: { ...BASE.ui, panel: { kind: 'talk', npc, line: 'Lovely weather.', card: 'line' }, paused },
   });
   const shopFor = (state: GameState, npc: NpcId): GameState => gameReducer(state, actions.npcAct(npc, 'shop'));
 

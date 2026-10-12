@@ -299,7 +299,7 @@ describe("a neighbour's robot in the save", () => {
 const ROBOT_SOURCES = import.meta.glob<string>('../src/robots/*.ts', { query: '?raw', import: 'default', eager: true });
 
 describe('the farm-only rules', () => {
-  it("reads every robot rule off the robot's own map: only the farm's generators and deliveries read the farm", () => {
+  it("reads every robot rule off the robot's own map: only the farm's generators, deliveries and Sol's pond rescue read the farm", () => {
     const reads = Object.entries(ROBOT_SOURCES).flatMap(([path, text]) =>
       text
         .split('\n')
@@ -310,6 +310,7 @@ describe('the farm-only rules', () => {
     expect(reads).toEqual([
       'overnight.ts: forEachTile(state.maps.farm, (tile, tx, tz) => {',
       'overnight.ts: const burned = withFarm(state, setTiles(state.maps.farm, edits));',
+      'overnight.ts: const at = freeSpotNear(state.maps.farm, WORKBENCH.home, [PLAYER.spawn, ...others]);',
       'overnight.ts: const at = freeSpotNear(next.maps.farm, WORKBENCH.home, taken);',
     ]);
   });

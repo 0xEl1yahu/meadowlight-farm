@@ -4,7 +4,8 @@
  * definitions (`MapDefinition.npcs`), so the startup check, movement, placement and the renderer
  * all read the same list.
  */
-import type { Appearance, MapId, NpcActionKind, NpcId } from '../core/types';
+import type { Appearance, GameState, MapId, NpcActionKind, NpcId } from '../core/types';
+import { giverJob } from '../jobs/jobs';
 import { MAPS, type NpcPlacement } from '../world/maps';
 
 export interface CastMember {
@@ -84,7 +85,18 @@ const ACTIONS: Readonly<Record<NpcId, readonly NpcAction[]>> = {
   tallulah: NO_ACTIONS,
 };
 
-/** The chat box's action buttons for `npc`, in order: Marigold's and Sol's Shop, Juniper's Workshop, and none for anyone else yet. */
-export function npcActions(npc: NpcId): readonly NpcAction[] {
-  return ACTIONS[npc];
+const JOB_ACTION: NpcAction = Object.freeze({ kind: 'job', label: 'Job' });
+
+/** Each character's buttons with Job in front, for a giver whose job is open (part 4c spec §2.2). */
+const WITH_JOB = Object.fromEntries(
+  Object.entries(ACTIONS).map(([npc, list]) => [npc, Object.freeze([JOB_ACTION, ...list])]),
+) as Readonly<Record<NpcId, readonly NpcAction[]>>;
+
+/**
+ * The chat box's action buttons for `npc`, in order: Job while their job is offered or active
+ * (giverJob), then Marigold's and Sol's Shop and Juniper's Workshop. The lists are frozen and
+ * shared, so the same buttons are the same array.
+ */
+export function npcActions(state: GameState, npc: NpcId): readonly NpcAction[] {
+  return giverJob(state, npc) === null ? ACTIONS[npc] : WITH_JOB[npc];
 }

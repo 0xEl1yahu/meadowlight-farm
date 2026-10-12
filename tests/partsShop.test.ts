@@ -28,7 +28,7 @@ const lastToast = (state: GameState): unknown => state.messages.entries.at(-1);
 
 describe("Sol's Shop action", () => {
   it('gives Sol a Shop button', () => {
-    expect(npcActions('sol')).toEqual([{ kind: 'partsShop', label: 'Shop' }]);
+    expect(npcActions(BASE, 'sol')).toContainEqual({ kind: 'partsShop', label: 'Shop' });
   });
 
   it("swaps Sol's chat for the parts shop, from a real chat", () => {
@@ -44,9 +44,9 @@ describe("Sol's Shop action", () => {
   });
 
   it("doesn't open from someone else's chat or while paused", () => {
-    const marigold = withPanel(BASE, { kind: 'talk', npc: 'marigold', line: 'Hello.' });
+    const marigold = withPanel(BASE, { kind: 'talk', npc: 'marigold', line: 'Hello.', card: 'line' });
     expect(gameReducer(marigold, actions.npcAct('marigold', 'partsShop'))).toBe(marigold);
-    const paused = withPanel(BASE, { kind: 'talk', npc: 'sol', line: 'Hello.' }, true);
+    const paused = withPanel(BASE, { kind: 'talk', npc: 'sol', line: 'Hello.', card: 'line' }, true);
     expect(gameReducer(paused, actions.npcAct('sol', 'partsShop'))).toBe(paused);
   });
 

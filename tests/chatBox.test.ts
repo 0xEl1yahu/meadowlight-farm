@@ -28,7 +28,7 @@ const SPEC_CAST: Readonly<Record<NpcId, readonly [string, string]>> = {
 /** BASE with the talk panel open on `npc`, carrying `line`. */
 const talkingTo = (npc: NpcId, line = 'Lovely weather.'): GameState => ({
   ...BASE,
-  ui: { ...BASE.ui, panel: { kind: 'talk', npc, line } },
+  ui: { ...BASE.ui, panel: { kind: 'talk', npc, line, card: 'line' } },
 });
 
 /** BASE with the player in town on the tile south of Marigold, facing her (she faces south). */
@@ -54,21 +54,23 @@ describe('chatBoxView', () => {
       name: 'Marigold',
       role: 'General store',
       line: 'Lovely weather.',
-      actions: [{ kind: 'shop', label: 'Shop' }],
+      job: null,
+      buttons: [{ label: 'Shop', action: actions.npcAct('marigold', 'shop'), primary: true }],
     });
   });
 
   it("shows every character's name and role line, with buttons only for Marigold, Sol and Juniper", () => {
+    const allDone: GameState = { ...BASE, jobs: { ...BASE.jobs, status: { spinningRobot: 'done', showHim: 'done', knowTheLimits: 'done' } } };
     const buttons: Partial<Record<NpcId, readonly NpcAction[]>> = {
       marigold: [{ kind: 'shop', label: 'Shop' }],
       sol: [{ kind: 'partsShop', label: 'Shop' }],
       juniper: [{ kind: 'workshop', label: 'Workshop' }],
     };
     for (const npc of NPC_IDS) {
-      const view = must(chatBoxView(talkingTo(npc)));
+      const view = must(chatBoxView({ ...talkingTo(npc), jobs: allDone.jobs }));
       expect(view.npc).toBe(npc);
       expect([view.name, view.role]).toEqual(SPEC_CAST[npc]);
-      expect(view.actions).toEqual(buttons[npc] ?? []);
+      expect(view.buttons).toEqual((buttons[npc] ?? []).map((a) => ({ label: a.label, action: actions.npcAct(npc, a.kind), primary: true })));
     }
   });
 

@@ -1,7 +1,8 @@
 /**
  * The robots' night, run inside startNextDay after the maps grow (farmclaws part 1 spec §5.7):
  * generators burn, a carried robot is set down, repairs come back, broken robots left in the
- * water are ruined (part 3 spec §3.2), robots near a generator recharge and the neighbours take
+ * water are ruined (part 3 spec §3.2) unless Sol fishes job 1's robot out for free (part 4c spec
+ * §3.1), robots near a generator recharge and the neighbours take
  * what their robots harvested (part 4c spec §5.1), robots ordered from Juniper arrive by the
  * workbench (part 4b spec §4.6), and every robot is reset for the morning where it stands, on
  * its own map. Pure.
@@ -19,6 +20,7 @@ import {
   type RobotStats,
   type TileCoord,
 } from '../core/types';
+import { sprinkleOf } from '../jobs/checks';
 import { withZoneMarker } from '../state/zoneMarker';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
@@ -109,23 +111,52 @@ function returnRepaired(state: GameState, notes: RobotNote[]): { readonly state:
  * A broken robot still standing in the water at the end of the day (not carried, not on the
  * bench) is ruined (part 3 spec §3.2): logged and noted, in id order. Runs after the carried
  * robot is set down at spawn, so a robot the player is holding is safe.
+ *
+ * The first time it's Sprinkle while job 1 is active, Sol fishes it out for free instead (part 4c
+ * spec §3.1): it's back by the workbench, working and fully charged as from a repair, noted, and
+ * `jobs.rescued` makes it once only. Returns its id as `rescued`, so it isn't named as away from
+ * a generator.
  */
-function ruinSoaked(state: GameState, notes: RobotNote[]): GameState {
+function ruinSoaked(state: GameState, notes: RobotNote[]): { readonly state: GameState; readonly rescued: number | null } {
   let next = state;
+  let rescued: number | null = null;
+  const spared = state.jobs.status.spinningRobot === 'active' && !state.jobs.rescued ? sprinkleOf(state) : null;
   for (const robot of state.robots.list) {
     if (robot.power !== 'broken' || robot.carried || robot.onBench) continue;
     if (getTile(robotWorld(state, robot), robot.tx, robot.tz)?.blocker !== Blocker.Water) continue;
+    if (robot.id === spared?.id) {
+      next = fishedOut(next, robot);
+      rescued = robot.id;
+      notes.push({ text: `Sol fished ${robot.name} out of the pond, free this once. A DON'T card can keep it out: Go into water.`, tone: 'info' });
+      continue;
+    }
     next = logRobotEvent(withRobot(next, { ...robot, power: 'ruined' }), robot.id, { kind: 'ruined' });
     notes.push({ text: `${robot.name} spent the night in the water and is ruined. Scrap it at the workbench.`, tone: 'warn' });
   }
-  return next;
+  return { state: next, rescued };
+}
+
+/** `robot` back on the free tile nearest the workbench's home, facing South, working and fully charged; `jobs.rescued` set. */
+function fishedOut(state: GameState, robot: Robot): GameState {
+  const others = state.robots.list.filter((r) => r.id !== robot.id && r.mapId === 'farm' && r.power !== 'repairing');
+  const at = freeSpotNear(state.maps.farm, WORKBENCH.home, [PLAYER.spawn, ...others]);
+  const back: Robot = {
+    ...robot,
+    tx: at.tx,
+    tz: at.tz,
+    facing: Direction.South,
+    tokens: batteryFor(robot.size),
+    power: 'working',
+    teleportSeq: robot.teleportSeq + 1,
+  };
+  return withRobot({ ...state, jobs: { ...state.jobs, rescued: true } }, back);
 }
 
 /**
  * In id order, the player's robots within chargeRadius of a farm burner fill up from the pool.
  * Every other robot of the player's that isn't broken, ruined or away at repairs (even a full
  * one) is named as having missed out. A robot just back from repairs spent the day at the shop,
- * so it's never named. A neighbour's robot within chargeRadius of its owner's generator fills up
+ * so it's never named, and nor is one Sol fished out of the pond (both in `returned`). A neighbour's robot within chargeRadius of its owner's generator fills up
  * for free, and one away from it stays as it is, unnamed: the pool and the toasts are the
  * player's (part 4c spec §5.1).
  */
@@ -283,7 +314,9 @@ export function runRobotsOvernight(state: GameState): { readonly state: GameStat
   const notes: RobotNote[] = [];
   const burned = burnGenerators(state, notes);
   const repaired = returnRepaired(setDownCarried(burned.state), notes);
-  let next = emptyNeighbourBags(recharge(ruinSoaked(repaired.state, notes), burned.burners, repaired.returned, notes));
+  const soaked = ruinSoaked(repaired.state, notes);
+  const back = soaked.rescued === null ? repaired.returned : new Set([...repaired.returned, soaked.rescued]);
+  let next = emptyNeighbourBags(recharge(soaked.state, burned.burners, back, notes));
   next = deliverPendingMarker(resetForMorning(deliverRobots(next, notes)), notes);
   return { state: pruneRobotLog(next), notes };
 }

@@ -156,9 +156,9 @@ export type NpcId = (typeof NPC_IDS)[number];
 
 /**
  * What a character's chat-box buttons do (part 4a spec §3.2): Marigold's seed shop, Sol's parts
- * shop and Juniper's workshop (part 4b spec §3.1, §4.1). Part 4c adds kinds.
+ * shop and Juniper's workshop (part 4b spec §3.1, §4.1), and a giver's job card (part 4c spec §2.2).
  */
-export const NPC_ACTION_KINDS = ['shop', 'partsShop', 'workshop'] as const;
+export const NPC_ACTION_KINDS = ['shop', 'partsShop', 'workshop', 'job'] as const;
 export type NpcActionKind = (typeof NPC_ACTION_KINDS)[number];
 
 export const ANIMAL_KINDS = ['chicken', 'cow'] as const;
@@ -493,9 +493,10 @@ export type UiPanel =
   /**
    * A character's chat box (farmclaws part 4a spec §3.2). `line` is picked as the chat opens,
    * before the chat is recorded, so the first chat shows the introduction and the line never
-   * changes while the box is open.
+   * changes while the box is open. `card` is what the box shows: the line, or the giver's job
+   * card in its place (part 4c spec §2.2).
    */
-  | { readonly kind: 'talk'; readonly npc: NpcId; readonly line: string };
+  | { readonly kind: 'talk'; readonly npc: NpcId; readonly line: string; readonly card: 'line' | 'job' };
 
 export interface UiState {
   readonly panel: UiPanel;

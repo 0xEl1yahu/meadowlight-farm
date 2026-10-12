@@ -215,16 +215,29 @@ describe("a character's tile", () => {
 });
 
 describe('npcActions', () => {
+  /** BASE with every job done, so no character has a job open. */
+  const ALL_DONE: GameState = { ...BASE, jobs: { ...BASE.jobs, status: { spinningRobot: 'done', showHim: 'done', knowTheLimits: 'done' } } };
+
   it("gives Marigold the seed shop, Sol the parts shop, Juniper the workshop and everyone else none", () => {
-    expect(npcActions('marigold')).toEqual([{ kind: 'shop', label: 'Shop' }]);
-    expect(npcActions('sol')).toEqual([{ kind: 'partsShop', label: 'Shop' }]);
-    expect(npcActions('juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
+    expect(npcActions(ALL_DONE, 'marigold')).toEqual([{ kind: 'shop', label: 'Shop' }]);
+    expect(npcActions(ALL_DONE, 'sol')).toEqual([{ kind: 'partsShop', label: 'Shop' }]);
+    expect(npcActions(ALL_DONE, 'juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
     for (const id of NPC_IDS) {
       if (id === 'marigold' || id === 'sol' || id === 'juniper') continue;
-      expect(npcActions(id), id).toEqual([]);
-      expect(npcActions(id), id).toBe(npcActions('cosmo'));
+      expect(npcActions(ALL_DONE, id), id).toEqual([]);
+      expect(npcActions(ALL_DONE, id), id).toBe(npcActions(ALL_DONE, 'cosmo'));
     }
-    for (const id of NPC_IDS) expect(Object.isFrozen(npcActions(id)), id).toBe(true);
+    for (const id of NPC_IDS) expect(Object.isFrozen(npcActions(ALL_DONE, id)), id).toBe(true);
+  });
+
+  it("puts Job in front of a giver's buttons while their job is open (part 4c spec §2.2)", () => {
+    expect(npcActions(BASE, 'sol')).toEqual([
+      { kind: 'job', label: 'Job' },
+      { kind: 'partsShop', label: 'Shop' },
+    ]);
+    expect(npcActions(BASE, 'sol')).toBe(npcActions(BASE, 'sol'));
+    expect(Object.isFrozen(npcActions(BASE, 'sol'))).toBe(true);
+    expect(npcActions(BASE, 'marigold')).toBe(npcActions(ALL_DONE, 'marigold'));
   });
 });
 

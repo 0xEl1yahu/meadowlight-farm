@@ -136,11 +136,15 @@ export function runRobotsMinute(state: GameState): GameState {
   return next;
 }
 
-/** Runs every minute after the current one up to and including `lastMinute`. */
-export function runRobotsThrough(state: GameState, lastMinute: number): GameState {
+/**
+ * Runs every minute after the current one up to and including `lastMinute`; `afterMinute`, when
+ * given, follows each minute's robots (the jobs' checks, part 4c spec §2.1).
+ */
+export function runRobotsThrough(state: GameState, lastMinute: number, afterMinute?: (state: GameState) => GameState): GameState {
   let next = state;
   for (let minute = state.time.minuteOfDay + 1; minute <= lastMinute; minute++) {
     next = runRobotsMinute({ ...next, time: { ...next.time, minuteOfDay: minute } });
+    if (afterMinute !== undefined) next = afterMinute(next);
   }
   return next;
 }

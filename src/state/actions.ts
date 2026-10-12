@@ -6,6 +6,7 @@ import type {
   CraftingRecipeId,
   Direction,
   GameState,
+  JobId,
   MdCard,
   MessageTone,
   NpcActionKind,
@@ -73,7 +74,9 @@ export type GameAction =
   /** Takes a part off the robot on the workbench into the backpack. */
   | { readonly type: 'robot/unfit'; readonly robotId: number; readonly part: RobotPartId }
   /** An action button in the chat box, e.g. Marigold's Shop (farmclaws part 4a spec §3.2). */
-  | { readonly type: 'talk/act'; readonly npc: NpcId; readonly act: NpcActionKind };
+  | { readonly type: 'talk/act'; readonly npc: NpcId; readonly act: NpcActionKind }
+  /** Take the job: the job card's button for an offered job (farmclaws part 4c spec §2.2). */
+  | { readonly type: 'job/take'; readonly job: JobId };
 
 export type GameActionType = GameAction['type'];
 
@@ -117,4 +120,5 @@ export const actions = {
   fitPart: (robotId: number, part: RobotPartId): GameAction => ({ type: 'robot/fit', robotId, part }),
   unfitPart: (robotId: number, part: RobotPartId): GameAction => ({ type: 'robot/unfit', robotId, part }),
   npcAct: (npc: NpcId, act: NpcActionKind): GameAction => ({ type: 'talk/act', npc, act }),
+  takeJob: (job: JobId): GameAction => ({ type: 'job/take', job }),
 } as const;

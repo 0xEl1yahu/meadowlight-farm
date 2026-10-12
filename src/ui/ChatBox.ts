@@ -2,12 +2,13 @@
  * The chat box (farmclaws part 4a spec §3.2): while the talk panel is open, a panel along the
  * bottom of the screen, above the hotbar, with the character's name, their role line under it in
  * smaller text, the line the talk panel carries and a row of action buttons. Close sits at the
- * top right.
+ * top right. A giver's job card (part 4c spec §2.2) takes the line's place: the job's title, its
+ * offer and goal, the progress line while it's active, and its own buttons in the row.
  *
  * - `sync(state, prev)` redraws only when `ui.panel` changes. What it shows comes from the pure
  *   chatBoxView, so the line is never picked again while the box is open.
- * - An action button dispatches `talk/act` for the character shown; Close dispatches
- *   `ui/closePanel`. E, K, Enter and Escape close the box through panelKeyCommand. Buttons blur
+ * - A button dispatches the action chatBoxView gives it (`talk/act`, `job/take` or
+ *   `ui/closePanel`); Close dispatches `ui/closePanel`. E, K, Enter and Escape close the box through panelKeyCommand. Buttons blur
  *   after mouse clicks but keep focus on keyboard activation, like the modals' buttons.
  * - Narrower than ROBOT_SCREEN.phoneMaxWidth (isPhoneWidth) the box takes the chat-box--phone
  *   modifier: it spans the screen and its buttons wrap. The width is read again on every resize.
@@ -33,6 +34,11 @@ export class ChatBox {
   private readonly name = h('h2', 'chat-box__name');
   private readonly role = h('p', 'chat-box__role');
   private readonly line = h('p', 'chat-box__line');
+  private readonly job = h('div', 'chat-box__job');
+  private readonly jobTitle = h('h3', 'chat-box__job-title');
+  private readonly jobOffer = h('p', 'chat-box__job-offer');
+  private readonly jobGoal = h('p', 'chat-box__job-goal');
+  private readonly jobProgress = h('p', 'chat-box__job-progress');
   private readonly buttons = h('div', 'chat-box__actions');
   /** What the box shows now; null while it's hidden. */
   private shown: ChatBoxView | null = null;
@@ -48,7 +54,8 @@ export class ChatBox {
     heading.append(this.name, this.role);
     const close = hudButton('hud-btn hud-btn--ghost chat-box__close', 'Close');
     close.title = 'Close (E / Esc)';
-    this.element.append(heading, close, this.line, this.buttons);
+    this.job.append(this.jobTitle, this.jobOffer, this.jobGoal, this.jobProgress);
+    this.element.append(heading, close, this.line, this.job, this.buttons);
 
     const signal = context.signal;
     close.addEventListener(
@@ -66,8 +73,8 @@ export class ChatBox {
         const view = this.shown;
         if (button === null || view === null) return;
         releasePointerFocus(button, event);
-        const action = view.actions[Number(button.dataset.index)];
-        if (action !== undefined) context.dispatch(actions.npcAct(view.npc, action.kind));
+        const chosen = view.buttons[Number(button.dataset.index)];
+        if (chosen !== undefined) context.dispatch(chosen.action);
       },
       { signal },
     );
@@ -88,13 +95,24 @@ export class ChatBox {
     setText(this.name, view.name);
     setText(this.role, view.role);
     setText(this.line, view.line);
+    const job = view.job;
+    setHidden(this.line, job !== null);
+    setHidden(this.job, job === null);
+    if (job !== null) {
+      setText(this.jobTitle, job.title);
+      setText(this.jobOffer, job.offer);
+      setText(this.jobGoal, job.goal);
+      setText(this.jobProgress, job.progress ?? '');
+      setHidden(this.jobProgress, job.progress === null);
+    }
     this.buttons.replaceChildren(
-      ...view.actions.map((action, index) => {
-        const button = hudButton('hud-btn hud-btn--primary chat-box__action', action.label);
+      ...view.buttons.map((chosen, index) => {
+        const style = chosen.primary ? 'hud-btn--primary' : 'hud-btn--ghost';
+        const button = hudButton(`hud-btn ${style} chat-box__action`, chosen.label);
         button.dataset.index = String(index);
         return button;
       }),
     );
-    setHidden(this.buttons, view.actions.length === 0);
+    setHidden(this.buttons, view.buttons.length === 0);
   }
 }

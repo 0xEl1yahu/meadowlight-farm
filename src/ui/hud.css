@@ -1064,6 +1064,7 @@
   grid-template-areas:
     'heading close'
     'line line'
+    'job job'
     'actions actions';
   align-items: start;
   gap: 8px 12px;
@@ -1109,6 +1110,42 @@
   font-weight: 500;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+/* The job card (part 4c spec §2.2) takes the line's place, on the same parchment. */
+.chat-box__job {
+  grid-area: job;
+  display: grid;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 2px solid var(--hud-line);
+  border-radius: var(--hud-radius-sm);
+  background: var(--hud-parchment);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.chat-box__job-title {
+  color: var(--hud-ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.chat-box__job-offer {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.chat-box__job-goal {
+  color: var(--hud-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.chat-box__job-progress {
+  color: var(--hud-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .chat-box__actions {

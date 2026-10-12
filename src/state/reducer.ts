@@ -26,6 +26,7 @@ import {
   type Direction,
   type GameState,
   type CraftingRecipeId,
+  type JobId,
   type CropId,
   type InventoryState,
   type ItemStack,
@@ -53,7 +54,8 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
-import { npcActions, npcAt } from '../people/cast';
+import { JOBS_TABLE, activeJob, finishJob, jobMorning, passedJob, takeJob } from '../jobs/jobs';
+import { CAST, npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
 import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
@@ -182,6 +184,8 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return unfitPart(state, action.robotId, action.part);
     case 'talk/act':
       return talkAct(state, action.npc, action.act);
+    case 'job/take':
+      return takeJobAct(state, action.job);
     default: {
       const unknown: never = action;
       void unknown;
@@ -195,17 +199,18 @@ function reduceAction(state: GameState, action: GameAction): GameState {
 // ---------------------------------------------------------------------------
 
 /**
- * Advances the clock. With robots on the farm it goes one minute at a time so every robot acts
- * on its minute (farmclaws part 1 §5.5); however the minutes arrive, the result is the same.
+ * Advances the clock. With robots or an active job it goes one minute at a time so every robot
+ * acts on its minute (farmclaws part 1 §5.5) and the job is checked after each minute's robots
+ * (part 4c spec §2.1); however the minutes arrive, the result is the same.
  */
 function tick(state: GameState, minutes: number): GameState {
   if (selectIsFrozen(state) || !Number.isFinite(minutes)) return state;
   const whole = Math.min(TIME.maxTickMinutes, Math.floor(minutes));
   if (whole <= 0) return state;
   const target = state.time.minuteOfDay + whole;
-  if (target >= TIME.passOutMinute) return startNextDay(runRobotsThrough(state, TIME.passOutMinute - 1), true);
-  if (state.robots.list.length === 0) return { ...state, time: { ...state.time, minuteOfDay: target } };
-  return runRobotsThrough(state, target);
+  if (target >= TIME.passOutMinute) return startNextDay(runRobotsThrough(state, TIME.passOutMinute - 1, applyJobCheck), true);
+  if (state.robots.list.length === 0 && activeJob(state) === null) return { ...state, time: { ...state.time, minuteOfDay: target } };
+  return runRobotsThrough(state, target, applyJobCheck);
 }
 
 /** The placed object a placeable item becomes: an empty chest, a cold wood burner, or the plain kind. */
@@ -265,8 +270,8 @@ function restocked(sold: ShopsSoldToday): ShopsSoldToday {
  * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
  * pipeline on every map with that map's seed, restore energy, clear yesterday's chats
  * (`talkedToday`), restock the shops (part 4b spec §6) and put the player back at the house on
- * the farm. Then the robots' night runs (farmclaws part 1 §5.7); its toasts follow the
- * morning's own messages.
+ * the farm. Then the robots' night runs (farmclaws part 1 §5.7), and the active job's morning
+ * reset (part 4c spec §2.1); the night's toasts follow the morning's own messages.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -312,7 +317,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     shopsSoldToday: restocked(state.shopsSoldToday),
   };
   const night = runRobotsOvernight(next);
-  next = night.state;
+  next = jobMorning(night.state);
 
   next = pushMessage(next, `Good morning! ${formatDate(time)}.`, 'info');
   if (passedOut) next = pushMessage(next, 'You passed out from exhaustion and woke up at home with half your energy.', 'warn');
@@ -546,13 +551,17 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'peek' } } };
 
     case 'talkTo': {
+      // Talking to the active job's giver checks the job once more (part 4c spec §2.1), so a job
+      // done by now is finished before the line is picked.
+      const job = activeJob(state);
+      const checked = job !== null && JOBS_TABLE[job].giver === intent.npc ? applyJobCheck(state) : state;
       // The line is picked before the chat is recorded, so the first chat shows the introduction (part 4a spec §3.4).
-      const line = lineFor(state, intent.npc);
-      const talk = state.npcs[intent.npc];
+      const line = lineFor(checked, intent.npc);
+      const talk = checked.npcs[intent.npc];
       return {
-        ...state,
-        npcs: { ...state.npcs, [intent.npc]: { talks: talk.talks + 1, talkedToday: true } },
-        ui: { ...state.ui, panel: { kind: 'talk', npc: intent.npc, line } },
+        ...checked,
+        npcs: { ...checked.npcs, [intent.npc]: { talks: talk.talks + 1, talkedToday: true } },
+        ui: { ...checked.ui, panel: { kind: 'talk', npc: intent.npc, line, card: 'line' } },
       };
     }
 
@@ -1071,15 +1080,15 @@ function paintRobot(state: GameState, robotId: number, paint: number): GameState
 
 /**
  * `talk/act`: an action button in the chat box. It acts only while the talk panel is open on
- * `npc`, the game isn't paused and `act` is one of `npcActions(npc)`; anything else changes
+ * `npc`, the game isn't paused and `act` is one of `npcActions(state, npc)`; anything else changes
  * nothing. Marigold's Shop swaps the talk panel for the seed shop in one step, Sol's for the
- * parts shop and Juniper's Workshop for the workshop (part 4b spec §3.1, §4.1). Part 4c adds a
- * case per new action kind.
+ * parts shop and Juniper's Workshop for the workshop (part 4b spec §3.1, §4.1); Job shows the
+ * job card in place of the line (part 4c spec §2.2).
  */
 function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
   const panel = state.ui.panel;
   if (panel.kind !== 'talk' || panel.npc !== npc || state.ui.paused) return state;
-  if (!npcActions(npc).some((action) => action.kind === act)) return state;
+  if (!npcActions(state, npc).some((action) => action.kind === act)) return state;
   switch (act) {
     case 'shop':
       return { ...state, ui: { ...state.ui, panel: { kind: 'shop' } } };
@@ -1087,12 +1096,49 @@ function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
       return { ...state, ui: { ...state.ui, panel: { kind: 'partsShop' } } };
     case 'workshop':
       return { ...state, ui: { ...state.ui, panel: { kind: 'workshop' } } };
+    case 'job':
+      return panel.card === 'job' ? state : { ...state, ui: { ...state.ui, panel: { ...panel, card: 'job' } } };
     default: {
       const unknown: never = act;
       void unknown;
       return state;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Jobs (farmclaws part 4c spec §2)
+// ---------------------------------------------------------------------------
+
+/**
+ * `job/take`: Take the job on the job card. It acts only while the card is open on the job's
+ * giver, the game isn't paused and the job is offered: the job is taken (takeJob), the chat closes
+ * and "{title}: job taken." is toasted. A set-up that can't run is toasted as a warning instead,
+ * with the card left open.
+ */
+function takeJobAct(state: GameState, job: JobId): GameState {
+  const panel = state.ui.panel;
+  const def = Object.hasOwn(JOBS_TABLE, job) ? JOBS_TABLE[job] : null;
+  if (def === null || panel.kind !== 'talk' || panel.card !== 'job' || panel.npc !== def.giver || state.ui.paused) return state;
+  if (state.jobs.status[job] !== 'offered') return state;
+  const taken = takeJob(state, job);
+  if (typeof taken === 'string') return pushMessage(state, taken, 'warn');
+  if (taken === state) return state;
+  return pushMessage({ ...taken, ui: { ...taken.ui, panel: { kind: 'none' } } }, `${def.title}: job taken.`, 'success');
+}
+
+/**
+ * Finishes the active job when its check passes (part 4c spec §2.1): done, the next job offered,
+ * the reward paid, then the toast "Job done: {title}. {giver} paid you {reward}g." and each of the
+ * job's unlock lines as its own toast. The same state otherwise.
+ */
+function applyJobCheck(state: GameState): GameState {
+  const job = passedJob(state);
+  if (job === null) return state;
+  const def = JOBS_TABLE[job];
+  let next = pushMessage(finishJob(state, job), `Job done: ${def.title}. ${CAST[def.giver].name} paid you ${def.reward}g.`, 'success');
+  for (const line of def.doneLines) next = pushMessage(next, line, 'success');
+  return next;
 }
 
 /** Replaces the whole state (new game / loaded save): no panel open, unpaused, no zone draft, the player flagged as teleported. */
