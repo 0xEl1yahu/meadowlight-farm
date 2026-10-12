@@ -20,7 +20,7 @@ import { actions } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { workshopView } from '../src/ui/shops/viewModel';
-import { BASE, must, robotOf, withGold, withPlayer, withRobots } from './testUtils';
+import { BASE, must, robotOf, withGold, withJobsDone, withPlayer, withRobots } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel, paused = false): GameState => ({ ...state, ui: { ...state.ui, panel, paused } });
 const withDeliveries = (state: GameState, deliveries: readonly RobotDelivery[]): GameState => ({
@@ -28,8 +28,11 @@ const withDeliveries = (state: GameState, deliveries: readonly RobotDelivery[]):
   robots: { ...state.robots, deliveries },
 });
 
-/** BASE with Juniper's workshop open and 20,000g. */
-const WORKSHOP: GameState = deepFreeze(withPanel(withGold(BASE, 20000), { kind: 'workshop' }));
+/** BASE with every job done, so every size is behind no gate (part 4c spec §4.2). */
+const OPEN: GameState = deepFreeze(withJobsDone(BASE, 'knowTheLimits'));
+
+/** OPEN with Juniper's workshop open and 20,000g. */
+const WORKSHOP: GameState = deepFreeze(withPanel(withGold(OPEN, 20000), { kind: 'workshop' }));
 
 const order = (state: GameState, size: (typeof ROBOT_SIZES)[number], name: string): GameState => gameReducer(state, actions.orderRobot(size, name));
 const sleep = (state: GameState): GameState => gameReducer(state, actions.sleep());
@@ -46,12 +49,12 @@ const POWER_DOWN = b.program({ stacks: [b.when(b.morning(), b.powerDown())] });
 
 describe("Juniper's Workshop action", () => {
   it('gives Juniper a Workshop button', () => {
-    expect(npcActions(BASE, 'juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
+    expect(npcActions(OPEN, 'juniper')).toEqual([{ kind: 'workshop', label: 'Workshop' }]);
   });
 
   it("swaps Juniper's chat for the workshop, from a real chat", () => {
     const { mapId, placement } = must(npcSpot('juniper'));
-    const before = withPlayer(BASE, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+    const before = withPlayer(OPEN, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
     const talking = gameReducer(before, actions.interact());
     expect(talking.ui.panel.kind).toBe('talk');
     const shopping = gameReducer(talking, actions.npcAct('juniper', 'workshop'));
@@ -266,9 +269,9 @@ describe('workshopView', () => {
     expect(view.gold).toBe(20000);
     expect(view.count).toBe('3 / 12 robots');
     expect(view.cards).toEqual([
-      { size: 'mini', title: 'Mini', price: 1500, specs: '1 part slot · 80 battery · 12 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null },
-      { size: 'standard', title: 'Standard', price: 4000, specs: '2 part slots · 200 battery · 30 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null },
-      { size: 'big', title: 'Big', price: 10000, specs: '3 part slots · 500 battery · 80 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null },
+      { size: 'mini', title: 'Mini', price: 1500, specs: '1 part slot · 80 battery · 12 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null, locked: null },
+      { size: 'standard', title: 'Standard', price: 4000, specs: '2 part slots · 200 battery · 30 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null, locked: null },
+      { size: 'big', title: 'Big', price: 10000, specs: '3 part slots · 500 battery · 80 blocks', line: 'Comes with a claw and a program that harvests Zone A.', left: '1 left', soldOut: null, locked: null },
     ]);
     expect(view.suggestedName).toBe(suggestedName(state));
   });

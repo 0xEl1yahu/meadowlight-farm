@@ -54,7 +54,7 @@ import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
 import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
-import { JOBS_TABLE, activeJob, finishJob, isJobRobot, jobMorning, passedJob, takeJob } from '../jobs/jobs';
+import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, passedJob, sizeGate, takeJob } from '../jobs/jobs';
 import { CAST, npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
@@ -806,9 +806,12 @@ function isBasicPartId(part: RobotPartId): part is BasicPartId {
   return (BASIC_PART_IDS as readonly RobotPartId[]).includes(part);
 }
 
-/** `parts/buy`: one basic part into the backpack for its price, counted into today's stock, or a toast saying why not. */
+/**
+ * `parts/buy`: one basic part into the backpack for its price, counted into today's stock, or a
+ * toast saying why not. Nothing happens behind the parts shop's gate (part 4c spec §4.2).
+ */
 function buyPart(state: GameState, part: RobotPartId): GameState {
-  if (!partsShopOpen(state) || !isBasicPartId(part)) return state;
+  if (!partsShopOpen(state) || !isBasicPartId(part) || !isGateOpen(state, 'partsShop')) return state;
   if (partsLeft(state, part) === 0) return pushMessage(state, 'Out of stock. Sol restocks tomorrow.', 'warn');
   const price = PARTS.prices[part];
   if (state.player.gold < price) return pushMessage(state, `You need ${price}g.`, 'warn');
@@ -856,10 +859,11 @@ function previewRobot(state: GameState, size: RobotSize): GameState {
 /**
  * `workshop/order` (part 4b spec §4.5, §6): pays for a robot from Juniper's workshop, counts it
  * into today's stock and queues its delivery for the morning, or says why not. Only while the
- * workshop is open and the game runs.
+ * workshop is open and the game runs, and silently not behind the size's gate (part 4c spec §4.2).
  */
 function orderRobot(state: GameState, size: RobotSize, name: string): GameState {
   if (state.ui.panel.kind !== 'workshop' || state.ui.paused || !ROBOT_SIZES.includes(size)) return state;
+  if (!isGateOpen(state, sizeGate(size))) return state;
   const { price } = ROBOTS.sizes[size];
   const robots = state.robots;
   if (robotsLeft(state, size) === 0) return pushMessage(state, 'Sold out today. Juniper builds another tomorrow.', 'warn');

@@ -15,6 +15,7 @@ import {
   Blocker,
   CRAFTING_RECIPE_IDS,
   Direction,
+  JOB_IDS,
   TileState,
   type Animal,
   type Robot,
@@ -25,6 +26,8 @@ import {
   type GameState,
   type ItemId,
   type ItemStack,
+  type JobId,
+  type JobStatus,
   type MapId,
   type NpcTalk,
   type RobotStats,
@@ -348,6 +351,17 @@ export function withMigratedJobs(state: GameState): GameState {
   const fresh = createDefaultSections().jobs;
   if (state.robots.list.length === 0 && state.robots.deliveries.length === 0) return { ...state, jobs: fresh };
   return { ...state, jobs: { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } };
+}
+
+/**
+ * `state` with every job up to and including `last` done and the next one offered (farmclaws part
+ * 4c spec §2.1), so the shop gates those jobs open are open (spec §4.2).
+ */
+export function withJobsDone(state: GameState, last: JobId): GameState {
+  const upTo = JOB_IDS.indexOf(last);
+  const status: Record<JobId, JobStatus> = { ...state.jobs.status };
+  for (const [i, id] of JOB_IDS.entries()) status[id] = i <= upTo ? 'done' : i === upTo + 1 ? 'offered' : 'locked';
+  return { ...state, jobs: { ...state.jobs, status, fieldDay: -1 } };
 }
 
 /**

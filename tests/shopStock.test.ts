@@ -15,12 +15,12 @@ import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer, startNextDay } from '../src/state/reducer';
 import { partsLeft, robotsLeft, seedsLeft } from '../src/state/selectors';
 import { partsShopView, seedStock, workshopView } from '../src/ui/shops/viewModel';
-import { BASE, must, withGold, withSlots } from './testUtils';
+import { BASE, must, withGold, withJobsDone, withSlots } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel): GameState => ({ ...state, ui: { ...state.ui, panel } });
 
-/** BASE (spring) with 50,000g and an empty backpack, ready to open any shop. */
-const RICH: GameState = deepFreeze(withGold(withSlots(BASE, []), 50000));
+/** BASE (spring) with every job done, 50,000g and an empty backpack, ready to open any shop. */
+const RICH: GameState = deepFreeze(withGold(withSlots(withJobsDone(BASE, 'knowTheLimits'), []), 50000));
 const SOL = deepFreeze(withPanel(RICH, { kind: 'partsShop' }));
 const JUNIPER = deepFreeze(withPanel(RICH, { kind: 'workshop' }));
 const MARIGOLD = deepFreeze(withPanel(RICH, { kind: 'shop' }));

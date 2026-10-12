@@ -7,7 +7,8 @@
  * `workshop/order`; the reducer gives every refusal's toast, so the buttons stay enabled.
  *
  * - The cards are built once; the gold, the count, the suggested name and each card's "{n} left"
- *   (spec §6) follow the state. A sold-out card shows "Sold out today" in place of its buttons.
+ *   (spec §6) follow the state. A sold-out card shows "Sold out today" in place of its buttons, and
+ *   a card behind job 3's gate "After Barnaby's job." in place of Buy (part 4c spec §4.2).
  * - The checkout closes when an order lands (the deliveries grow), on Cancel, on Escape in the
  *   name field, and whenever the panel opens again. The input controller skips keys typed in the
  *   field, so Enter there submits the checkout and Escape cancels it.
@@ -32,6 +33,8 @@ interface CardParts {
   readonly buttons: HTMLElement;
   readonly read: HTMLButtonElement;
   readonly buy: HTMLButtonElement;
+  /** "After Barnaby's job.", in place of Buy while the card's gate is closed. */
+  readonly locked: HTMLElement;
   readonly left: HTMLElement;
   readonly soldOut: HTMLElement;
 }
@@ -157,7 +160,8 @@ export class WorkshopPanel {
       state.player.gold !== prev.player.gold ||
       state.robots !== prev.robots ||
       state.seed !== prev.seed ||
-      state.shopsSoldToday !== prev.shopsSoldToday;
+      state.shopsSoldToday !== prev.shopsSoldToday ||
+      state.jobs !== prev.jobs;
     if (changed) this.syncView(state);
     if (opened) {
       this.closeCheckout(false);
@@ -175,6 +179,9 @@ export class WorkshopPanel {
       const parts = this.cards.find((entry) => entry.card.size === card.size);
       if (parts === undefined) continue;
       setText(parts.left, card.left);
+      setHidden(parts.buy, card.locked !== null);
+      setHidden(parts.locked, card.locked === null);
+      if (card.locked !== null) setText(parts.locked, card.locked);
       if (card.soldOut === null) this.soldOut.delete(card.size);
       else this.soldOut.add(card.size);
       if (parts !== this.buying) setHidden(parts.buttons, card.soldOut !== null);
@@ -197,11 +204,13 @@ export class WorkshopPanel {
     const buy = hudButton('hud-btn hud-btn--buy', 'Buy');
     buy.dataset.size = card.size;
     buy.setAttribute('aria-label', `Buy a ${card.title} robot for ${gold(card.price)}`);
-    buttons.append(read, buy);
+    const locked = h('span', 'hud-shop__sold-out');
+    locked.hidden = true;
+    buttons.append(read, buy, locked);
     const soldOut = h('span', 'hud-shop__sold-out');
     soldOut.hidden = true;
     element.append(iconHost('hud-shop__icon', this.context.icons.get('claw')), info, buttons, soldOut);
-    return { card, element, buttons, read, buy, left, soldOut };
+    return { card, element, buttons, read, buy, locked, left, soldOut };
   }
 
   /** Turns `parts` into the checkout, with the suggested name selected in the field. */

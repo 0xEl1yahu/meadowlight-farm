@@ -25,7 +25,7 @@ import { hasBenchActions, isReadOnly, looksEditable, partsSectionView, switchVie
 import { chebyshevDistance } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import { addBlockRobot, programmed } from './programGen';
-import { BASE, atDay, holding, matureCrop, must, robotOf, soilTile, stack, tileAt, withGold, withPlayer, withRobots, withTile, withZones } from './testUtils';
+import { BASE, atDay, holding, matureCrop, must, robotOf, soilTile, stack, tileAt, withGold, withJobsDone, withPlayer, withRobots, withTile, withZones } from './testUtils';
 
 const MORNING = atDay(BASE, 0, TIME.dayStartMinute);
 const sleep = (state: GameState): GameState => gameReducer(state, actions.sleep());
@@ -286,7 +286,7 @@ describe('the 12-robot cap', () => {
   });
 
   it("lets Juniper's workshop take an order with the neighbours' robots about", () => {
-    const eleven = { ...withGold(withRobots(BASE, [...players(11), ...neighbours(12)]), 20000), ui: { ...BASE.ui, panel: { kind: 'workshop' as const } } };
+    const eleven = { ...withGold(withRobots(withJobsDone(BASE, 'knowTheLimits'), [...players(11), ...neighbours(12)]), 20000), ui: { ...BASE.ui, panel: { kind: 'workshop' as const } } };
     const ordered = gameReducer(eleven, actions.orderRobot('mini', 'Bolt'));
     expect(ordered.robots.deliveries).toEqual([{ size: 'mini', name: 'Bolt' }]);
     expect(texts(gameReducer(ordered, actions.orderRobot('standard', 'Cog')))).toContain(ROBOT_CAP_RULE);

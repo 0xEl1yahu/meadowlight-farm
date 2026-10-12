@@ -16,6 +16,7 @@ import {
   type SeedItemId,
 } from '../../core/types';
 import { getItem, sellBackPrice } from '../../items/items';
+import { isGateOpen } from '../../jobs/jobs';
 import { playerRobotCount } from '../../robots/create';
 import { suggestedName } from '../../robots/workshop';
 import { countItem } from '../../state/inventory';
@@ -97,12 +98,17 @@ export interface WorkshopCard {
   readonly line: string;
 }
 
+/** A card's gate (part 4c spec §4.2): "After Barnaby's job." in place of Buy while its size's gate is closed, else null. */
+export interface CardGate {
+  readonly locked: string | null;
+}
+
 export interface WorkshopView {
   readonly gold: number;
   /** "{n} / 12 robots": the player's robots plus deliveries due. */
   readonly count: string;
-  /** One card per size, with how many Juniper has left to build today. */
-  readonly cards: readonly (WorkshopCard & StockLabel)[];
+  /** One card per size, with how many Juniper has left to build today and whether its gate is open. */
+  readonly cards: readonly (WorkshopCard & StockLabel & CardGate)[];
   /** What the checkout's name field starts with. */
   readonly suggestedName: string;
 }
@@ -126,7 +132,11 @@ export function workshopView(state: GameState): WorkshopView {
   return {
     gold: state.player.gold,
     count: `${playerRobotCount(list) + deliveries.length} / ${ROBOTS.maxRobots} robots`,
-    cards: WORKSHOP_CARDS.map((card) => ({ ...card, ...stockLabel(robotsLeft(state, card.size), 'Sold out today') })),
+    cards: WORKSHOP_CARDS.map((card) => ({
+      ...card,
+      ...stockLabel(robotsLeft(state, card.size), 'Sold out today'),
+      locked: card.size === 'mini' || isGateOpen(state, 'bigRobots') ? null : "After Barnaby's job.",
+    })),
     suggestedName: suggestedName(state),
   };
 }

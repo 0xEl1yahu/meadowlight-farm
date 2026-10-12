@@ -141,7 +141,7 @@ describe('the job card', () => {
   it('keeps the line and the action buttons while the card is closed', () => {
     const view = must(chatBoxView(talk(BASE, 'sol')));
     expect(view.job).toBeNull();
-    expect(view.buttons.map((button) => button.label)).toEqual(['Job', 'Shop']);
+    expect(view.buttons.map((button) => button.label)).toEqual(['Job']);
   });
 });
 

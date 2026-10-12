@@ -5,7 +5,7 @@
  * all read the same list.
  */
 import type { Appearance, GameState, MapId, NpcActionKind, NpcId } from '../core/types';
-import { giverJob } from '../jobs/jobs';
+import { giverJob, isGateOpen, type ShopGate } from '../jobs/jobs';
 import { MAPS, type NpcPlacement } from '../world/maps';
 
 export interface CastMember {
@@ -75,28 +75,41 @@ export interface NpcAction {
 
 const NO_ACTIONS: readonly NpcAction[] = Object.freeze([]);
 
-const ACTIONS: Readonly<Record<NpcId, readonly NpcAction[]>> = {
-  sol: Object.freeze([{ kind: 'partsShop', label: 'Shop' }]),
-  cosmo: NO_ACTIONS,
-  barnaby: NO_ACTIONS,
-  marigold: Object.freeze([{ kind: 'shop', label: 'Shop' }]),
-  berlioz: NO_ACTIONS,
-  juniper: Object.freeze([{ kind: 'workshop', label: 'Workshop' }]),
-  tallulah: NO_ACTIONS,
+/** Each character's buttons after Job, and the shop gate they wait behind, or null (part 4c spec §4.2). */
+const BUTTONS: Readonly<Record<NpcId, { readonly actions: readonly NpcAction[]; readonly gate: ShopGate | null }>> = {
+  sol: { actions: [{ kind: 'partsShop', label: 'Shop' }], gate: 'partsShop' },
+  cosmo: { actions: [], gate: null },
+  barnaby: { actions: [], gate: null },
+  marigold: { actions: [{ kind: 'shop', label: 'Shop' }], gate: null },
+  berlioz: { actions: [], gate: null },
+  juniper: { actions: [{ kind: 'workshop', label: 'Workshop' }], gate: 'workshop' },
+  tallulah: { actions: [], gate: null },
 };
 
 const JOB_ACTION: NpcAction = Object.freeze({ kind: 'job', label: 'Job' });
 
-/** Each character's buttons with Job in front, for a giver whose job is open (part 4c spec §2.2). */
-const WITH_JOB = Object.fromEntries(
-  Object.entries(ACTIONS).map(([npc, list]) => [npc, Object.freeze([JOB_ACTION, ...list])]),
-) as Readonly<Record<NpcId, readonly NpcAction[]>>;
+function frozenList(list: readonly NpcAction[]): readonly NpcAction[] {
+  return list.length === 0 ? NO_ACTIONS : Object.freeze([...list]);
+}
+
+/**
+ * Each character's four lists, indexed by `(job open ? 1 : 0) + (gate open ? 2 : 0)`: with the
+ * gate closed their buttons are missing, and Job goes in front of a giver's (part 4c spec §2.2).
+ */
+const LISTS = Object.fromEntries(
+  Object.entries(BUTTONS).map(([npc, { actions, gate }]): [string, readonly (readonly NpcAction[])[]] => {
+    const closed = gate === null ? actions : [];
+    return [npc, [frozenList(closed), frozenList([JOB_ACTION, ...closed]), frozenList(actions), frozenList([JOB_ACTION, ...actions])]];
+  }),
+) as Readonly<Record<NpcId, readonly (readonly NpcAction[])[]>>;
 
 /**
  * The chat box's action buttons for `npc`, in order: Job while their job is offered or active
- * (giverJob), then Marigold's and Sol's Shop and Juniper's Workshop. The lists are frozen and
- * shared, so the same buttons are the same array.
+ * (giverJob), then Marigold's Shop, and Sol's Shop and Juniper's Workshop once their gates are
+ * open (isGateOpen). The lists are frozen and shared, so the same buttons are the same array.
  */
 export function npcActions(state: GameState, npc: NpcId): readonly NpcAction[] {
-  return giverJob(state, npc) === null ? ACTIONS[npc] : WITH_JOB[npc];
+  const { gate } = BUTTONS[npc];
+  const index = (giverJob(state, npc) === null ? 0 : 1) + (gate === null || isGateOpen(state, gate) ? 2 : 0);
+  return LISTS[npc][index] ?? NO_ACTIONS;
 }

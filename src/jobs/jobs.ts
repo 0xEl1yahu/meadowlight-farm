@@ -5,7 +5,7 @@
  * and the toasts.
  */
 import { JOBS, UNLOCKS } from '../config';
-import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotUnlocks } from '../core/types';
+import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotSize, type RobotUnlocks } from '../core/types';
 import { withUnlocks } from '../robots/unlocks';
 import { knowTheLimitsDone, knowTheLimitsProgress, showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress } from './checks';
 import { setUpBarnabyField, setUpCosmoField, setUpKnowTheLimits, setUpShowHim, setUpSpinningRobot } from './setup';
@@ -80,6 +80,25 @@ export const JOB_PLAYS: Readonly<Record<JobId, JobPlay>> = {
   showHim: { setup: setUpShowHim, morning: setUpCosmoField, check: showHimDone, progress: showHimProgress },
   knowTheLimits: { setup: setUpKnowTheLimits, morning: setUpBarnabyField, check: knowTheLimitsDone, progress: knowTheLimitsProgress },
 };
+
+/**
+ * The shop gates (spec §4.2): Juniper's workshop, Sol's parts shop, and Standard and Big robots at
+ * Juniper's. Each opens when its job is done.
+ */
+export const SHOP_GATES = ['workshop', 'partsShop', 'bigRobots'] as const;
+export type ShopGate = (typeof SHOP_GATES)[number];
+
+const GATE_JOBS: Readonly<Record<ShopGate, JobId>> = { workshop: 'spinningRobot', partsShop: 'showHim', bigRobots: 'knowTheLimits' };
+
+/** True once `gate`'s job is done. */
+export function isGateOpen(state: GameState, gate: ShopGate): boolean {
+  return state.jobs.status[GATE_JOBS[gate]] === 'done';
+}
+
+/** The gate a robot of `size` waits behind at Juniper's: the workshop's for a Mini, job 3's for the others. */
+export function sizeGate(size: RobotSize): ShopGate {
+  return size === 'mini' ? 'workshop' : 'bigRobots';
+}
 
 /** The active job, or null (at most one is active). */
 export function activeJob(state: GameState): JobId | null {

@@ -15,12 +15,15 @@ import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
 import { gameReducer } from '../src/state/reducer';
 import { partsShopView } from '../src/ui/shops/viewModel';
-import { BASE, must, stack, withGold, withPlayer, withSlots } from './testUtils';
+import { BASE, must, stack, withGold, withJobsDone, withPlayer, withSlots } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel, paused = false): GameState => ({ ...state, ui: { ...state.ui, panel, paused } });
 
-/** BASE with Sol's shop open, 2,000g and an empty backpack. */
-const SHOP: GameState = deepFreeze(withPanel(withGold(withSlots(BASE, []), 2000), { kind: 'partsShop' }));
+/** BASE with every job done, so Sol's shop is behind no gate (part 4c spec §4.2). */
+const OPEN: GameState = deepFreeze(withJobsDone(BASE, 'knowTheLimits'));
+
+/** OPEN with Sol's shop open, 2,000g and an empty backpack. */
+const SHOP: GameState = deepFreeze(withPanel(withGold(withSlots(OPEN, []), 2000), { kind: 'partsShop' }));
 
 const buy = (state: GameState, part: Parameters<typeof actions.buyPart>[0]): GameState => gameReducer(state, actions.buyPart(part));
 const sell = (state: GameState, part: Parameters<typeof actions.sellPart>[0]): GameState => gameReducer(state, actions.sellPart(part));
@@ -28,12 +31,12 @@ const lastToast = (state: GameState): unknown => state.messages.entries.at(-1);
 
 describe("Sol's Shop action", () => {
   it('gives Sol a Shop button', () => {
-    expect(npcActions(BASE, 'sol')).toContainEqual({ kind: 'partsShop', label: 'Shop' });
+    expect(npcActions(OPEN, 'sol')).toContainEqual({ kind: 'partsShop', label: 'Shop' });
   });
 
   it("swaps Sol's chat for the parts shop, from a real chat", () => {
     const { mapId, placement } = must(npcSpot('sol'));
-    const before = withPlayer(BASE, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+    const before = withPlayer(OPEN, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
     const talking = gameReducer(before, actions.interact());
     expect(talking.ui.panel.kind).toBe('talk');
     const shopping = gameReducer(talking, actions.npcAct('sol', 'partsShop'));
@@ -46,7 +49,7 @@ describe("Sol's Shop action", () => {
   it("doesn't open from someone else's chat or while paused", () => {
     const marigold = withPanel(BASE, { kind: 'talk', npc: 'marigold', line: 'Hello.', card: 'line' });
     expect(gameReducer(marigold, actions.npcAct('marigold', 'partsShop'))).toBe(marigold);
-    const paused = withPanel(BASE, { kind: 'talk', npc: 'sol', line: 'Hello.', card: 'line' }, true);
+    const paused = withPanel(OPEN, { kind: 'talk', npc: 'sol', line: 'Hello.', card: 'line' }, true);
     expect(gameReducer(paused, actions.npcAct('sol', 'partsShop'))).toBe(paused);
   });
 

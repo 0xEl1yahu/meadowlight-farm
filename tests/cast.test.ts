@@ -231,10 +231,7 @@ describe('npcActions', () => {
   });
 
   it("puts Job in front of a giver's buttons while their job is open (part 4c spec §2.2)", () => {
-    expect(npcActions(BASE, 'sol')).toEqual([
-      { kind: 'job', label: 'Job' },
-      { kind: 'partsShop', label: 'Shop' },
-    ]);
+    expect(npcActions(BASE, 'sol')).toEqual([{ kind: 'job', label: 'Job' }]);
     expect(npcActions(BASE, 'sol')).toBe(npcActions(BASE, 'sol'));
     expect(Object.isFrozen(npcActions(BASE, 'sol'))).toBe(true);
     expect(npcActions(BASE, 'marigold')).toBe(npcActions(ALL_DONE, 'marigold'));
