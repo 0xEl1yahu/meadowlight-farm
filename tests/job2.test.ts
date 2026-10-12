@@ -163,7 +163,7 @@ describe("Cosmo's field", () => {
     // A day not set up yet is.
     const stale: GameState = { ...later, jobs: { ...later.jobs, fieldDay: later.time.absoluteDay - 1 } };
     expect(tileAt(jobMorning(stale), ripe, 'neighbours').crop?.cropId).toBe('parsnip');
-    expect(JOB_PLAYS.showHim?.morning).not.toBeNull();
+    expect(JOB_PLAYS.showHim.morning).not.toBeNull();
   });
 
   it('leaves a tile under a placed object alone', () => {

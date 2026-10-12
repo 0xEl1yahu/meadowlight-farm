@@ -4,16 +4,17 @@
  */
 import { GENERATORS, JOBS, PLAYER, WORKBENCH } from '../config';
 import { invariant } from '../core/invariant';
-import { Direction, TileState, type BlockProgram, type CropInstance, type GameState, type RobotOwner, type TileCoord } from '../core/types';
+import { Direction, TileState, type BlockProgram, type CropInstance, type GameState, type MdCard, type RobotOwner, type TileCoord, type TileRect } from '../core/types';
 import { CROPS, createCropInstance, stageCount } from '../farming/crops';
 import { addRobot } from '../robots/create';
 import { withZone } from '../robots/edits';
 import { findFreeBlock, freeSpotNear } from '../robots/workbench';
 import { nearestFreeWalkable, robotsOnTile, withFarm, withRobot } from '../robots/world';
+import { pushMessage } from '../state/messages';
 import { withMap } from '../state/selectors';
-import { COSMO_FIELD } from '../world/maps/neighbours';
+import { BARNABY_FIELD, COSMO_FIELD } from '../world/maps/neighbours';
 import { EMPTY_TILE, requireTile, setTiles, type TileEdit } from '../world/tiles';
-import { SPRINKLE, WAVE, bedTiles } from './checks';
+import { BARNABY_TEAM, SPRINKLE, WAVE, bedTiles } from './checks';
 
 /** Sprinkle's program as Sol hands it over: when morning comes, repeat forever, turn right. */
 const SPINNING: BlockProgram = {
@@ -113,25 +114,33 @@ function parsnipDaysFromRipe(day: number, daysLeft: number): CropInstance {
 }
 
 /**
+ * `field` on the Neighbours map as tilled soil with the crop `cropAt` gives each tile. A tile
+ * under a placed object keeps it.
+ */
+function sowField(state: GameState, field: TileRect, cropAt: (tx: number, tz: number) => CropInstance): GameState {
+  const world = state.maps.neighbours;
+  const edits: TileEdit[] = [];
+  const { x0, z0, width, depth } = field;
+  for (let tz = z0; tz < z0 + depth; tz++) {
+    for (let tx = x0; tx < x0 + width; tx++) {
+      const tile = requireTile(world, tx, tz);
+      if (tile.object !== null) continue;
+      edits.push({ tx, tz, tile: { ...tile, state: TileState.Plowed, crop: cropAt(tx, tz) } });
+    }
+  }
+  return withMap(state, 'neighbours', setTiles(world, edits));
+}
+
+/**
  * Cosmo's field set up (spec §3.2), when job 2 is taken and every morning while it's active:
  * tilled soil with parsnips in a checkerboard, ripe where (tx + tz) is even and
  * JOBS.unripeDaysLeft days from ripe where it's odd. A tile under a placed object keeps it.
  */
 export function setUpCosmoField(state: GameState): GameState {
-  const world = state.maps.neighbours;
   const day = state.time.absoluteDay;
   const ripe = parsnipDaysFromRipe(day, 0);
   const unripe = parsnipDaysFromRipe(day, JOBS.unripeDaysLeft);
-  const edits: TileEdit[] = [];
-  const { x0, z0, width, depth } = COSMO_FIELD;
-  for (let tz = z0; tz < z0 + depth; tz++) {
-    for (let tx = x0; tx < x0 + width; tx++) {
-      const tile = requireTile(world, tx, tz);
-      if (tile.object !== null) continue;
-      edits.push({ tx, tz, tile: { ...tile, state: TileState.Plowed, crop: (tx + tz) % 2 === 0 ? ripe : unripe } });
-    }
-  }
-  return withMap(state, 'neighbours', setTiles(world, edits));
+  return sowField(state, COSMO_FIELD, (tx, tz) => ((tx + tz) % 2 === 0 ? ripe : unripe));
 }
 
 /**
@@ -150,4 +159,62 @@ export function setUpShowHim(state: GameState): GameState | string {
     owner: 'cosmo',
   });
   return 'error' in added ? added.error : added.state;
+}
+
+/**
+ * Barnaby's field set up (spec §3.3), when job 3 is taken and every morning while it's active:
+ * tilled soil with a ripe parsnip on every tile. A tile under a placed object keeps it.
+ */
+export function setUpBarnabyField(state: GameState): GameState {
+  const ripe = parsnipDaysFromRipe(state.time.absoluteDay, 0);
+  return sowField(state, BARNABY_FIELD, () => ripe);
+}
+
+/** B-1's program as Barnaby hands it over: every 10 minutes, for each tile in H, harvest. */
+const POLLING: BlockProgram = {
+  kind: 'blocks',
+  vars: [],
+  stacks: [{ trigger: { kind: 'every', minutes: 10 }, body: [{ kind: 'forEachTile', zone: 'H', body: [{ kind: 'do', action: { kind: 'harvest' } }] }] }],
+  helpers: [],
+};
+
+/** B-2 to B-4's empty program: a morning stack with nothing in it. */
+const IDLE: BlockProgram = { kind: 'blocks', vars: [], stacks: [{ trigger: { kind: 'morning' }, body: [] }], helpers: [] };
+
+/** Barnaby's .MD on each of his Minis: "DO return to the generator at 6:00 pm". */
+const BARNABY_MD: readonly MdCard[] = [{ kind: 'doReturn', to: { kind: 'generator' }, minute: JOBS.barnabyDeadline }];
+
+/** The toast when job 3 takes Zone H (spec §3.3). */
+export const ZONE_H_TOAST = 'Barnaby marked his field as Zone H.';
+
+/**
+ * Job 3's set-up (spec §3.3): Barnaby's generator, his field, Zone H set to the field on the
+ * Neighbours map whatever it was ("Barnaby marked his field as Zone H."), and his Minis B-1 to
+ * B-4 (a Claw each, Barnaby's .MD, fully charged, Barnaby's) on JOBS.barnabyRobots: B-1 with the
+ * polling program, the rest idle. A Mini whose tile is taken by a robot or an object stands on
+ * the nearest free walkable tile instead.
+ */
+export function setUpKnowTheLimits(state: GameState): GameState {
+  const { x0, z0, width, depth } = BARNABY_FIELD;
+  const zoned = withZone(setUpBarnabyField(withGenerator(state, 'barnaby')), 'H', { mapId: 'neighbours', x0, z0, w: width, d: depth });
+  invariant(typeof zoned !== 'string', "Barnaby's field is a zone on the Neighbours map");
+  let next = pushMessage(zoned, ZONE_H_TOAST, 'info');
+  BARNABY_TEAM.forEach((name, i) => {
+    const place = JOBS.barnabyRobots[i];
+    invariant(place !== undefined, `JOBS.barnabyRobots places ${name}`);
+    const at = nearestFreeWalkable(next, 'neighbours', place, next.robots.nextId);
+    const added = addRobot(next, {
+      name,
+      size: 'mini',
+      parts: ['claw'],
+      program: i === 0 ? POLLING : IDLE,
+      md: BARNABY_MD,
+      place: { ...at, facing: place.facing },
+      mapId: 'neighbours',
+      owner: 'barnaby',
+    });
+    invariant(!('error' in added), `${name} stands on open ground`);
+    next = added.state;
+  });
+  return next;
 }

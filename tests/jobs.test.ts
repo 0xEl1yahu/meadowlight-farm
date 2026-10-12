@@ -228,7 +228,7 @@ describe('the check', () => {
 
 describe('the morning reset', () => {
   it("leaves a job set up once (job 1's bed) as it is", () => {
-    expect(JOB_PLAYS.spinningRobot?.morning).toBeNull();
+    expect(JOB_PLAYS.spinningRobot.morning).toBeNull();
     expect(jobMorning(TAKEN)).toBe(TAKEN);
     const morning = act(TAKEN, actions.sleep());
     expect(morning.jobs.fieldDay).toBe(TAKEN.jobs.fieldDay);

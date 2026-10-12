@@ -7,8 +7,8 @@
 import { JOBS, UNLOCKS } from '../config';
 import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotUnlocks } from '../core/types';
 import { withUnlocks } from '../robots/unlocks';
-import { showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress } from './checks';
-import { setUpCosmoField, setUpShowHim, setUpSpinningRobot } from './setup';
+import { knowTheLimitsDone, knowTheLimitsProgress, showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress } from './checks';
+import { setUpBarnabyField, setUpCosmoField, setUpKnowTheLimits, setUpShowHim, setUpSpinningRobot } from './setup';
 
 /** What a job says and pays, verbatim from spec §3 and §4. */
 export interface JobDef {
@@ -74,13 +74,11 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
   },
 };
 
-/**
- * The plays built so far. A job without one is never available (giverJob): its giver shows no
- * Job button and says no hook, so it can't be taken.
- */
-export const JOB_PLAYS: Partial<Readonly<Record<JobId, JobPlay>>> = {
+/** How each job runs. */
+export const JOB_PLAYS: Readonly<Record<JobId, JobPlay>> = {
   spinningRobot: { setup: setUpSpinningRobot, morning: null, check: spinningRobotDone, progress: spinningRobotProgress },
   showHim: { setup: setUpShowHim, morning: setUpCosmoField, check: showHimDone, progress: showHimProgress },
+  knowTheLimits: { setup: setUpKnowTheLimits, morning: setUpBarnabyField, check: knowTheLimitsDone, progress: knowTheLimitsProgress },
 };
 
 /** The active job, or null (at most one is active). */
@@ -97,30 +95,28 @@ export function isJobRobot(state: GameState, robot: Robot): boolean {
   return robot.owner !== 'player' && id !== null && JOBS_TABLE[id].giver === robot.owner;
 }
 
-/** `npc`'s job while it's offered or active and has a play, or null: what the Job button opens. */
+/** `npc`'s job while it's offered or active, or null: what the Job button opens. */
 export function giverJob(state: GameState, npc: NpcId): JobId | null {
   for (const id of JOB_IDS) {
     const status = state.jobs.status[id];
-    if (JOBS_TABLE[id].giver === npc && (status === 'offered' || status === 'active') && JOB_PLAYS[id] !== undefined) return id;
+    if (JOBS_TABLE[id].giver === npc && (status === 'offered' || status === 'active')) return id;
   }
   return null;
 }
 
 /** The progress line of job `id` while it's active, else null. */
 export function jobProgress(state: GameState, id: JobId): string | null {
-  const play = JOB_PLAYS[id];
-  return play === undefined || state.jobs.status[id] !== 'active' ? null : play.progress(state);
+  return state.jobs.status[id] !== 'active' ? null : JOB_PLAYS[id].progress(state);
 }
 
 /**
  * Takes the offered job `id` (spec §2.1): its unlocks are added, its set-up runs and it becomes
  * active, with today as its field day. Returns the set-up's refusal, with nothing changed; a job
- * that isn't offered, or has no play, leaves the state as it is.
+ * that isn't offered leaves the state as it is.
  */
 export function takeJob(state: GameState, id: JobId): GameState | string {
-  const play = JOB_PLAYS[id];
-  if (play === undefined || state.jobs.status[id] !== 'offered') return state;
-  const set = play.setup(withUnlocks(state, JOBS_TABLE[id].unlocksOnTake));
+  if (state.jobs.status[id] !== 'offered') return state;
+  const set = JOB_PLAYS[id].setup(withUnlocks(state, JOBS_TABLE[id].unlocksOnTake));
   if (typeof set === 'string') return set;
   return { ...set, jobs: { ...set.jobs, status: withStatus(set.jobs.status, id, 'active'), fieldDay: set.time.absoluteDay } };
 }
@@ -144,13 +140,13 @@ function withStatus(status: JobsState['status'], id: JobId, to: JobStatus): Jobs
 /** The active job whose check passes, or null. */
 export function passedJob(state: GameState): JobId | null {
   const id = activeJob(state);
-  return id !== null && JOB_PLAYS[id]?.check(state) === true ? id : null;
+  return id !== null && JOB_PLAYS[id].check(state) ? id : null;
 }
 
 /** The active job's morning reset, once per day (`jobs.fieldDay`); the same state without one. */
 export function jobMorning(state: GameState): GameState {
   const id = activeJob(state);
-  const morning = id === null ? null : (JOB_PLAYS[id]?.morning ?? null);
+  const morning = id === null ? null : JOB_PLAYS[id].morning;
   const day = state.time.absoluteDay;
   if (morning === null || state.jobs.fieldDay === day) return state;
   const next = morning(state);

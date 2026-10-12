@@ -10,6 +10,7 @@ import {
   type RobotActionKind,
   type RobotOwner,
   type RobotPartId,
+  type RobotPlace,
   type RobotSize,
   type RobotUnlocks,
   type TileCoord,
@@ -526,4 +527,18 @@ export const JOBS = {
   waveAt: { tx: 8, tz: 13 } satisfies TileCoord,
   /** Cosmo's field (spec §3.2): the parsnips on odd tiles, (tx + tz) odd, are this many days from ripe. */
   unripeDaysLeft: 2,
+  /**
+   * Where Barnaby's Minis B-1 … B-4 stand when job 3 is taken, in that order (spec §3.3):
+   * scattered in and around his field.
+   */
+  barnabyRobots: [
+    { tx: 22, tz: 18, facing: Direction.East },
+    { tx: 27, tz: 22, facing: Direction.North },
+    { tx: 23, tz: 14, facing: Direction.South },
+    { tx: 22, tz: 23, facing: Direction.East },
+  ] satisfies readonly RobotPlace[],
+  /** Job 3's deadline (spec §3.3), 6:00 pm: also when Barnaby's .MD sends his team back to his generator. */
+  barnabyDeadline: 18 * 60,
+  /** Job 3's budget (spec §3.3): Barnaby's team may spend at most this many tokens a crop of his field in the day. */
+  tokensPerCrop: 5,
 } as const;

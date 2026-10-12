@@ -7,13 +7,16 @@ import { JOBS } from '../config';
 import type { GameState, Robot, RobotOwner, RobotProgram, TileCoord } from '../core/types';
 import { BLOCK_CATEGORY } from '../robots/blockKinds';
 import { allExprNodes, programStatements, statementExprs } from '../robots/program';
-import { COSMO_FIELD } from '../world/maps/neighbours';
+import { BARNABY_FIELD, COSMO_FIELD } from '../world/maps/neighbours';
 
 /** Sol's Mini, job 1's robot (spec §3.1). */
 export const SPRINKLE = 'Sprinkle';
 
 /** Cosmo's Big, job 2's robot (spec §3.2). */
 export const WAVE = 'Wave';
+
+/** Barnaby's four Minis, job 3's team (spec §3.3), in the order JOBS.barnabyRobots places them. */
+export const BARNABY_TEAM = ['B-1', 'B-2', 'B-3', 'B-4'] as const;
 
 /** `owner`'s robot called `name` with the lowest id, or null when there's none. */
 function robotNamed(state: GameState, owner: RobotOwner, name: string): Robot | null {
@@ -137,4 +140,56 @@ export function showHimDone(state: GameState): boolean {
 /** Job 2's progress line: "{n} / 18 ripe crops harvested today." */
 export function showHimProgress(state: GameState): string {
   return `${ripeCropsHarvested(state)} / ${cosmoRipeTiles().length} ripe crops harvested today.`;
+}
+
+/** The tiles of Barnaby's field (spec §3.3), row by row: every one has a ripe crop at the morning set-up. */
+export function barnabyFieldTiles(): readonly TileCoord[] {
+  const tiles: TileCoord[] = [];
+  const { x0, z0, width, depth } = BARNABY_FIELD;
+  for (let tz = z0; tz < z0 + depth; tz++) {
+    for (let tx = x0; tx < x0 + width; tx++) tiles.push({ tx, tz });
+  }
+  return tiles;
+}
+
+/** Barnaby's robots: his team, set up by job 3; none before. */
+function barnabyTeam(state: GameState): readonly Robot[] {
+  return state.robots.list.filter((robot) => robot.owner === 'barnaby');
+}
+
+/**
+ * How many tiles of Barnaby's field his robots' log shows them harvesting today. Each entry is
+ * logged on the tile harvested, as for Wave.
+ */
+export function barnabyCropsHarvested(state: GameState): number {
+  const harvested = new Set<string>();
+  for (const robot of barnabyTeam(state)) for (const tile of tilesDidToday(state, robot, 'harvest')) harvested.add(tile);
+  return barnabyFieldTiles().filter((tile) => harvested.has(`${tile.tx},${tile.tz}`)).length;
+}
+
+/** The tokens Barnaby's robots have spent today: actions, bickers, bumps and wakes (their stats). */
+export function barnabyTokensSpent(state: GameState): number {
+  return barnabyTeam(state).reduce((sum, robot) => sum + robot.stats.today.tokens, 0);
+}
+
+/** Job 3's budget: JOBS.tokensPerCrop for each crop of Barnaby's field. */
+export function barnabyBudget(): number {
+  return JOBS.tokensPerCrop * barnabyFieldTiles().length;
+}
+
+/**
+ * Job 3's check (spec §3.3): before JOBS.barnabyDeadline (6:00 pm), Barnaby's robots have
+ * harvested every tile of his field today, spending at most barnabyBudget tokens between them.
+ */
+export function knowTheLimitsDone(state: GameState): boolean {
+  return (
+    state.time.minuteOfDay < JOBS.barnabyDeadline &&
+    barnabyCropsHarvested(state) === barnabyFieldTiles().length &&
+    barnabyTokensSpent(state) <= barnabyBudget()
+  );
+}
+
+/** Job 3's progress line: "{n} / 64 crops harvested today · {t} tokens spent." */
+export function knowTheLimitsProgress(state: GameState): string {
+  return `${barnabyCropsHarvested(state)} / ${barnabyFieldTiles().length} crops harvested today · ${barnabyTokensSpent(state)} tokens spent.`;
 }
