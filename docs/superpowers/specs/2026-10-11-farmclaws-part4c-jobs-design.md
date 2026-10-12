@@ -62,7 +62,7 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - **The check** is a pure function of the state, `jobDone(state, id)`, run after every in-game minute while the job is active (after the robots act) and once more when the player talks to its giver. When it passes:
   - the job becomes `'done'`;
   - its reward is paid and its unlocks added (section 4);
-  - the toast: "Job done: {title}. {giver} paid you {reward}g." followed, as its own toast, by each unlock's line (section 4.2).
+  - the toast: "Job done: {title}. {giver} paid you {reward}g." followed, as its own toast, by each unlock's line (section 4.2). `{reward}` is a plain number ("1000g"), as the rest of the game writes gold; this spec's "1,000g" is prose (R24).
 - `src/jobs/` (new, pure): `jobs.ts` (the table: id, title, giver, offer text, goal text, setup, check, reward, unlocks), `setup.ts`, `checks.ts`.
 
 ### 2.2 The Job button and the job card
@@ -70,9 +70,9 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - Sol, Cosmo and Barnaby's chats gain **Job** (`npcActions`) while their job is offered or active.
 - **Job** shows the job card in the chat box, in place of the day's line:
   - the job's title, its offer text and its goal text;
-  - offered: **Take the job** and **Not now**;
+  - offered: **Take the job** and **Not now**, which closes the chat like **Close** (R11);
   - active: the goal, the progress line (section 3) and **Close**.
-- **Take the job** sets the job up and closes the chat: "{title}: job taken."
+- **Take the job** sets the job up and closes the chat: "{title}: job taken." When the set-up can't be done (job 1's bed, section 3.1), the refusal is the toast and the card stays open (R9).
 - A giver whose job is offered says, as their reactive line, before everything else: their job's hook (section 3). A giver whose job is done goes back to their usual lines.
 
 ---
@@ -86,11 +86,12 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - **Hook (Sol's reactive line):** "I've got a robot that needs a home. Ask me about the job."
 - **Setup:**
   - Sol's Mini **Sprinkle** (Watering head; program `When morning comes → Repeat forever → Turn right`; owner the player) appears on the farm on `freeSpotNear(farm, WORKBENCH.home, taken)`, fully charged. It counts towards the 12 robots.
-  - **The bed:** the 3 × 3 block of free grass nearest the workbench (`JOBS.bedSearchFrom`, searched like `freeSpotNear` but for a 3 × 3 block with no object, blocker, crop or reserved tile and no robot) is tilled and sown with parsnip seeds. `jobs.bed` saves its corner.
+  - **The bed:** the 3 × 3 block of free grass nearest the workbench (`JOBS.bedSearchFrom`, searched like `freeSpotNear` but for a 3 × 3 block with no object, blocker, crop or reserved tile and no robot) is tilled and sown with parsnip seeds. `jobs.bed` saves its corner. When the farm has no such block, **Take the job** is refused with "Your farm has no free 3 × 3 patch of grass for the bed." and nothing changes (R9).
   - Zone A is set to the bed if it's empty; otherwise the zones stay as they are.
 - **Check:** on one day, Sprinkle's log has a `did water` entry on each of the 9 bed tiles, and Sprinkle is powered down by its own `Power down` with tokens above 0. Rain or the player's watering doesn't count.
 - **Progress:** "{n} / 9 bed tiles watered today."
-- **The pond:** the first time Sprinkle ends a day broken in the water while job 1 is active, Sol fishes it out overnight for free instead of it being ruined. It's back by the workbench in the morning, working, and the toast says "Sol fished Sprinkle out of the pond, free this once. A DON'T card can keep it out: Go into water." `jobs.rescued` makes it once only.
+- **The pond:** the first time Sprinkle ends a day broken in the water while job 1 is active, Sol fishes it out overnight for free instead of it being ruined. It's back by the workbench in the morning, working and fully charged, as from a repair, and isn't named as away from a generator that morning (R10); the toast says "Sol fished Sprinkle out of the pond, free this once. A DON'T card can keep it out: Go into water." `jobs.rescued` makes it once only.
+- **Scrapping Sprinkle** while job 1 is active is refused with "Sol wants Sprinkle back in one piece." (R23)
 - **Reward:** 500g. **Unlocks:** Juniper's workshop (Minis).
 
 ### 3.2 Job 2: Show him what it can do (Cosmo)
@@ -99,7 +100,7 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - **Goal:** "Harvest every ripe crop in Cosmo's field, with a program that uses a sensor and an If."
 - **Hook (Cosmo):** "My robot could do more, I bet. Want a job?"
 - **Setup:**
-  - Cosmo's field (spec 4a §5.2: x 4–9, z 6–11) becomes tilled soil with parsnips in a checkerboard: ripe where `(tx + tz)` is even, two days from ripe where it's odd. Every morning while the job is active, the field is set up the same way again.
+  - Cosmo's field (spec 4a §5.2: x 4–9, z 6–11) becomes tilled soil with parsnips in a checkerboard: ripe where `(tx + tz)` is even, two days from ripe where it's odd. Every morning while the job is active, the field is set up the same way again. A tile under a placed object keeps it, and the set-up sows round it (R15).
   - Cosmo's Big **Wave** (Claw, Sensor eye, Basket; program `When morning comes → Repeat forever → Say "hello chickens"`; owner Cosmo) stands on the lane at (8, 13), facing North.
   - Cosmo's generator: a wood burner at (10, 13) that never runs out.
 - **Check:** every crop that was ripe at the morning set-up has been harvested by Wave today, and Wave's program has at least one `If` block and at least one sensor block (`BLOCK_CATEGORY` `sensor`).
@@ -109,15 +110,15 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 ### 3.3 Job 3: Know the limits (Barnaby)
 
 - **Offer:** "Four robots, one field, zero effort. It just never gets finished. Sort my team out?"
-- **Goal:** "Harvest Barnaby's whole field by 6:00 pm in one day, at 5 tokens a crop or less."
+- **Goal:** "Harvest Barnaby's whole field by 6:00 pm in one day, at 6 tokens a crop or less." (R21)
 - **Hook (Barnaby):** "My team needs a manager. Interested?"
 - **Setup:**
-  - Barnaby's field (x 21–28, z 17–24) becomes tilled soil with ripe parsnips on all 64 tiles, set up again every morning while the job is active.
-  - Zone H becomes Barnaby's field, on the Neighbours map, whatever it was before: "Barnaby marked his field as Zone H."
-  - Barnaby's four Minis **B-1**, **B-2**, **B-3** and **B-4** (Claw each; owner Barnaby), scattered on fixed tiles in and around the field (`JOBS.barnabyRobots`), with Barnaby's .MD on each: "DO return to the generator at 6:00 pm". B-1 runs `Every 10 minutes → For each tile in H → Harvest`; B-2 to B-4 have empty programs.
-  - Barnaby's generator: a wood burner by his house at (27, 6) that never runs out, far from the field.
-- **Check:** before 18:00 on one day, every crop in Barnaby's field has been harvested by Barnaby's robots, and the tokens they spent that day are at most `JOBS.tokensPerCrop` (5) × 64.
-- **Progress:** "{n} / 64 crops harvested today · {t} tokens spent."
+  - The north 6 rows of Barnaby's field (x 21–28, z 17–22; `JOBS.barnabyRows`, from the gate side down) become tilled soil with ripe parsnips, 48 crops, set up again every morning while the job is active; the field's south two rows stay bare dirt (R21). A tile under a placed object keeps it, as in Cosmo's field (R15).
+  - Zone H becomes the sown rows of Barnaby's field, on the Neighbours map, whatever it was before: "Barnaby marked his field as Zone H."
+  - Barnaby's four Minis **B-1**, **B-2**, **B-3** and **B-4** (Claw each; owner Barnaby), scattered on fixed tiles in and around the field (`JOBS.barnabyRobots`), with Barnaby's .MD on each: "DO return to the generator at 6:00 pm". A Mini whose tile is taken by a robot or an object when the job is taken stands on the nearest free walkable tile instead (R17). B-1 runs `Every 10 minutes → For each tile in H → Harvest`; B-2 to B-4 have empty programs: a `When morning comes` stack with nothing in it, since a program has at least one stack (R18).
+  - Barnaby's generator: a wood burner that never runs out, on the lane at (26, 15), two tiles east of his field's gate: in reach of the gate and the field's north row, but not of his Minis' starting tiles (R20).
+- **Check:** before 18:00 on one day, every sown crop in Barnaby's field has been harvested by Barnaby's robots, and the tokens they spent that day are at most `JOBS.tokensPerCrop` (6) × 48, a budget of 288 (R21).
+- **Progress:** "{n} / 48 crops harvested today · {t} tokens spent."
 - **Reward:** 2,000g. **Unlocks:** Standard and Big robots at Juniper's.
 
 ---
@@ -160,26 +161,29 @@ A migrated save (section 7) keeps every robot, part and delivery it has. If it h
 - Every robot rule reads the robot's own map where it read the farm: its tile, the tile ahead, routing, harvesting, the log's tiles, the night's ruin and set-down checks. `robotsOnTile(state, mapId, tx, tz)` gains the map.
 - The 12-robot cap counts the player's robots (and deliveries) only.
 - Robots on both maps act every minute, in id order as now; bumps and bickers only happen between robots on the same map.
-- **The token pool** is the player's: it charges the player's robots, as now. The neighbours' robots charge overnight from their owner's generator, for free, but only within `ROBOTS.chargeRadius` of it, the same distance rule as the farm's. Barnaby's team drifting away from his generator is the job's lesson.
-- **Deliveries and harvests:** a neighbour's robot that harvests keeps the produce in its bag; its bag empties overnight (the neighbour takes it). It can't deposit into the player's bin or chests, which are on the farm.
+- The player walks through robots on either map, as on the farm: robots never block the player (R4).
+- **The token pool** is the player's: it charges the player's robots, as now, and the night's charge toasts name only the player's robots (R2). The neighbours' robots charge overnight from their owner's generator, for free, but only within `ROBOTS.chargeRadius` of it, the same distance rule as the farm's. A neighbour's robot's `DO return` heads for its owner's generator, the only one it charges from (R2).
+- **Dragged back:** the player can't carry a neighbour's robot, so a team run flat away from its generator could leave a job unwinnable. Before the neighbours' robots charge overnight, a neighbour's robot that is flat (out of power, or at 0 tokens) beyond `ROBOTS.chargeRadius` of its owner's placed generator moves to the free walkable tile nearest the generator within its reach (no other robot, character's spot or reserved tile), keeps its program and .MD, and charges as usual: "{owner} dragged {name} back to the generator." Without the generator, or with every tile in reach taken, it stays (R25). Barnaby's team wandering off and starting the day without a charge is still the job's lesson; being stranded for good isn't.
+- **Deliveries and harvests:** a neighbour's robot that harvests keeps the produce in its bag; its bag empties overnight (the neighbour takes it). It always harvests at normal quality: silver and gold roll only for the player's robots, so mixed qualities can't jam a Mini's one-stack bag (R19). It can neither deposit into nor take from a container, since the bin and the chests are all the player's (R3).
 
 ### 5.2 Working on a neighbour's robot
 
 - While a neighbour's job is active, facing one of their robots and pressing E shows "Work on {name}" and opens the robot screen in a new mode, `'job'`, where it stands. Shift + E peeks, as for any robot.
-- In job mode, the Program and .MD tabs edit as on the bench; Looks shows the parts read-only; there's no On/Off switch, **Lift off**, **Scrap** or **Paint**.
-- The edit actions (`robot/program`, `robot/md`) accept a neighbour's robot in job mode, and refuse it otherwise with "That's {owner}'s robot."
+- In job mode the screen shows every unlocked tab, Stats and Log included, as the bench does (R13). The Program and .MD tabs edit as on the bench; Looks shows the parts read-only; there's no On/Off switch, **Lift off**, **Scrap** or **Paint**.
+- The edit actions (`robot/program`, `robot/md`) accept a neighbour's robot in job mode, and refuse it otherwise with "That's {owner}'s robot." The switch, **Scrap**, **Paint** and fitting or taking off parts are refused on a neighbour's robot with the same "That's {owner}'s robot." (not the bench's "Put {name} on the workbench first."; R14).
 - The player can't pick up, carry or bench a neighbour's robot: "That's {owner}'s robot." (`{owner}` is "Cosmo" or "Barnaby").
 
 ### 5.3 Zones on both maps
 
 - A zone has a map: `ZoneRect` gains `mapId: 'farm' | 'neighbours'`. The eight letters are shared: Zone A is on one map or the other.
-- The zone marker works on the Neighbours map too; painting a letter on one map moves it there.
+- The zone marker works on the Neighbours map too; painting a letter on one map moves it there. On any other map it's refused with "Zones go on your farm or the neighbours' fields." (replacing part 3's "Zones are only on the farm."; R5), and a rectangle that leaves its map with "A zone is at least 1 × 1 tile and lies wholly inside its map." (was "… inside the farm."; R7).
 - A robot's `For each tile in {zone}` and the .MD's zone cards only use a zone on the robot's own map; a zone on the other map counts as empty.
-- The zone overlay shows the active map's zones.
+- The zone overlay and the marker's chip show the active map's zones: a zone on the other map reads as "not set" on the chip, and Shift + E has nothing to clear there (silent); it clears a zone only from its own map (R6).
 
 ### 5.4 The neighbours' farms
 
-- The two generators are wood burner objects on the Neighbours map that never run out (`fuel` stays full; they don't need the player's wood). They can't be picked up (spec 4b's "That belongs to the neighbours." covers them).
+- The two generators are wood burner objects on the Neighbours map that never run out (`fuel` stays full; they don't need the player's wood), placed when their owner's job is taken and kept: Cosmo's at (10, 13), Barnaby's at (26, 15) (R20). They can't be picked up (spec 4b's "That belongs to the neighbours." covers them), and E at one says "That belongs to the neighbours." instead of offering to load wood (R12).
+- The player can't place anything on a generator's tile, before or after the generator arrives: "Keep this spot clear." A robot standing on the tile when the generator arrives steps to the nearest free walkable tile (R12, R16).
 - Outside a job, the fields stay bare dirt, as in 4a. A job's set-up turns its field into soil with crops; when the job is done, the field keeps its last state and isn't set up again.
 - The neighbours' robots stay after their job is done and keep running whatever program they have.
 
@@ -187,13 +191,13 @@ A migrated save (section 7) keeps every robot, part and delivery it has. If it h
 
 ## 6. The balance pass
 
-The design's target is "do it well and it works well". Tests run each job's **reference solution** through the real simulation and pin that it passes with a margin, and that the naive approaches fail:
+The design's target is "do it well and it works well". Tests run each job's **reference solution** (`tests/jobSolutions.ts`) through the real simulation from the job's set-up and pin that it passes with a margin, and that the naive approaches fail. `For each tile` stays locked until job 3 is taken (section 4.1), so jobs 1 and 2's references use only the blocks unlocked by then (R22):
 
 | Job | Passes | Fails |
 | --- | --- | --- |
-| 1 | `When morning comes → For each tile in A → Water`, then `Power down`, with A the bed: done on day 1 with at least 40 tokens left | The spinning program; a program without `Power down` |
-| 2 | `When morning comes → For each tile in {Cosmo's field} → If crop is ready → Harvest`: done on day 1 | Harvesting every tile without a sensor and `If` (the program rule); the hello-chickens program |
-| 3 | Four zones of 4 × 4, one per Mini, each `When morning comes → For each tile in {its zone} → Harvest → Power down`, and the .MD's DO return removed: done by 18:00 at ≤ 5 tokens a crop | B-1's polling program alone; the four Minis on polling programs; one Big robot's program on the whole field (cost) — run as a simulation fixture, though the player can't bring a Big |
+| 1 | `When morning comes → Go to` the bed's north-east corner, water round its edge turning right (`Repeat 4 → Repeat 2 → Water, Move forward` and `Turn right`), step into the middle and water it, then `Power down`: 12 blocks, a Mini's limit. Done on day 1 by 9:00 with at least 40 tokens left | The spinning program; the same program without `Power down` |
+| 2 | `When morning comes`, walk Cosmo's field column by column (`Go to`, `Repeat`, turns) with `If crop is ready → Harvest` on every tile: done on day 1 by noon with at least 40 tokens left | The same walk harvesting every tile without a sensor and `If` (the program rule, and Wave runs flat); the hello-chickens program |
+| 3 | Four zones of 4 × 3 on the sown rows, one per Mini (the nearest), each `When morning comes → For each tile in {its zone} → Harvest → Power down`, and Barnaby's .MD removed: done the next day by noon, at least a token a crop under the 288-token budget, starting from where Barnaby left his Minis or from where his .MD sent them the evening before (R21) | B-1's polling program alone; the four Minis on polling programs; one Big robot's program on the whole field (cost) — run as a simulation fixture, though the player can't bring a Big |
 
 If a reference solution doesn't pass with its margin, the numbers that change are the job's (field size, ripe pattern, `JOBS.tokensPerCrop`), never the robot sizes or part prices; the change is recorded as a ruling.
 
@@ -206,7 +210,7 @@ If a reference solution doesn't pass with its margin, the numbers that change ar
 - **Zones** gain `mapId`.
 - **`UiPanel`** gains the robot screen's `'job'` mode (no migration; the loader resets panels).
 - **Migration (`migrateV8toV9`):** robots get `mapId: 'farm'`, `owner: 'player'`; zones get `mapId: 'farm'`; `jobs` per section 4.3; `SAVE_VERSION = 9`.
-- **Validation:** a player robot is on the farm and a neighbour's robot on the Neighbours map, each on a walkable tile of its map; the player's robots plus deliveries are at most 12; `jobs.status` has every id once, with at most one active job and the order rule (a job is only offered, active or done when the one before it is done); `jobs.bed` is null or a 3 × 3 block on the farm; a zone's rect lies on its map.
+- **Validation:** a player robot is on the farm and a neighbour's robot on the Neighbours map, each on a walkable tile of its map; the player's robots plus deliveries are at most 12; `jobs.status` has every id once, with at most one active job and the order rule, read both ways: after the jobs that are done, the next one is offered or active (job 1 included) and the rest are locked, so a save with every job locked, or a locked job straight after a done one, is rejected (R1); `jobs.bed` is null or a 3 × 3 block on the farm; a zone's rect lies on its map.
 - `v8Save` in `tests/testUtils.ts` turns a v9 state back into v8 JSON, and `v7Save` starts from it.
 
 ---
@@ -229,7 +233,7 @@ If a reference solution doesn't pass with its margin, the numbers that change ar
 | `tests/neighbourRobots.test.ts` | Robots on the Neighbours map: acting, routing and harvesting on their map; bumps only within a map; charging only near their owner's generator; bags emptied overnight; job mode editing and the refusals; the cap counting only the player's robots. |
 | `tests/zonesOnMaps.test.ts` | Zones with a map; the marker on the Neighbours map; a zone on the other map counts as empty for a robot and the .MD. |
 | `tests/gates.test.ts` | The three gates, their buttons and lines; silent refusals behind a closed gate; a 4b save's job 1 counted as done when it has robots. |
-| `tests/balance.test.ts` | Section 6's reference solutions and naive fails. |
+| `tests/balance.test.ts` | Section 6's reference solutions (built in `tests/jobSolutions.ts`, which the job tests use too) and naive fails. |
 | `tests/saveV9.test.ts` | v8 → v9 (and the v2 fixture through every version); a round trip mid-job with neighbours' robots; one corrupted field per rule. |
 | `tests/checkBundle.test.ts` (update) | The 40 KiB allowance. |
 
@@ -250,6 +254,8 @@ If a reference solution doesn't pass with its margin, the numbers that change ar
 9. The balance pass.
 10. The playbook and the spec sync.
 
+The plan built steps 4 and 5 as one task, so the jobs table was never empty or stubbed (R8); its Task N is step N + 1 from Task 5 on.
+
 ---
 
 ## 11. Done means
@@ -264,7 +270,40 @@ If a reference solution doesn't pass with its margin, the numbers that change ar
 
 - **§8, job 1:** the bed is the 3 × 3 block of grass nearest the workbench, sown with parsnips; Sol's free pond rescue happens overnight.
 - **§8, job 2:** taking the job unlocks its blocks (it needs them); finishing it opens the parts shop and pays 1,000g.
-- **§8, job 3:** the three idle Minis have empty programs (messages are release 2); a Big robot can't be brought to Barnaby's field, so "swapping in a Big fails on cost" is pinned by a simulation test, not by play. Finishing it opens Standard and Big robots and pays 2,000g.
+- **§8, job 3:** the three idle Minis have empty programs (messages are release 2); a Big robot can't be brought to Barnaby's field, so "swapping in a Big fails on cost" is pinned by a simulation test, not by play. The job sows the north 6 rows of his 8 × 8 field (48 crops) and its budget is 6 tokens a crop (R21); his generator stands on the lane by his field's gate, out of reach of where his Minis start (R20). Finishing it opens Standard and Big robots and pays 2,000g.
 - **§8:** jobs pay gold (500 / 1,000 / 2,000g) as well as their unlocks.
-- **§3, robots:** robots have a map and an owner; the neighbours' robots work the Neighbours map and charge from their owner's generator.
+- **§3, robots:** robots have a map and an owner; the neighbours' robots work the Neighbours map and charge from their owner's generator, and one left flat out of its generator's reach is dragged back beside it overnight (R25).
+- **§6, the zone marker:** it paints zones on the farm and the Neighbours map.
 - **§11.2:** part 4c is built.
+
+---
+
+## 13. Plan refinements
+
+Decided by the part 4c implementation plan and its execution, each with the commit that made it. Each one keeps the intent of the rule it refines, and the sections above already say what it decided. A later refinement can supersede part of an earlier commit's text: job 3's commit set his generator by his house and the budget at 5 tokens a crop, which R20 and R21 replaced.
+
+- **R1** (`c53657f`). The jobs validation reads the order rule both ways: after the jobs that are done, the next one is offered or active (job 1 included) and the rest are locked, so a save with every job locked, or a locked job straight after a done one, is rejected. (§7)
+- **R2** (`97aee94`). A neighbour's robot's `DO return` heads for its owner's generator, the only one it charges from, and the night's charge toasts name only the player's robots. (§5.1)
+- **R3** (`97aee94`). A neighbour's robot can neither deposit into nor take from a container, since the bin and the chests are all the player's. (§5.1)
+- **R4** (`97aee94`). The plan's Task 2 had `movePlayer` block the player on robots of the active map; it was left unchanged, since robots never blocked the player (the design's §3.1: the player walks through them). (§5.1)
+- **R5** (`9616299`). Off the farm and the Neighbours map the zone marker is refused with "Zones go on your farm or the neighbours' fields." (replaces "Zones are only on the farm."; the part 3 spec says so too). (§5.3)
+- **R6** (`9616299`). A zone on the other map reads as "not set" on the marker's chip, and Shift + E has nothing to clear there (silent); it clears the zone only from its own map. (§5.3)
+- **R7** (`9616299`). A rectangle that leaves its map is refused with "A zone is at least 1 × 1 tile and lies wholly inside its map." (was "… inside the farm."). (§5.3)
+- **R8** (`22a146d`). The plan built implementation steps 4 (the jobs framework) and 5 (job 1) as one task, so the jobs table was never empty or stubbed. (§10)
+- **R9** (`22a146d`). When the farm has no free 3 × 3 patch of grass, **Take the job** is refused with "Your farm has no free 3 × 3 patch of grass for the bed." (new text), and the card stays open. (§2.2, §3.1)
+- **R10** (`22a146d`). Sprinkle comes back from Sol's pond rescue fully charged, as from a repair, and isn't named as away from a generator that morning. (§3.1)
+- **R11** (`22a146d`). **Not now** on the job card closes the chat, like **Close**. (§2.2)
+- **R12** (`30a1870`). E at a neighbour's generator says "That belongs to the neighbours." (as the axe and pickaxe do) instead of offering to load wood, and the player can't place anything on a generator's tile, before or after it arrives: "Keep this spot clear." (§5.4)
+- **R13** (`30a1870`). Job mode shows every unlocked tab, Stats and Log included, as the bench does. (§5.2)
+- **R14** (`30a1870`). The switch, Scrap, Paint and fitting or removing parts on a neighbour's robot are refused with "That's {owner}'s robot." (was "Put {name} on the workbench first."). (§5.2)
+- **R15** (`30a1870`). A tile of Cosmo's field under a placed object keeps it; the set-up sows round it. Job 3's set-up does the same on Barnaby's field. (§3.2, §3.3)
+- **R16** (`30a1870`). A robot standing on a neighbour's generator tile when the generator arrives steps to the nearest free walkable tile. (§5.4)
+- **R17** (`e64ed1d`). A Mini of Barnaby's whose tile is taken by a robot or an object when job 3 is taken stands on the nearest free walkable tile instead. (§3.3)
+- **R18** (`e64ed1d`). B-2 to B-4's empty programs are a `When morning comes` stack with nothing in it, since a program has at least one stack. (§3.3)
+- **R19** (`4833d91`). The neighbours' robots always harvest at normal quality; silver and gold roll only for the player's robots, so mixed qualities can't jam a Mini's one-stack bag. (§5.1)
+- **R20** (`4833d91`). Barnaby's generator stands on the lane at (26, 15), two tiles east of his field's gate, in reach of the gate and the field's north row but not of his Minis' starting tiles (was by his house at (27, 6)). (§3.3, §5.4)
+- **R21** (`4833d91`). With the spec's numbers, job 3's Minis finished with 3 to 5 tokens to spare and only from where Barnaby left them, so job 3 sows only the north 6 rows of Barnaby's field (48 crops, Zone H) and `JOBS.tokensPerCrop` is 6 (a budget of 288); the goal reads "Harvest Barnaby's whole field by 6:00 pm in one day, at 6 tokens a crop or less." and the reference uses four zones of 4 × 3. (§3.3, §6)
+- **R22** (`4833d91`). `For each tile` stays locked until job 3, so jobs 1 and 2's references use only the blocks unlocked by then: job 1 goes to the bed's north-east corner, waters round its edge, then the middle, and powers down (12 blocks); job 2 walks Cosmo's field column by column with `If crop is ready → Harvest`. (§6)
+- **R23** (`4833d91`). Scrapping Sprinkle while job 1 is active is refused with "Sol wants Sprinkle back in one piece." (§3.1)
+- **R24** (`4833d91`). Gold in toasts stays a plain number ("1000g"), as the rest of the game writes it (this spec writes 1,000g). (§2.1)
+- **R25** (`05286cf`). B-1's polling program can run it flat away from Barnaby's generator, and the player can't carry a neighbour's robot, so job 3 could become unwinnable. A neighbour's robot that ends the day flat out of its generator's reach is dragged back beside it overnight, with the toast "{owner} dragged {name} back to the generator." This rewords §5.1's "Barnaby's team drifting away from his generator is the job's lesson". (§5.1)

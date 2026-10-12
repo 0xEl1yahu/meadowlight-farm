@@ -5,7 +5,8 @@ navigation (see SKILL.md). Checks 1–4 run in order on one farm started from `?
 and 6 each start from `?new`. Each fenced `js` block is one `javascript_tool` call; lines naming
 `find`, `computer` or `get_page_text` are browser-pane tool calls. While a shop or the robot
 screen is open the game is frozen: drive it with `find` and clicks, and close it (Escape)
-before `__qa.sleep()`, which a frozen game ignores.
+before `__qa.sleep()`, which a frozen game ignores. Since part 4c the jobs open the shops, so the
+setups mark every job done (`F.withJobsDone`).
 
 Town spots, talked to from the tile below facing north: Berlioz (16,7) → (16,8) · Sol (21,7) →
 (21,8) · Juniper (24,7) → (24,8) · Tallulah (35,7) → (35,8). The parts exchange is x 18–21 and
@@ -15,7 +16,7 @@ Juniper's workshop (the carpenter) x 22–27, both along z 0–6. The workbench 
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withGold(__qa.state(), 20000), { tx: 21, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withGold(F.withJobsDone(__qa.state(), 'knowTheLimits'), 20000), { tx: 21, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 ```
@@ -96,7 +97,7 @@ entries. Done with this farm.
 From `?new`:
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withGold(__qa.state(), 5000), { tx: 21, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withGold(F.withJobsDone(__qa.state(), 'knowTheLimits'), 5000), { tx: 21, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 ```

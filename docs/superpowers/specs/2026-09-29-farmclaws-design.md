@@ -54,7 +54,8 @@ Robot state (stored in the save):
 - identity: `id`, `name` (chosen when bought), `size`
 - body: `parts`, `paint`, `voice`, `personality`, `quirk`
 - program: the block tree as data, plus the interpreter's frame stack and variables
-- place: `tx`, `tz`, `facing`
+- place: `mapId` (the farm or the Neighbours map, part 4c), `tx`, `tz`, `facing`
+- `owner`: the player, Cosmo or Barnaby (part 4c)
 - `bag`: item stacks, capacity set by size and parts
 - `tokens`: current battery charge
 - `power`: `working | standby | off | flat | broken`
@@ -62,7 +63,7 @@ Robot state (stored in the save):
 - `mailbox`: section 5.3
 - `stats`: tokens used, actions taken, crops handled, today and this week
 
-Robots work on the farm map only, and they keep working while the player is in town or the forest. They don't run while the player sleeps, because the night is skipped. **Robots stay where they finish.** Nothing brings a robot back unless its program does, and each morning its program starts again from wherever it stands. A program that doesn't return its robot drifts further every day. The farm holds at most 12 robots.
+The player's robots work on the farm map, and the neighbours' robots on the Neighbours map, where jobs 2 and 3 happen (part 4c); nothing carries a robot between maps. Robots keep working while the player is on another map. They don't run while the player sleeps, because the night is skipped. **Robots stay where they finish.** Nothing brings a robot back unless its program does, and each morning its program starts again from wherever it stands. A program that doesn't return its robot drifts further every day. The one exception is a neighbour's robot left flat out of its generator's reach: the player can't carry it, so its owner drags it back beside the generator overnight. The farm holds at most 12 of the player's robots.
 
 `Water`, `Harvest`, `Till` and `Plant` work the tile the robot stands on. `Refill`, `Deposit into` and `Take from` work the tile ahead.
 
@@ -257,7 +258,7 @@ These costs are for a Mini, before the size multiplier:
 
 ### 4.2 The farm's token pool
 
-Generators fill one farm-wide token pool, shown in the HUD next to gold. Each night, after generators run, every robot that isn't `broken` **and ends the day within 2 tiles of a generator** recharges from the pool up to its battery size, in robot order. Robots anywhere else don't recharge. If the pool runs short, later robots start the day partly charged. The pool has no cap.
+Generators fill one farm-wide token pool, shown in the HUD next to gold. Each night, after generators run, every robot of the player's that isn't `broken` **and ends the day within 2 tiles of a generator** recharges from the pool up to its battery size, in robot order. The neighbours' robots charge to full for free, but only within 2 tiles of their owner's generator (part 4c). Robots anywhere else don't recharge. If the pool runs short, later robots start the day partly charged. The pool has no cap.
 
 ### 4.3 Generators
 
@@ -366,7 +367,7 @@ The screen has five tabs:
 | Stats | Tokens used, actions, crops handled and tokens per crop, today and this week. Unlocked by job 3. |
 | Log | Speech and farm log side by side (section 3.5) |
 
-The zone marker (a hotbar tool in every backpack from part 3, which Sol explains in job 1) paints named rectangular zones on the farm, A to H.
+The zone marker (a hotbar tool in every backpack from part 3, which Sol explains in job 1) paints named rectangular zones on the farm and, since part 4c, the Neighbours map, A to H. Each letter is on one map at a time.
 
 ---
 
@@ -451,33 +452,33 @@ Limited editions have exclusive quirks.
 
 ## 8. Jobs
 
-Jobs replace the v2 quests and notice board. The first three run in a fixed order and teach the core ideas. When job 3 is done, jobs 4 to 8 open and can be done in any order. Each job has a giver, a setup, a success check that is a pure function of game state, and unlocks.
+Jobs replace the v2 quests and notice board. The first three run in a fixed order and teach the core ideas. When job 3 is done, jobs 4 to 8 open and can be done in any order. Each job has a giver, a setup, a success check that is a pure function of game state, unlocks and a gold reward (500, 1,000 and 2,000g for jobs 1 to 3).
 
 ### Fixed path
 
 **Job 1: The spinning robot.** Given by Sol at the parts exchange, who gives you your first Mini (with a Watering head) and explains the zone marker, which is already in every backpack (part 3).
 - **Setup:** its preloaded program is `When morning → Repeat forever → Turn right`. It spins on the spot and burns its whole battery.
-- **Goal:** rewrite it to water a 3×3 bed and power down, with tokens left over.
+- **Goal:** rewrite it to water the bed and power down, with tokens left over. Taking the job sows the bed with parsnips on the 3×3 block of grass nearest the workbench.
 - **Teaches:** sequence, repeat, stop conditions.
-- **Unlocks:** the job 1 blocks, the .MD tab, and the DON'T cards "Leave [zone]" and "Go into [water]".
-- **Mid-job beat:** Sol suggests `Move forward` to reach the bed. If the player hasn't written a DON'T, the robot drives into the pond, and Sol fishes it out for free this one time. Then he shows the player how to write their first .MD line.
+- **Unlocks:** the job 1 blocks, the .MD tab, and the DON'T cards "Leave [zone]" and "Go into [water]" (a new farm starts with them). Finishing it opens Juniper's workshop for Minis and pays 500g.
+- **Mid-job beat:** Sol suggests `Move forward` to reach the bed. If the player hasn't written a DON'T, the robot drives into the pond, and Sol fishes it out overnight for free this one time. Then he shows the player how to write their first .MD line.
 
 **Job 2: Show him what it can do.** Given by Cosmo, the under-user.
 - **Setup:** his Big robot runs `Repeat forever → Say "hello chickens"`.
 - **Goal:** give it a program that harvests his field using at least one sensor and one `If`.
 - **Teaches:** capabilities, sensors, conditions, parts.
-- **Unlocks:** the job 2 blocks and the parts shop.
+- **Unlocks:** the job 2 blocks when the job is taken, since it needs them. Finishing it opens the parts shop and pays 1,000g.
 - **Payoff:** Cosmo is astonished it could do this all along.
 
 **Job 3: Know the limits.** Given by Barnaby, the evangelist.
 - **Setup:** his "team" is four Minis.
-  - One works his whole 8×8 field on `Every 10 minutes`, runs flat by mid-morning, and takes days to finish.
-  - The other three sit in standby waiting for a message nobody sends.
-  - None of them has ever been told to come back, so they're scattered around his field, far from his generator, and never fully recharge.
+  - One works his field (the north 6 rows of his 8×8 plot are sown, 48 crops) on `Every 10 minutes`, runs flat by mid-morning, and takes days to finish.
+  - The other three have empty programs (messages come in release 2).
+  - None of them has ever been told to come back, so they're scattered around his field, out of reach of his generator on the lane by the field's gate, and never fully recharge. One left flat out of reach is dragged back beside it overnight.
   - His .MD is "DO return to the generator at 6:00 pm". That sounds sensible, but it makes them walk off mid-row every day (section 3.9).
-- **Goal:** the whole field harvested by 18:00 in one day, at no more than 5 tokens per crop. Splitting the field into four zones and swapping polling for a morning trigger passes. Swapping in a Big robot fails on cost.
+- **Goal:** the whole field harvested by 18:00 in one day, at no more than 6 tokens per crop. Splitting the field into four zones and swapping polling for a morning trigger passes. Swapping in a Big robot fails on cost; a Big can't be brought to his field, so a simulation test pins that rather than play.
 - **Teaches:** cost, measuring, splitting work, events versus polling, and that bigger isn't always better.
-- **Unlocks:** the Stats tab, the job 3 blocks, the DO cards, and robot sizes at the robot workshop.
+- **Unlocks:** the Stats tab, the job 3 blocks and the DO cards when the job is taken. Finishing it opens Standard and Big robots at the robot workshop and pays 2,000g.
 - **Payoff:** he learns what robots are bad at and claims he knew all along.
 
 ### Open
@@ -652,7 +653,7 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 | 1 Robot core | 1 | Robot state, save v4, token pool, wood burner, robot actions through the player's tile rules, token costs, mistakes, carrying and repairs, farm log, robot rendering. Robots run fixed scripted action lists in this part; the interpreter replaces them in part 2. | Scripted robots work, fail and recover on the farm (development builds only). |
 | 2 Language | 1 | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
 | 3 Robot screen | 1 | The workbench, Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
-| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye); repairs stay at the shipping bin. Juniper's workshop with ready-made robots in all three sizes. The balance pass. Built as 4a (people), 4b (shops and parts) and 4c (jobs). The neighbours' fields are on a new Neighbours map, east of the town. | The first hour of the new game, shippable |
+| 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye); repairs stay at the shipping bin. Juniper's workshop with ready-made robots in all three sizes. The balance pass. Split into 4a (people), 4b (shops and parts) and 4c (jobs), all three built. The neighbours' fields are on a new Neighbours map, east of the town, where their robots work. | The first hour of the new game, shippable |
 | 4d Town life | After 4, before 5 | Anonymous townsfolk with fixed personalities walking short routes; market stalls, benches and planters; bunting and banners; barrels, crates and a cart; posters, stands and small props around the town, including brand posters for Byre at Tallulah's ranch ("Milk from cows, not claws. 100% claw free."), Tokenly ("Keep your claws charged."), Hollis Handpicked ("Picked by people. Slowly."), Claw Fair ("Parade · Contest · Day 14") and Sprocket Cereal ("Part of a balanced robot."). Every brand is made up; FarmClaw, the valley's robot maker, already has its posters at Sol's and Juniper's from 4b. | A town that feels lived in |
 | 4e Graphics pass | After 4, before 5 | Soft fitted shadows, ambient sky lighting, a water shader, and post-processing: ambient occlusion, night bloom, colour grading and a vignette, better anti-aliasing. A low / medium / high quality setting, with phones defaulting to medium; the heavy parts load lazily. | The same game, better lit |
 | 5 Coordination | 2 | Messages, mailboxes, claims, triggers, schedules, power states, the Antenna. Job 4 (Ziggy) and job 5 (Sol's crew): tester and Test run, supervisor, mechanic, program library. | Multi-robot farms |

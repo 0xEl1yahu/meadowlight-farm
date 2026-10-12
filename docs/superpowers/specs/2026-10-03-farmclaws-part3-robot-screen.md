@@ -448,12 +448,12 @@ export interface RobotUnlocks {
 - **Painting:** with the marker selected, a **fresh** press of the tool key (Space, J, or a click) on the tile ahead. Held-key repeats are ignored by the marker.
   - **First press:** the draft's corner is set.
   - **Second press:** the rectangle from the corner to this tile becomes `ui.zoneLetter`'s zone through `markZone` (`withZone`). The toast reads "Zone A · 3×3.". The draft clears.
-  - **Off the farm:** another map is refused with "Zones are only on the farm.".
+  - **Other maps:** since part 4c the Neighbours map takes zones too (its spec §5.3); any other map is refused with "Zones go on your farm or the neighbours' fields." (was "Zones are only on the farm."; part 4c R5).
 - **Keys:**
   - Shift with the tool key cycles the letter A → H → A, and drops a draft.
   - Shift + E clears the current letter's zone (`clearZone`), with the toast "Cleared Zone A.", unless the workbench or a standing robot is ahead (section 2.3).
   - Escape drops a draft: `panelKeyCommand` returns `clearZoneDraft` instead of pausing while a draft exists.
-  - A draft also drops when the selected slot changes, the player leaves the farm, or any panel opens.
+  - A draft also drops when the selected slot changes, the player changes map, or any panel opens.
 - **HUD:** a chip above the hotbar while the marker is selected, e.g. "Zone A · 3×3" or "Zone A · not set", plus "corner set" during a draft.
 - **Rendering (`src/render/ZoneRenderer.ts`):**
   - **When it draws:** while the marker is selected, or a robot screen is open.
