@@ -1,9 +1,9 @@
 /**
  * Robots on the Neighbours map (farmclaws part 4c spec §5.1–5.2, §5.4): each robot works its own
  * map, bumps and bickers stay within a map, the neighbours' robots charge only near their owner's
- * generator and hand their bag over overnight, the player can't carry them but works on one in
- * job mode while its job is active, the neighbours' generators are theirs, and the cap counts
- * only the player's robots. A farm-only run stays byte-identical to the one before maps.
+ * generator (a flat one out of its reach is dragged back to it) and hand their bag over overnight,
+ * the player can't carry them but works on one in job mode while its job is active, the
+ * neighbours' generators are theirs, and the cap counts only the player's robots. A farm-only run stays byte-identical to the one before maps.
  */
 import { describe, expect, it } from 'vitest';
 import { GENERATORS, JOBS, ROBOTS, TIME, UNLOCKS } from '../src/config';
@@ -23,6 +23,7 @@ import { ALL_UNLOCKS } from '../src/robots/unlocks';
 import { workshopView } from '../src/ui/shops/viewModel';
 import { hasBenchActions, isReadOnly, looksEditable, partsSectionView, switchView, visibleTabs } from '../src/ui/robotScreen/viewModel';
 import { chebyshevDistance } from '../src/world/grid';
+import { NEIGHBOURS_MAP } from '../src/world/maps/neighbours';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import { addBlockRobot, programmed } from './programGen';
 import { BASE, atDay, holding, matureCrop, must, robotOf, soilTile, stack, tileAt, withGold, withJobsDone, withPlayer, withRobots, withTile, withZones } from './testUtils';
@@ -214,6 +215,65 @@ describe("the neighbours' robots overnight", () => {
   it("doesn't charge a neighbour's robot when its owner has no generator", () => {
     const next = sleep(withRobots(BASE, [neighbourBot({ id: 1, owner: 'barnaby', tx: barnabyGen.tx, tz: barnabyGen.tz + 1, tokens: 3 })]));
     expect(requireRobot(next, 1).tokens).toBe(3);
+  });
+
+  describe('a flat robot away from its generator', () => {
+    const card = { kind: 'doReturn' as const, to: { kind: 'generator' as const }, minute: 18 * 60 };
+    const program = b.program({ stacks: [b.when(b.morning(), b.turn('right'))] });
+    const flatBot = (overrides: Partial<Robot> & Pick<Robot, 'id' | 'tx' | 'tz'>): Robot => neighbourBot({ tokens: 0, power: 'flat', md: [card], ...overrides });
+
+    it('is dragged back beside the generator by its owner, charged, with its program and .MD, and a toast', () => {
+      const robots = [
+        flatBot({ id: 1, owner: 'barnaby', tx: 20, tz: 14, program }),
+        // Out of power with a token left: still flat.
+        flatBot({ id: 2, owner: 'cosmo', tx: 3, tz: 14, tokens: 1 }),
+      ];
+      const next = sleep(withGenerators(withRobots(BASE, robots)));
+      const [b1, c2] = [requireRobot(next, 1), requireRobot(next, 2)];
+      for (const [robot, gen] of [[b1, barnabyGen], [c2, cosmoGen]] as const) {
+        expect(chebyshevDistance(robot, gen)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+        expect(robot.tokens).toBe(80);
+        expect(robot.teleportSeq).toBe(1);
+        expect(robot.md).toEqual([card]);
+        expect(robotsOnTile(next, 'neighbours', robot.tx, robot.tz)).toEqual([robot]);
+        expect(NEIGHBOURS_MAP.npcs.some((p) => p.tx === robot.tx && p.tz === robot.tz)).toBe(false);
+      }
+      expect(b1.program).toEqual(program);
+      expect(b1.power).toBe('working');
+      expect(texts(next)).toContain('Barnaby dragged N1 back to the generator.');
+      expect(texts(next)).toContain('Cosmo dragged N2 back to the generator.');
+      expect(texts(next).some((t) => t.includes('away from a generator'))).toBe(false);
+    });
+
+    it("isn't dragged onto another robot's tile", () => {
+      const alone = sleep(withGenerators(withRobots(BASE, [flatBot({ id: 1, owner: 'barnaby', tx: 20, tz: 14 })])));
+      const spot = requireRobot(alone, 1);
+      const sitter = neighbourBot({ id: 2, owner: 'barnaby', tx: spot.tx, tz: spot.tz, tokens: 3 });
+      const next = sleep(withGenerators(withRobots(BASE, [flatBot({ id: 1, owner: 'barnaby', tx: 20, tz: 14 }), sitter])));
+      const moved = requireRobot(next, 1);
+      expect({ tx: moved.tx, tz: moved.tz }).not.toEqual({ tx: spot.tx, tz: spot.tz });
+      expect(chebyshevDistance(moved, barnabyGen)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+      expect(requireRobot(next, 2)).toMatchObject({ tx: spot.tx, tz: spot.tz });
+    });
+
+    it('stays where it is when flat but already in reach, and charges', () => {
+      const at = { tx: barnabyGen.tx + ROBOTS.chargeRadius, tz: barnabyGen.tz - 1 };
+      const next = sleep(withGenerators(withRobots(BASE, [flatBot({ id: 1, owner: 'barnaby', ...at })])));
+      expect(requireRobot(next, 1)).toMatchObject({ ...at, tokens: 80, teleportSeq: 0 });
+      expect(texts(next).some((t) => t.includes('dragged'))).toBe(false);
+    });
+
+    it("isn't dragged or charged when it still has power", () => {
+      const next = sleep(withGenerators(withRobots(BASE, [neighbourBot({ id: 1, owner: 'barnaby', tx: 20, tz: 14, tokens: 3 })])));
+      expect(requireRobot(next, 1)).toMatchObject({ tx: 20, tz: 14, tokens: 3, teleportSeq: 0 });
+      expect(texts(next).some((t) => t.includes('dragged'))).toBe(false);
+    });
+
+    it('stays where it is, flat, when its owner has no generator', () => {
+      const next = sleep(withRobots(BASE, [flatBot({ id: 1, owner: 'barnaby', tx: 20, tz: 14 })]));
+      expect(requireRobot(next, 1)).toMatchObject({ tx: 20, tz: 14, tokens: 0, power: 'flat', teleportSeq: 0 });
+      expect(texts(next).some((t) => t.includes('dragged'))).toBe(false);
+    });
   });
 
   it("sends a neighbour's DO return to its owner's generator", () => {

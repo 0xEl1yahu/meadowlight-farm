@@ -3,11 +3,12 @@
  * Neighbours map (farmclaws part 4c spec §5.1), and every robot rule reads that map through
  * robotWorld.
  */
-import { JOBS } from '../config';
+import { JOBS, ROBOTS } from '../config';
 import { invariant } from '../core/invariant';
 import { Blocker, DIRECTIONS, type GameState, type Robot, type RobotMapId, type Tile, type TileCoord, type WorldState } from '../core/types';
 import { withMap } from '../state/selectors';
-import { inBounds, stepTile } from '../world/grid';
+import { chebyshevDistance, inBounds, stepTile } from '../world/grid';
+import { MAPS, isReservedTile } from '../world/maps';
 import { forEachTile, getTile, isWalkable } from '../world/tiles';
 import type { Slots } from './bag';
 
@@ -94,9 +95,9 @@ export function chestSlots(tile: Tile | null): Slots {
 
 /**
  * `from` when it `fits`, else the nearest tile that does, by breadth-first search over in-bounds
- * tiles in DIRECTIONS order (passing through any tile). Throws `failure` when none fits.
+ * tiles in DIRECTIONS order (passing through any tile). Null when none fits.
  */
-function nearestFitting(world: WorldState, from: TileCoord, fits: (tile: Tile, at: TileCoord) => boolean, failure: string): TileCoord {
+function nearestFittingOrNull(world: WorldState, from: TileCoord, fits: (tile: Tile, at: TileCoord) => boolean): TileCoord | null {
   const key = (c: TileCoord): number => c.tz * world.grid.width + c.tx;
   const seen = new Set<number>([key(from)]);
   const queue: TileCoord[] = [from];
@@ -112,7 +113,14 @@ function nearestFitting(world: WorldState, from: TileCoord, fits: (tile: Tile, a
       queue.push(next);
     }
   }
-  throw new Error(failure);
+  return null;
+}
+
+/** nearestFittingOrNull, throwing `failure` when no tile fits. */
+function nearestFitting(world: WorldState, from: TileCoord, fits: (tile: Tile, at: TileCoord) => boolean, failure: string): TileCoord {
+  const found = nearestFittingOrNull(world, from, fits);
+  if (found === null) throw new Error(failure);
+  return found;
 }
 
 /** `from` when it's walkable, else the nearest walkable tile by breadth-first search in DIRECTIONS order. */
@@ -128,4 +136,21 @@ export function nearestWalkable(world: WorldState, from: TileCoord): TileCoord {
 export function nearestFreeWalkable(state: GameState, mapId: RobotMapId, from: TileCoord, selfId: number): TileCoord {
   const free = (tile: Tile, at: TileCoord): boolean => isWalkable(tile) && robotsOnTile(state, mapId, at.tx, at.tz).every((r) => r.id === selfId);
   return nearestFitting(state.maps[mapId], from, free, 'nearestFreeWalkable: the map has no free walkable tile');
+}
+
+/**
+ * The tile of `mapId` nearest `generator`, within ROBOTS.chargeRadius of it, where a robot can be
+ * set down: walkable, not reserved, not a character's spot, with no standing robot on it but
+ * `selfId`. Where a neighbour drags a flat robot back to overnight; null when every such tile is
+ * taken.
+ */
+export function freeSpotInReach(state: GameState, mapId: RobotMapId, generator: TileCoord, selfId: number): TileCoord | null {
+  const def = MAPS[mapId];
+  const free = (tile: Tile, at: TileCoord): boolean =>
+    chebyshevDistance(at, generator) <= ROBOTS.chargeRadius &&
+    isWalkable(tile) &&
+    !isReservedTile(def, at.tx, at.tz) &&
+    !def.npcs.some((p) => p.tx === at.tx && p.tz === at.tz) &&
+    robotsOnTile(state, mapId, at.tx, at.tz).every((r) => r.id === selfId);
+  return nearestFittingOrNull(state.maps[mapId], generator, free);
 }

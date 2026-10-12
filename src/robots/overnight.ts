@@ -2,7 +2,8 @@
  * The robots' night, run inside startNextDay after the maps grow (farmclaws part 1 spec §5.7):
  * generators burn, a carried robot is set down, repairs come back, broken robots left in the
  * water are ruined (part 3 spec §3.2) unless Sol fishes job 1's robot out for free (part 4c spec
- * §3.1), robots near a generator recharge and the neighbours take
+ * §3.1), a neighbour drags a flat robot of theirs back to their generator, robots near a
+ * generator recharge and the neighbours take
  * what their robots harvested (part 4c spec §5.1), robots ordered from Juniper arrive by the
  * workbench (part 4b spec §4.6), and every robot is reset for the morning where it stands, on
  * its own map. Pure.
@@ -21,6 +22,7 @@ import {
   type TileCoord,
 } from '../core/types';
 import { sprinkleOf } from '../jobs/checks';
+import { CAST } from '../people/cast';
 import { withZoneMarker } from '../state/zoneMarker';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
@@ -30,7 +32,7 @@ import { logRobotEvent, pruneRobotLog } from './log';
 import { ZERO_ROBOT_STATS, batteryFor, isWeekStart, periodFor, resumedPower } from './stats';
 import { freeSpotNear } from './workbench';
 import { WORKSHOP_ROBOTS } from './workshop';
-import { generatorTiles, nearestFreeWalkable, robotWorld, withFarm, withRobot } from './world';
+import { freeSpotInReach, generatorTiles, nearestFreeWalkable, robotWorld, withFarm, withRobot } from './world';
 
 /** A morning toast the night produced. */
 export interface RobotNote {
@@ -150,6 +152,28 @@ function fishedOut(state: GameState, robot: Robot): GameState {
     teleportSeq: robot.teleportSeq + 1,
   };
   return withRobot({ ...state, jobs: { ...state.jobs, rescued: true } }, back);
+}
+
+/**
+ * In id order, a neighbour's robot that ends the day flat (out of power, or at 0 tokens) beyond
+ * chargeRadius of its owner's generator is dragged back to the free tile nearest the generator
+ * within its reach, so it charges tonight: the neighbours' robots can't be carried, and a flat
+ * one left out could leave its job unwinnable. Noted for each; it keeps its program and .MD.
+ * Nothing happens without the generator, and a robot stays put when every tile in reach is taken.
+ */
+function dragBackFlat(state: GameState, notes: RobotNote[]): GameState {
+  let next = state;
+  for (const robot of state.robots.list) {
+    if (robot.owner === 'player' || (robot.power !== 'flat' && robot.tokens > 0)) continue;
+    if (robot.power === 'broken' || robot.power === 'ruined' || robot.power === 'repairing') continue;
+    const generator = generatorTiles(next, robot)[0];
+    if (generator === undefined || chebyshevDistance(generator, robot) <= ROBOTS.chargeRadius) continue;
+    const at = freeSpotInReach(next, robot.mapId, generator, robot.id);
+    if (at === null) continue;
+    next = withRobot(next, { ...robot, tx: at.tx, tz: at.tz, teleportSeq: robot.teleportSeq + 1 });
+    notes.push({ text: `${CAST[robot.owner].name} dragged ${robot.name} back to the generator.`, tone: 'info' });
+  }
+  return next;
 }
 
 /**
@@ -316,7 +340,7 @@ export function runRobotsOvernight(state: GameState): { readonly state: GameStat
   const repaired = returnRepaired(setDownCarried(burned.state), notes);
   const soaked = ruinSoaked(repaired.state, notes);
   const back = soaked.rescued === null ? repaired.returned : new Set([...repaired.returned, soaked.rescued]);
-  let next = emptyNeighbourBags(recharge(soaked.state, burned.burners, back, notes));
+  let next = emptyNeighbourBags(recharge(dragBackFlat(soaked.state, notes), burned.burners, back, notes));
   next = deliverPendingMarker(resetForMorning(deliverRobots(next, notes)), notes);
   return { state: pruneRobotLog(next), notes };
 }

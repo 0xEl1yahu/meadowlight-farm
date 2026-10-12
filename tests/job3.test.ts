@@ -24,11 +24,12 @@ import { ZONE_H_TOAST } from '../src/jobs/setup';
 import { npcActions, npcSpot } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
+import { batteryFor } from '../src/robots/stats';
 import { withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
-import { rectContains } from '../src/world/grid';
+import { chebyshevDistance, rectContains } from '../src/world/grid';
 import { BARNABY_FENCE, BARNABY_FIELD, NEIGHBOURS_LANE, NEIGHBOURS_MAP } from '../src/world/maps/neighbours';
 import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withZones } from './testUtils';
 
@@ -253,6 +254,26 @@ describe('the check', () => {
     let day = act(TAKEN, actions.sleep());
     while (day.time.minuteOfDay < 20 * 60) day = act(day, actions.tick(60));
     expect(day.jobs.status.knowTheLimits).toBe('active');
+  });
+
+  it('gets B-1 back to work the next day after its polling runs it flat out of reach: Barnaby drags it to his generator', () => {
+    let day = act(TAKEN, actions.sleep());
+    while (day.time.minuteOfDay < 20 * 60) day = act(day, actions.tick(60));
+    const flat = must(team(day).find((robot) => robot.name === 'B-1'));
+    expect(flat.power).toBe('flat');
+    expect(chebyshevDistance(flat, JOBS.generators.barnaby)).toBeGreaterThan(ROBOTS.chargeRadius);
+
+    const morning = act(day, actions.sleep());
+    const b1 = must(team(morning).find((robot) => robot.id === flat.id));
+    expect(chebyshevDistance(b1, JOBS.generators.barnaby)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+    expect(b1).toMatchObject({ tokens: batteryFor(b1.size), program: flat.program, md: flat.md });
+    expect(b1.power).not.toBe('flat');
+    expect(texts(morning)).toContain('Barnaby dragged B-1 back to the generator.');
+    expect(isValidGameState(morning)).toBe(true);
+
+    const later = act(morning, actions.tick(120));
+    expect(must(team(later).find((robot) => robot.id === flat.id)).stats.today.tokens).toBeGreaterThan(0);
+    expect(barnabyCropsHarvested(later)).toBeGreaterThan(0);
   });
 });
 
