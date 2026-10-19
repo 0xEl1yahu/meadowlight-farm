@@ -4,7 +4,7 @@
  * No DOM, so tests/partsShop.test.ts, tests/workshop.test.ts and tests/shopStock.test.ts cover
  * every rule here; the panels only draw what these return.
  */
-import { PARTS, ROBOTS } from '../../config';
+import { PARTS, ROBOTS, SLOP } from '../../config';
 import {
   BASIC_PART_IDS,
   ROBOT_PART_IDS,
@@ -19,6 +19,7 @@ import { getItem, sellBackPrice } from '../../items/items';
 import { isGateOpen } from '../../jobs/jobs';
 import { playerRobotCount } from '../../robots/create';
 import { suggestedName } from '../../robots/workshop';
+import { actions, type GameAction } from '../../state/actions';
 import { countItem } from '../../state/inventory';
 import { partsLeft, robotsLeft, seedsLeft } from '../../state/selectors';
 
@@ -138,5 +139,39 @@ export function workshopView(state: GameState): WorkshopView {
       locked: card.size === 'mini' || isGateOpen(state, 'bigRobots') ? null : "After Barnaby's job.",
     })),
     suggestedName: suggestedName(state),
+  };
+}
+
+/** One button in DEALZ's row. */
+export interface SlopButton {
+  readonly label: string;
+  readonly action: GameAction;
+  /** The main button style; otherwise the quiet one. */
+  readonly primary: boolean;
+}
+
+/** DEALZ's chat at SLOPMART (part 4d spec §6.2): the chat box's heading, the panel's line and two buttons. */
+export interface SlopShopView {
+  readonly name: string;
+  readonly role: string;
+  readonly line: string;
+  readonly buttons: readonly SlopButton[];
+}
+
+export const SLOP_NAME = 'DEALZ';
+export const SLOP_ROLE = 'SLOPMART 24/7 · A BARNABY VENTURE';
+
+/** DEALZ's panel for the open slopShop panel, or null when another panel (or none) is open. */
+export function slopShopView(state: GameState): SlopShopView | null {
+  const panel = state.ui.panel;
+  if (panel.kind !== 'slopShop') return null;
+  return {
+    name: SLOP_NAME,
+    role: SLOP_ROLE,
+    line: panel.line,
+    buttons: [
+      { label: `Buy a mystery box (${SLOP.boxPrice}g)`, action: actions.buySlopBox(), primary: true },
+      { label: 'Leave', action: actions.closePanel(), primary: false },
+    ],
   };
 }

@@ -298,3 +298,28 @@
     text-align: center;
   }
 }
+
+/* -------------------------------------------------------------------------------------------
+ * DEALZ at SLOPMART (SlopShopPanel.ts, part 4d spec §6.2): the chat box's own classes, seated
+ * along the bottom of the screen above the hotbar like the chat box. The layer takes no clicks;
+ * the phone modifier spans the screen from gutter to gutter, as the chat box does.
+ * ----------------------------------------------------------------------------------------- */
+
+.slop-shop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--hud-gutter) var(--hud-gutter) 104px;
+  pointer-events: none;
+}
+
+.slop-shop[hidden] {
+  display: none;
+}
+
+.slop-shop__box.chat-box--phone {
+  align-self: flex-end;
+}

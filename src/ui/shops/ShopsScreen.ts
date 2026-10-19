@@ -1,6 +1,6 @@
 /**
  * The shops (farmclaws part 4b spec §10): one lazy chunk, loaded by ShopsHost the first time a
- * shop panel opens, holding Marigold's seed shop, Sol's parts shop and Juniper's workshop. Each panel shows itself
+ * shop panel opens, holding Marigold's seed shop, Sol's parts shop, Juniper's workshop and DEALZ's chat at SLOPMART. Each panel shows itself
  * while its `ui.panel` kind is open and hides otherwise, so the screen just passes every state on.
  */
 import './shops.css';
@@ -11,6 +11,7 @@ import { ItemIconCache } from '../slots';
 import type { ShopPanelContext } from './context';
 import { PartsShopPanel } from './PartsShopPanel';
 import { SeedShopPanel } from './SeedShopPanel';
+import { SlopShopPanel } from './SlopShopPanel';
 import { WorkshopPanel } from './WorkshopPanel';
 
 export interface ShopsScreenOptions {
@@ -26,6 +27,7 @@ export class ShopsScreen {
   private readonly seeds: SeedShopPanel;
   private readonly parts: PartsShopPanel;
   private readonly workshop: WorkshopPanel;
+  private readonly slop: SlopShopPanel;
 
   constructor(options: ShopsScreenOptions) {
     screenCount += 1;
@@ -41,7 +43,8 @@ export class ShopsScreen {
     this.seeds = new SeedShopPanel(context);
     this.parts = new PartsShopPanel(context);
     this.workshop = new WorkshopPanel(context);
-    options.root.append(this.seeds.element, this.parts.element, this.workshop.element);
+    this.slop = new SlopShopPanel(context);
+    options.root.append(this.seeds.element, this.parts.element, this.workshop.element, this.slop.element);
   }
 
   /** `prev` null redraws the open panel from scratch. */
@@ -49,6 +52,7 @@ export class ShopsScreen {
     this.seeds.sync(state, prev);
     this.parts.sync(state, prev);
     this.workshop.sync(state, prev);
+    this.slop.sync(state, prev);
   }
 
   dispose(): void {
@@ -56,5 +60,6 @@ export class ShopsScreen {
     this.seeds.element.remove();
     this.parts.element.remove();
     this.workshop.element.remove();
+    this.slop.element.remove();
   }
 }

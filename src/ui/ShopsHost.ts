@@ -1,6 +1,6 @@
 /**
  * Opens the shops (farmclaws part 4b spec §10). The host lives in the main chunk; the shops
- * themselves (src/ui/shops/: Marigold's seed shop, Sol's parts shop and Juniper's workshop) are
+ * themselves (src/ui/shops/: Marigold's seed shop, Sol's parts shop, Juniper's workshop and DEALZ's chat) are
  * one dynamic import, made the first time a shop panel opens, so their code stays out of the
  * game's first download.
  *
@@ -24,7 +24,7 @@ export interface ShopsHostOptions {
 }
 
 /** The panels the shops chunk draws. */
-const SHOP_PANELS: ReadonlySet<UiPanel['kind']> = new Set(['shop', 'partsShop', 'workshop']);
+const SHOP_PANELS: ReadonlySet<UiPanel['kind']> = new Set(['shop', 'partsShop', 'workshop', 'slopShop']);
 
 const LOADING_TEXT = 'Opening…';
 const LOAD_FAILED_TEXT = "The shop didn't open. Try again.";

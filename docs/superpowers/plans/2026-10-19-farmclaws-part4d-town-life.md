@@ -158,6 +158,7 @@ export const DEALZ_LINES: { readonly soldOut: string; readonly noGold: string; r
 - **R5.** Barnaby's pace moves on every 25 minutes (was 20): (19, 20) is 21 steps round his field from (30, 22), so at 20 minutes he turned back one tile short every time. (Spec §2.3)
 - **R6.** When only the player is in the way, a walker takes the route's first step and waits only when that step is onto the player's tile, so they walk up to the player and wait beside them, rather than freezing wherever they are. (Spec §4.3)
 - **R7.** A stuck walker, with no route to their target even ignoring the player, walks to the reachable tile fewest Manhattan steps from the target (ties to the search's first visit) and stays there, rather than freezing wherever they are. A chest on a stop then leaves the walker beside it, as Review Focus 4 describes. `isStuck` is true on the way and once there. (Spec §4.3, §4.4)
+- **R8.** The main chunk's gzip allowance in `scripts/bundleRules.mjs` rises from baseline + 40 KiB to baseline + 48 KiB, the spec's full +8 KiB for part 4d, because the main chunk had reached 315.7 KiB gzipped (limit 317.1 KiB) by Task 8, past the old 309.1 KiB. The shops chunk, with DEALZ's panel, is 5.1 KiB of its 20 KiB. (Spec §10)
 
 ---
 
