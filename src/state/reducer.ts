@@ -60,7 +60,7 @@ import { lineFor } from '../people/lines';
 import { SHOP_DOORS, closedLine, shopDoorOf, shopOpen, type ShopId } from '../people/shops';
 import { boxAt, boxToast, dealzGreeting, dealzRefusal, dealzResult } from '../people/slop';
 import { townsfolkLine } from '../people/townsfolk';
-import { isTownsfolk, walkerAt, walkersIndoors } from '../people/walk';
+import { isTownsfolk, swapWithPlayer, walkersIndoors } from '../people/walk';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
 import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
@@ -367,7 +367,8 @@ function isDirection(value: number): value is Direction {
 
 /**
  * One grid step. Inside the grid the destination must be walkable and no walker may stand on it
- * (part 4a spec §2.2, part 4d spec §4.5); a refused step only turns the player. Stepping off the
+ * (part 4a spec §2.2, part 4d spec §4.5), unless they're waiting for the player: then the two swap
+ * places (plan R13, `swapWithPlayer`). A refused step only turns the player. Stepping off the
  * edge takes the map's warp from this tile in this direction, if there is one: the player lands on
  * the warp's arrival tile on the other map, facing into it (a teleport, so `moveSeq` is untouched).
  * A warp whose arrival tile isn't walkable is refused like any blocked step.
@@ -378,9 +379,10 @@ function movePlayer(state: GameState, direction: Direction): GameState {
   const destination = stepTile(player, direction);
   const world = selectActiveWorld(state);
   if (inBounds(world.grid, destination.tx, destination.tz)) {
-    if (isWalkable(requireTile(world, destination.tx, destination.tz)) && walkerAt(state, player.mapId, destination.tx, destination.tz) === null) {
+    const cleared = isWalkable(requireTile(world, destination.tx, destination.tz)) ? swapWithPlayer(state, destination) : null;
+    if (cleared !== null) {
       return {
-        ...state,
+        ...cleared,
         player: { ...player, tx: destination.tx, tz: destination.tz, facing: direction, moveSeq: player.moveSeq + 1 },
       };
     }

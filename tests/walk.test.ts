@@ -21,7 +21,7 @@ import {
 } from '../src/core/types';
 import { LINE_BANKS, STUCK_LINE, lineFor } from '../src/people/lines';
 import { farmerStops, legsFor, targetOf } from '../src/people/timetable';
-import { isStuck, nudgeWalkersOff, runWalkersMinute, walkerAt, walkerPlace, walkersIndoors, withWalkerPlace } from '../src/people/walk';
+import { isStuck, nudgeWalkersOff, runWalkersMinute, waitsForPlayer, walkerAt, walkerPlace, walkersIndoors, withWalkerPlace } from '../src/people/walk';
 import { runMinutesThrough } from '../src/robots/run';
 import { freeSpotInReach } from '../src/robots/world';
 import { actions } from '../src/state/actions';
@@ -183,6 +183,48 @@ describe('the player in the way', () => {
     const last = states.at(-1) as GameState;
     expect(manhattanDistance(tileOf(walkerPlace(last, 'cosmo')), target.tile)).toBe(nearest);
     for (const state of states.slice(-5)) expect(walkerPlace(state, 'cosmo')).toBe(walkerPlace(last, 'cosmo'));
+  });
+});
+
+describe('R13: the player and a walker waiting for them swap places', () => {
+  const inYard = withPlaces(DRY, { cosmo: out('neighbours', 6, 10, Direction.South) });
+  /** Cosmo waiting at (6, 11) for the player in the yard's one-tile gap at (6, 12). */
+  const waiting = runTo(withPlayer(inYard, { tx: 6, tz: 12 }, Direction.North, 'neighbours'), at(6, 5));
+
+  it('swaps the player on Cosmo’s door front at 8:00 pm with Cosmo, who then goes in', () => {
+    const evening = withPlayer(withPlaces(atMinute(DRY, at(20)), { cosmo: out('neighbours', 7, 13, Direction.West) }), { tx: 5, tz: 5 }, Direction.North, 'neighbours');
+    const parked = runTo(evening, at(20, 15));
+    expect(walkerPlace(parked, 'cosmo')).toEqual(out('neighbours', 5, 6, Direction.West));
+    expect(waitsForPlayer(parked, 'cosmo')).toBe(true);
+    const swapped = gameReducer(parked, actions.move(Direction.South));
+    expect(swapped.player).toEqual({ ...parked.player, tx: 5, tz: 6, facing: Direction.South, moveSeq: parked.player.moveSeq + 1 });
+    expect(walkerPlace(swapped, 'cosmo')).toEqual(out('neighbours', 5, 5, Direction.North));
+    expect(isValidGameState(swapped)).toBe(true);
+    expect(walkerPlace(runTo(swapped, at(20, 16)), 'cosmo')).toEqual(INDOORS);
+  });
+
+  it('swaps the player with a walker waiting on them in a one-tile gap, and the walker walks on', () => {
+    expect(walkerPlace(waiting, 'cosmo')).toEqual(out('neighbours', 6, 11, Direction.South));
+    const swapped = gameReducer(waiting, actions.move(Direction.North));
+    expect(swapped.player).toMatchObject({ mapId: 'neighbours', tx: 6, tz: 11, facing: Direction.North });
+    expect(walkerPlace(swapped, 'cosmo')).toEqual(out('neighbours', 6, 12, Direction.South));
+    expect(walkerPlace(runTo(swapped, at(6, 6)), 'cosmo')).toEqual(out('neighbours', 6, 13, Direction.South));
+  });
+
+  it('still blocks the step onto a walker who isn’t waiting for the player: Sol at his stop', () => {
+    const atWell = runTo(DRY, at(6, 10));
+    expect(walkerPlace(atWell, 'sol')).toEqual(out('town', 21, 13, Direction.West));
+    const beside = standBeside(atWell, { mapId: 'town', tx: 21, tz: 13 });
+    expect(waitsForPlayer(beside, 'sol')).toBe(false);
+    const refused = gameReducer(beside, actions.move(beside.player.facing));
+    expect(refused).toBe(beside);
+  });
+
+  it('never swaps onto a robot standing on the player’s tile', () => {
+    const robot = robotOf({ id: 1, mapId: 'neighbours', owner: 'cosmo', tx: 6, tz: 12, power: 'flat' });
+    const underfoot = withRobots(waiting, [robot]);
+    expect(waitsForPlayer(underfoot, 'cosmo')).toBe(false);
+    expect(gameReducer(underfoot, actions.move(Direction.North))).toBe(underfoot);
   });
 });
 

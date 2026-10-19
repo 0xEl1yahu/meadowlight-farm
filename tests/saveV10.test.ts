@@ -7,7 +7,7 @@
  * validated (spec §9.3).
  */
 import { describe, expect, it } from 'vitest';
-import { INVENTORY } from '../src/config';
+import { INVENTORY, JOBS } from '../src/config';
 import {
   Blocker,
   Direction,
@@ -22,7 +22,8 @@ import {
   type WalkerPlace,
 } from '../src/core/types';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
-import { rectContains } from '../src/world/grid';
+import { manhattanDistance, rectContains } from '../src/world/grid';
+import { MAPS, isReservedTile } from '../src/world/maps';
 import { CHICKEN_RUN, COSMO_DOOR_GAP, ringInside, ringTiles } from '../src/world/maps/neighbours';
 import { TOWN_EXITS } from '../src/world/maps/town';
 import { EMPTY_TILE, blockedTile, isWalkable, requireTile } from '../src/world/tiles';
@@ -221,6 +222,31 @@ describe('v9 → v10: the Neighbours', () => {
     expect(tileAt(loaded, COSMO_DOOR_GAP, 'neighbours')).toEqual(EMPTY_TILE);
     expect(chestsOn(loaded, 'neighbours').size).toBe(1);
     expect(isWalkable(tileAt(loaded, COSMO_DOOR_GAP, 'neighbours'))).toBe(true);
+  });
+
+  it('never moves a chest onto a job’s generator tile, even when every nearer free tile is taken', () => {
+    const generators: readonly TileCoord[] = Object.values(JOBS.generators);
+    const reach = Math.max(...generators.map((at) => manhattanDistance(at, COSMO_DOOR_GAP)));
+    // The run's ring is fenced in BASE, so only its inside and Cosmo's door front need leaving out.
+    const changed = (at: TileCoord): boolean => rectContains(RUN, at.tx, at.tz) || key(at.tx, at.tz) === key(COSMO_DOOR_GAP.tx, COSMO_DOOR_GAP.tz);
+    const filler: (readonly [MapId, TileCoord, Tile])[] = [];
+    const world = BASE.maps.neighbours;
+    for (let tz = 0; tz < world.grid.depth; tz++) {
+      for (let tx = 0; tx < world.grid.width; tx++) {
+        const at = { tx, tz };
+        const tile = requireTile(world, tx, tz);
+        const free = isWalkable(tile) && tile.object === null && tile.crop === null && !isReservedTile(MAPS.neighbours, tx, tz);
+        if (!free || changed(at) || manhattanDistance(at, COSMO_DOOR_GAP) > reach) continue;
+        if (generators.some((g) => g.tx === tx && g.tz === tz)) continue;
+        filler.push(['neighbours', at, chestTile()]);
+      }
+    }
+    const moved = chestTile(stack('wood', 5));
+    const loaded = must(load(v9With(BASE, [...filler, ['neighbours', COSMO_DOOR_GAP, moved]])));
+    for (const at of generators) expect(tileAt(loaded, at, 'neighbours').object, key(at.tx, at.tz)).toBeNull();
+    const chests = chestsOn(loaded, 'neighbours');
+    expect(chests.size).toBe(filler.length + 1);
+    expect([...chests.values()].filter((tile) => JSON.stringify(tile) === JSON.stringify(moved))).toHaveLength(1);
   });
 
   it("moves the player and a neighbour's robot out of the run", () => {

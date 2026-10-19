@@ -258,7 +258,7 @@ A stuck walker's line is "Someone's put something in my way. I'll wait." For a c
 
 ### 4.5 The player, robots and walkers
 
-- **A walker's tile blocks the player's steps,** whether they're walking or standing (as 4a's characters already do).
+- **A walker's tile blocks the player's steps,** whether they're walking or standing (as 4a's characters already do), with one exception (R13): a walker waiting this minute because of the player, their next step by their own plan (§4.3) being onto the player's tile, swaps places with them. The player steps onto the walker's tile, and the walker takes the player's old tile, facing the way they were heading. Otherwise a walker parked beside the player in a dead end or a one-tile gap, such as Cosmo's door front at 8:00 pm, would pin them until the pass-out. No robot can stand on the player's tile then, because the walker's plan routes round robots.
 - **E talks,** mid-walk too. The chat freezes the game, so nobody moves while you talk.
 - **Gate arrivals:** the player arrives even if a walker is on the arrival tile (as now).
 - **Placing:** nothing can be placed on a walker's tile ("Someone's standing there.", as now).
@@ -343,7 +343,7 @@ Each of the five doors gets a small hanging sign that reads **OPEN** or **CLOSED
   - DEALZ's line;
   - two buttons, **Buy a mystery box ({price}g)** and **Leave**.
 
-  4a's chat box view gains this speaker alongside the cast's, and the townsfolk use the same path (§3.3).
+  DEALZ's chat box is its own panel in 4b's lazy shops chunk (`src/ui/shops/`), dressed in 4a's chat box classes and phone width, rather than a third speaker in 4a's chat box view (R14). The townsfolk speak through 4a's chat box view (§3.3).
 - **The greeting** on opening is `greetings[hash32(seed, absoluteDay, boxesOpened, SLOP.greetingSalt) % 8]`.
 - **Buying** runs these checks in order. Each refusal changes DEALZ's line and charges nothing:
   1. Today's boxes have reached `SLOP.boxesPerDay`: the sold-out line.

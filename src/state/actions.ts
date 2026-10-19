@@ -103,7 +103,17 @@ export const actions = {
     quantity,
   }),
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
+  /**
+   * The `shopDoor` intent's way into the reducer, without its position check: nothing asks
+   * whether the player stands on the tile in front of the door. The game dispatches E, whose
+   * intent plans from that tile; this action is for tests.
+   */
   shopDoor: (shop: ShopId): GameAction => ({ type: 'shop/door', shop }),
+  /**
+   * The `slopShop` intent's way into the reducer, without its position check: nothing asks
+   * whether the player stands on the tile in front of the booth's door. The game dispatches E,
+   * whose intent plans from that tile; this action is for tests.
+   */
   openSlopShop: (): GameAction => ({ type: 'slop/open' }),
   buySlopBox: (): GameAction => ({ type: 'slop/buy' }),
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),

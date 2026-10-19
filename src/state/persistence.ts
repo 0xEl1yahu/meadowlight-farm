@@ -2,7 +2,7 @@
  * Save / load. GameState is plain JSON-compatible data, so persistence is serialisation plus a
  * strict structural validator — a corrupted or outdated save is rejected, never half-loaded.
  */
-import { INVENTORY, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
+import { INVENTORY, JOBS, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
   MAP_IDS,
@@ -635,9 +635,10 @@ function changedTileV10(tile: Obj, change: TileChangeV10, displace: (object: unk
  * One map's part of the v9 → v10 step: its changed tiles (tileChangesV10), then the player and
  * that map's robots off a tile they can no longer stand on, then every displaced object, each in
  * scan order to `freeSpotNear` on that map. A spot once given is taken, and so is every changed
- * tile and every robot or player who stays, so nothing lands on anything else, in the run or on
- * Cosmo's door front. Chunk revisions are kept. A malformed map passes through unchanged for the
- * validator to reject.
+ * tile, every robot or player who stays and, on the Neighbours, the jobs' generator tiles, so
+ * nothing lands on anything else, in the run, on Cosmo's door front or where a generator will
+ * go. Chunk revisions are kept. A malformed map passes through unchanged for the validator to
+ * reject.
  */
 function migrateMapV10(save: Obj, mapId: 'town' | 'neighbours'): Obj {
   const { maps, player, robots } = save;
@@ -657,6 +658,7 @@ function migrateMapV10(save: Obj, mapId: 'town' | 'neighbours'): Obj {
   const standing = (v: unknown): v is Obj & { tx: number; tz: number } => isObj(v) && v.mapId === mapId && isInt(v.tx) && isInt(v.tz);
   const list: readonly unknown[] = isObj(robots) && Array.isArray(robots.list) ? robots.list : [];
   const taken: TileCoord[] = [...changes.keys()].map((k) => ({ tx: k % width, tz: Math.floor(k / width) }));
+  if (mapId === 'neighbours') taken.push(...Object.values(JOBS.generators));
   for (const at of [player, ...list]) if (standing(at) && !mustLeave(at.tx, at.tz)) taken.push({ tx: at.tx, tz: at.tz });
   const moveOff = <T>(at: T): T => {
     if (!standing(at) || !mustLeave(at.tx, at.tz)) return at;

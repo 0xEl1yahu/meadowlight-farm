@@ -4,7 +4,8 @@
  * the live map, steps in at home, or turns to their stop's facing. Pure. No path is saved: a
  * walker re-plans every step, so anything placed in the way is routed round at once. The world
  * finds walkers by their saved places (`walkerAt`), asks the same plans whether one is stuck
- * (`isStuck`, spec §4.4), and moves them off a job's generator tile (`nudgeWalkersOff`, §4.5).
+ * (`isStuck`, spec §4.4) or waiting for the player (`waitsForPlayer`, plan R13), and moves them off
+ * a job's generator tile (`nudgeWalkersOff`, §4.5).
  *
  * Walkers never block each other, so the order they're taken in never changes the outcome. Each
  * walker's world is `state.maps[place.mapId]`.
@@ -104,10 +105,15 @@ function canEnter(state: GameState, obstacles: Obstacles, mapId: MapId, tile: Ti
 }
 
 /**
- * One minute's move: a step to an adjacent tile, a crossing through a gate onto the other map, or
- * staying put (waiting for the player, or with nowhere nearer to go).
+ * One minute's move: a step to an adjacent tile, a crossing through a gate onto the other map,
+ * waiting because the step is onto the player's tile, or staying put (with nowhere nearer to go,
+ * or at a gate).
  */
-type Move = { readonly kind: 'step'; readonly to: TileCoord } | { readonly kind: 'cross'; readonly to: OutPlace } | { readonly kind: 'stay' };
+type Move =
+  | { readonly kind: 'step'; readonly to: TileCoord }
+  | { readonly kind: 'cross'; readonly to: OutPlace }
+  | { readonly kind: 'wait' }
+  | { readonly kind: 'stay' };
 
 /**
  * A minute's plan: the move, and whether the walker is stuck (spec §4.4), their target out of
@@ -119,6 +125,7 @@ interface Plan {
 }
 
 const STAY: Move = { kind: 'stay' };
+const WAIT: Move = { kind: 'wait' };
 
 /**
  * Plans already made, per world. A plan is a pure function of the world, the tiles blocked on it
@@ -161,8 +168,8 @@ function routeStep(state: GameState, obstacles: Obstacles, mapId: MapId, from: T
   const around = findPath(grid, from, to, (_, next) => canEnter(state, obstacles, mapId, next, true));
   if (around === null) return null;
   const next = around[0];
-  if (next === undefined || (next.tx === player.tx && next.tz === player.tz)) return STAY;
-  return { kind: 'step', to: next };
+  if (next === undefined) return STAY;
+  return next.tx === player.tx && next.tz === player.tz ? WAIT : { kind: 'step', to: next };
 }
 
 /**
@@ -261,7 +268,7 @@ function stepWalker(state: GameState, obstacles: Obstacles, id: WalkerId, place:
   }
   const { move } = moveTowards(state, obstacles, place, goal.mapId, goal.tile);
   if (move.kind === 'cross') return move.to;
-  if (move.kind === 'stay') return place;
+  if (move.kind !== 'step') return place;
   const from = { tx: place.tx, tz: place.tz };
   return { kind: 'out', mapId: place.mapId, tx: move.to.tx, tz: move.to.tz, facing: directionTo(from, move.to) };
 }
@@ -320,6 +327,15 @@ export function walkerAt(state: GameState, mapId: MapId, tx: number, tz: number)
   return null;
 }
 
+/** `id`'s plan this minute, the same as their step's (spec §4.3); null indoors or at their target. */
+function planOf(state: GameState, id: WalkerId): Plan | null {
+  const place = walkerPlace(state, id);
+  if (place.kind === 'indoors') return null;
+  const goal = goalOf(id, targetOf(id, state.time.minuteOfDay, weatherWaters(state.weather)));
+  if (isAt(place, goal.mapId, goal.tile)) return null;
+  return moveTowards(state, obstaclesOf(state), place, goal.mapId, goal.tile);
+}
+
 /**
  * Whether `id` is stuck (spec §4.4): out, not at their target, and with no route to it even
  * ignoring the player, whether still heading for the nearest tile they can reach or standing on
@@ -327,11 +343,33 @@ export function walkerAt(state: GameState, mapId: MapId, tx: number, tz: number)
  * for the player isn't stuck. Worked out when the chat opens; nothing is saved.
  */
 export function isStuck(state: GameState, id: WalkerId): boolean {
-  const place = walkerPlace(state, id);
-  if (place.kind === 'indoors') return false;
-  const goal = goalOf(id, targetOf(id, state.time.minuteOfDay, weatherWaters(state.weather)));
-  if (isAt(place, goal.mapId, goal.tile)) return false;
-  return moveTowards(state, obstaclesOf(state), place, goal.mapId, goal.tile).stuck;
+  return planOf(state, id)?.stuck === true;
+}
+
+/**
+ * Whether `id` waits this minute because of the player (plan R13): their plan's next step, the
+ * same as the walk's, is onto the player's tile. That step was planned round robots, so no robot
+ * stands on the player's tile.
+ */
+export function waitsForPlayer(state: GameState, id: WalkerId): boolean {
+  return planOf(state, id)?.move.kind === 'wait';
+}
+
+/**
+ * `state` with every walker on `to`, next to the player on their map, moved onto the player's
+ * tile facing the way they were heading (plan R13), so the player can step onto `to`; `state`
+ * itself when nobody is there, and null when anyone there isn't waiting for the player.
+ */
+export function swapWithPlayer(state: GameState, to: TileCoord): GameState | null {
+  const { player } = state;
+  let next = state;
+  for (const id of WALKER_IDS) {
+    const place = walkerPlace(state, id);
+    if (place.kind !== 'out' || !isAt(place, player.mapId, to)) continue;
+    if (!waitsForPlayer(state, id)) return null;
+    next = withWalkerPlace(next, id, { ...place, tx: player.tx, tz: player.tz, facing: directionTo(to, player) });
+  }
+  return next;
 }
 
 /**
