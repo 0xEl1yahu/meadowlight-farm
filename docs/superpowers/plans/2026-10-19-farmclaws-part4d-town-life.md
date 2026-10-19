@@ -159,6 +159,7 @@ export const DEALZ_LINES: { readonly soldOut: string; readonly noGold: string; r
 - **R6.** When only the player is in the way, a walker takes the route's first step and waits only when that step is onto the player's tile, so they walk up to the player and wait beside them, rather than freezing wherever they are. (Spec §4.3)
 - **R7.** A stuck walker, with no route to their target even ignoring the player, walks to the reachable tile fewest Manhattan steps from the target (ties to the search's first visit) and stays there, rather than freezing wherever they are. A chest on a stop then leaves the walker beside it, as Review Focus 4 describes. `isStuck` is true on the way and once there. (Spec §4.3, §4.4)
 - **R8.** The main chunk's gzip allowance in `scripts/bundleRules.mjs` rises from baseline + 40 KiB to baseline + 48 KiB, the spec's full +8 KiB for part 4d, because the main chunk had reached 315.7 KiB gzipped (limit 317.1 KiB) by Task 8, past the old 309.1 KiB. The shops chunk, with DEALZ's panel, is 5.1 KiB of its 20 KiB. (Spec §10)
+- **R9.** A walker's glide lasts the robots' lerp time for a one-minute step (`glideSeconds(1, timeScale)`: 0.8 of a game minute, at most 0.45 s), not a robot's own `moveSeconds`, whose 4-minute period would make a walker glide past the next minute's step from 2× speed and trail tiles behind. At 1× they're the same 0.45 s. Walkers also keep swaying while they glide, so a step never jolts the sway. (Spec §4.6)
 
 ---
 

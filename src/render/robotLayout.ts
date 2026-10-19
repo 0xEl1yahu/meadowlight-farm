@@ -50,21 +50,47 @@ export const MAX_MOVE_SECONDS = 0.45;
 export const MOVE_PERIOD_SHARE = 0.8;
 
 export function moveSeconds(robot: Pick<Robot, 'parts'>, timeScale: number): number {
-  return Math.min(MAX_MOVE_SECONDS, (MOVE_PERIOD_SHARE * periodFor(robot) * TIME.realSecondsPerGameMinute) / Math.max(1, timeScale));
+  return glideSeconds(periodFor(robot), timeScale);
+}
+
+/**
+ * How long a tile-to-tile lerp takes for something that steps every `periodMinutes` game minutes:
+ * MOVE_PERIOD_SHARE of that period in real seconds, never over MAX_MOVE_SECONDS. Walkers step
+ * every minute (part 4d spec §4.6).
+ */
+export function glideSeconds(periodMinutes: number, timeScale: number): number {
+  return Math.min(MAX_MOVE_SECONDS, (MOVE_PERIOD_SHARE * periodMinutes * TIME.realSecondsPerGameMinute) / Math.max(1, timeScale));
+}
+
+/** Yaw easing rate toward the facing (1/s). */
+export const YAW_RATE = 12;
+
+/** `yaw` eased `dt` seconds toward `target` the short way round, at YAW_RATE. */
+export function easeYaw(yaw: number, target: number, dt: number): number {
+  return yaw + Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw)) * (1 - Math.exp(-YAW_RATE * dt));
 }
 
 /** Robots sharing a tile spread sideways by ±this, in tiles. */
 export const SHARED_OFFSET = 0.18;
 
-/** Sideways offset per robot on the map; robots sharing a tile spread ±SHARED_OFFSET in id order. */
-export function sharedTileOffsets(robots: readonly Robot[]): ReadonlyMap<number, number> {
-  const groups = new Map<string, number[]>();
+/** What sharedTileOffsets reads: a robot, or a walker (part 4d spec §4.6), which is never carried or away. */
+export interface TileSharer<K> {
+  readonly id: K;
+  readonly tx: number;
+  readonly tz: number;
+  readonly carried?: boolean;
+  readonly power?: RobotPower;
+}
+
+/** Sideways offset per robot (or walker) on the map; those sharing a tile spread ±SHARED_OFFSET in list order. */
+export function sharedTileOffsets<K>(robots: readonly TileSharer<K>[]): ReadonlyMap<K, number> {
+  const groups = new Map<string, K[]>();
   for (const r of robots) {
-    if (r.carried || r.power === 'repairing') continue;
+    if (r.carried === true || r.power === 'repairing') continue;
     const key = `${r.tx},${r.tz}`;
     groups.set(key, [...(groups.get(key) ?? []), r.id]);
   }
-  const offsets = new Map<number, number>();
+  const offsets = new Map<K, number>();
   for (const ids of groups.values()) {
     ids.forEach((id, i) => offsets.set(id, (i - (ids.length - 1) / 2) * SHARED_OFFSET * 2));
   }

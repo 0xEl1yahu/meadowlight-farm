@@ -1,6 +1,7 @@
 /**
- * Nameplates (farmclaws part 4a spec §2.3): a character's name on a small rounded plate, drawn
- * once per character onto a canvas that NpcRenderer shows on a sprite above the head.
+ * Nameplates (farmclaws part 4a spec §2.3, part 4d spec §4.6): a walker's name on a small rounded
+ * plate, drawn once per walker onto a canvas that WalkerRenderer shows on a sprite above the head.
+ * Characters show their names, the townsfolk their plates (part 4d spec §3.1).
  *
  * - Every plate's canvas is NAMEPLATE_CANVAS in size, so every sprite has the same aspect
  *   (NAMEPLATE_ASPECT). The plate inside it is sized to the name (nameplateRect); the rest of
@@ -8,6 +9,10 @@
  * - The name is drawn with fillText, squeezed to fit when it is too long for the plate.
  */
 import * as THREE from 'three';
+import type { WalkerId } from '../core/types';
+import { CAST } from '../people/cast';
+import { TOWNSFOLK_PLATES } from '../people/townsfolk';
+import { isTownsfolk } from '../people/walk';
 
 /** Canvas size of every nameplate (pixels). */
 export const NAMEPLATE_CANVAS = { width: 256, height: 64 } as const;
@@ -23,6 +28,11 @@ const OUTLINE = 4;
 const CORNER = 18;
 const PLATE_FILL = 'rgba(255, 248, 232, 0.92)';
 const INK = '#5a3d2b';
+
+/** The name on a walker's plate: a character's name, or a townsperson's plate. */
+export function walkerName(id: WalkerId): string {
+  return isTownsfolk(id) ? TOWNSFOLK_PLATES[id] : CAST[id].name;
+}
 
 /** A rectangle on the nameplate canvas (pixels). */
 export interface PlateRect {

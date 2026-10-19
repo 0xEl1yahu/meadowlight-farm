@@ -23,7 +23,6 @@ import { CropRenderer } from './render/CropRenderer';
 import { EffectsRenderer } from './render/EffectsRenderer';
 import { LightingManager } from './render/LightingManager';
 import { updateSharedUniforms } from './render/materials';
-import { NpcRenderer } from './render/NpcRenderer';
 import { ObjectRenderer } from './render/ObjectRenderer';
 import { PlayerRenderer } from './render/PlayerRenderer';
 import { RobotRenderer } from './render/RobotRenderer';
@@ -33,6 +32,7 @@ import { classifySync } from './render/syncPolicy';
 import { TerrainRenderer } from './render/TerrainRenderer';
 import { TileHighlighter } from './render/TileHighlighter';
 import type { FrameContext, RenderSystem } from './render/types';
+import { WalkerRenderer } from './render/WalkerRenderer';
 import { WeatherRenderer } from './render/WeatherRenderer';
 import { ZoneRenderer } from './render/ZoneRenderer';
 import { actions, type GameAction } from './state/actions';
@@ -88,7 +88,7 @@ function bootstrap(): () => void {
     new CropRenderer(ctx),
     new ObjectRenderer(ctx),
     new RobotRenderer(ctx, () => player.focus),
-    new NpcRenderer(ctx),
+    new WalkerRenderer(ctx),
     new TileHighlighter(ctx),
     new ZoneRenderer(ctx),
     new WeatherRenderer(ctx),

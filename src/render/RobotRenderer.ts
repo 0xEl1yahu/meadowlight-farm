@@ -44,6 +44,7 @@ import {
   clipFor,
   clipOffsets,
   dizzySpin,
+  easeYaw,
   eyeLevel,
   idleBob,
   moveSeconds,
@@ -63,8 +64,6 @@ import type { FrameContext, RenderSystem } from './types';
 
 const PARTICLE_CAPACITY = 64;
 const CAMERA_YAW = (CAMERA.yawDeg * Math.PI) / 180;
-/** Yaw easing rate toward the facing (1/s). */
-const YAW_RATE = 12;
 
 /** Particle bursts: count, colour, launch speeds (tiles/s), gravity (tiles/s²) and lifetime (s). */
 const DROPLETS = { count: 6, color: 0x7fb8e6 } as const;
@@ -341,8 +340,7 @@ export class RobotRenderer implements RenderSystem {
       v.z = v.fromZ + (v.toZ - v.fromZ) * t;
     }
     const targetYaw = directionYaw(robot.carried ? state.player.facing : robot.facing);
-    const delta = Math.atan2(Math.sin(targetYaw - v.yaw), Math.cos(targetYaw - v.yaw));
-    v.yaw += delta * (1 - Math.exp(-YAW_RATE * dt));
+    v.yaw = easeYaw(v.yaw, targetYaw, dt);
     v.clipT += dt;
     v.badgeT += dt;
     v.spinT += dt;

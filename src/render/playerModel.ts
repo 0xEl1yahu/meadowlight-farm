@@ -15,7 +15,7 @@
  * - The constructor takes an Appearance: skin, hair, shirt and overalls colours come from
  *   APPEARANCE_PALETTES, plus a hair style (HAIR_STYLES) and a hat (HAT_STYLES). Index 0 of
  *   each is the player's original look, so `new PlayerModel()` builds today's farmer: short
- *   hair under the straw hat, in PALETTE.player's colours. NpcRenderer builds the cast with it.
+ *   hair under the straw hat, in PALETTE.player's colours. WalkerRenderer builds the walkers with it.
  *
  * Held items
  * - Hoe, watering can, pickaxe, axe, scythe and zone marker are merged vertex-coloured props. A seed pouch
@@ -259,8 +259,8 @@ function hairParts(hair: number, style: number): Part[] {
   }
 }
 
-/** The hat over the hair; `hat` is a HAT_STYLES value. */
-function hatParts(hat: number): Part[] {
+/** The hat over the hair; `hat` is a HAT_STYLES value. npcProps.ts also lays the busker's straw hat on the ground with it. */
+export function hatParts(hat: number): Part[] {
   switch (hat) {
     case HAT_STYLES.straw:
       // Straw hat: wide brim, crown and a coral ribbon.
@@ -592,7 +592,7 @@ export class PlayerModel {
     );
 
     this.root.name = 'player';
-    // The bones NpcRenderer hangs the cast's props from (npcProps.ts NPC_PROP_BONES).
+    // The bones WalkerRenderer hangs the walkers' props from (npcProps.ts NPC_PROP_BONES).
     this.hips.name = 'hips';
     this.torso.name = 'torso';
     this.head.name = 'head';

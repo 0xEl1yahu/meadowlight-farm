@@ -157,7 +157,7 @@ const CARRY_POSES: Readonly<Record<CarryStyle, Pose>> = {
   robot: createPose({ rArmSwing: 1.25, rArmSpread: 0.22, lArmSwing: 1.25, lArmSpread: 0.22, lean: -0.05 }),
 };
 
-/** The empty-handed rest pose; NpcRenderer stands the cast in it. */
+/** The empty-handed rest pose; WalkerRenderer stands the walkers in it. */
 export const EMPTY_HANDED_POSE: Readonly<Pose> = CARRY_POSES.empty;
 
 /** How much of the walk arm swing the right arm keeps while carrying. */

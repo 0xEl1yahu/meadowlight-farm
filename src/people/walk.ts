@@ -36,7 +36,7 @@ import { homeFront, targetOf, type Target } from './timetable';
 const INDOORS: WalkerPlace = { kind: 'indoors' };
 
 /** Every walker, in the order the walk takes them: the characters, then the townsfolk. */
-const WALKER_IDS: readonly WalkerId[] = [...NPC_IDS, ...TOWNSFOLK_IDS];
+export const WALKER_IDS: readonly WalkerId[] = [...NPC_IDS, ...TOWNSFOLK_IDS];
 
 /** Whether `id` is one of the townsfolk rather than a character. */
 export function isTownsfolk(id: WalkerId): id is TownsfolkId {

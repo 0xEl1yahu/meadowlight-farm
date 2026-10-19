@@ -1,25 +1,42 @@
 /**
- * The cast's props (farmclaws part 4a spec §2.3): one merged, vertex-coloured geometry per
- * NpcProp, hung from one bone of the character's PlayerModel so it sways with the character.
+ * The walkers' props (farmclaws part 4a spec §2.3, part 4d spec §3.1): one merged, vertex-coloured
+ * geometry per prop, hung from one bone of the walker's PlayerModel so it sways with them, and
+ * the ground props drawn beside three of the townsfolk (walkerLayout.WALKER_GROUND_PROPS).
  *
  * - Each prop is authored in the local space of its bone (NPC_PROP_BONES), facing +Z like the
  *   model: the head's origin is the neck pivot, the torso's the waist and the hips' the hip joint
  *   (see PLAYER_RIG and the body segments in playerModel.ts).
  * - A prop worn as a hat replaces the character's own hat: modelAppearance builds the model
  *   with HAT_STYLES.none under it.
- * - A clipboard is held against the chest, so it brings a left-arm pose of its own
- *   (NPC_PROP_POSES); every other prop leaves the arms at rest.
+ * - A held prop (the clipboard, the book, the guitar, the teapot) brings an arm pose of its own
+ *   (NPC_PROP_POSES), and so does the courier pushing the cart; every other prop leaves the arms
+ *   at rest.
+ * - Ground props are authored on the ground (y = 0) at their own origin, facing +Z with the
+ *   walker; WalkerRenderer hangs them from the model's root, the dog's lead running up to the hand.
  */
 import * as THREE from 'three';
-import type { Appearance } from '../core/types';
-import type { CastLook, NpcProp } from '../people/cast';
-import { mergeParts } from './geometryParts';
-import { HAT_STYLES, bakeParts, type Part, type Pose } from './playerModel';
+import type { Appearance, WalkerId } from '../core/types';
+import { CAST_LOOKS, type NpcProp } from '../people/cast';
+import { TOWNSFOLK_LOOKS, type TownsfolkProp } from '../people/townsfolk';
+import { isTownsfolk } from '../people/walk';
+import { at, mergeParts } from './geometryParts';
+import { APPEARANCE_PALETTES } from './palette';
+import { HAT_STYLES, bakeParts, hatParts, type Part, type Pose } from './playerModel';
+import type { GroundProp } from './walkerLayout';
+
+/** Any walker's prop: a character's or a townsperson's. */
+export type WalkerProp = NpcProp | TownsfolkProp;
+
+/** How a walker looks: a fixed appearance and one prop (CAST_LOOKS, TOWNSFOLK_LOOKS). */
+export interface WalkerLook {
+  readonly appearance: Appearance;
+  readonly prop: WalkerProp;
+}
 
 /** The PlayerModel bones a prop hangs from. */
 export type PropBone = 'head' | 'torso' | 'hips';
 
-export const NPC_PROP_BONES: Readonly<Record<NpcProp, PropBone>> = {
+export const NPC_PROP_BONES: Readonly<Record<WalkerProp, PropBone>> = {
   toolApron: 'torso',
   featherHat: 'head',
   clipboard: 'torso',
@@ -27,16 +44,31 @@ export const NPC_PROP_BONES: Readonly<Record<NpcProp, PropBone>> = {
   smithApron: 'torso',
   pencil: 'head',
   neckerchief: 'torso',
+  headband: 'head',
+  dogLead: 'torso',
+  book: 'torso',
+  satchel: 'torso',
+  guitar: 'torso',
+  chocolateTeapot: 'torso',
 };
 
+/** Both hands held in front of the chest. */
+const HOLDING: Readonly<Partial<Pose>> = { lArmSwing: 0.85, lArmSpread: -0.3, rArmSwing: 0.85, rArmSpread: -0.3 };
+
 /** Joints a prop sets on top of the empty-handed rest pose. */
-export const NPC_PROP_POSES: Readonly<Partial<Record<NpcProp, Readonly<Partial<Pose>>>>> = {
+export const NPC_PROP_POSES: Readonly<Partial<Record<WalkerProp, Readonly<Partial<Pose>>>>> = {
   // The left hand holds the clipboard's lower corner against the chest.
   clipboard: { lArmSwing: 0.85, lArmSpread: -0.3 },
+  book: HOLDING,
+  chocolateTeapot: HOLDING,
+  // The left hand on the neck, the right strumming.
+  guitar: { lArmSwing: 0.9, lArmSpread: -0.2, rArmSwing: 0.45, rArmSpread: -0.35 },
+  // Both hands on the cart's handles.
+  satchel: HOLDING,
 };
 
 /** Props worn in place of the character's own hat. */
-const HAT_PROPS: ReadonlySet<NpcProp> = new Set<NpcProp>(['featherHat']);
+const HAT_PROPS: ReadonlySet<WalkerProp> = new Set<WalkerProp>(['featherHat']);
 
 const CANVAS = 0xd9b77e;
 const LEATHER = 0x8a5a3c;
@@ -58,6 +90,13 @@ const PENCIL_WOOD = 0xe8c99a;
 const PENCIL_LEAD = 0x4a4a52;
 const ERASER = 0xf6a6a0;
 const KERCHIEF = 0xe2563f;
+const GUITAR = 0xc8783c;
+const DARK = 0x4a3a32;
+const CHOCOLATE = 0x6b3f26;
+const DOG = 0xe8c99a;
+const WHEEL = 0x5b4a40;
+/** The kid's too-big hoodie is their shirt; its hood is their prop's. */
+const HOOD = at(APPEARANCE_PALETTES.shirt, TOWNSFOLK_LOOKS.kid.appearance.shirtColor);
 
 const placement = new THREE.Matrix4();
 const placementRotation = new THREE.Quaternion();
@@ -184,7 +223,63 @@ function buildNeckerchief(): THREE.BufferGeometry {
   ]);
 }
 
-const PROP_BUILDERS: Readonly<Record<NpcProp, () => THREE.BufferGeometry>> = {
+/** The jogger: a red sweatband round the forehead. */
+function buildHeadband(): THREE.BufferGeometry {
+  return bakeParts([{ geometry: cylinder(0.18, 0.18, 0.04, 10), color: KERCHIEF, position: [0, 0.2, 0], scale: [1, 1, 0.97] }]);
+}
+
+/** The dog walker: the lead's loop in the right hand. The lead itself runs from the dog (buildDog). */
+function buildLeadHandle(): THREE.BufferGeometry {
+  return bakeParts([{ geometry: box(0.03, 0.07, 0.03), color: KERCHIEF, position: [-0.22, -0.01, 0.02] }]);
+}
+
+/** The retiree: an open book held in both hands, tipped up to read. */
+function buildBook(): THREE.BufferGeometry {
+  return bakePlaced(
+    [
+      { geometry: box(0.22, 0.15, 0.014), color: RIBBON },
+      { geometry: box(0.2, 0.135, 0.01), color: PAPER, position: [0, 0, 0.009] },
+    ],
+    [0, 0.12, 0.22],
+    [-0.6, 0, 0],
+  );
+}
+
+/** The courier: a canvas satchel on the left hip, its strap across the chest and back. */
+function buildSatchel(): THREE.BufferGeometry {
+  return bakeParts([
+    { geometry: box(0.03, 0.44, 0.23), color: LEATHER, position: [0, 0.18, 0], rotation: [0, 0, 0.62] },
+    { geometry: box(0.06, 0.15, 0.18), color: CANVAS, position: [0.18, 0, 0] },
+    { geometry: box(0.065, 0.06, 0.185), color: CANVAS, shade: 0.8, position: [0.18, 0.05, 0] },
+  ]);
+}
+
+/** The busker: a guitar across the chest, its neck up to the left. His hat is on the ground (buildGroundHat). */
+function buildGuitar(): THREE.BufferGeometry {
+  return bakePlaced(
+    [
+      { geometry: new THREE.IcosahedronGeometry(0.11, 0), color: GUITAR, scale: [1, 0.95, 0.4] },
+      { geometry: new THREE.IcosahedronGeometry(0.085, 0), color: GUITAR, position: [0, 0.12, 0], scale: [1, 1, 0.4] },
+      { geometry: cylinder(0.035, 0.035, 0.012, 8), color: DARK, position: [0, 0.07, 0.04], rotation: [Math.PI / 2, 0, 0] },
+      { geometry: box(0.04, 0.3, 0.02), color: LEATHER, position: [0, 0.31, 0.01] },
+    ],
+    [-0.03, 0.06, 0.17],
+    [0, 0, -1],
+  );
+}
+
+/** The kid: a chocolate teapot held in both hands, and the too-big hoodie's hood. */
+function buildChocolateTeapot(): THREE.BufferGeometry {
+  return bakeParts([
+    { geometry: new THREE.IcosahedronGeometry(0.07, 1), color: CHOCOLATE, position: [0, 0.1, 0.21], scale: [1, 0.8, 1] },
+    { geometry: cylinder(0.035, 0.045, 0.02, 8), color: CHOCOLATE, shade: 0.85, position: [0, 0.155, 0.21] },
+    { geometry: cylinder(0.01, 0.018, 0.08, 5), color: CHOCOLATE, position: [0.09, 0.12, 0.21], rotation: [0, 0, -0.8] },
+    { geometry: box(0.02, 0.06, 0.025), color: CHOCOLATE, shade: 0.85, position: [-0.075, 0.1, 0.21] },
+    { geometry: new THREE.IcosahedronGeometry(0.1, 0), color: HOOD, position: [0, 0.32, -0.11], scale: [1.3, 0.7, 0.7] },
+  ]);
+}
+
+const PROP_BUILDERS: Readonly<Record<WalkerProp, () => THREE.BufferGeometry>> = {
   toolApron: buildToolApron,
   featherHat: buildFeatherHat,
   clipboard: buildClipboard,
@@ -192,14 +287,77 @@ const PROP_BUILDERS: Readonly<Record<NpcProp, () => THREE.BufferGeometry>> = {
   smithApron: buildSmithApron,
   pencil: buildPencil,
   neckerchief: buildNeckerchief,
+  headband: buildHeadband,
+  dogLead: buildLeadHandle,
+  book: buildBook,
+  satchel: buildSatchel,
+  guitar: buildGuitar,
+  chocolateTeapot: buildChocolateTeapot,
+};
+
+/**
+ * A small dog, a tile behind its walker. Its lead runs 0.96 from the collar (0, 0.21, 0.1) up to
+ * the walker's right hand, (−0.22, 0.37, 1.02) from the dog: the hand at rest, a tile ahead.
+ */
+function buildDog(): THREE.BufferGeometry {
+  const pairs: Part[] = [-1, 1].flatMap((x): Part[] => [
+    { geometry: box(0.035, 0.09, 0.035), color: DOG, shade: 0.9, position: [x * 0.04, 0.045, 0.08] },
+    { geometry: box(0.035, 0.09, 0.035), color: DOG, shade: 0.9, position: [x * 0.04, 0.045, -0.08] },
+    { geometry: box(0.03, 0.06, 0.03), color: LEATHER, position: [x * 0.05, 0.27, 0.12] },
+  ]);
+  return bakeParts([
+    ...pairs,
+    { geometry: box(0.13, 0.11, 0.24), color: DOG, position: [0, 0.14, 0] },
+    { geometry: box(0.11, 0.1, 0.11), color: DOG, position: [0, 0.23, 0.14] },
+    { geometry: box(0.06, 0.045, 0.06), color: DOG, shade: 0.9, position: [0, 0.205, 0.215] },
+    { geometry: box(0.025, 0.025, 0.1), color: DOG, position: [0, 0.2, -0.15], rotation: [0.7, 0, 0] },
+    { geometry: box(0.115, 0.02, 0.02), color: KERCHIEF, position: [0, 0.2, 0.1] },
+    { geometry: box(0.012, 0.012, 0.96), color: KERCHIEF, position: [-0.11, 0.29, 0.56], rotation: [-0.172, -0.231, 0] },
+  ]);
+}
+
+/** The courier's hand cart, a tile ahead with a parcel aboard, its handles back to the courier's hands. */
+function buildCart(): THREE.BufferGeometry {
+  const sides: Part[] = [-1, 1].flatMap((side): Part[] => [
+    { geometry: box(0.36, 0.1, 0.02), color: BOARD, shade: 0.85, position: [0, 0.27, side * 0.2] },
+    { geometry: box(0.02, 0.1, 0.42), color: BOARD, shade: 0.85, position: [side * 0.17, 0.27, 0] },
+    { geometry: cylinder(0.11, 0.11, 0.03, 8), color: WHEEL, position: [side * 0.2, 0.11, 0], rotation: [0, 0, Math.PI / 2] },
+    { geometry: box(0.025, 0.025, 0.6), color: BOARD, position: [side * 0.12, 0.39, -0.49], rotation: [0.3, 0, 0] },
+  ]);
+  return bakeParts([
+    ...sides,
+    { geometry: box(0.36, 0.05, 0.42), color: BOARD, position: [0, 0.2, 0] },
+    { geometry: box(0.16, 0.12, 0.15), color: BURLAP, position: [0.05, 0.28, 0.05] },
+  ]);
+}
+
+/** The busker's straw hat, upside down on the ground at his left for coins. */
+function buildGroundHat(): THREE.BufferGeometry {
+  return bakePlaced(hatParts(HAT_STYLES.straw), [0.4, 0.41, 0.05], [Math.PI, 0, 0]);
+}
+
+const GROUND_BUILDERS: Readonly<Record<GroundProp, () => THREE.BufferGeometry>> = {
+  dog: buildDog,
+  cart: buildCart,
+  hat: buildGroundHat,
 };
 
 /** A fresh geometry for `prop` in its bone's local space; the caller disposes it. */
-export function createNpcPropGeometry(prop: NpcProp): THREE.BufferGeometry {
+export function createNpcPropGeometry(prop: WalkerProp): THREE.BufferGeometry {
   return PROP_BUILDERS[prop]();
 }
 
-/** The appearance a character's model is built with: a prop worn as a hat replaces its own hat. */
-export function modelAppearance(look: CastLook): Appearance {
+/** A fresh geometry for a ground prop, on the ground at its own origin; the caller disposes it. */
+export function createGroundPropGeometry(prop: GroundProp): THREE.BufferGeometry {
+  return GROUND_BUILDERS[prop]();
+}
+
+/** How `id` looks: a character's CAST_LOOKS entry, or a townsperson's TOWNSFOLK_LOOKS one. */
+export function walkerLook(id: WalkerId): WalkerLook {
+  return isTownsfolk(id) ? TOWNSFOLK_LOOKS[id] : CAST_LOOKS[id];
+}
+
+/** The appearance a walker's model is built with: a prop worn as a hat replaces its own hat. */
+export function modelAppearance(look: WalkerLook): Appearance {
   return HAT_PROPS.has(look.prop) ? { ...look.appearance, hat: HAT_STYLES.none } : look.appearance;
 }

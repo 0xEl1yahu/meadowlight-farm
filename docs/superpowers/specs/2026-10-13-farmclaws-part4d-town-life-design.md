@@ -271,8 +271,8 @@ A stuck walker's line is "Someone's put something in my way. I'll wait." For a c
 ### 4.6 Rendering
 
 - One renderer draws every walker with an `out` place on the active map. It replaces 4a's `NpcRenderer`.
-- **Tweening:** when a walker's new tile is next to their old one on the same map, they glide there over the robots' `moveSeconds`. Any other change (a map change, coming out of a door or exit, or a jump of several tiles at high time scales) snaps.
-- They face the way they walk, easing their turns like robots, and keep 4a's idle sway when standing. Walkers sharing a tile use the robots' `sharedTileOffsets`.
+- **Tweening:** when a walker's new tile is next to their old one on the same map, they glide there over the robots' lerp time for a one-minute step (`glideSeconds(1, timeScale)`, the formula behind `moveSeconds`), so a glide always lands before the next step. Any other change (a map change, coming out of a door or exit, or a jump of several tiles at high time scales) snaps.
+- They face the way they walk, easing their turns like robots, and keep 4a's idle sway, standing and walking. Walkers sharing a tile use the robots' `sharedTileOffsets`.
 - The dog walks one tile behind the dog walker and the cart rolls one tile in front of the courier. Both are drawn only: they never block anything and aren't saved.
 - Nameplates work as in 4a, with the townsfolk's plates from §3.1.
 
