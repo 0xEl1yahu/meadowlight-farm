@@ -549,7 +549,7 @@ When jobs 6, 7 and 8 are all done, Wendell's sign changes from **THEY'LL DESTROY
 
 ### 9.1 The farmclaw cast
 
-They only chat. They stand on fixed spots: the shopkeepers by their shops, Sol by the parts exchange, and Cosmo and Barnaby by their fields on the Neighbours map, east of the town. Their lines react to what's on the player's farm; for example, Wendell notices a flat robot left in a field. Lines are picked deterministically by day, like robot lines. None of them is the "correct" view. Each has a real point and a blind spot.
+They keep daily routines (part 4d). The tradies keep shop hours with a morning routine and a lunch break, and the farmers, Cosmo and Barnaby, work beside their fields on the Neighbours map, east of the town, and walk into town for lunch. Otherwise they only chat. Their lines react to what's on the player's farm; for example, Wendell notices a flat robot left in a field. Lines are picked deterministically by day, like robot lines. None of them is the "correct" view. Each has a real point and a blind spot.
 
 | Name | Stance | Real point | Blind spot | Jobs |
 | --- | --- | --- | --- | --- |
@@ -571,6 +571,8 @@ They only chat. They stand on fixed spots: the shopkeepers by their shops, Sol b
 | Ranch | Tallulah | Chickens, cows, wheat (unchanged from v2) |
 | Parts exchange | Sol | Parts, paint, voices, common personality cores. Release 1 opens it with basic parts; the Antenna comes in release 2, and cores, paint, voices and personality cores in release 3. |
 | Robot workshop | Juniper (also still the carpenter) | Ready-made robots, custom robots and limited editions. Plus coop, barn, wood and stone from v2. Release 1 opens it with ready-made robots; custom robots and limited editions come in release 3. |
+
+**Shops open 9:00 am to 12:00 pm and 1:00 pm to 5:00 pm** (part 4d), behind part 4c's gates; jobs ignore the hours. **SLOPMART 24/7**, Barnaby's robot-run booth in the town, is open at any hour and sells mystery boxes: mostly slop, sometimes a gem.
 
 The parts exchange is a town building where the notice board stood. Bram the blacksmith is renamed Berlioz, and Tess at the ranch is renamed Tallulah.
 
@@ -654,7 +656,7 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 | 2 Language | 1 | Block tree format, typed values, the interpreter, step budget, resolution and bickering, and .MD enforcement (DON'T checks, DO orders, precedence) | Any program and .MD run deterministically. Tested without UI. |
 | 3 Robot screen | 1 | The workbench, Blockly-style editor, the five tabs including the .MD card editor, zone tool | The player writes programs and .MDs (development builds only). |
 | 4 First jobs and shops | 1 | Jobs framework, jobs 1 to 3, Sol, Cosmo and Barnaby, the Stats tab. The parts exchange with basic stock (claw, watering head, tiller, seeder, basket, sensor eye); repairs stay at the shipping bin. Juniper's workshop with ready-made robots in all three sizes. The balance pass. Split into 4a (people), 4b (shops and parts) and 4c (jobs), all three built. The neighbours' fields are on a new Neighbours map, east of the town, where their robots work. | The first hour of the new game, shippable |
-| 4d Town life | After 4, before 5 | Anonymous townsfolk with fixed personalities walking short routes; market stalls, benches and planters; bunting and banners; barrels, crates and a cart; posters, stands and small props around the town, including brand posters for Byre at Tallulah's ranch ("Milk from cows, not claws. 100% claw free."), Tokenly ("Keep your claws charged."), Hollis Handpicked ("Picked by people. Slowly."), Claw Fair ("Parade · Contest · Day 14") and Sprocket Cereal ("Part of a balanced robot."). Every brand is made up; FarmClaw, the valley's robot maker, already has its posters at Sol's and Juniper's from 4b. | A town that feels lived in |
+| 4d Town life | After 4, before 5 | The cast's daily routines, six anonymous townsfolk walking short loops, shop opening hours, SLOPMART 24/7, Cosmo's chickens; market stalls, benches and planters; bunting and banners; barrels, crates and a cart; posters, stands and small props around the town, including brand posters for Byre at Tallulah's ranch ("Milk from cows, not claws. 100% claw free."), Tokenly ("Keep your claws charged."), Hollis Handpicked ("Picked by people. Slowly."), Claw Fair ("Parade · Contest · Day 14") and Sprocket Cereal ("Part of a balanced robot."). Every brand is made up; FarmClaw, the valley's robot maker, already has its posters at Sol's and Juniper's from 4b. | A town that feels lived in |
 | 4e Graphics pass | After 4, before 5 | Soft fitted shadows, ambient sky lighting, a water shader, and post-processing: ambient occlusion, night bloom, colour grading and a vignette, better anti-aliasing. A low / medium / high quality setting, with phones defaulting to medium; the heavy parts load lazily. | The same game, better lit |
 | 5 Coordination | 2 | Messages, mailboxes, claims, triggers, schedules, power states, the Antenna. Job 4 (Ziggy) and job 5 (Sol's crew): tester and Test run, supervisor, mechanic, program library. | Multi-robot farms |
 | 6 Character | 3 | Paint, voices, personalities, line bank, fun facts, quirks, the efficient and quick cores, custom robots, limited editions, the Claw Fair | Robots with character |

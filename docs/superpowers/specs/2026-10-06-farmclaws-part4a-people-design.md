@@ -45,7 +45,7 @@ Global rules (unchanged from parts 1–3; see also `CLAUDE.md`):
 | Jobs, the "Job" button, crops and robots on the neighbours' fields, Barnaby's generator, Cosmo's chickens | 4c |
 | Bram's and Tess's shop menus | Not in farmclaws release 1 |
 | Hollis, Wendell and Ziggy | Their jobs' parts (5 and 7) |
-| Timetables, walking characters | Not planned |
+| Timetables, walking characters | Part 4d |
 | Friendship, gifts, heart events | Cut by the design (§10) |
 | Removing the B shortcut to the seed shop | Not planned |
 
@@ -270,7 +270,7 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
   - Barnaby's house: rect (24, 0, 6, 5), door (26, 4).
   - Hedges fill x 0–2, 9–10, 15–23 and 30–39.
 - **The lane:** dirt surface, z 13–15, x 0–39.
-- **Cosmo's field:** a wood-fence ring with corners (3, 5) and (10, 12), leaving a gap at (6, 12) as the gate. Its inside, x 4–9 and z 6–11, is bare dirt. Cosmo stands on the lane at (7, 13).
+- **Cosmo's field:** a wood-fence ring with corners (3, 5) and (10, 12), leaving a gap at (6, 12) as the gate. Part 4d opens a second gap at (5, 5), in front of his door at (5, 4), so he can walk out of his house. Its inside, x 4–9 and z 6–11, is bare dirt. Cosmo stands on the lane at (7, 13).
 - **Barnaby's field:** a wood-fence ring with corners (20, 16) and (29, 25), leaving a gap at (24, 16) as the gate. Its inside, x 21–28 and z 17–24, is bare dirt. Barnaby stands on the lane at (25, 15).
 - **Everything else** is grass, with low scenery only (flowers and small bushes, which don't block) outside the back band.
 - **The fences** are `woodFence` placed objects on the map's tiles.

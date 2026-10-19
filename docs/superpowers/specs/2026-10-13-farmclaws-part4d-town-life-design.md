@@ -492,7 +492,7 @@ These join 4b's poster atlas and hang on walls, as 4b's FarmClaw posters do. Eve
 
 ### 7.4 Changing saved tiles
 
-The props and the run's fences take tiles that saves already hold as open ground. The migration (§9.2) blocks them, and it moves anything a player placed on one of them to the nearest free walkable tile on the same map, with its contents (the same search as `freeSpotNear`).
+The props and the run's fences take tiles that saves already hold as open ground. The migration (§9.2) blocks them, and it moves anything a player placed on one of them to the nearest free walkable tile on the same map, with its contents (the same search as `freeSpotNear`). It does the same for the player and any robot standing on a newly blocked tile, and clears objects from the chicken run's inside and from the two new exits, so a save made standing on a prop tile still loads.
 
 ---
 
@@ -522,7 +522,7 @@ The props and the run's fences take tiles that saves already hold as open ground
 - **Tiles:**
   - the town's prop tiles become blocked;
   - the Neighbours map gains the chicken run's fences and Cosmo's door gap at (5, 5) (the gap's fence is removed);
-  - anything placed on a newly blocked tile moves as §7.4 says.
+  - anything placed on a newly blocked tile moves as §7.4 says, and so do the player and any robot standing on one; objects on the chicken run's inside and on the two new exits are cleared (R11).
 - **Version:** `SAVE_VERSION = 10`. `tests/testUtils.ts` gains a `v9Save` helper that `v8Save` builds on, in the style of the others.
 
 ### 9.3 Validation
@@ -544,8 +544,8 @@ The props and the run's fences take tiles that saves already hold as open ground
 | File | Covers |
 | --- | --- |
 | `tests/findPath.test.ts` | The general search. The robots' route tests pass unchanged. |
-| `tests/timetable.test.ts` | Every stop and loop spot is valid and reachable. The current leg at each boundary, dry and wet. Pace targets cycle. On the empty maps, a simulated dry day gets everyone to every stop before their next leg, both farmers reach the square by 12:00 pm, and all seven are there from 12:25 pm to 12:50 pm. Barnaby reaches each of his three pace spots during his morning field leg. Sol is out at 6:00 am, dry and wet. No farmer stop is on a field tile, a job's robot tile or a generator tile. |
-| `tests/walk.test.ts` | One step a minute. Rerouting round a placed chest and round a robot. Waiting for the player. Stuck behind fences or with a chest on a stop: walking to the nearest reachable tile and staying there, with the stuck line. The east gate both ways. Doors and exits, in and out, including waiting at a blocked one. The morning reset. Sharing tiles. Walking while the player is on another map. No movement while frozen. A generator placed under a walker moves them. 4c's drag-back keeps off the farmers' stops. |
+| `tests/timetable.test.ts` | Every stop and loop spot is valid and reachable. The current leg at each boundary, dry and wet. Pace targets cycle. Sol is out at 6:00 am, dry and wet. No farmer stop is on a field tile, a job's robot tile or a generator tile. `assertTimetables` is shown throwing for each rule. |
+| `tests/walk.test.ts` | One step a minute. Rerouting round a placed chest and round a robot. Waiting for the player. Stuck behind fences or with a chest on a stop: walking to the nearest reachable tile and staying there, with the stuck line. The east gate both ways. Doors and exits, in and out, including waiting at a blocked one. The morning reset. Sharing tiles. Walking while the player is on another map. On the empty maps, a simulated dry day gets everyone to every stop before their next leg, both farmers reach the square by 12:00 pm, and all seven are there from 12:25 pm to 12:50 pm, and Barnaby reaches each of his three pace spots during his morning field leg. No movement while frozen. A generator placed under a walker moves them. 4c's drag-back keeps off the farmers' stops. |
 | `tests/townsfolk.test.ts` | The six loops. Wet days bring out only the jogger and courier. Today's line is stable all day and verbatim, with no buttons. |
 | `tests/shopHours.test.ts` | `shopOpen` at every boundary and `nextOpening`'s three cases. The door, the buttons and B, across gate closed / closed hours / open hours, with the toast and line verbatim. The Job button and job checks at 8:00 pm. |
 | `tests/slopShop.test.ts` | The booth's blocked tiles match the old hedge's. A sale, and each refusal with its line and nothing charged. The same `boxesOpened` gives the same box. Over 10,000 boxes the gem share is within 0.08–0.12, and every gem and slop item appears. The out-of-season pick is never in season. Every line is verbatim and ends " ✓". Result lines don't depend on the tier. Barnaby's line. |

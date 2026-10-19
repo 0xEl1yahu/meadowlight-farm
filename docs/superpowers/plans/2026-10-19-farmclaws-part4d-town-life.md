@@ -161,6 +161,8 @@ export const DEALZ_LINES: { readonly soldOut: string; readonly noGold: string; r
 - **R8.** The main chunk's gzip allowance in `scripts/bundleRules.mjs` rises from baseline + 40 KiB to baseline + 48 KiB, the spec's full +8 KiB for part 4d, because the main chunk had reached 315.7 KiB gzipped (limit 317.1 KiB) by Task 8, past the old 309.1 KiB. The shops chunk, with DEALZ's panel, is 5.1 KiB of its 20 KiB. (Spec §10)
 - **R9.** A walker's glide lasts the robots' lerp time for a one-minute step (`glideSeconds(1, timeScale)`: 0.8 of a game minute, at most 0.45 s), not a robot's own `moveSeconds`, whose 4-minute period would make a walker glide past the next minute's step from 2× speed and trail tiles behind. At 1× they're the same 0.45 s. Walkers also keep swaying while they glide, so a step never jolts the sway. (Spec §4.6)
 - **R10.** The main chunk's gzip allowance rises again, from baseline + 48 KiB to baseline + 53 KiB: 13 KiB for part 4d, past the 8 KiB the spec first allowed. Task 10's posters, door signs, neon, DEALZ, bunting and chickens took the main chunk from 324,684 to 329,335 gzipped bytes (321.6 KiB), 4,644 bytes over the old 324,691 limit; the new limit is 329,811, leaving 476 bytes. They share the one poster atlas (the brand posters, the banner, both sign faces and the neon are cells of it) and the shops' builders (the wall poster, the display Mini, the window spacing). (Spec: global rules, Bundle)
+- **R11.** `migrateV9toV10` also moves the player and any robot off newly blocked tiles, clears objects from the chicken run's inside and from the two new exits, and moves displaced things with `freeSpotNear` on their own map (commit 6e15be2). Without it, a save standing on a prop tile would fail to load. (Spec §7.4, §9.2)
+- **R12.** Outside hours, a keeper's shop button writes the closed line into the talk panel's existing `line` field. The plan's `override` field isn't added (commit b97e23e). (Spec §5.2)
 
 ---
 
@@ -261,7 +263,7 @@ The data for everyone's day, the startup check, and the saved places. (Spec §2,
 
 - [ ] **Step 1: Write `tests/timetable.test.ts`:**
   - `assertTimetables` passes;
-  - `currentLeg` at each boundary for Sol (6:00 am dry and wet), Marigold (6:59, 7:00, 8:29, 8:30, 12:00, 12:50, 5:00, 7:00) and Cosmo (wet: no 11:30 leg);
+  - `currentLeg` at each boundary for Sol (6:00 am dry and wet), Marigold (6:59, 7:00, 8:29, 8:30, 12:00, 12:50, 5:00, 7:00) and Cosmo (wet: no 11:15 leg, R4);
   - pace targets cycle every `everyMinutes`;
   - Sol's first leg departs at 6:00 am on both days;
   - the wet townsfolk are just the jogger and courier;
