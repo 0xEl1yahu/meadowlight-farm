@@ -562,7 +562,8 @@ describe('UI panels', () => {
   });
 
   it('closes the shop and the inventory only when that panel is the one open', () => {
-    const shopping = shop(BASE, true);
+    const shopping = shop(atMinute(BASE, 600), true);
+    expect(shopping.ui.panel).toEqual({ kind: 'shop' });
     const packing = bag(BASE, true);
     const chest = atChest([]);
     expect(shop(shopping, false).ui.panel).toEqual({ kind: 'none' });
@@ -574,11 +575,15 @@ describe('UI panels', () => {
     expect(shop(BASE, false)).toBe(BASE);
     expect(bag(BASE, false)).toBe(BASE);
     // Closing works while paused too.
+    expect(pause(shopping, true).ui.panel).toEqual({ kind: 'shop' });
     expect(shop(pause(shopping, true), false).ui).toEqual({ ...BASE.ui, panel: { kind: 'none' }, paused: true });
   });
 
   it('closePanel closes any panel and is a no-op with none open', () => {
-    for (const state of [shop(BASE, true), bag(BASE, true), atChest([]), pause(bag(BASE, true), true)]) {
+    const shopping = shop(atMinute(BASE, 600), true);
+    expect(shopping.ui.panel).toEqual({ kind: 'shop' });
+    for (const state of [shopping, bag(BASE, true), atChest([]), pause(bag(BASE, true), true)]) {
+      expect(state.ui.panel.kind).not.toBe('none');
       const closed = close(state);
       expect(closed.ui.panel).toEqual({ kind: 'none' });
       expect(closed.ui.paused).toBe(state.ui.paused);

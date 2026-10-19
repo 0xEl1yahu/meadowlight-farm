@@ -50,6 +50,7 @@ import saveV2Text from './fixtures/save-v2.json?raw';
 import {
   BASE,
   Violations,
+  atMinute,
   cropOf,
   holding,
   legacySave,
@@ -81,7 +82,8 @@ function corrupt(state: GameState, path: JsonPath, value: unknown): string {
 
 /** A mid-game state touching every part of the save: crops, debris damage, shipping, messages. */
 function richState(): GameState {
-  let state = withTile(BASE, { tx: 8, tz: 12 }, soilTile(TileState.Watered, matureCrop('strawberry', { harvestCount: 2, regrowing: true })));
+  // 10:00 am, so the seed shop is open for the purchase below (part 4d spec §5.1).
+  let state = withTile(atMinute(BASE, 600), { tx: 8, tz: 12 }, soilTile(TileState.Watered, matureCrop('strawberry', { harvestCount: 2, regrowing: true })));
   state = withTile(state, { tx: 3, tz: 15 }, { state: TileState.Blocked, blocker: Blocker.Rock, blockerHp: 1, crop: null, object: null, fertilizer: null });
   const script: readonly GameAction[] = [
     actions.move(Direction.South),
@@ -121,6 +123,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('restores a mid-game state exactly, except that menus are closed', () => {
     const state = richState();
     expect(state.shipping.pending.length).toBeGreaterThan(0);
+    expect(state.messages.entries.some((m) => m.text.startsWith('Bought'))).toBe(true);
     expect(state.player.lastAction).not.toBeNull();
     expect(state.maps.farm.chunks.some((chunk) => chunk.revision > 0)).toBe(true);
     const restored = deserializeGame(serializeGame(state));
