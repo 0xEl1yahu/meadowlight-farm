@@ -30,6 +30,7 @@ import {
   BASE,
   STAND,
   TARGET,
+  atMinute,
   must,
   scenario,
   soilTile,
@@ -543,15 +544,16 @@ describe('UI panels', () => {
   const pause = (state: GameState, paused: boolean): GameState => gameReducer(state, actions.setPaused(paused));
 
   it('opens the shop and the inventory only when no panel is open and the game is not paused', () => {
-    expect(shop(BASE, true).ui.panel).toEqual({ kind: 'shop' });
+    const day = atMinute(BASE, 600);
+    expect(shop(day, true).ui.panel).toEqual({ kind: 'shop' });
     expect(bag(BASE, true).ui.panel).toEqual({ kind: 'inventory' });
-    const shopping = shop(BASE, true);
+    const shopping = shop(day, true);
     expect(bag(shopping, true)).toBe(shopping);
     expect(shop(shopping, true)).toBe(shopping);
     const packing = bag(BASE, true);
     expect(shop(packing, true)).toBe(packing);
     expect(bag(packing, true)).toBe(packing);
-    const paused = pause(BASE, true);
+    const paused = pause(day, true);
     expect(shop(paused, true)).toBe(paused);
     expect(bag(paused, true)).toBe(paused);
     const chest = atChest([]);
@@ -586,7 +588,7 @@ describe('UI panels', () => {
   });
 
   it('every panel freezes the clock, movement, tools and interaction; hotbar selection still works', () => {
-    const panels: readonly GameState[] = [shop(scenario(EMPTY_TILE), true), bag(scenario(EMPTY_TILE), true), atChest([stack('hoe', 1)])];
+    const panels: readonly GameState[] = [shop(atMinute(scenario(EMPTY_TILE), 600), true), bag(scenario(EMPTY_TILE), true), atChest([stack('hoe', 1)])];
     const frozenActions: readonly GameAction[] = [
       actions.tick(10),
       actions.tick(TIME.maxTickMinutes),

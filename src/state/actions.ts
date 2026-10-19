@@ -17,6 +17,7 @@ import type {
   SeedItemId,
   SlotRef,
 } from '../core/types';
+import type { ShopId } from '../people/shops';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -34,6 +35,7 @@ export type GameAction =
   /** Moves `quantity` units (null = the whole stack) between two slots: player ↔ player or player ↔ open chest. */
   | { readonly type: 'inventory/move'; readonly from: SlotRef; readonly to: SlotRef; readonly quantity: number | null }
   | { readonly type: 'shop/setOpen'; readonly open: boolean }
+  | { readonly type: 'shop/door'; readonly shop: ShopId }
   | { readonly type: 'ui/setInventoryOpen'; readonly open: boolean }
   /** Closes whichever panel is open. */
   | { readonly type: 'ui/closePanel' }
@@ -97,6 +99,7 @@ export const actions = {
     quantity,
   }),
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
+  shopDoor: (shop: ShopId): GameAction => ({ type: 'shop/door', shop }),
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),
   notify: (text: string, tone: MessageTone): GameAction => ({ type: 'ui/notify', text, tone }),

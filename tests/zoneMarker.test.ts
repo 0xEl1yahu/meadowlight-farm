@@ -19,7 +19,7 @@ import { isZoneMarkerSelected } from '../src/state/selectors';
 import { zoneChipText } from '../src/ui/zoneChip';
 import { MAPS } from '../src/world/maps';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
-import { BASE, STAND, TARGET, holding, must, robotOf, scenario, stack, withPlayer, withRobots, withSlots, withTile, withZones } from './testUtils';
+import { BASE, STAND, TARGET, atMinute, holding, must, robotOf, scenario, stack, withPlayer, withRobots, withSlots, withTile, withZones } from './testUtils';
 
 /** The player on STAND facing South (TARGET ahead), the marker in hand from the starter kit's slot. */
 const MARKING = holding(scenario(EMPTY_TILE), 'zoneMarker');
@@ -224,7 +224,7 @@ describe('the draft', () => {
 
   it('drops when any panel opens', () => {
     expect(gameReducer(DRAFT, actions.setInventoryOpen(true)).ui.zoneDraft).toBeNull();
-    expect(gameReducer(DRAFT, actions.setShopOpen(true)).ui.zoneDraft).toBeNull();
+    expect(gameReducer(atMinute(DRAFT, 600), actions.setShopOpen(true)).ui.zoneDraft).toBeNull();
     const peeked = gameReducer(withRobots(DRAFT, [robotOf()]), actions.peek());
     expect(peeked.ui.panel).toEqual({ kind: 'robot', robotId: 1, mode: 'peek' });
     expect(peeked.ui.zoneDraft).toBeNull();

@@ -20,7 +20,7 @@ import { actions } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { workshopView } from '../src/ui/shops/viewModel';
-import { BASE, must, robotOf, withGold, withJobsDone, withPlayer, withRobots, withWalkerAt } from './testUtils';
+import { BASE, atMinute, must, robotOf, withGold, withJobsDone, withPlayer, withRobots, withWalkerAt } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel, paused = false): GameState => ({ ...state, ui: { ...state.ui, panel, paused } });
 const withDeliveries = (state: GameState, deliveries: readonly RobotDelivery[]): GameState => ({
@@ -29,7 +29,7 @@ const withDeliveries = (state: GameState, deliveries: readonly RobotDelivery[]):
 });
 
 /** BASE with every job done, so every size is behind no gate (part 4c spec §4.2). */
-const OPEN: GameState = deepFreeze(withJobsDone(BASE, 'knowTheLimits'));
+const OPEN: GameState = deepFreeze(atMinute(withJobsDone(BASE, 'knowTheLimits'), 600));
 
 /** OPEN with Juniper's workshop open and 20,000g. */
 const WORKSHOP: GameState = deepFreeze(withPanel(withGold(OPEN, 20000), { kind: 'workshop' }));

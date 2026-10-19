@@ -231,6 +231,11 @@ export function withMigratedPlaces(state: GameState): GameState {
   return withPlaces(state, places);
 }
 
+/** `state` at `minuteOfDay`, same day: 600 (10:00 am) is inside the shops' hours (part 4d spec §5.1). */
+export function atMinute(state: GameState, minuteOfDay: number): GameState {
+  return { ...state, time: { ...state.time, minuteOfDay } };
+}
+
 /** Moves the calendar to `absoluteDay` (weather is left as-is). */
 export function atDay(state: GameState, absoluteDay: number, minuteOfDay = 600): GameState {
   return { ...state, time: calendarTime(absoluteDay, minuteOfDay) };

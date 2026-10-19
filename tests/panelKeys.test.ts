@@ -12,11 +12,11 @@ import { IGNORED, INTERACT_KEYS, isInventoryScreenOpen, panelKeyCommand } from '
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
 import { EMPTY_TILE } from '../src/world/tiles';
-import { BASE, scenario } from './testUtils';
+import { BASE, atMinute, scenario } from './testUtils';
 
 const NONE = BASE;
 const INVENTORY_OPEN = deepFreeze(gameReducer(BASE, actions.setInventoryOpen(true)));
-const SHOP_OPEN = deepFreeze(gameReducer(BASE, actions.setShopOpen(true)));
+const SHOP_OPEN = deepFreeze(gameReducer(atMinute(BASE, 600), actions.setShopOpen(true)));
 const PAUSED = deepFreeze(gameReducer(BASE, actions.setPaused(true)));
 const CHEST_OPEN = deepFreeze(
   gameReducer(

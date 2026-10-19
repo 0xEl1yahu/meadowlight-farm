@@ -36,6 +36,7 @@ import {
   STAND,
   TARGET,
   atDay,
+  atMinute,
   count,
   cropOf,
   emptyHanded,
@@ -384,13 +385,13 @@ describe('per-map rules', () => {
   });
 
   it('does nothing, silently, when interacting with a town building', () => {
-    // The general store's door, faced from the square in front of it.
-    const state = emptyHanded(withPlayer(BASE, { tx: 6, tz: 7 }, Direction.North, 'town'));
-    expect(tileAt(state, { tx: 6, tz: 6 }).blocker).toBe(Blocker.Building);
+    // The general store's wall beside its door, faced from the square in front of it.
+    const state = emptyHanded(withPlayer(BASE, { tx: 5, tz: 7 }, Direction.North, 'town'));
+    expect(tileAt(state, { tx: 5, tz: 6 }).blocker).toBe(Blocker.Building);
     expect(planInteraction(state).intent).toEqual({ kind: 'blocked', reason: null });
     expect(interact(state)).toBe(state);
     const hoe = holding(state, 'hoe');
-    expectFailedAttempt(hoe, useTool(hoe), 'hoe', { tx: 6, tz: 6 }, null);
+    expectFailedAttempt(hoe, useTool(hoe), 'hoe', { tx: 5, tz: 6 }, null);
   });
 });
 
@@ -803,7 +804,7 @@ describe('movement', () => {
 
 describe('frozen game (a panel open or paused)', () => {
   const frozenStates: readonly (readonly [string, GameState])[] = [
-    ['shop open', gameReducer(scenario(EMPTY_TILE), actions.setShopOpen(true))],
+    ['shop open', gameReducer(atMinute(scenario(EMPTY_TILE), 600), actions.setShopOpen(true))],
     ['inventory open', gameReducer(scenario(EMPTY_TILE), actions.setInventoryOpen(true))],
     ['chest open', { ...scenario(EMPTY_TILE), ui: { ...BASE.ui, panel: { kind: 'chest', mapId: 'farm', tx: 5, tz: 10 } } }],
     ['paused', gameReducer(scenario(EMPTY_TILE), actions.setPaused(true))],
@@ -831,7 +832,7 @@ describe('frozen game (a panel open or paused)', () => {
   it('cannot open the shop while paused, but can pause while shopping', () => {
     const paused = gameReducer(BASE, actions.setPaused(true));
     expect(gameReducer(paused, actions.setShopOpen(true))).toBe(paused);
-    const shopping = gameReducer(BASE, actions.setShopOpen(true));
+    const shopping = gameReducer(atMinute(BASE, 600), actions.setShopOpen(true));
     const both = gameReducer(shopping, actions.setPaused(true));
     expect(both.ui).toMatchObject({ panel: { kind: 'shop' }, paused: true });
     expect(gameReducer(both, actions.setPaused(true))).toBe(both);
@@ -845,7 +846,7 @@ describe('frozen game (a panel open or paused)', () => {
 // ---------------------------------------------------------------------------
 
 describe('shop/buy', () => {
-  const open = gameReducer(BASE, actions.setShopOpen(true));
+  const open = gameReducer(atMinute(BASE, 600), actions.setShopOpen(true));
 
   it('is ignored while the shop is closed', () => {
     expect(gameReducer(BASE, actions.buy('parsnip_seeds', 1))).toBe(BASE);

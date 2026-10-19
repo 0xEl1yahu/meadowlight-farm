@@ -57,6 +57,7 @@ import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPrice
 import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, passedJob, scrapRefusal, sizeGate, takeJob } from '../jobs/jobs';
 import { CAST, npcActions } from '../people/cast';
 import { lineFor } from '../people/lines';
+import { SHOP_DOORS, closedLine, shopDoorOf, shopOpen, type ShopId } from '../people/shops';
 import { townsfolkLine } from '../people/townsfolk';
 import { isTownsfolk, walkerAt, walkersIndoors } from '../people/walk';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
@@ -139,7 +140,9 @@ function reduceAction(state: GameState, action: GameAction): GameState {
     case 'inventory/move':
       return moveItem(state, action.from, action.to, action.quantity);
     case 'shop/setOpen':
-      return setPanelOpen(state, { kind: 'shop' }, action.open);
+      return action.open ? openSeedShop(state) : setPanelOpen(state, { kind: 'shop' }, false);
+    case 'shop/door':
+      return selectIsFrozen(state) ? state : useShopDoor(state, action.shop);
     case 'ui/setInventoryOpen':
       return setPanelOpen(state, { kind: 'inventory' }, action.open);
     case 'ui/closePanel':
@@ -576,6 +579,9 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       };
     }
 
+    case 'shopDoor':
+      return useShopDoor(state, intent.shop);
+
     case 'zoneCorner':
       return { ...state, ui: { ...state.ui, zoneDraft: { zone: state.ui.zoneLetter, corner: intent.corner } } };
 
@@ -714,6 +720,25 @@ function setPanelOpen(state: GameState, panel: { readonly kind: 'shop' | 'invent
     return { ...state, ui: { ...state.ui, panel } };
   }
   return current.kind === panel.kind ? { ...state, ui: { ...state.ui, panel: { kind: 'none' } } } : state;
+}
+
+/** B (part 4d spec §5.2): the seed shop opens in the general store's hours, otherwise the closed toast. */
+function openSeedShop(state: GameState): GameState {
+  if (state.ui.panel.kind !== 'none' || state.ui.paused) return state;
+  if (!shopOpen(state, 'generalStore')) return pushMessage(state, closedLine(state.time.minuteOfDay), 'info');
+  return setPanelOpen(state, { kind: 'shop' }, true);
+}
+
+/**
+ * `shop/door` (part 4d spec §5.2): a shop's door opens its menu in hours, and gives the closed
+ * toast outside them. Behind a shut 4c gate, and for a shop with no menu in hours, it does nothing.
+ */
+function useShopDoor(state: GameState, shop: ShopId): GameState {
+  const door = shopDoorOf(shop);
+  if (door.gate !== null && !isGateOpen(state, door.gate)) return state;
+  if (!shopOpen(state, shop)) return pushMessage(state, closedLine(state.time.minuteOfDay), 'info');
+  if (door.menu === null) return state;
+  return { ...state, ui: { ...state.ui, panel: { kind: door.menu } } };
 }
 
 /** A slot reference checked against the current state: the container's slots and where they live. */
@@ -1125,6 +1150,14 @@ function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
   const panel = state.ui.panel;
   if (panel.kind !== 'talk' || panel.npc !== npc || state.ui.paused) return state;
   if (!npcActions(state, npc).some((action) => action.kind === act)) return state;
+  // Outside hours a keeper's shop button only changes their line (part 4d spec §5.2).
+  if (act !== 'job') {
+    const shop = SHOP_DOORS.find((door) => door.menu === act);
+    if (shop !== undefined && !shopOpen(state, shop.shop)) {
+      const line = closedLine(state.time.minuteOfDay);
+      return panel.line === line ? state : { ...state, ui: { ...state.ui, panel: { ...panel, line } } };
+    }
+  }
   switch (act) {
     case 'shop':
       return { ...state, ui: { ...state.ui, panel: { kind: 'shop' } } };

@@ -29,9 +29,10 @@ import {
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
-import { isJobRobot } from '../jobs/jobs';
+import { isGateOpen, isJobRobot } from '../jobs/jobs';
 import { CAST } from '../people/cast';
 import { TOWNSFOLK_PLATES } from '../people/townsfolk';
+import { SHOP_DOORS, shopOpen, type ShopId } from '../people/shops';
 import { isTownsfolk, walkerAt } from '../people/walk';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
@@ -85,6 +86,8 @@ export type Intent =
   | { readonly kind: 'workOnRobot'; readonly robotId: number; readonly name: string }
   /** Talk to the walker ahead, character or townsperson: their chat box opens with today's line, for free (part 4a spec §3.1). */
   | { readonly kind: 'talkTo'; readonly npc: WalkerId }
+  /** E on a shop's door from the tile in front: its menu opens in hours, otherwise the closed toast (part 4d spec §5.2). */
+  | { readonly kind: 'shopDoor'; readonly shop: ShopId; readonly closed: boolean }
   /** The zone marker's first press: the draft's corner (part 3 spec §8). */
   | { readonly kind: 'zoneCorner'; readonly corner: TileCoord }
   /** The zone marker's second press: the rectangle from the draft's corner becomes the zone. */
@@ -462,6 +465,22 @@ function planTalk(state: GameState): ActionPlan | null {
 }
 
 /**
+ * E on a shop's door, from the tile in front of it (part 4d spec §5.2): planned once the 4c gate
+ * is open, when the shop is closed (hint "Closed") or has a menu to open (hint "Shop"). Berlioz's
+ * and Tallulah's doors have no menu, so they're planned only while closed.
+ */
+function planShopDoor(state: GameState): ActionPlan | null {
+  if (state.player.mapId !== 'town') return null;
+  const target = selectTargetTile(state);
+  if (target === null) return null;
+  const door = SHOP_DOORS.find((d) => d.door.tx === target.tx && d.door.tz === target.tz);
+  if (door === undefined || (door.gate !== null && !isGateOpen(state, door.gate))) return null;
+  const closed = !shopOpen(state, door.shop);
+  if (!closed && door.menu === null) return null;
+  return plan(target, { kind: 'shopDoor', shop: door.shop, closed }, 'none');
+}
+
+/**
  * While carrying: a character ahead is talked to first (part 4a spec §3.1); otherwise the empty
  * workbench takes the robot, the shipping bin sends a broken robot for repair, open ground puts it down.
  */
@@ -532,6 +551,8 @@ export function planInteraction(state: GameState): ActionPlan {
   // A character comes before anything else on their tile (part 4a spec §3.1).
   const talk = planTalk(state);
   if (talk !== null) return talk;
+  const door = planShopDoor(state);
+  if (door !== null) return door;
   const target = selectTargetTile(state);
   if (target === null) return blocked(null, 'none');
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
@@ -682,6 +703,8 @@ export function describeIntent(intent: Intent): string | null {
       return `Work on ${intent.name}`;
     case 'talkTo':
       return `Talk to ${isTownsfolk(intent.npc) ? TOWNSFOLK_PLATES[intent.npc] : CAST[intent.npc].name}`;
+    case 'shopDoor':
+      return intent.closed ? 'Closed' : 'Shop';
     case 'zoneCorner':
       return 'Mark corner';
     case 'markZone':

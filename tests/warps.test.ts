@@ -15,7 +15,7 @@ import { gameReducer } from '../src/state/reducer';
 import { inBounds, stepTile } from '../src/world/grid';
 import { MAPS, findWarp, type Warp } from '../src/world/maps';
 import { EMPTY_TILE, blockedTile, isWalkable } from '../src/world/tiles';
-import { BASE, atDay, must, tileAt, withPlayer, withTile } from './testUtils';
+import { BASE, atDay, atMinute, must, tileAt, withPlayer, withTile } from './testUtils';
 
 function run(state: GameState, ...sequence: readonly GameAction[]): GameState {
   return sequence.reduce(gameReducer, state);
@@ -204,7 +204,7 @@ describe('arriving', () => {
   it('is frozen with the rest of the player while paused or shopping', () => {
     const { mapId, warp } = must(WARPS[0]);
     const state = onWarpTile(mapId, warp);
-    for (const frozen of [run(state, actions.setPaused(true)), run(state, actions.setShopOpen(true))]) {
+    for (const frozen of [run(state, actions.setPaused(true)), run(atMinute(state, 600), actions.setShopOpen(true))]) {
       expect(move(frozen, warp.exit)).toBe(frozen);
     }
   });

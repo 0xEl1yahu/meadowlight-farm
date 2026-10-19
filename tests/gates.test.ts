@@ -13,7 +13,7 @@ import { actions } from '../src/state/actions';
 import { deserializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { workshopView } from '../src/ui/shops/viewModel';
-import { BASE, must, robotOf, v8Save, withGold, withJobsDone, withMigratedJobs, withPlayer, withRobots, withWalkerAt } from './testUtils';
+import { BASE, atMinute, must, robotOf, v8Save, withGold, withJobsDone, withMigratedJobs, withPlayer, withRobots, withWalkerAt } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel): GameState => ({ ...state, ui: { ...state.ui, panel } });
 
@@ -79,7 +79,7 @@ describe('the buttons', () => {
   });
 
   it("opens Juniper's workshop from a real chat once job 1 is done", () => {
-    const atCounter = withWalkerAt(JOB1, 'juniper', 'town', 24, 7, Direction.South);
+    const atCounter = withWalkerAt(atMinute(JOB1, 600), 'juniper', 'town', 24, 7, Direction.South);
     const talking = gameReducer(withPlayer(atCounter, { tx: 24, tz: 8 }, Direction.North, 'town'), actions.interact());
     expect(gameReducer(talking, actions.npcAct('juniper', 'workshop')).ui.panel).toEqual({ kind: 'workshop' });
   });

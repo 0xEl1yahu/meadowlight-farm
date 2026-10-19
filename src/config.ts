@@ -492,6 +492,15 @@ export const SHOP_STOCK = {
   seedsPerDay: 30,
 } as const;
 
+/**
+ * When the town's shops are open, as minutes of the day (farmclaws part 4d spec §5.1): one table
+ * for every shop, closed over lunch and from 5:00 pm until 9:00 am.
+ */
+export const SHOP_HOURS: readonly { readonly opens: number; readonly closes: number }[] = [
+  { opens: 9 * 60, closes: 12 * 60 },
+  { opens: 13 * 60, closes: 17 * 60 },
+];
+
 /** Robot part prices (farmclaws design §3.7) and the share of a price Sol pays to buy one back (part 4b spec §3.2). */
 export const PARTS = {
   prices: {

@@ -15,12 +15,12 @@ import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
 import { gameReducer } from '../src/state/reducer';
 import { partsShopView } from '../src/ui/shops/viewModel';
-import { BASE, stack, withGold, withJobsDone, withPlayer, withSlots, withWalkerAt } from './testUtils';
+import { BASE, atMinute, stack, withGold, withJobsDone, withPlayer, withSlots, withWalkerAt } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel, paused = false): GameState => ({ ...state, ui: { ...state.ui, panel, paused } });
 
 /** BASE with every job done, so Sol's shop is behind no gate (part 4c spec §4.2). */
-const OPEN: GameState = deepFreeze(withJobsDone(BASE, 'knowTheLimits'));
+const OPEN: GameState = deepFreeze(atMinute(withJobsDone(BASE, 'knowTheLimits'), 600));
 
 /** OPEN with Sol's shop open, 2,000g and an empty backpack. */
 const SHOP: GameState = deepFreeze(withPanel(withGold(withSlots(OPEN, []), 2000), { kind: 'partsShop' }));

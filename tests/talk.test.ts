@@ -18,7 +18,7 @@ import { describeIntent, planInteraction, planPrimaryAction, planShiftInteractio
 import { gameReducer, startNextDay } from '../src/state/reducer';
 import { selectIsFrozen } from '../src/state/selectors';
 import { EMPTY_TILE } from '../src/world/tiles';
-import { BASE, atDay, emptyHanded, holding, robotOf, withEnergy, withPlaces, withPlayer, withRobots, withTile, withWalkerAt } from './testUtils';
+import { BASE, atDay, atMinute, emptyHanded, holding, robotOf, withEnergy, withPlaces, withPlayer, withRobots, withTile, withWalkerAt } from './testUtils';
 
 const interact = (state: GameState): GameState => gameReducer(state, actions.interact());
 const peek = (state: GameState): GameState => gameReducer(state, actions.peek());
@@ -253,7 +253,7 @@ describe('the talk panel keys (spec §3.2)', () => {
 describe("the chat box's actions (talk/act)", () => {
   /** BASE with the talk panel open on `npc`, paused or not. */
   const talkingTo = (npc: NpcId, paused = false): GameState => ({
-    ...BASE,
+    ...atMinute(BASE, 600),
     ui: { ...BASE.ui, panel: { kind: 'talk', npc, line: 'Lovely weather.', card: 'line' }, paused },
   });
   const shopFor = (state: GameState, npc: NpcId): GameState => gameReducer(state, actions.npcAct(npc, 'shop'));
@@ -270,7 +270,7 @@ describe("the chat box's actions (talk/act)", () => {
   });
 
   it('opens the shop from a real chat with Marigold, and the shop closes as usual', () => {
-    const before = withPlayer(MARIGOLD_OUT, { tx: MARIGOLD.tx, tz: MARIGOLD.tz + 1 }, Direction.North, 'town');
+    const before = withPlayer(atMinute(MARIGOLD_OUT, 600), { tx: MARIGOLD.tx, tz: MARIGOLD.tz + 1 }, Direction.North, 'town');
     const talking = gameReducer(before, actions.interact());
     expect(talking.ui.panel.kind).toBe('talk');
     const shopping = shopFor(talking, 'marigold');
