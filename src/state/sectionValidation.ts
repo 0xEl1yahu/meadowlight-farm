@@ -1,10 +1,10 @@
 /**
  * Save validation for the GameState sections later workstreams fill in (profile, tools,
- * crafting, cooking, buildings, NPCs, townsfolk, quests, stats, festival, shop stock, jobs).
+ * crafting, cooking, buildings, NPCs, townsfolk, quests, stats, festival, shop stock, SLOPMART, jobs).
  * Phase 0 only stores them, so these checks pin down exactly the shapes and ranges the section
  * types document.
  */
-import { APPEARANCE, JOBS, LAYOUT, PROFILE, SHOP_STOCK } from '../config';
+import { APPEARANCE, JOBS, LAYOUT, PROFILE, SHOP_STOCK, SLOP } from '../config';
 import {
   ANIMAL_KINDS,
   BASIC_PART_IDS,
@@ -227,15 +227,24 @@ function isValidSoldCounts(v: unknown, ids: readonly string[], stock: number): b
   return isObj(v) && hasExactKeys(v, ids) && ids.every((id) => isIntIn(v[id], 0, stock));
 }
 
-/** What each shop sold today (farmclaws part 4b spec §9): Sol's parts, Juniper's robots and Marigold's seeds. */
+/**
+ * What each shop sold today (farmclaws part 4b spec §9): Sol's parts, Juniper's robots and
+ * Marigold's seeds, and SLOPMART's boxes, no more than SLOP.boxesPerDay (part 4d spec §9.3).
+ */
 function isValidShopsSoldToday(v: unknown): boolean {
   return (
     isObj(v) &&
-    hasExactKeys(v, ['parts', 'robots', 'seeds']) &&
+    hasExactKeys(v, ['parts', 'robots', 'seeds', 'slopBoxes']) &&
     isValidSoldCounts(v.parts, BASIC_PART_IDS, SHOP_STOCK.partsPerDay) &&
     isValidSoldCounts(v.robots, ROBOT_SIZES, SHOP_STOCK.robotsPerSizePerDay) &&
-    isValidSoldCounts(v.seeds, SEED_ITEM_IDS, SHOP_STOCK.seedsPerDay)
+    isValidSoldCounts(v.seeds, SEED_ITEM_IDS, SHOP_STOCK.seedsPerDay) &&
+    isIntIn(v.slopBoxes, 0, SLOP.boxesPerDay)
   );
+}
+
+/** SLOPMART (part 4d spec §9.3): exactly a lifetime count of boxes. */
+function isValidSlopShop(v: unknown): boolean {
+  return isObj(v) && hasExactKeys(v, ['boxesOpened']) && isCount(v.boxesOpened);
 }
 
 /**
@@ -280,6 +289,7 @@ export function isValidSections(v: Obj, maps: GameState['maps']): v is Obj & Gam
     isValidStats(v.stats) &&
     isValidFestival(v.festival) &&
     isValidShopsSoldToday(v.shopsSoldToday) &&
+    isValidSlopShop(v.slopShop) &&
     isValidJobs(v.jobs)
   );
 }

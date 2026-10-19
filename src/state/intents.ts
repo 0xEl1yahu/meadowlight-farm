@@ -88,6 +88,8 @@ export type Intent =
   | { readonly kind: 'talkTo'; readonly npc: WalkerId }
   /** E on a shop's door from the tile in front: its menu opens in hours, otherwise the closed toast (part 4d spec §5.2). */
   | { readonly kind: 'shopDoor'; readonly shop: ShopId; readonly closed: boolean }
+  /** E on SLOPMART's booth door from the tile in front: DEALZ's chat opens, at any hour (part 4d spec §6.2). */
+  | { readonly kind: 'slopShop' }
   /** The zone marker's first press: the draft's corner (part 3 spec §8). */
   | { readonly kind: 'zoneCorner'; readonly corner: TileCoord }
   /** The zone marker's second press: the rectangle from the draft's corner becomes the zone. */
@@ -481,6 +483,19 @@ function planShopDoor(state: GameState): ActionPlan | null {
 }
 
 /**
+ * E on SLOPMART's booth door, from the tile in front of it (part 4d spec §6.2): DEALZ is there at
+ * every hour, with no gate.
+ */
+function planSlopShop(state: GameState): ActionPlan | null {
+  if (state.player.mapId !== 'town') return null;
+  const target = selectTargetTile(state);
+  if (target === null) return null;
+  const door = selectActiveMap(state).structures.find((s) => s.kind === 'slopShop')?.door ?? null;
+  if (door === null || door.tx !== target.tx || door.tz !== target.tz) return null;
+  return plan(target, { kind: 'slopShop' }, 'none');
+}
+
+/**
  * While carrying: a character ahead is talked to first (part 4a spec §3.1); otherwise the empty
  * workbench takes the robot, the shipping bin sends a broken robot for repair, open ground puts it down.
  */
@@ -551,7 +566,7 @@ export function planInteraction(state: GameState): ActionPlan {
   // A character comes before anything else on their tile (part 4a spec §3.1).
   const talk = planTalk(state);
   if (talk !== null) return talk;
-  const door = planShopDoor(state);
+  const door = planShopDoor(state) ?? planSlopShop(state);
   if (door !== null) return door;
   const target = selectTargetTile(state);
   if (target === null) return blocked(null, 'none');
@@ -619,9 +634,11 @@ export function planPrimaryAction(state: GameState): ActionPlan {
       return planPlace(state, item, target);
     case 'fertilizer':
       return planFertilize(state, item, target);
+    // Slop is never placed, planted or used (part 4d spec §6.3): like produce, it leaves E's meaning to the tile.
     case 'produce':
     case 'material':
     case 'part':
+    case 'slop':
       return planInteraction(state);
   }
 }
@@ -705,6 +722,8 @@ export function describeIntent(intent: Intent): string | null {
       return `Talk to ${isTownsfolk(intent.npc) ? TOWNSFOLK_PLATES[intent.npc] : CAST[intent.npc].name}`;
     case 'shopDoor':
       return intent.closed ? 'Closed' : 'Shop';
+    case 'slopShop':
+      return 'Talk to DEALZ';
     case 'zoneCorner':
       return 'Mark corner';
     case 'markZone':

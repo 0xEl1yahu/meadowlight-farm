@@ -12,7 +12,7 @@
  */
 import { Weather, type MessageTone, type ToolType } from '../core/types';
 import { CROPS, type CropVisual } from '../farming/crops';
-import type { FertilizerItem, ItemDefinition, MaterialItem, PartItem, PlaceableItem, SeedItem } from '../items/items';
+import type { FertilizerItem, ItemDefinition, MaterialItem, PartItem, PlaceableItem, SeedItem, SlopItem } from '../items/items';
 import { PALETTE } from '../render/palette';
 import { PART_PATHS } from './partShapes';
 
@@ -654,6 +654,20 @@ function partParts(item: PartItem): SVGElement[] {
   ];
 }
 
+/**
+ * A slop item (farmclaws part 4d spec §6.3): a plain faceted lump in the item's colour, the
+ * existing icon convention; the name says what it is.
+ */
+function slopParts(item: SlopItem): SVGElement[] {
+  const color = item.color;
+  return [
+    faceted('16,3 28,10 28,22 16,29 4,22 4,10', hex(color), [
+      facet('16,3 28,10 16,16 4,10', light(color, 0.35)),
+      facet('28,10 28,22 16,29 16,16', dark(color, 0.18)),
+    ]),
+  ];
+}
+
 /** Icon for any registry item: tools, tinted seed packets, faceted produce and materials. */
 export function createItemIcon(item: ItemDefinition, className: string = ICON_CLASS): SVGSVGElement {
   switch (item.kind) {
@@ -671,6 +685,8 @@ export function createItemIcon(item: ItemDefinition, className: string = ICON_CL
       return svgRoot(fertilizerParts(item), className);
     case 'part':
       return svgRoot(partParts(item), className);
+    case 'slop':
+      return svgRoot(slopParts(item), className);
   }
 }
 

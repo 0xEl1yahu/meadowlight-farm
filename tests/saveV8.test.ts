@@ -25,6 +25,7 @@ function withSold(state: GameState, sold: { readonly [K in keyof ShopsSoldToday]
       parts: { ...now.parts, ...sold.parts },
       robots: { ...now.robots, ...sold.robots },
       seeds: { ...now.seeds, ...sold.seeds },
+      slopBoxes: now.slopBoxes,
     },
   };
 }

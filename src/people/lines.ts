@@ -19,7 +19,7 @@ import { isStuck } from './walk';
 /** What a stuck walker says (farmclaws part 4d spec §4.4), character or townsperson. */
 export const STUCK_LINE = "Someone's put something in my way. I'll wait.";
 
-/** The farm conditions a reactive line answers (spec §3.5's table). */
+/** The farm conditions a reactive line answers (spec §3.5's table, and a box bought at SLOPMART today, part 4d spec §6.5). */
 export const REACTIVE_KINDS = [
   'robotRuined',
   'robotBroken',
@@ -30,6 +30,7 @@ export const REACTIVE_KINDS = [
   'copperOre',
   'robotOnBench',
   'raining',
+  'boughtSlopBox',
 ] as const;
 export type ReactiveKind = (typeof REACTIVE_KINDS)[number];
 
@@ -83,6 +84,8 @@ export const LINE_BANKS: Readonly<Record<NpcId, LineBank>> = {
   barnaby: {
     introduction: "Barnaby. Four robots, one field, zero effort. That's the future, and I'm already living in it.",
     reactive: [
+      // SLOPMART is Barnaby's venture (part 4d spec §6.5).
+      { when: 'boughtSlopBox', text: "Bought a box at SLOPMART? Open all hours, no wages, no complaints. Well, none I've read." },
       { when: 'noRobots', text: "No robots yet? You're leaving money in the field, friend." },
       { when: 'manyRobots', text: "Four robots or more? Now you're thinking like me. Scale fixes everything." },
     ],
@@ -183,6 +186,8 @@ export function reactiveFill(state: GameState, when: ReactiveKind): LineFill | n
       return nameOf(robotOnBench(state));
     case 'raining':
       return weatherWaters(state.weather) ? HOLDS : null;
+    case 'boughtSlopBox':
+      return state.shopsSoldToday.slopBoxes > 0 ? HOLDS : null;
   }
 }
 

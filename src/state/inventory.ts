@@ -57,6 +57,12 @@ export function capacityFor(inventory: InventoryState, itemId: ItemId, quality: 
   return room;
 }
 
+/** Whether an unlocked slot is completely empty, whatever the stacks in the others could take. */
+export function hasEmptySlot(inventory: InventoryState): boolean {
+  for (let i = 0; i < inventory.unlockedSlots; i++) if ((inventory.slots[i] ?? null) === null) return true;
+  return false;
+}
+
 /**
  * Adds up to `quantity` units of `itemId` at `quality`, exactly as many as `capacityFor`
  * allows. Tops up matching stacks in slot order, then fills empty unlocked slots in slot

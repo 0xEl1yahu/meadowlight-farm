@@ -7,7 +7,7 @@
  * hash in core/hash.ts, so an action log replayed from the same initial state reproduces the
  * exact same game.
  */
-import { INVENTORY, PARTS, PLAYER, ROBOT_CARE, ROBOT_PAINTS, ROBOTS, TIME, TOOLS } from '../config';
+import { INVENTORY, PARTS, PLAYER, ROBOT_CARE, ROBOT_PAINTS, ROBOTS, SLOP, TIME, TOOLS } from '../config';
 import { invariant } from '../core/invariant';
 import { joinWithAnd, qualityPrefix, withArticle } from '../core/text';
 import {
@@ -58,6 +58,7 @@ import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, p
 import { CAST, npcActions } from '../people/cast';
 import { lineFor } from '../people/lines';
 import { SHOP_DOORS, closedLine, shopDoorOf, shopOpen, type ShopId } from '../people/shops';
+import { boxAt, boxToast, dealzGreeting, dealzRefusal, dealzResult } from '../people/slop';
 import { townsfolkLine } from '../people/townsfolk';
 import { isTownsfolk, walkerAt, walkersIndoors } from '../people/walk';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
@@ -143,6 +144,10 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return action.open ? openSeedShop(state) : setPanelOpen(state, { kind: 'shop' }, false);
     case 'shop/door':
       return selectIsFrozen(state) ? state : useShopDoor(state, action.shop);
+    case 'slop/open':
+      return selectIsFrozen(state) ? state : openSlopShop(state);
+    case 'slop/buy':
+      return buySlopBox(state);
     case 'ui/setInventoryOpen':
       return setPanelOpen(state, { kind: 'inventory' }, action.open);
     case 'ui/closePanel':
@@ -261,12 +266,16 @@ function zeroed<K extends string>(counts: Readonly<Record<K, number>>): Readonly
   return Object.fromEntries(ids.map((id) => [id, 0])) as Record<K, number>;
 }
 
-/** Every shop restocks in the morning (part 4b spec §6); a shop that sold nothing keeps its counts. */
+/**
+ * Every shop restocks in the morning (part 4b spec §6), SLOPMART too (part 4d spec §9.4); a shop
+ * that sold nothing keeps its counts.
+ */
 function restocked(sold: ShopsSoldToday): ShopsSoldToday {
   const parts = zeroed(sold.parts);
   const robots = zeroed(sold.robots);
   const seeds = zeroed(sold.seeds);
-  return parts === sold.parts && robots === sold.robots && seeds === sold.seeds ? sold : { parts, robots, seeds };
+  const unchanged = parts === sold.parts && robots === sold.robots && seeds === sold.seeds && sold.slopBoxes === 0;
+  return unchanged ? sold : { parts, robots, seeds, slopBoxes: 0 };
 }
 
 /**
@@ -582,6 +591,9 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
     case 'shopDoor':
       return useShopDoor(state, intent.shop);
 
+    case 'slopShop':
+      return openSlopShop(state);
+
     case 'zoneCorner':
       return { ...state, ui: { ...state.ui, zoneDraft: { zone: state.ui.zoneLetter, corner: intent.corner } } };
 
@@ -739,6 +751,37 @@ function useShopDoor(state: GameState, shop: ShopId): GameState {
   if (!shopOpen(state, shop)) return pushMessage(state, closedLine(state.time.minuteOfDay), 'info');
   if (door.menu === null) return state;
   return { ...state, ui: { ...state.ui, panel: { kind: door.menu } } };
+}
+
+/** `slop/open` (part 4d spec §6.2): DEALZ's chat opens with the greeting, at any hour. */
+function openSlopShop(state: GameState): GameState {
+  return { ...state, ui: { ...state.ui, panel: { kind: 'slopShop', line: dealzGreeting(state) } } };
+}
+
+/**
+ * `slop/buy` (part 4d spec §6.2), with DEALZ's chat open: a refusal only changes DEALZ's line and
+ * charges nothing. A sale takes the price, adds the box to the inventory, counts it for life and
+ * for today, changes the line to a result and toasts what was in the box; the chat stays open.
+ */
+function buySlopBox(state: GameState): GameState {
+  const panel = state.ui.panel;
+  if (panel.kind !== 'slopShop' || state.ui.paused) return state;
+  const refusal = dealzRefusal(state);
+  if (refusal !== null) return panel.line === refusal ? state : { ...state, ui: { ...state.ui, panel: { ...panel, line: refusal } } };
+  const opened = state.slopShop.boxesOpened;
+  const contents = boxAt(state.seed, opened, state.time.season);
+  const { inventory, added } = addItem(state.inventory, contents.itemId, contents.quantity);
+  invariant(added === contents.quantity, 'a mystery box fits in an empty slot');
+  const sold = state.shopsSoldToday;
+  const next: GameState = {
+    ...state,
+    inventory,
+    player: { ...state.player, gold: state.player.gold - SLOP.boxPrice },
+    slopShop: { boxesOpened: opened + 1 },
+    shopsSoldToday: { ...sold, slopBoxes: sold.slopBoxes + 1 },
+    ui: { ...state.ui, panel: { kind: 'slopShop', line: dealzResult(state.seed, opened, contents) } },
+  };
+  return pushMessage(next, boxToast(contents), 'success');
 }
 
 /** A slot reference checked against the current state: the container's slots and where they live. */

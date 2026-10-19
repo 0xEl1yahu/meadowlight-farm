@@ -190,7 +190,9 @@ describe('createDefaultSections', () => {
       parts: { claw: 0, wateringHead: 0, tiller: 0, seeder: 0, basket: 0, sensorEye: 0 },
       robots: { mini: 0, standard: 0, big: 0 },
       seeds: Object.fromEntries(CROP_IDS.map((id) => [`${id}_seeds`, 0])) as Record<SeedItemId, number>,
+      slopBoxes: 0,
     },
+    slopShop: { boxesOpened: 0 },
     jobs: { status: { spinningRobot: 'offered', showHim: 'locked', knowTheLimits: 'locked' }, bed: null, rescued: false, fieldDay: -1 },
   };
 

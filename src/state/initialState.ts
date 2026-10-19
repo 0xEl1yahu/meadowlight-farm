@@ -78,7 +78,13 @@ export function createDefaultSections(): GameSections {
       unlocks: UNLOCKS.job1,
       deliveries: [],
     },
-    shopsSoldToday: { parts: zeroCounts(BASIC_PART_IDS), robots: zeroCounts(ROBOT_SIZES), seeds: zeroCounts(CROP_IDS.map(seedItemId)) },
+    shopsSoldToday: {
+      parts: zeroCounts(BASIC_PART_IDS),
+      robots: zeroCounts(ROBOT_SIZES),
+      seeds: zeroCounts(CROP_IDS.map(seedItemId)),
+      slopBoxes: 0,
+    },
+    slopShop: { boxesOpened: 0 },
     // Job 1 is offered from the start; each later job is offered when the one before it is done (part 4c spec §2.1).
     jobs: {
       status: { spinningRobot: 'offered', showHim: 'locked', knowTheLimits: 'locked' },

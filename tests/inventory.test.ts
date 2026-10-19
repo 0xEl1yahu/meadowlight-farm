@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { INVENTORY, TOOLS } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import { InvariantError } from '../src/core/invariant';
-import { CROP_IDS, FERTILIZER_ITEM_IDS, MATERIAL_IDS, PLACEABLE_ITEM_IDS, ROBOT_PART_IDS, TOOL_TYPES, type InventoryState, type ItemStack } from '../src/core/types';
+import { CROP_IDS, FERTILIZER_ITEM_IDS, MATERIAL_IDS, PLACEABLE_ITEM_IDS, ROBOT_PART_IDS, SLOP_IDS, TOOL_TYPES, type InventoryState, type ItemStack } from '../src/core/types';
 import { CROPS } from '../src/farming/crops';
 import { ITEMS, getItem, isItemId, isSeedItemId } from '../src/items/items';
 import {
@@ -48,10 +48,17 @@ function head(inv: InventoryState, usable = 4): readonly (ItemStack | null)[] {
 }
 
 describe('item registry', () => {
-  it('registers every tool, seed, produce, material, placeable, fertiliser and part exactly once', () => {
+  it('registers every tool, seed, produce, material, placeable, fertiliser, part and slop item exactly once', () => {
     expect(ITEMS.size).toBe(
-      TOOL_TYPES.length + 2 * CROP_IDS.length + MATERIAL_IDS.length + PLACEABLE_ITEM_IDS.length + FERTILIZER_ITEM_IDS.length + ROBOT_PART_IDS.length,
+      TOOL_TYPES.length +
+        2 * CROP_IDS.length +
+        MATERIAL_IDS.length +
+        PLACEABLE_ITEM_IDS.length +
+        FERTILIZER_ITEM_IDS.length +
+        ROBOT_PART_IDS.length +
+        SLOP_IDS.length,
     );
+    expect(SLOP_IDS).toHaveLength(12);
     for (const tool of TOOL_TYPES) {
       const item = getItem(tool);
       expect(item.kind).toBe('tool');
@@ -73,6 +80,7 @@ describe('item registry', () => {
       expect(produce.maxStack).toBe(MAX);
     }
     for (const material of MATERIAL_IDS) expect(getItem(material).kind).toBe('material');
+    for (const slop of SLOP_IDS) expect(getItem(slop).kind).toBe('slop');
   });
 
   it('gives quality to produce only', () => {

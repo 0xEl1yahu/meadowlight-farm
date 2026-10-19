@@ -726,10 +726,16 @@ function placeWalkersV10(save: Obj): Obj {
  * chicken run, and the walkers (farmclaws part 4d spec §9.2). The booth stands on the old hedge's
  * tiles, so only the props, the exits, the door gap and the run change saved tiles, on the town
  * and the Neighbours map (migrateMapV10). Then every walker is placed on the reshaped maps
- * (placeWalkersV10).
+ * (placeWalkersV10), and SLOPMART has sold no boxes, today or ever.
  */
 function migrateV9toV10(save: Obj): Obj {
-  return placeWalkersV10(migrateMapV10(migrateMapV10({ ...save, version: 10 }, 'town'), 'neighbours'));
+  const placed = placeWalkersV10(migrateMapV10(migrateMapV10({ ...save, version: 10 }, 'town'), 'neighbours'));
+  const sold = placed.shopsSoldToday;
+  return {
+    ...placed,
+    slopShop: createDefaultSections().slopShop,
+    shopsSoldToday: isObj(sold) ? { ...sold, slopBoxes: createDefaultSections().shopsSoldToday.slopBoxes } : sold,
+  };
 }
 
 /**

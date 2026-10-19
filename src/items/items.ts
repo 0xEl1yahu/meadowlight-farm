@@ -2,7 +2,7 @@
  * Item registry. Tools and materials are declared here; seed and produce items are derived
  * from the crop registry so new crops need no item boilerplate.
  */
-import { FARMING, INVENTORY, PARTS, TOOLS } from '../config';
+import { FARMING, INVENTORY, PARTS, SLOP, TOOLS } from '../config';
 import { CROPS, seedItemId } from '../farming/crops';
 import {
   CROP_IDS,
@@ -10,6 +10,7 @@ import {
   MATERIAL_IDS,
   PLACEABLE_ITEM_IDS,
   ROBOT_PART_IDS,
+  SLOP_IDS,
   type FertilizerItemId,
   type FertilizerKind,
   type PlaceableItemId,
@@ -20,10 +21,11 @@ import {
   type Quality,
   type RobotPartId,
   type SeedItemId,
+  type SlopItemId,
   type ToolType,
 } from '../core/types';
 
-export type ItemKind = 'tool' | 'seed' | 'produce' | 'material' | 'placeable' | 'fertilizer' | 'part';
+export type ItemKind = 'tool' | 'seed' | 'produce' | 'material' | 'placeable' | 'fertilizer' | 'part' | 'slop';
 
 interface ItemBase {
   readonly id: ItemId;
@@ -84,7 +86,16 @@ export interface PartItem extends ItemBase {
   readonly price: number;
 }
 
-export type ItemDefinition = ToolItem | SeedItem | ProduceItem | MaterialItem | PlaceableItem | FertilizerItem | PartItem;
+/**
+ * SLOPMART's slop (farmclaws part 4d spec §6.3): it stacks and ships for SLOP.slopSellPrice, and
+ * can't be placed, planted, fitted, burnt or used.
+ */
+export interface SlopItem extends ItemBase {
+  readonly kind: 'slop';
+  readonly id: SlopItemId;
+}
+
+export type ItemDefinition = ToolItem | SeedItem | ProduceItem | MaterialItem | PlaceableItem | FertilizerItem | PartItem | SlopItem;
 
 const TOOL_INFO: Readonly<Record<ToolType, { name: string; description: string; color: number }>> = {
   hoe: { name: 'Hoe', description: 'Tills grass into soil. Clears withered crops.', color: 0xb98b5e },
@@ -146,6 +157,25 @@ const PART_INFO: Readonly<Record<RobotPartId, readonly [name: string, descriptio
   sensorEye: ['Sensor eye', 'Sees the tile ahead, the rain and the time.'],
   efficientCore: ['Efficient core', 'Actions cost a quarter fewer tokens.'],
   quickCore: ['Quick core', 'Acts every 3 minutes instead of 4.'],
+};
+
+/**
+ * Each slop item's plain name, DEALZ's product copy for its description (spec §6.3), and its icon
+ * colour.
+ */
+const SLOP_INFO: Readonly<Record<SlopItemId, readonly [name: string, description: string, color: number]>> = {
+  chocolateTeapot: ['Chocolate teapot', 'HOLDS HOT TEA. BRIEFLY ✓', 0x6b4226],
+  dollHead: ["Doll's head", 'PREMIUM DOLL EXPERIENCE. 100% OF THE HEAD ✓', 0xf2c6b4],
+  oneFlipFlop: ['One flip-flop', 'HALF A PAIR. TWICE THE VALUE ✓', 0x3fb6c9],
+  glassHammer: ['Glass hammer', 'FOR VERY GENTLE NAILS ✓', 0xbfe3ef],
+  inflatableDartboard: ['Inflatable dartboard', 'HOURS OF FUN. SECONDS OF DARTBOARD ✓', 0xd94a3d],
+  waterproofTeabag: ['Waterproof teabag', 'KEEPS YOUR TEA DRY ✓', 0xc9a66b],
+  solarTorch: ['Solar torch', 'WORKS PERFECTLY IN DAYLIGHT ✓', 0xf2d43a],
+  signedPhoto: ['Signed photo of nobody', 'AUTHENTIC SIGNATURE. AUTHENTIC NOBODY ✓', 0xe8e2d0],
+  cowPainting: ['Seven-legged cow painting', 'PHOTOREALISTIC COW. ANATOMICALLY CORRECT ✓', 0x8d6fb5],
+  boxOfBoxes: ['Box of empty boxes', 'STORAGE SOLUTION FOR YOUR STORAGE SOLUTIONS ✓', 0xc89b62],
+  padlockNoKey: ['Padlock, no key', 'MAXIMUM SECURITY. MAXIMUM ✓', 0x9a9a9a],
+  fishnetBucket: ['Fishnet bucket', 'HOLDS ANYTHING BIGGER THAN THE HOLES ✓', 0x4a7a5c],
 };
 
 /** Every part shares the robots' steel; the icon's drawing tells them apart. */
@@ -221,6 +251,10 @@ function buildRegistry(): ReadonlyMap<ItemId, ItemDefinition> {
     const [name, description] = PART_INFO[id];
     const price = PARTS.prices[id];
     registry.set(id, { kind: 'part', id, name, description, price, maxStack: INVENTORY.maxStack, sellPrice: null, color: PART_COLOR, hasQuality: false });
+  }
+  for (const id of SLOP_IDS) {
+    const [name, description, color] = SLOP_INFO[id];
+    registry.set(id, { kind: 'slop', id, name, description, maxStack: INVENTORY.maxStack, sellPrice: SLOP.slopSellPrice, color, hasQuality: false });
   }
   return registry;
 }

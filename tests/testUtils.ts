@@ -17,6 +17,7 @@ import {
   Direction,
   JOB_IDS,
   NPC_IDS,
+  SLOP_IDS,
   TOWNSFOLK_IDS,
   TileState,
   type Animal,
@@ -412,16 +413,22 @@ const FENCE_TILE: Tile = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
  * Hand-transforms a current (version 10) state back into the JSON of a version-9 save (farmclaws
  * part 4d spec §9.2): no walker has a place and there are no townsfolk, the town's prop tiles are
  * open grass, Cosmo's door gap is fence and the chicken run's ring is open grass, with chunk
- * revisions as they are. The state must hold those tiles as version 10 makes them, since nothing
- * else on them migrates back. The migration gives every walker the place their timetable puts
+ * revisions as they are, and SLOPMART has no counts. The state must hold those tiles as version 10
+ * makes them, since nothing else on them migrates back, and no slop item anywhere nor a box bought,
+ * which version 9 can't express. The migration gives every walker the place their timetable puts
  * them in, so a state loaded from this save is `withMigratedPlaces(state)`. v8Save starts from
  * this, so every older-save builder inherits it.
  */
 export function v9Save(state: GameState): SaveJson {
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const json = serializeGame(state);
+  for (const id of SLOP_IDS) if (json.includes(`"${id}"`)) throw new Error(`v9Save: version 9 has no slop items (${id})`);
+  if (state.slopShop.boxesOpened !== 0 || state.shopsSoldToday.slopBoxes !== 0) throw new Error('v9Save: version 9 has no SLOPMART boxes bought');
+  const save = JSON.parse(json) as SaveJson;
   save.version = 9;
   for (const talk of Object.values(save.npcs as Record<string, SaveJson>)) delete talk.place;
   delete save.townsfolk;
+  delete save.slopShop;
+  delete (save.shopsSoldToday as SaveJson).slopBoxes;
   const turnBack = (mapId: MapId, at: TileCoord, now: Tile, then: Tile): void => {
     if (!deepEqual(tileAt(state, at, mapId), now)) throw new Error(`v9Save: version 9 can't hold what is at (${at.tx}, ${at.tz}) on ${mapId}`);
     setSavedTile(save, mapId, at, then);
@@ -680,6 +687,7 @@ export function livelySections(): GameSections {
     },
     robots: createDefaultSections().robots,
     shopsSoldToday: createDefaultSections().shopsSoldToday,
+    slopShop: createDefaultSections().slopShop,
     jobs: createDefaultSections().jobs,
   };
 }

@@ -221,6 +221,7 @@ function heldChoiceFor(stack: ItemStack | null): HeldChoice {
     case 'material':
     case 'placeable':
     case 'part':
+    case 'slop':
       return { kind: 'gem', color: item.color };
   }
 }

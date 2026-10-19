@@ -36,6 +36,10 @@ export type GameAction =
   | { readonly type: 'inventory/move'; readonly from: SlotRef; readonly to: SlotRef; readonly quantity: number | null }
   | { readonly type: 'shop/setOpen'; readonly open: boolean }
   | { readonly type: 'shop/door'; readonly shop: ShopId }
+  /** Opens DEALZ's chat at SLOPMART, at any hour (farmclaws part 4d spec §6.2). */
+  | { readonly type: 'slop/open' }
+  /** Buys one mystery box from DEALZ, or hears why not. */
+  | { readonly type: 'slop/buy' }
   | { readonly type: 'ui/setInventoryOpen'; readonly open: boolean }
   /** Closes whichever panel is open. */
   | { readonly type: 'ui/closePanel' }
@@ -100,6 +104,8 @@ export const actions = {
   }),
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
   shopDoor: (shop: ShopId): GameAction => ({ type: 'shop/door', shop }),
+  openSlopShop: (): GameAction => ({ type: 'slop/open' }),
+  buySlopBox: (): GameAction => ({ type: 'slop/buy' }),
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),
   notify: (text: string, tone: MessageTone): GameAction => ({ type: 'ui/notify', text, tone }),

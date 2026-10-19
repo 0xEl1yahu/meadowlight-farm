@@ -51,7 +51,8 @@ function withLog(state: GameState, events: readonly (readonly [number, RobotLogE
 
 /**
  * Every reactive condition holding at once, except "no robots": four robots (Sprocket ruined,
- * Bolt broken, Gizmo on the bench), a Say today, no seeds, copper, and rain.
+ * Bolt broken, Gizmo on the bench), a Say today, no seeds, copper, rain, and a box bought at
+ * SLOPMART today.
  */
 function busy(): GameState {
   const robots = [
@@ -61,7 +62,8 @@ function busy(): GameState {
     robotOf({ id: 4, name: 'Widget', tx: TARGET.tx + 1 }),
   ];
   const farm = withSlots(withRobots(quiet(), robots), [stack('hoe', 1), stack('copperOre', PEOPLE.copperOreLine)]);
-  return { ...withLog(farm, [[DAY, SAY]]), weather: Weather.Rain };
+  const logged = withLog(farm, [[DAY, SAY]]);
+  return { ...logged, weather: Weather.Rain, shopsSoldToday: { ...logged.shopsSoldToday, slopBoxes: 1 } };
 }
 
 /** The everyday line spec §3.3's formula picks for `npc` on `state`'s day. */
@@ -84,7 +86,7 @@ describe('lineFor', () => {
     expect(Object.fromEntries(NPC_IDS.map((npc) => [npc, lineFor(state, npc)]))).toEqual({
       sol: "Water and wires don't mix. Bring what's left of Sprocket to the bench.",
       cosmo: 'Your robot talked today! Mine talks every day. To the chickens. They love it, probably.',
-      barnaby: "Four robots or more? Now you're thinking like me. Scale fixes everything.",
+      barnaby: "Bought a box at SLOPMART? Open all hours, no wages, no complaints. Well, none I've read.",
       marigold: "Out of seeds? I've got plenty for spring.",
       berlioz: "That's a fair bit of copper. Sprinklers don't build themselves.",
       juniper: 'Gizmo is up on your bench, I hear. A good bench is half the job.',
@@ -218,6 +220,7 @@ describe('reactiveFill', () => {
       copperOre: {},
       robotOnBench: { name: 'Gizmo' },
       raining: {},
+      boughtSlopBox: {},
     });
   });
 });
@@ -271,7 +274,7 @@ describe('LINE_BANKS', () => {
   });
 });
 
-/** Spec §3.5, copied line for line. */
+/** Spec §3.5, copied line for line, with Barnaby's SLOPMART line first (part 4d spec §6.5). */
 const SPEC_BANKS: Readonly<Record<NpcId, LineBank>> = {
   sol: {
     introduction: 'Sol. I used to seed fields by hand; now I build the hands. When your robots need parts, this is the place.',
@@ -305,6 +308,7 @@ const SPEC_BANKS: Readonly<Record<NpcId, LineBank>> = {
   barnaby: {
     introduction: "Barnaby. Four robots, one field, zero effort. That's the future, and I'm already living in it.",
     reactive: [
+      { when: 'boughtSlopBox', text: "Bought a box at SLOPMART? Open all hours, no wages, no complaints. Well, none I've read." },
       { when: 'noRobots', text: "No robots yet? You're leaving money in the field, friend." },
       { when: 'manyRobots', text: "Four robots or more? Now you're thinking like me. Scale fixes everything." },
     ],

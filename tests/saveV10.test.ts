@@ -30,6 +30,7 @@ import saveV2Text from './fixtures/save-v2.json?raw';
 import {
   BASE,
   atDay,
+  holding,
   must,
   placesOf,
   reachableFrom,
@@ -96,6 +97,23 @@ describe('save version 10', () => {
     const save = v9Save(BASE);
     expect(save.townsfolk).toBeUndefined();
     for (const id of NPC_IDS) expect(Object.keys((save.npcs as Record<string, SaveJson>)[id] ?? {}), id).toEqual(['talks', 'talkedToday']);
+  });
+
+  it('v9Save leaves out SLOPMART’s counts, and the migration starts them at 0', () => {
+    const save = v9Save(BASE);
+    expect(save.slopShop).toBeUndefined();
+    expect(Object.keys(save.shopsSoldToday as SaveJson)).toEqual(['parts', 'robots', 'seeds']);
+    const loaded = must(load(save));
+    expect(loaded.slopShop).toEqual({ boxesOpened: 0 });
+    expect(loaded.shopsSoldToday.slopBoxes).toBe(0);
+  });
+
+  it('v9Save refuses a state holding a slop item anywhere, or a box bought', () => {
+    expect(() => v9Save(holding(BASE, 'oneFlipFlop'))).toThrow(/version 9/);
+    expect(() => v9Save(withTile(BASE, { tx: 9, tz: 8 }, chestTile(stack('dollHead', 1)), 'town'))).toThrow(/version 9/);
+    expect(() => v9Save({ ...BASE, shipping: { ...BASE.shipping, pending: [stack('solarTorch', 2)] } })).toThrow(/version 9/);
+    expect(() => v9Save({ ...BASE, slopShop: { boxesOpened: 1 } })).toThrow(/version 9/);
+    expect(() => v9Save({ ...BASE, shopsSoldToday: { ...BASE.shopsSoldToday, slopBoxes: 1 } })).toThrow(/version 9/);
   });
 
   it('v9Save opens the props and the run and fences Cosmo’s door front, as version 9 held them', () => {
@@ -294,6 +312,13 @@ describe('saved places', () => {
     expect(must(load(JSON.parse(serializeGame(state)) as SaveJson))).toEqual(state);
   });
 
+  it('round-trip slop in a chest, with boxes bought today and over the save’s life', () => {
+    const chest = chestTile(stack('chocolateTeapot', 3), stack('padlockNoKey', 1), stack('speedGro', 5));
+    const bought = { ...BASE, slopShop: { boxesOpened: 41 }, shopsSoldToday: { ...BASE.shopsSoldToday, slopBoxes: 2 } };
+    const state = withTile(bought, { tx: 9, tz: 8 }, chest, 'town');
+    expect(must(load(JSON.parse(serializeGame(state)) as SaveJson))).toEqual(state);
+  });
+
   /** A valid v10 save with walkers out, its JSON at `path` set to `value` (undefined deletes it). */
   function corrupted(path: readonly string[], value: unknown): SaveJson {
     const save = JSON.parse(serializeGame(must(load(v9Save(when(clock(12, 30), Weather.Sunny)))))) as SaveJson;
@@ -321,6 +346,13 @@ describe('saved places', () => {
     ['a missing townsperson', ['townsfolk', 'kid'], undefined],
     ['an unknown townsperson', ['townsfolk', 'mime'], { place: INDOORS }],
     ['townsfolk that are not an object', ['townsfolk'], []],
+    ['more boxes today than SLOPMART sells', ['shopsSoldToday', 'slopBoxes'], 4],
+    ['a negative count of boxes today', ['shopsSoldToday', 'slopBoxes'], -1],
+    ['no count of boxes today', ['shopsSoldToday', 'slopBoxes'], undefined],
+    ['a fractional lifetime count of boxes', ['slopShop', 'boxesOpened'], 1.5],
+    ['a negative lifetime count of boxes', ['slopShop', 'boxesOpened'], -1],
+    ['a SLOPMART section with an extra key', ['slopShop', 'boxesToday'], 0],
+    ['no SLOPMART section', ['slopShop'], undefined],
   ];
 
   it('accept the save the cases corrupt', () => {

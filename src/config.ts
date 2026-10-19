@@ -19,6 +19,7 @@ import {
   type TileRect,
   type TownsfolkId,
 } from './core/types';
+import type { SlopGem } from './people/slop';
 import type { Leg, OutStop, Stop, Timetable, TownsfolkDay } from './people/timetable';
 
 /** Settings shared by every map. Each map's size lives in its definition (src/world/maps/). */
@@ -499,6 +500,30 @@ export const SHOP_STOCK = {
 export const SHOP_HOURS: readonly { readonly opens: number; readonly closes: number }[] = [
   { opens: 9 * 60, closes: 12 * 60 },
   { opens: 13 * 60, closes: 17 * 60 },
+];
+
+/** SLOPMART's mystery boxes (farmclaws part 4d spec §6.6): the price, the odds, the daily limit and the hash salts. */
+export const SLOP = {
+  boxPrice: 40,
+  /** The share of boxes that hold a gem rather than slop. */
+  gemChance: 0.1,
+  boxesPerDay: 3,
+  /** What one slop item ships for. */
+  slopSellPrice: 1,
+  greetingSalt: 4101,
+  tierSalt: 4102,
+  pickSalt: 4103,
+  cropSalt: 4104,
+  resultSalt: 4105,
+} as const;
+
+/** What a gem box can hold (part 4d spec §6.3), in the table's order. */
+export const SLOP_GEMS: readonly SlopGem[] = [
+  { kind: 'item', itemId: 'spectraherb_seeds', quantity: 3 },
+  { kind: 'item', itemId: 'qualitySprinkler', quantity: 1 },
+  { kind: 'item', itemId: 'speedGro', quantity: 5 },
+  { kind: 'item', itemId: 'qualityFertilizer', quantity: 5 },
+  { kind: 'outOfSeasonSeeds', quantity: 5 },
 ];
 
 /** Robot part prices (farmclaws design §3.7) and the share of a price Sol pays to buy one back (part 4b spec §3.2). */

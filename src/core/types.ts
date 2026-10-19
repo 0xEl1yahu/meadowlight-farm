@@ -127,10 +127,30 @@ export type PlaceableItemId = (typeof PLACEABLE_ITEM_IDS)[number];
 export const FERTILIZER_ITEM_IDS = ['basicFertilizer', 'qualityFertilizer', 'speedGro'] as const;
 export type FertilizerItemId = (typeof FERTILIZER_ITEM_IDS)[number];
 
+/**
+ * SLOPMART's slop (farmclaws part 4d spec §6.3): twelve things a mystery box mostly holds. They
+ * stack, ship for next to nothing and do nothing else.
+ */
+export const SLOP_IDS = [
+  'chocolateTeapot',
+  'dollHead',
+  'oneFlipFlop',
+  'glassHammer',
+  'inflatableDartboard',
+  'waterproofTeabag',
+  'solarTorch',
+  'signedPhoto',
+  'cowPainting',
+  'boxOfBoxes',
+  'padlockNoKey',
+  'fishnetBucket',
+] as const;
+export type SlopItemId = (typeof SLOP_IDS)[number];
+
 export type SeedItemId = `${CropId}_seeds`;
 export type ProduceItemId = CropId;
 /** Robot parts are items too (farmclaws part 4b spec §2): RobotPartId is declared with the robots below. */
-export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId | PlaceableItemId | FertilizerItemId | RobotPartId;
+export type ItemId = ToolType | SeedItemId | ProduceItemId | MaterialItemId | PlaceableItemId | FertilizerItemId | RobotPartId | SlopItemId;
 
 // Identifier lists for later workstreams. They are data keys only: their item registry
 // entries, icons and behaviour arrive with the workstream that uses them.
@@ -507,7 +527,12 @@ export type UiPanel =
    * the box shows: the line, or the giver's job card in its place (part 4c spec §2.2); a
    * townsperson's is always the line.
    */
-  | { readonly kind: 'talk'; readonly npc: WalkerId; readonly line: string; readonly card: 'line' | 'job' };
+  | { readonly kind: 'talk'; readonly npc: WalkerId; readonly line: string; readonly card: 'line' | 'job' }
+  /**
+   * DEALZ's chat at SLOPMART (farmclaws part 4d spec §6.2): `line` is what DEALZ says now, the
+   * greeting as it opens, then a refusal or a result after each Buy.
+   */
+  | { readonly kind: 'slopShop'; readonly line: string };
 
 export interface UiState {
   readonly panel: UiPanel;
@@ -1148,6 +1173,14 @@ export interface ShopsSoldToday {
   readonly parts: Readonly<Record<BasicPartId, number>>;
   readonly robots: Readonly<Record<RobotSize, number>>;
   readonly seeds: Readonly<Record<SeedItemId, number>>;
+  /** SLOPMART's mystery boxes (part 4d spec §6.2), up to SLOP.boxesPerDay. */
+  readonly slopBoxes: number;
+}
+
+/** SLOPMART (part 4d spec §9.1). */
+export interface SlopShopState {
+  /** Lifetime boxes bought; the next box is decided by this count before it's added to (spec §6.3). */
+  readonly boxesOpened: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,6 +1223,7 @@ export interface GameSections {
   readonly festival: FestivalState;
   readonly robots: RobotsState;
   readonly shopsSoldToday: ShopsSoldToday;
+  readonly slopShop: SlopShopState;
   readonly jobs: JobsState;
 }
 
