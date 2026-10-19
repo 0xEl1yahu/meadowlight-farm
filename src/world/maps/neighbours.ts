@@ -1,8 +1,9 @@
 /**
  * The Neighbours (40 × 28): Cosmo's and Barnaby's farms, east of the town (farmclaws part 4a
  * spec §5). Pure data, identical for every seed: two farmhouses and a chicken coop along the
- * back (−Z) edge behind a hedge line, a dirt lane from the west gate, and two fenced fields of
- * bare dirt, Cosmo's north of the lane and Barnaby's south of it.
+ * back (−Z) edge behind a hedge line, a dirt lane from the west gate, two fenced fields of bare
+ * dirt, Cosmo's north of the lane and Barnaby's south of it, and a fenced chicken run beside the
+ * coop (part 4d spec §7.3).
  *
  * Occlusion rule, as in the town: the camera looks from +X/+Z, so anything tall hides the tiles
  * on its −X/−Z side. The houses and the coop therefore stand against the back edge, and every
@@ -50,31 +51,53 @@ export const COSMO_FIELD = rect(4, 6, 6, 6);
 /** Inside Barnaby's fence, x 21–28, z 17–24: bare dirt. */
 export const BARNABY_FIELD = rect(21, 17, 8, 8);
 
-/** A rectangular ring of wood fence round a field, open at one tile. */
+/** A rectangular ring of wood fence, open at its gaps. */
 export interface FenceRing {
   /** The ring's north-west and south-east corner tiles. */
   readonly corners: readonly [TileCoord, TileCoord];
-  /** The one ring tile left open as the field's gate. */
-  readonly gap: TileCoord;
+  /** The ring tiles left open: a field's gate, and Cosmo's door front. */
+  readonly gaps: readonly TileCoord[];
 }
 
-/** Round Cosmo's field, open on the lane side at (6, 12). */
-export const COSMO_FENCE: FenceRing = { corners: [{ tx: 3, tz: 5 }, { tx: 10, tz: 12 }], gap: { tx: 6, tz: 12 } };
+/** The tile in front of Cosmo's door, on his fence's top row: a gap, so he walks out of his house into his field (part 4d spec §8). */
+export const COSMO_DOOR_GAP: TileCoord = { tx: 5, tz: 5 };
+/** Round Cosmo's field, open on the lane side at (6, 12) and at his door. */
+export const COSMO_FENCE: FenceRing = { corners: [{ tx: 3, tz: 5 }, { tx: 10, tz: 12 }], gaps: [{ tx: 6, tz: 12 }, COSMO_DOOR_GAP] };
 /** Round Barnaby's field, open on the lane side at (24, 16). */
-export const BARNABY_FENCE: FenceRing = { corners: [{ tx: 20, tz: 16 }, { tx: 29, tz: 25 }], gap: { tx: 24, tz: 16 } };
+export const BARNABY_FENCE: FenceRing = { corners: [{ tx: 20, tz: 16 }, { tx: 29, tz: 25 }], gaps: [{ tx: 24, tz: 16 }] };
+/** Cosmo's chicken run beside the coop (part 4d spec §7.3), closed all round. Its chickens are drawn only. */
+export const CHICKEN_RUN: FenceRing = { corners: [{ tx: 11, tz: 5 }, { tx: 15, tz: 8 }], gaps: [] };
 
-const FENCES: readonly FenceRing[] = [COSMO_FENCE, BARNABY_FENCE];
+const FENCES: readonly FenceRing[] = [COSMO_FENCE, BARNABY_FENCE, CHICKEN_RUN];
 
-/** Is (tx, tz) on the ring of `fence` (its gap included)? */
+/** Is (tx, tz) on the ring of `fence` (its gaps included)? */
 function onRing(fence: FenceRing, tx: number, tz: number): boolean {
   const [nw, se] = fence.corners;
   if (tx < nw.tx || tx > se.tx || tz < nw.tz || tz > se.tz) return false;
   return tx === nw.tx || tx === se.tx || tz === nw.tz || tz === se.tz;
 }
 
-/** A wood-fence tile: on either field's ring, except its gap. */
+const isGap = (fence: FenceRing, tx: number, tz: number): boolean => fence.gaps.some((g) => g.tx === tx && g.tz === tz);
+
+/** Every tile of `fence`'s ring that holds a fence (its gaps left out), row by row. */
+export function ringTiles(fence: FenceRing): TileCoord[] {
+  const [nw, se] = fence.corners;
+  const tiles: TileCoord[] = [];
+  for (let tz = nw.tz; tz <= se.tz; tz++) {
+    for (let tx = nw.tx; tx <= se.tx; tx++) if (onRing(fence, tx, tz) && !isGap(fence, tx, tz)) tiles.push({ tx, tz });
+  }
+  return tiles;
+}
+
+/** The tiles inside `fence`'s ring. */
+export function ringInside(fence: FenceRing): TileRect {
+  const [nw, se] = fence.corners;
+  return rect(nw.tx + 1, nw.tz + 1, se.tx - nw.tx - 1, se.tz - nw.tz - 1);
+}
+
+/** A wood-fence tile: on a field's ring or the run's, except a gap. */
 export function isFenceTile(tx: number, tz: number): boolean {
-  return FENCES.some((fence) => onRing(fence, tx, tz) && !(tx === fence.gap.tx && tz === fence.gap.tz));
+  return FENCES.some((fence) => onRing(fence, tx, tz) && !isGap(fence, tx, tz));
 }
 
 function neighboursSurface(tx: number, tz: number): Surface {
@@ -85,9 +108,9 @@ function neighboursSurface(tx: number, tz: number): Surface {
 /**
  * The Neighbours' own layout rules, checked by `assertMapDefinitions`: the houses, the coop and
  * the hedges cover the back band exactly once, and no structure stands outside it; every reserved
- * tile is clear; both fence rings are whole except their gaps, and the gaps are walkable; every
- * walkable tile is reachable from the arrival tile. The tiles are those of `def.generate(0)`, the
- * same for every seed.
+ * tile is clear; every fence ring is whole except its gaps, and every gap is walkable; the chicken
+ * run's inside is clear ground; every walkable tile outside the run is reachable from the arrival
+ * tile. The tiles are those of `def.generate(0)`, the same for every seed.
  */
 export function assertNeighboursLayout(def: MapDefinition): void {
   const { width, depth } = def.grid;
@@ -114,7 +137,7 @@ export function assertNeighboursLayout(def: MapDefinition): void {
       for (let tx = nw.tx; tx <= se.tx; tx++) {
         if (!onRing(fence, tx, tz)) continue;
         const tile = requireTile(world, tx, tz);
-        if (tx === fence.gap.tx && tz === fence.gap.tz) {
+        if (isGap(fence, tx, tz)) {
           if (!isWalkable(tile)) throw new RangeError(`Neighbours: the fence gap at (${tx}, ${tz}) is blocked`);
         } else if (tile.object?.kind !== 'woodFence') {
           throw new RangeError(`Neighbours: the fence has a hole at (${tx}, ${tz})`);
@@ -122,10 +145,17 @@ export function assertNeighboursLayout(def: MapDefinition): void {
       }
     }
   }
+  const run = ringInside(CHICKEN_RUN);
+  for (let tz = run.z0; tz < run.z0 + run.depth; tz++) {
+    for (let tx = run.x0; tx < run.x0 + run.width; tx++) {
+      const tile = requireTile(world, tx, tz);
+      if (!isWalkable(tile) || tile.object !== null) throw new RangeError(`Neighbours: the chicken run is not clear at (${tx}, ${tz})`);
+    }
+  }
   const reachable = reachableTiles(world, [ARRIVAL], () => false);
   for (let tz = 0; tz < depth; tz++) {
     for (let tx = 0; tx < width; tx++) {
-      if (isWalkable(requireTile(world, tx, tz)) && !reachable(tx, tz)) {
+      if (isWalkable(requireTile(world, tx, tz)) && !reachable(tx, tz) && !rectContains(run, tx, tz)) {
         throw new RangeError(`Neighbours: (${tx}, ${tz}) can't be reached from the gate`);
       }
     }

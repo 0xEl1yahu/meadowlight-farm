@@ -12,7 +12,7 @@
 
 import type { BlockKind } from '../robots/blockKinds';
 
-export const SAVE_VERSION = 9 as const;
+export const SAVE_VERSION = 10 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -239,6 +239,13 @@ export const STRUCTURE_KINDS = [
   'cosmoHouse',
   'barnabyHouse',
   'chickenCoop',
+  'slopShop',
+  'marketStall',
+  'bench',
+  'planter',
+  'crates',
+  'barrels',
+  'cart',
 ] as const;
 export type StructureKind = (typeof STRUCTURE_KINDS)[number];
 

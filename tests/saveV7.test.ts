@@ -53,8 +53,8 @@ const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringif
 
 describe('the cast in saves', () => {
   it('is in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(9);
-    expect(BASE.version).toBe(9);
+    expect(SAVE_VERSION).toBe(10);
+    expect(BASE.version).toBe(10);
   });
 
   it('starts every character at no chats', () => {
@@ -75,8 +75,8 @@ describe('the cast in saves', () => {
 });
 
 describe('v6 → v7', () => {
-  it('carries on to version 9', () => {
-    expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(9);
+  it('carries on to version 10', () => {
+    expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(10);
   });
 
   it('loads a v6 save as the state it was taken from', () => {
@@ -145,9 +145,9 @@ describe('v6 → v7', () => {
     expect(must(load(save))).toEqual(state);
   });
 
-  it('migrates the version-2 fixture through every version to 9', () => {
+  it('migrates the version-2 fixture through every version to 10', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(9);
+    expect(loaded.version).toBe(10);
     expect(loaded.npcs).toEqual(BASE.npcs);
     expect(loaded.quests.board).toBeNull();
     expect(loaded.festival.giftTarget).toBeNull();
@@ -168,7 +168,7 @@ describe('v6 → v7', () => {
     ];
     for (const [label, edit] of corrupt) {
       const save = v6With(chatted(), edit);
-      expect((migrateSave(save) as SaveJson).version, label).toBe(9);
+      expect((migrateSave(save) as SaveJson).version, label).toBe(10);
       expect(load(save), label).toBeNull();
     }
   });
@@ -181,7 +181,7 @@ describe('v6 → v7', () => {
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v6Save(BASE), version: 10 };
+    const save = { ...v6Save(BASE), version: 11 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });
@@ -253,7 +253,7 @@ describe('the Neighbours map in saves', () => {
 
   it('v6Save refuses a player on the Neighbours map, or a Neighbours map that changed', () => {
     expect(() => v6Save(onTheLane())).toThrow('v6Save');
-    const changed = withTile(BASE, { tx: 15, tz: 8 }, { ...EMPTY_TILE, object: { kind: 'woodPath' } }, 'neighbours');
+    const changed = withTile(BASE, { tx: 17, tz: 8 }, { ...EMPTY_TILE, object: { kind: 'woodPath' } }, 'neighbours');
     expect(() => v6Save(changed)).toThrow('v6Save');
   });
 

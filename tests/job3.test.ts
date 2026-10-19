@@ -107,12 +107,13 @@ describe('taking job 3', () => {
     const gen = JOBS.generators.barnaby;
     expect(tileAt(TAKEN, gen, 'neighbours').object).toEqual({ kind: 'woodBurner', fuel: GENERATORS.woodBurner.hopper });
     const reach = (tile: TileCoord): number => Math.max(Math.abs(tile.tx - gen.tx), Math.abs(tile.tz - gen.tz));
+    const gate = must(BARNABY_FENCE.gaps[0]);
     expect(rectContains(NEIGHBOURS_LANE, gen.tx, gen.tz)).toBe(true);
-    expect(reach(BARNABY_FENCE.gap)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
-    expect(reach({ tx: BARNABY_FENCE.gap.tx, tz: BARNABY_FIELD.z0 })).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+    expect(reach(gate)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
+    expect(reach({ tx: gate.tx, tz: BARNABY_FIELD.z0 })).toBeLessThanOrEqual(ROBOTS.chargeRadius);
     // Not the gate, the tile in front of it, a character's spot or a reserved tile.
     const { placement } = npcSpot('barnaby');
-    for (const tile of [BARNABY_FENCE.gap, { tx: BARNABY_FENCE.gap.tx, tz: BARNABY_FENCE.gap.tz - 1 }, placement, ...NEIGHBOURS_MAP.reserved]) {
+    for (const tile of [gate, { tx: gate.tx, tz: gate.tz - 1 }, placement, ...NEIGHBOURS_MAP.reserved]) {
       expect({ tx: tile.tx, tz: tile.tz }).not.toEqual(gen);
     }
   });

@@ -69,6 +69,21 @@ function assertFarmSpawn(def: MapDefinition): void {
 }
 
 /**
+ * Every door's front tile, the tile on its +Z side, is in bounds and walkable on the map's world
+ * from seed 0 (part 4d spec §8), on every map: a door that opens onto a fence can't be walked out of.
+ */
+function assertDoorFronts(def: MapDefinition): void {
+  const doors = def.structures.filter((s) => s.door !== null);
+  if (doors.length === 0) return;
+  const world = def.generate(0);
+  for (const s of doors) {
+    if (s.door === null) continue;
+    const front = getTile(world, s.door.tx, s.door.tz + 1);
+    if (front === null || !isWalkable(front)) throw new RangeError(`Map ${def.id}: the tile in front of the ${s.kind} door is not walkable`);
+  }
+}
+
+/**
  * The characters' spots (part 4a spec §2.2). Each must be on its map, walkable, not reserved,
  * neither a door nor the tile in front of one, alone on its tile, and reachable: one of its
  * orthogonal neighbours can be walked to from one of the map's arrival tiles, over walkable
@@ -109,9 +124,10 @@ function assertNpcPlacements(defs: Readonly<Record<MapId, MapDefinition>>): void
  * Throws on a broken set of definitions: a warp not on the edge or exiting into the grid, a
  * target out of bounds, a warp without a reciprocal (the target map must have a warp to this
  * map arriving orthogonally next to `from`), an unreserved warp or arrival tile, a structure
- * outside the grid or overlapping another structure or a reserved tile, a farm spawn that isn't
- * clear, the town's and the Neighbours' own layout rules (`assertTownLayout`,
- * `assertNeighboursLayout`), and a character's spot that breaks a rule of `assertNpcPlacements`.
+ * outside the grid or overlapping another structure or a reserved tile, a door whose front tile
+ * isn't walkable, a farm spawn that isn't clear, the town's and the Neighbours' own layout rules
+ * (`assertTownLayout`, `assertNeighboursLayout`), and a character's spot that breaks a rule of
+ * `assertNpcPlacements`.
  */
 export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>>): void {
   for (const id of MAP_IDS) {
@@ -122,6 +138,7 @@ export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>
     }
     assertWarps(defs, def);
     assertStructures(def);
+    assertDoorFronts(def);
   }
   assertNpcPlacements(defs);
   assertFarmSpawn(defs.farm);

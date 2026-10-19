@@ -51,10 +51,12 @@ import {
   LAMP_POST_SHAPE,
   PARTS_EXCHANGE_SHAPE,
   PARTS_EXCHANGE_STYLE,
+  PROP_MAX_HEIGHT,
   SHOP_INSET,
   SHOP_KINDS,
   SHOP_SHAPE,
   SHOP_STYLES,
+  SLOP_BOOTH_SHAPE,
   WELL_MAX_HEIGHT,
   mapStructureParts,
   structureParts,
@@ -62,7 +64,7 @@ import {
 import type { FrameContext } from '../src/render/types';
 import { tileCenterX, tileMinX, tileMinZ, worldRect } from '../src/world/grid';
 import { MAPS, type StructurePlacement } from '../src/world/maps';
-import { TOWN_BACK_BAND_DEPTH } from '../src/world/maps/town';
+import { TOWN_BACK_BAND_DEPTH, TOWN_PROP_KINDS } from '../src/world/maps/town';
 import { BASE, withPlayer } from './testUtils';
 
 const EPS = 1e-6;
@@ -498,6 +500,47 @@ describe('town structures', () => {
       expect(post.max.x - post.min.x).toBeLessThanOrEqual(0.15 + EPS);
       expect(post.max.z - post.min.z).toBeLessThanOrEqual(0.15 + EPS);
     }
+  });
+});
+
+describe("SLOPMART's booth and the town's props", () => {
+  const grid = MAPS.town.grid;
+  const structures = MAPS.town.structures;
+
+  it('keeps every prop low, no taller than the well, inside its rect and on the ground', () => {
+    expect(PROP_MAX_HEIGHT).toBe(WELL_MAX_HEIGHT);
+    const props = structures.filter((s) => TOWN_PROP_KINDS.includes(s.kind));
+    expect(new Set(props.map((s) => s.kind))).toEqual(new Set(TOWN_PROP_KINDS));
+    for (const s of props) {
+      const { body, glass, parts } = structureBox(s);
+      expect(parts.body.length, s.kind).toBeGreaterThan(3);
+      expect(glass.isEmpty(), s.kind).toBe(true);
+      expect(parts.posters, s.kind).toHaveLength(0);
+      expect(body.max.y, s.kind).toBeLessThanOrEqual(PROP_MAX_HEIGHT + EPS);
+      expect(body.min.y, s.kind).toBeGreaterThanOrEqual(-EPS);
+      expect(body.min.x, s.kind).toBeGreaterThanOrEqual(tileMinX(grid, s.rect.x0) - EPS);
+      expect(body.max.x, s.kind).toBeLessThanOrEqual(tileMinX(grid, s.rect.x0 + s.rect.width) + EPS);
+      expect(body.min.z, s.kind).toBeGreaterThanOrEqual(tileMinZ(grid, s.rect.z0) - EPS);
+      expect(body.max.z, s.kind).toBeLessThanOrEqual(tileMinZ(grid, s.rect.z0 + s.rect.depth) + EPS);
+    }
+  });
+
+  it('builds the booth narrow on its front rows, the old hedge behind it, with a counter at the door', () => {
+    const booth = structures.find((s) => s.kind === 'slopShop');
+    if (booth === undefined || booth.door === null) throw new Error('no booth with a door');
+    const { parts } = structureBox(booth);
+    const front = tileMinZ(grid, booth.rect.z0 + booth.rect.depth) - SLOP_BOOTH_SHAPE.inset.front;
+    // The counter: a slab reaching out of the front wall at counter height, across the door tile's centre.
+    const doorX = tileCenterX(grid, booth.door.tx);
+    const counter = parts.body.map(boxOf).filter((b) => b.min.z > front - 0.1 && b.max.z > front + 0.2 && b.min.x < doorX && b.max.x > doorX);
+    expect(counter).toHaveLength(1);
+    expect(counter[0]!.min.y).toBeGreaterThan(SLOP_BOOTH_SHAPE.counterHeight - 0.1);
+    // The booth's walls stand only on its front rows; the rows behind are hedge.
+    const hedgeEnd = tileMinZ(grid, booth.rect.z0 + booth.rect.depth - SLOP_BOOTH_SHAPE.rows);
+    const tall = parts.body.map(boxOf).filter((b) => b.max.y > 1.5);
+    expect(tall.length).toBeGreaterThan(0);
+    for (const b of tall) expect(b.min.z).toBeGreaterThan(hedgeEnd - SLOP_BOOTH_SHAPE.roofOverhang - EPS);
+    expect(parts.body.some((part) => boxOf(part).max.z < hedgeEnd + EPS)).toBe(true);
   });
 });
 

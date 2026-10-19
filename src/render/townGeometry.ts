@@ -1,6 +1,7 @@
 /**
  * Painted geometry for Brookhollow's structures (`MapDefinition.structures`): the four shops, Sol's
- * parts exchange, the well, the lamp posts and the trimmed hedges of the back band. Every builder
+ * parts exchange, SLOPMART's booth, the well, the lamp posts, the trimmed hedges of the back band
+ * and the low props out on the grass (farmclaws part 4d spec §6.1, §7.1). Every builder
  * works in world space and pushes parts into a {@link PartSet}: painted opaque parts into `body`
  * (StructureRenderer merges them into the map's one painted mesh) and window and lamp glass into
  * `glass` (the shared glow-glass mesh). Nothing here touches the scene or game state. The same
@@ -14,9 +15,10 @@
  * PartSet's `posters` (one atlas mesh per map).
  *
  * Occlusion: the camera looks from +X/+Z, so a point at height h hides the ground h units further
- * along −X and −Z. Everything stays inside its structure rect: the shops, the parts exchange and
- * the hedges fill the back band (z 0–6), so all they can hide is more back band, however tall they
- * stand; the well stays ≤ 0.9 tall and the lamp posts ≤ 0.15 wide, as the town layout allows.
+ * along −X and −Z. Everything stays inside its structure rect: the shops, the booth, the parts
+ * exchange and the hedges fill the back band (z 0–6), so all they can hide is more back band,
+ * however tall they stand; the well and every prop stay ≤ 0.9 tall and the lamp posts ≤ 0.15
+ * wide, as the town layout allows.
  */
 import * as THREE from 'three';
 import { NEIGHBOUR_ROOFS, ROBOT_PAINTS } from '../config';
@@ -61,7 +63,7 @@ interface Offset {
 }
 
 /** Per-feature salts, combined with Salt.Cosmetic (structureGeometry uses 11–61, sceneryGeometry 71–81). */
-const FEATURE = { hedge: 91, crate: 101 } as const;
+const FEATURE = { hedge: 91, crate: 101, prop: 111 } as const;
 
 function cosmetic(offset: Offset, feature: number, a: number, b: number, k: number): number {
   return hashFloat(Salt.Cosmetic, feature, a + offset.x, b + offset.z, k);
@@ -1056,6 +1058,305 @@ function coopParts(grid: GridSpec, s: StructurePlacement, out: PartSet): void {
 }
 
 // ---------------------------------------------------------------------------
+// SLOPMART's booth
+// ---------------------------------------------------------------------------
+
+/**
+ * SLOPMART's booth (part 4d spec §6.1), world units: a narrow, cramped kiosk on the front rows of
+ * its rect with the hedge it replaced still filling the rows behind it. Its counter sits in the
+ * front wall at the door tile. The neon sign and DEALZ the clerk are drawn on top of this body.
+ */
+export const SLOP_BOOTH_SHAPE = {
+  /** The booth stands on this many front rows of its rect; the hedge fills the rest. */
+  rows: 3,
+  /** How far the walls sit inside the booth's rows. The front inset is the shops' (SHOP_INSET), so the counter stays inside the rect. */
+  inset: { side: 0.32, back: 0.12, front: SHOP_INSET.front },
+  plinthHeight: 0.12,
+  wallHeight: 1.85,
+  /** A band of trim round the top of the walls. */
+  bandHeight: 0.14,
+  roofThickness: 0.12,
+  roofOverhang: 0.1,
+  /** The serving hatch above the counter: width, height, and its sill above the ground. */
+  hatchWidth: 1.2,
+  hatchHeight: 0.72,
+  counterHeight: 0.86,
+  counterThickness: 0.07,
+  /** How far the counter reaches out of the front wall. */
+  counterReach: 0.3,
+  /** The roller shutter, rolled up above the hatch. */
+  shutterHeight: 0.12,
+} as const;
+
+const SLOP_BOOTH_COLORS = {
+  wall: 0x8f7cc4,
+  band: 0xf0e6f5,
+  plinth: 0x5f527c,
+  roof: 0x4f4368,
+  hatch: 0x2a2236,
+  counter: 0xe9dcc4,
+  bracket: 0x5f527c,
+  shutter: 0xb9b0c8,
+} as const;
+
+/** The booth on its front rows, and a hedge on the rows behind it. */
+function slopBoothParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
+  const B = SLOP_BOOTH_SHAPE;
+  const C = SLOP_BOOTH_COLORS;
+  const hedgeDepth = s.rect.depth - B.rows;
+  hedgeParts(grid, offset, { kind: 'hedge', rect: { ...s.rect, depth: hedgeDepth }, door: null }, out);
+  const b = rectBounds(grid, s.rect);
+  const minX = b.minX + B.inset.side;
+  const maxX = b.maxX - B.inset.side;
+  const minZ = tileMinZ(grid, s.rect.z0 + hedgeDepth) + B.inset.back;
+  const front = b.maxZ - B.inset.front;
+  const w = maxX - minX;
+  const d = front - minZ;
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + front) / 2;
+  const top = B.plinthHeight + B.wallHeight;
+  out.body.push(box(w + 0.08, B.plinthHeight, d + 0.08, { x: cx, y: B.plinthHeight / 2, z: cz }, C.plinth));
+  out.body.push(box(w, B.wallHeight, d, { x: cx, y: B.plinthHeight + B.wallHeight / 2, z: cz }, C.wall));
+  out.body.push(box(w + 0.04, B.bandHeight, d + 0.04, { x: cx, y: top - B.bandHeight / 2, z: cz }, C.band));
+  const roof = { x: cx, y: top + B.roofThickness / 2, z: cz };
+  out.body.push(box(w + 2 * B.roofOverhang, B.roofThickness, d + 2 * B.roofOverhang, roof, C.roof));
+  // The hatch: a dark opening in the front wall over the counter, centred on the door tile.
+  const hatchX = s.door === null ? cx : tileCenterX(grid, s.door.tx);
+  const hatchY = B.counterHeight + B.hatchHeight / 2;
+  out.body.push(box(B.hatchWidth, B.hatchHeight, 0.04, { x: hatchX, y: hatchY, z: front + 0.01 }, C.hatch));
+  const shutterY = B.counterHeight + B.hatchHeight + B.shutterHeight / 2;
+  out.body.push(box(B.hatchWidth + 0.1, B.shutterHeight, 0.1, { x: hatchX, y: shutterY, z: front + 0.04 }, C.shutter));
+  const counterZ = front + B.counterReach / 2 - 0.02;
+  out.body.push(box(B.hatchWidth + 0.16, B.counterThickness, B.counterReach, { x: hatchX, y: B.counterHeight, z: counterZ }, C.counter));
+  for (const side of [-1, 1]) {
+    const bracket = { x: hatchX + side * (B.hatchWidth / 2 - 0.08), y: B.counterHeight - 0.12, z: front + 0.08 };
+    out.body.push(box(0.05, 0.18, 0.14, bracket, C.bracket));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+/** Tallest point of any prop: they stand in the open, so none is taller than the well (part 4d spec §7.1). */
+export const PROP_MAX_HEIGHT = WELL_MAX_HEIGHT;
+
+/** How far every prop stays inside its rect. */
+const PROP_INSET = 0.08;
+
+const PROP_COLORS = {
+  wood: 0xb5835a,
+  woodDark: 0x8a5f3e,
+  iron: LAMP_IRON,
+  awning: [0xd9574a, 0xf3ead8] as const,
+  cloth: 0xe8d6b0,
+  produce: [0xe2563f, 0xf28a3a, 0xf2c14e, 0x78c06b, 0x8e5ba8] as const,
+  stone: STRUCTURE_COLORS.stone,
+  soil: 0x6b4a32,
+  leaf: STRUCTURE_COLORS.leaf,
+  blossom: [0xf4b38a, 0xe87fa3, 0xf3ead8] as const,
+  sack: 0xd8c39a,
+} as const;
+
+/** A prop's footprint: its rect less PROP_INSET all round, in world space. */
+interface PropFrame {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+  readonly cx: number;
+  readonly cz: number;
+  readonly w: number;
+  readonly d: number;
+  /** A cosmetic [0, 1) value for part i of this prop. */
+  readonly unit: (i: number, k: number) => number;
+}
+
+function propFrame(grid: GridSpec, offset: Offset, s: StructurePlacement): PropFrame {
+  const b = rectBounds(grid, s.rect);
+  const minX = b.minX + PROP_INSET;
+  const maxX = b.maxX - PROP_INSET;
+  const minZ = b.minZ + PROP_INSET;
+  const maxZ = b.maxZ - PROP_INSET;
+  const unit = (i: number, k: number): number => cosmetic(offset, FEATURE.prop, s.rect.x0 * 8 + i, s.rect.z0, k);
+  return { minX, maxX, minZ, maxZ, cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, d: maxZ - minZ, unit };
+}
+
+/** A few pieces of produce heaped on a surface at height y around (x, z). */
+function produceParts(x: number, y: number, z: number, spread: number, unit: (i: number, k: number) => number, first: number, out: PartSet): void {
+  for (let i = first; i < first + 4; i++) {
+    const px = x + ((i % 2) - 0.5) * spread + (unit(i, 0) - 0.5) * 0.04;
+    const pz = z + (Math.floor((i - first) / 2) - 0.5) * spread * 0.8;
+    const color = pick(PROP_COLORS.produce, unit(i, 1));
+    out.body.push(paint(pose(new THREE.IcosahedronGeometry(0.055, 0), { x: px, y: y + 0.045, z: pz, ry: unit(i, 2) * 3 }), color));
+  }
+}
+
+/** Market stall proportions: a table under a striped awning on four posts, crates of produce on display. */
+export const MARKET_STALL_SHAPE = { tableHeight: 0.42, tableTop: 0.05, leg: 0.06, post: 0.045, awningTop: 0.88, awningThickness: 0.04, stripes: 6, crates: 3, crateHeight: 0.12 } as const;
+
+function marketStallParts(f: PropFrame, out: PartSet): void {
+  const M = MARKET_STALL_SHAPE;
+  const C = PROP_COLORS;
+  out.body.push(box(f.w, M.tableTop, f.d * 0.8, { x: f.cx, y: M.tableHeight - M.tableTop / 2, z: f.cz }, C.wood));
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const leg = { x: f.cx + sx * (f.w / 2 - M.leg), y: (M.tableHeight - M.tableTop) / 2, z: f.cz + sz * (f.d * 0.4 - M.leg) };
+      out.body.push(box(M.leg, M.tableHeight - M.tableTop, M.leg, leg, C.woodDark));
+      const postHeight = M.awningTop - M.awningThickness - M.tableHeight;
+      const post = { x: f.cx + sx * (f.w / 2 - M.post / 2), y: M.tableHeight + postHeight / 2, z: f.cz + sz * (f.d / 2 - M.post / 2) };
+      out.body.push(box(M.post, postHeight, M.post, post, C.woodDark));
+    }
+  }
+  // A cloth skirt along the front of the table.
+  out.body.push(box(f.w - 0.04, 0.22, 0.02, { x: f.cx, y: M.tableHeight - M.tableTop - 0.11, z: f.cz + f.d * 0.4 }, C.cloth));
+  const crateW = (f.w - 0.12) / M.crates;
+  for (let i = 0; i < M.crates; i++) {
+    const x = f.minX + 0.06 + crateW * (i + 0.5);
+    out.body.push(box(crateW - 0.06, M.crateHeight, f.d * 0.55, { x, y: M.tableHeight + M.crateHeight / 2, z: f.cz }, C.woodDark));
+    produceParts(x, M.tableHeight + M.crateHeight - 0.03, f.cz, crateW * 0.4, f.unit, i * 4, out);
+  }
+  const stripeW = f.w / M.stripes;
+  for (let i = 0; i < M.stripes; i++) {
+    const stripe = { x: f.minX + stripeW * (i + 0.5), y: M.awningTop - M.awningThickness / 2, z: f.cz };
+    out.body.push(box(stripeW, M.awningThickness, f.d, stripe, C.awning[i % 2] ?? C.cloth));
+  }
+}
+
+/** Bench proportions: slatted seat on iron legs with a back on its −Z side. */
+export const BENCH_SHAPE = { seatHeight: 0.32, slats: 3, slatGap: 0.03, backTop: 0.64, seatDepth: 0.42 } as const;
+
+function benchParts(f: PropFrame, out: PartSet): void {
+  const B = BENCH_SHAPE;
+  const C = PROP_COLORS;
+  const seatZ = f.cz + 0.04;
+  const slatD = (B.seatDepth - (B.slats - 1) * B.slatGap) / B.slats;
+  for (let i = 0; i < B.slats; i++) {
+    const z = seatZ - B.seatDepth / 2 + slatD / 2 + i * (slatD + B.slatGap);
+    out.body.push(box(f.w - 0.1, 0.04, slatD, { x: f.cx, y: B.seatHeight, z }, C.wood));
+  }
+  const backZ = seatZ - B.seatDepth / 2 + 0.02;
+  for (const y of [B.seatHeight + 0.14, B.backTop - 0.06]) out.body.push(box(f.w - 0.1, 0.08, 0.035, { x: f.cx, y, z: backZ }, C.wood));
+  for (const sx of [-1, 1]) {
+    const x = f.cx + sx * (f.w / 2 - 0.16);
+    out.body.push(box(0.05, B.seatHeight, 0.05, { x, y: B.seatHeight / 2, z: seatZ + B.seatDepth / 2 - 0.06 }, C.iron));
+    out.body.push(box(0.05, B.backTop, 0.05, { x, y: B.backTop / 2, z: backZ - 0.01 }, C.iron));
+    out.body.push(box(0.04, 0.04, B.seatDepth, { x, y: B.seatHeight - 0.04, z: seatZ }, C.iron));
+  }
+}
+
+/** Planter proportions: a stone box of soil with a round shrub and a few flowers. */
+export const PLANTER_SHAPE = { size: 0.72, height: 0.34, shrub: 0.25 } as const;
+
+function planterParts(f: PropFrame, out: PartSet): void {
+  const P = PLANTER_SHAPE;
+  const C = PROP_COLORS;
+  out.body.push(box(P.size, P.height, P.size, { x: f.cx, y: P.height / 2, z: f.cz }, C.stone));
+  out.body.push(box(P.size + 0.06, 0.05, P.size + 0.06, { x: f.cx, y: P.height + 0.02, z: f.cz }, 0xc7beb2));
+  out.body.push(box(P.size - 0.1, 0.02, P.size - 0.1, { x: f.cx, y: P.height + 0.05, z: f.cz }, C.soil));
+  out.body.push(paint(pose(new THREE.IcosahedronGeometry(P.shrub, 0).scale(1, 0.85, 1), { x: f.cx, y: P.height + P.shrub * 0.75, z: f.cz, ry: f.unit(0, 0) * 3 }), C.leaf));
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2 + f.unit(i, 1);
+    const r = P.size / 2 - 0.09;
+    const flower = { x: f.cx + Math.sin(angle) * r, y: P.height + 0.12, z: f.cz + Math.cos(angle) * r, ry: angle };
+    out.body.push(paint(pose(new THREE.OctahedronGeometry(0.06, 0), flower), pick(C.blossom, f.unit(i, 2))));
+  }
+}
+
+/** Crate proportions: a big slatted crate with a smaller one set askew on top. */
+export const CRATES_SHAPE = { big: 0.6, bigHeight: 0.46, small: 0.42, smallHeight: 0.34 } as const;
+
+function slattedCrate(width: number, height: number, x: number, y: number, z: number, ry: number, out: PartSet): void {
+  const C = PROP_COLORS;
+  out.body.push(box(width, height, width, { x, y: y + height / 2, z, ry }, C.wood));
+  for (const third of [1, 2]) out.body.push(box(width + 0.02, 0.04, width + 0.02, { x, y: y + (third * height) / 3, z, ry }, C.woodDark));
+}
+
+function cratesParts(f: PropFrame, out: PartSet): void {
+  const K = CRATES_SHAPE;
+  slattedCrate(K.big, K.bigHeight, f.cx, 0, f.cz, (f.unit(0, 0) - 0.5) * 0.3, out);
+  slattedCrate(K.small, K.smallHeight, f.cx + (f.unit(1, 0) - 0.5) * 0.06, K.bigHeight, f.cz, (f.unit(1, 1) - 0.5) * 0.9, out);
+}
+
+/** Barrel proportions: a staved barrel with two iron hoops and a lid. */
+export const BARREL_SHAPE = { radius: 0.27, bulge: 0.03, height: 0.72, sides: 10 } as const;
+
+function barrelsParts(f: PropFrame, out: PartSet): void {
+  const B = BARREL_SHAPE;
+  const C = PROP_COLORS;
+  const ry = f.unit(0, 0) * Math.PI;
+  const half = B.height / 2;
+  for (const [y0, rBottom, rTop] of [[0, B.radius, B.radius + B.bulge], [half, B.radius + B.bulge, B.radius]] as const) {
+    out.body.push(paint(pose(new THREE.CylinderGeometry(rTop, rBottom, half, B.sides), { x: f.cx, y: y0 + half / 2, z: f.cz, ry }), C.wood));
+  }
+  for (const y of [0.12, B.height - 0.12]) {
+    out.body.push(paint(pose(new THREE.CylinderGeometry(B.radius + 0.025, B.radius + 0.025, 0.04, B.sides), { x: f.cx, y, z: f.cz, ry }), C.iron));
+  }
+  out.body.push(paint(pose(new THREE.CylinderGeometry(B.radius - 0.03, B.radius - 0.03, 0.02, B.sides), { x: f.cx, y: B.height + 0.01, z: f.cz, ry }), C.woodDark));
+}
+
+/** Handcart proportions: a plank bed with low sides on two spoked wheels, its handles to −X. */
+export const CART_SHAPE = { bedLength: 1.2, bedHeight: 0.44, bedThickness: 0.08, sideHeight: 0.18, wheelRadius: 0.3, wheelWidth: 0.06 } as const;
+
+function cartParts(f: PropFrame, out: PartSet): void {
+  const K = CART_SHAPE;
+  const C = PROP_COLORS;
+  const bedX = f.maxX - K.bedLength / 2 - 0.04;
+  const bedD = f.d - 2 * K.wheelWidth - 0.08;
+  out.body.push(box(K.bedLength, K.bedThickness, bedD, { x: bedX, y: K.bedHeight, z: f.cz }, C.wood));
+  const sideY = K.bedHeight + K.sideHeight / 2;
+  for (const sz of [-1, 1]) out.body.push(box(K.bedLength, K.sideHeight, 0.04, { x: bedX, y: sideY, z: f.cz + sz * (bedD / 2 - 0.02) }, C.woodDark));
+  for (const sx of [-1, 1]) out.body.push(box(0.04, K.sideHeight, bedD, { x: bedX + sx * (K.bedLength / 2 - 0.02), y: sideY, z: f.cz }, C.woodDark));
+  // Wheels on an axle across the bed's middle, their faces towards ±Z.
+  for (const sz of [-1, 1]) {
+    const z = f.cz + sz * (f.d / 2 - K.wheelWidth / 2);
+    out.body.push(paint(pose(new THREE.CylinderGeometry(K.wheelRadius, K.wheelRadius, K.wheelWidth, 10), { x: bedX, y: K.wheelRadius, z, rx: Math.PI / 2 }), C.woodDark));
+    out.body.push(paint(pose(new THREE.CylinderGeometry(0.06, 0.06, K.wheelWidth + 0.02, 6), { x: bedX, y: K.wheelRadius, z, rx: Math.PI / 2 }), C.iron));
+  }
+  out.body.push(box(0.05, 0.05, f.d - 0.02, { x: bedX, y: K.wheelRadius, z: f.cz }, C.iron));
+  // Two handles running down to the ground on the −X side, and a rest leg under the bed's end.
+  const handleLength = bedX - K.bedLength / 2 - f.minX;
+  const handleX = f.minX + handleLength / 2;
+  for (const sz of [-1, 1]) {
+    out.body.push(box(handleLength, 0.04, 0.04, { x: handleX, y: K.bedHeight - 0.04, z: f.cz + sz * (bedD / 2 - 0.04) }, C.woodDark));
+  }
+  out.body.push(box(0.05, K.bedHeight, 0.05, { x: bedX - K.bedLength / 2 + 0.06, y: K.bedHeight / 2, z: f.cz }, C.woodDark));
+  // A sack and some produce in the bed.
+  const sack = { x: bedX + K.bedLength / 4, y: K.bedHeight + 0.14, z: f.cz, ry: f.unit(0, 0) };
+  out.body.push(paint(pose(new THREE.DodecahedronGeometry(0.17, 0).scale(1.2, 0.85, 1), sack), C.sack));
+  produceParts(bedX - K.bedLength / 6, K.bedHeight + 0.02, f.cz, 0.16, f.unit, 1, out);
+}
+
+type PropKind = Extract<StructureKind, 'marketStall' | 'bench' | 'planter' | 'crates' | 'barrels' | 'cart'>;
+
+/** One prop, low and inside its rect. */
+function propParts(grid: GridSpec, offset: Offset, kind: PropKind, s: StructurePlacement, out: PartSet): void {
+  const f = propFrame(grid, offset, s);
+  switch (kind) {
+    case 'marketStall':
+      marketStallParts(f, out);
+      return;
+    case 'bench':
+      benchParts(f, out);
+      return;
+    case 'planter':
+      planterParts(f, out);
+      return;
+    case 'crates':
+      cratesParts(f, out);
+      return;
+    case 'barrels':
+      barrelsParts(f, out);
+      return;
+    case 'cart':
+      cartParts(f, out);
+      return;
+    default:
+      assertNever(kind, 'propParts');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
 
@@ -1086,12 +1387,23 @@ export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlace
     case 'chickenCoop':
       coopParts(grid, s, out);
       return;
+    case 'slopShop':
+      slopBoothParts(grid, offset, s, out);
+      return;
+    case 'marketStall':
+    case 'bench':
+    case 'planter':
+    case 'crates':
+    case 'barrels':
+    case 'cart':
+      propParts(grid, offset, kind, s, out);
+      return;
     default:
       assertNever(kind, 'structureParts');
   }
 }
 
-/** Every structure of a map (the town's shops, parts exchange, well, lamp posts and hedges; the Neighbours' houses, coop and hedges), in world space. */
+/** Every structure of a map (the town's shops, parts exchange, booth, well, lamp posts, hedges and props; the Neighbours' houses, coop and hedges), in world space. */
 export function mapStructureParts(def: MapDefinition, out: PartSet): void {
   for (const s of def.structures) structureParts(def.grid, def.cosmeticOffset, s, out);
 }

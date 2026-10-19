@@ -3,7 +3,7 @@
  * ring around the grid, border woodland, bushes and flower clumps, the farm's fence, the town's
  * stone wall, trails leading off the grid at every warp, the farmstead (farmhouse and shipping
  * bin), the Neighbours map's two houses and coop, and the town's structures (shops, the parts
- * exchange, well, lamp posts and hedges).
+ * exchange, SLOPMART's booth, well, lamp posts, hedges and props).
  *
  * Lifecycle
  * - One {@link StaticScenery} per map, built lazily on the first full rebuild (`sync(state, null)`)

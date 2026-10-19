@@ -41,9 +41,12 @@ const onRing = (x0: number, z0: number, x1: number, z1: number) => (tx: number, 
   tx >= x0 && tx <= x1 && tz >= z0 && tz <= z1 && (tx === x0 || tx === x1 || tz === z0 || tz === z1);
 const cosmoRing = onRing(3, 5, 10, 12);
 const barnabyRing = onRing(20, 16, 29, 25);
-/** Spec §5.2: each ring is fence except its gate. */
+const runRing = onRing(11, 5, 15, 8);
+/** Spec §5.2: each field's ring is fence except its gate, and Cosmo's door front (part 4d spec §8); the chicken run is closed (part 4d spec §7.3). */
 const fenceExpected = (tx: number, tz: number): boolean =>
-  (cosmoRing(tx, tz) && !(tx === 6 && tz === 12)) || (barnabyRing(tx, tz) && !(tx === 24 && tz === 16));
+  (cosmoRing(tx, tz) && !(tx === 6 && tz === 12) && !(tx === 5 && tz === 5)) || (barnabyRing(tx, tz) && !(tx === 24 && tz === 16)) || runRing(tx, tz);
+/** Inside the chicken run: open, but shut off by its fence. */
+const inRun = (tx: number, tz: number): boolean => tx >= 12 && tx <= 14 && tz >= 6 && tz <= 7;
 
 const move = (state: GameState, direction: Direction): GameState => gameReducer(state, actions.move(direction));
 
@@ -101,17 +104,18 @@ describe('the Neighbours map', () => {
     });
   });
 
-  it('rings both fields with wood fences, open at one gate each', () => {
-    expect(COSMO_FENCE).toEqual({ corners: [{ tx: 3, tz: 5 }, { tx: 10, tz: 12 }], gap: { tx: 6, tz: 12 } });
-    expect(BARNABY_FENCE).toEqual({ corners: [{ tx: 20, tz: 16 }, { tx: 29, tz: 25 }], gap: { tx: 24, tz: 16 } });
+  it('rings both fields with wood fences, open at their gaps, and closes the chicken run', () => {
+    expect(COSMO_FENCE).toEqual({ corners: [{ tx: 3, tz: 5 }, { tx: 10, tz: 12 }], gaps: [{ tx: 6, tz: 12 }, { tx: 5, tz: 5 }] });
+    expect(BARNABY_FENCE).toEqual({ corners: [{ tx: 20, tz: 16 }, { tx: 29, tz: 25 }], gaps: [{ tx: 24, tz: 16 }] });
     forEachTile(world, (tile, tx, tz) => {
       expect(isFenceTile(tx, tz), key(tx, tz)).toBe(fenceExpected(tx, tz));
       if (fenceExpected(tx, tz)) expect(tile, key(tx, tz)).toEqual(FENCE);
       else expect(tile.object, key(tx, tz)).toBeNull();
     });
-    // 28 ring tiles round Cosmo's 6 × 6 field and 36 round Barnaby's 8 × 8, less a gate each.
-    expect(countTiles(world, (tile) => tile.object?.kind === 'woodFence')).toBe(27 + 35);
-    for (const gap of [COSMO_FENCE.gap, BARNABY_FENCE.gap]) {
+    // 28 ring tiles round Cosmo's 6 × 6 field less his gate and door front, 36 round Barnaby's
+    // 8 × 8 less a gate, and 14 round the run's 3 × 2.
+    expect(countTiles(world, (tile) => tile.object?.kind === 'woodFence')).toBe(26 + 35 + 14);
+    for (const gap of [...COSMO_FENCE.gaps, ...BARNABY_FENCE.gaps]) {
       expect(requireTile(world, gap.tx, gap.tz), key(gap.tx, gap.tz)).toEqual(EMPTY_TILE);
       expect(isWalkable(requireTile(world, gap.tx, gap.tz))).toBe(true);
     }
@@ -174,10 +178,10 @@ describe('the gates', () => {
 });
 
 describe('getting around', () => {
-  it('reaches every walkable tile from the gate, the fields through their gaps', () => {
+  it('reaches every walkable tile outside the chicken run from the gate, the fields through their gaps', () => {
     const reach = reachableFrom(world, { tx: 1, tz: 14 });
     forEachTile(world, (tile, tx, tz) => {
-      expect(reach.has(key(tx, tz)), key(tx, tz)).toBe(isWalkable(tile));
+      expect(reach.has(key(tx, tz)), key(tx, tz)).toBe(isWalkable(tile) && !inRun(tx, tz));
     });
     for (const inside of [{ tx: 7, tz: 8 }, { tx: 25, tz: 20 }]) expect(reach.has(key(inside.tx, inside.tz))).toBe(true);
   });
@@ -188,8 +192,9 @@ describe('getting around', () => {
       const reach = reachableFrom(closed, { tx: 1, tz: 14 });
       expect(reach.has(key(inside.tx, inside.tz))).toBe(false);
     };
-    shut(COSMO_FENCE.gap, { tx: 7, tz: 8 });
-    shut(BARNABY_FENCE.gap, { tx: 25, tz: 20 });
+    // Cosmo's door front opens only onto his house, so his field still closes at its gate.
+    shut({ tx: 6, tz: 12 }, { tx: 7, tz: 8 });
+    shut({ tx: 24, tz: 16 }, { tx: 25, tz: 20 });
   });
 });
 
@@ -269,7 +274,7 @@ describe("the neighbours' fences", () => {
   });
 
   it("let the axe lift a fence the player put down off the neighbours' rings", () => {
-    const own = withTile(withPlayer(BASE, { tx: 15, tz: 8 }, Direction.North, 'neighbours'), { tx: 15, tz: 7 }, FENCE, 'neighbours');
+    const own = withTile(withPlayer(BASE, { tx: 17, tz: 8 }, Direction.North, 'neighbours'), { tx: 17, tz: 7 }, FENCE, 'neighbours');
     expect(planPrimaryAction(holding(own, 'axe')).intent).toEqual({ kind: 'pickUp', itemId: 'woodFence' });
   });
 });

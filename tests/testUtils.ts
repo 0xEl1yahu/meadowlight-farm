@@ -45,9 +45,11 @@ import { countItem } from '../src/state/inventory';
 import { serializeGame } from '../src/state/persistence';
 import { withMap } from '../src/state/selectors';
 import { MAPS } from '../src/world/maps';
+import { CHICKEN_RUN, COSMO_DOOR_GAP, ringTiles } from '../src/world/maps/neighbours';
+import { TOWN_PROP_KINDS } from '../src/world/maps/town';
 import { calendarTime } from '../src/time/clock';
 import { locateTile } from '../src/world/grid';
-import { isWalkable, requireTile, setTile } from '../src/world/tiles';
+import { EMPTY_TILE, blockedTile, isWalkable, requireTile, setTile } from '../src/world/tiles';
 
 /** Tile the canonical scenario stands on (clear zone, always walkable). */
 export const STAND: TileCoord = { tx: 5, tz: 9 };
@@ -317,15 +319,62 @@ const V7_NPC_IDS: ReadonlyMap<string, string> = new Map([
 ]);
 const v7NpcId = (id: unknown): unknown => (typeof id === 'string' ? (V7_NPC_IDS.get(id) ?? id) : id);
 
+/** The tile at `at` on `mapId` in save JSON, by reference, so a builder can read or rewrite it. */
+export function savedTileAt(save: SaveJson, mapId: MapId, at: TileCoord): SaveJson {
+  const { chunkIndex, localIndex } = locateTile(MAPS[mapId].grid, at.tx, at.tz);
+  const chunks = (save.maps as Record<string, { chunks: { tiles: SaveJson[] }[] }>)[mapId]?.chunks;
+  const tile = chunks?.[chunkIndex]?.tiles[localIndex];
+  if (tile === undefined) throw new Error(`savedTileAt: no tile (${at.tx}, ${at.tz}) on ${mapId}`);
+  return tile;
+}
+
+/** Replaces the tile at `at` on `mapId` in save JSON, keeping its chunk's revision as a save of that version would. */
+export function setSavedTile(save: SaveJson, mapId: MapId, at: TileCoord, tile: Tile | SaveJson): void {
+  const { chunkIndex, localIndex } = locateTile(MAPS[mapId].grid, at.tx, at.tz);
+  const chunk = (save.maps as Record<string, { chunks: { tiles: unknown[] }[] }>)[mapId]?.chunks[chunkIndex];
+  if (chunk === undefined) throw new Error(`setSavedTile: no tile (${at.tx}, ${at.tz}) on ${mapId}`);
+  chunk.tiles[localIndex] = JSON.parse(JSON.stringify(tile)) as unknown;
+}
+
+/** The tiles of every town prop (farmclaws part 4d spec §7.1), which version 9 holds as open grass. */
+export function townPropTiles(): TileCoord[] {
+  return MAPS.town.structures
+    .filter((s) => TOWN_PROP_KINDS.includes(s.kind))
+    .flatMap((s) => Array.from({ length: s.rect.width * s.rect.depth }, (_, i) => ({ tx: s.rect.x0 + (i % s.rect.width), tz: s.rect.z0 + Math.floor(i / s.rect.width) })));
+}
+
+/** A fence tile, as the Neighbours map holds one. */
+const FENCE_TILE: Tile = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
+
 /**
- * Hand-transforms a current (version 9) state back into the JSON of a version-8 save (farmclaws
- * part 4c spec §7): robots without a map or an owner, zones without a map, and no jobs. Every
- * robot must be the player's and every zone on the farm, and the jobs must be what the migration
- * gives back: job 1 done and job 2 offered when there is any robot or delivery, else a new game's.
- * v7Save starts from this, so every older-save builder inherits it.
+ * Hand-transforms a current (version 10) state back into the JSON of a version-9 save (farmclaws
+ * part 4d spec §9.2): the town's prop tiles are open grass, Cosmo's door gap is fence and the
+ * chicken run's ring is open grass, with chunk revisions as they are. The state must hold those
+ * tiles as version 10 makes them, since nothing else on them migrates back. v8Save starts from
+ * this, so every older-save builder inherits it.
+ */
+export function v9Save(state: GameState): SaveJson {
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 9;
+  const turnBack = (mapId: MapId, at: TileCoord, now: Tile, then: Tile): void => {
+    if (!deepEqual(tileAt(state, at, mapId), now)) throw new Error(`v9Save: version 9 can't hold what is at (${at.tx}, ${at.tz}) on ${mapId}`);
+    setSavedTile(save, mapId, at, then);
+  };
+  for (const at of townPropTiles()) turnBack('town', at, blockedTile(Blocker.Building), EMPTY_TILE);
+  turnBack('neighbours', COSMO_DOOR_GAP, EMPTY_TILE, FENCE_TILE);
+  for (const at of ringTiles(CHICKEN_RUN)) turnBack('neighbours', at, FENCE_TILE, EMPTY_TILE);
+  return save;
+}
+
+/**
+ * Hand-transforms a state back into the JSON of a version-8 save (farmclaws part 4c spec §7): it
+ * starts from v9Save, with robots without a map or an owner, zones without a map, and no jobs.
+ * Every robot must be the player's and every zone on the farm, and the jobs must be what the
+ * migration gives back: job 1 done and job 2 offered when there is any robot or delivery, else a
+ * new game's. v7Save starts from this, so every older-save builder inherits it.
  */
 export function v8Save(state: GameState): SaveJson {
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const save = v9Save(state);
   save.version = 8;
   const robots = save.robots as { list: SaveJson[]; zones: Record<string, SaveJson | null> };
   for (const robot of robots.list) {

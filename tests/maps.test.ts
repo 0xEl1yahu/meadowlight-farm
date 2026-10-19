@@ -194,6 +194,8 @@ describe('map definitions', () => {
         { tx: 1, tz: 16 },
         { tx: 39, tz: 16 },
         { tx: 38, tz: 16 },
+        { tx: 0, tz: 30 },
+        { tx: 39, tz: 30 },
       ],
     });
     expect([MAPS.town.grid.width, MAPS.town.grid.depth]).toEqual([40, 32]);
@@ -244,9 +246,9 @@ describe('warps and reserved tiles', () => {
     }
   });
 
-  it('reserves exactly the warp tiles and the arrival tiles', () => {
+  it("reserves exactly the warp tiles and the arrival tiles, and the town's two south exits", () => {
     for (const id of MAP_IDS) {
-      const expected = new Set<string>();
+      const expected = new Set<string>(id === 'town' ? [key(0, 30), key(39, 30)] : []);
       for (const warp of MAPS[id].warps) expected.add(key(warp.from.tx, warp.from.tz));
       for (const other of MAP_IDS) {
         for (const warp of MAPS[other].warps) if (warp.to.mapId === id) expected.add(key(warp.to.tx, warp.to.tz));
@@ -524,15 +526,16 @@ describe('the town, Brookhollow', () => {
   it('places exactly the structures of the spec', () => {
     const lamp = (tx: number, tz: number) => ({ kind: 'lampPost', rect: r(tx, tz, 1, 1), door: null });
     const hedge = (x0: number, z0: number, width: number, depth: number) => ({ kind: 'hedge', rect: r(x0, z0, width, depth), door: null });
+    const prop = (kind: string, x0: number, z0: number, width: number, depth: number) => ({ kind, rect: r(x0, z0, width, depth), door: null });
     expect(def.structures).toEqual([
       { kind: 'generalStore', rect: r(3, 0, 7, 7), door: { tx: 6, tz: 6 } },
       { kind: 'blacksmith', rect: r(12, 0, 6, 7), door: { tx: 15, tz: 6 } },
       { kind: 'carpenter', rect: r(22, 0, 6, 7), door: { tx: 25, tz: 6 } },
       { kind: 'ranch', rect: r(31, 0, 7, 7), door: { tx: 34, tz: 6 } },
       { kind: 'partsExchange', rect: r(18, 0, 4, 7), door: { tx: 20, tz: 6 } },
+      { kind: 'slopShop', rect: r(28, 0, 3, 7), door: { tx: 29, tz: 6 } },
       hedge(0, 0, 3, 7),
       hedge(10, 0, 2, 7),
-      hedge(28, 0, 3, 7),
       hedge(38, 0, 2, 7),
       { kind: 'well', rect: r(19, 13, 2, 2), door: null },
       lamp(13, 8),
@@ -541,6 +544,18 @@ describe('the town, Brookhollow', () => {
       lamp(26, 20),
       lamp(4, 14),
       lamp(36, 14),
+      prop('marketStall', 9, 9, 2, 1),
+      prop('marketStall', 9, 11, 2, 1),
+      prop('marketStall', 29, 10, 2, 1),
+      prop('bench', 15, 21, 2, 1),
+      prop('bench', 23, 21, 2, 1),
+      prop('planter', 12, 12, 1, 1),
+      prop('planter', 27, 12, 1, 1),
+      prop('crates', 3, 8, 1, 1),
+      prop('crates', 4, 8, 1, 1),
+      prop('barrels', 31, 8, 1, 1),
+      prop('barrels', 32, 8, 1, 1),
+      prop('cart', 37, 19, 2, 1),
     ]);
   });
 
@@ -558,27 +573,34 @@ describe('the town, Brookhollow', () => {
     }
   });
 
-  it('blocks exactly the tiles it blocked before the parts exchange, so saved towns need no migration', () => {
-    // Pinned without reading def.structures: the whole back band (z 0–6), the well and the six
-    // lamp posts are buildings, the river is water and everything else is open grass.
+  it('blocks the back band, the well, the lamp posts and the props, and nothing else but the river', () => {
+    // Pinned without reading def.structures: the whole back band (z 0–6), the well, the six lamp
+    // posts and the props' 18 tiles (part 4d spec §7.1) are buildings, the river is water and
+    // everything else is open grass. Before part 4d the props' tiles were open grass, so save
+    // version 10 migrates them.
     const lamps = [key(13, 8), key(26, 8), key(13, 20), key(26, 20), key(4, 14), key(36, 14)];
+    const props = [
+      ...[9, 10].flatMap((tx) => [key(tx, 9), key(tx, 11)]),
+      key(29, 10), key(30, 10), key(15, 21), key(16, 21), key(23, 21), key(24, 21),
+      key(12, 12), key(27, 12), key(3, 8), key(4, 8), key(31, 8), key(32, 8), key(37, 19), key(38, 19),
+    ];
     const isBuilding = (tx: number, tz: number): boolean =>
-      tz <= 6 || (tx >= 19 && tx <= 20 && tz >= 13 && tz <= 14) || lamps.includes(key(tx, tz));
+      tz <= 6 || (tx >= 19 && tx <= 20 && tz >= 13 && tz <= 14) || lamps.includes(key(tx, tz)) || props.includes(key(tx, tz));
     let buildings = 0;
     forEachTile(town, (tile, tx, tz) => {
       const expected = isBuilding(tx, tz) ? blockedTile(Blocker.Building) : isTownRiver(tx, tz) ? blockedTile(Blocker.Water) : EMPTY_TILE;
       expect(tile, key(tx, tz)).toEqual(expected);
       if (tile.blocker === Blocker.Building) buildings++;
     });
-    expect(buildings).toBe(40 * 7 + 4 + 6);
+    expect(buildings).toBe(40 * 7 + 4 + 6 + 18);
   });
 
-  it('covers the back band z 0–6 exactly once with shops, hedges and the parts exchange', () => {
+  it("covers the back band z 0–6 exactly once with shops, hedges, SLOPMART's booth and the parts exchange", () => {
     for (let tz = 0; tz <= 6; tz++) {
       for (let tx = 0; tx < 40; tx++) {
         const covering = def.structures.filter((s) => rectContains(s.rect, tx, tz));
         expect(covering.length, key(tx, tz)).toBe(1);
-        expect(['well', 'lampPost']).not.toContain(covering[0]?.kind);
+        expect(['generalStore', 'blacksmith', 'carpenter', 'ranch', 'partsExchange', 'slopShop', 'hedge']).toContain(covering[0]?.kind);
       }
     }
   });
@@ -634,13 +656,14 @@ describe('the town, Brookhollow', () => {
     });
   });
 
-  it('opens every shop door and the parts exchange door onto a walkable path tile at z = 7', () => {
+  it("opens every shop door, the parts exchange door and SLOPMART's counter onto a walkable tile at z = 7, a path but for the booth's", () => {
     expect(def.structures.filter((s) => s.door !== null).map((s) => s.kind)).toEqual([
       'generalStore',
       'blacksmith',
       'carpenter',
       'ranch',
       'partsExchange',
+      'slopShop',
     ]);
     for (const s of def.structures) {
       if (s.door === null) continue;
@@ -648,7 +671,8 @@ describe('the town, Brookhollow', () => {
       expect(rectContains(s.rect, s.door.tx, s.door.tz)).toBe(true);
       const front = requireTile(town, s.door.tx, 7);
       expect(isWalkable(front), s.kind).toBe(true);
-      expect(def.surfaceAt(s.door.tx, 7), s.kind).not.toBe('grass');
+      if (s.kind === 'slopShop') expect(def.surfaceAt(s.door.tx, 7)).toBe('grass');
+      else expect(def.surfaceAt(s.door.tx, 7), s.kind).not.toBe('grass');
     }
   });
 });
@@ -887,7 +911,7 @@ describe('migrating the single farm world of an older save into maps', () => {
     const state = gatesInTheWay();
     const v2 = legacySave(state, 2);
     const migrated = migrateSave(v2) as SaveJson;
-    expect(migrated.version).toBe(9);
+    expect(migrated.version).toBe(10);
     expect('world' in migrated).toBe(false);
     expect(Object.keys(migrated.maps as SaveJson)).toEqual([...MAP_IDS]);
     expect((migrated.player as SaveJson).mapId).toBe('farm');

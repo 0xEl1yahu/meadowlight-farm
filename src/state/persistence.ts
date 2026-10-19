@@ -23,7 +23,9 @@ import { freeSpotNear, withWorkbenchAt } from '../robots/workbench';
 import { calendarTime } from '../time/clock';
 import { chunkCount, chunkRectByIndex, createGridSpec, inBounds } from '../world/grid';
 import { MAPS, isReservedTile } from '../world/maps';
-import { assertWorldObjectsConsistent, getTile, isWalkable } from '../world/tiles';
+import { CHICKEN_RUN, COSMO_DOOR_GAP, ringInside, ringTiles } from '../world/maps/neighbours';
+import { TOWN_EXITS, TOWN_PROP_KINDS } from '../world/maps/town';
+import { EMPTY_TILE, assertWorldObjectsConsistent, blockedTile, getTile, isWalkable } from '../world/tiles';
 import { createDefaultSections } from './initialState';
 import { isValidRobotsSection } from './robotValidation';
 import { isValidSections } from './sectionValidation';
@@ -581,6 +583,107 @@ function migrateV8toV9(save: Obj): Obj {
 }
 
 /**
+ * What version 10 does to a tile it changes (farmclaws part 4d spec §7.4, §9.2): 'block' makes a
+ * town prop's tile a building, 'fence' puts the chicken run's fence on its ring (a fence already
+ * there stays), 'gap' takes the fence off Cosmo's door front, 'shut' keeps the run's inside as
+ * open ground, and 'exit' keeps a town exit clear. Anything else on a changed tile moves away;
+ * the player and robots move off 'block', 'fence' and 'shut' tiles.
+ */
+type TileChangeV10 = 'block' | 'fence' | 'gap' | 'shut' | 'exit';
+
+/** The tiles version 10 changes on `mapId`, keyed by row (tz × width + tx). */
+function tileChangesV10(mapId: 'town' | 'neighbours'): ReadonlyMap<number, TileChangeV10> {
+  const { width } = MAPS[mapId].grid;
+  const changes = new Map<number, TileChangeV10>();
+  const set = (tx: number, tz: number, change: TileChangeV10): void => void changes.set(tz * width + tx, change);
+  if (mapId === 'town') {
+    for (const s of MAPS.town.structures) {
+      if (!TOWN_PROP_KINDS.includes(s.kind)) continue;
+      for (let tz = s.rect.z0; tz < s.rect.z0 + s.rect.depth; tz++) for (let tx = s.rect.x0; tx < s.rect.x0 + s.rect.width; tx++) set(tx, tz, 'block');
+    }
+    for (const exit of TOWN_EXITS) set(exit.tx, exit.tz, 'exit');
+    return changes;
+  }
+  set(COSMO_DOOR_GAP.tx, COSMO_DOOR_GAP.tz, 'gap');
+  for (const at of ringTiles(CHICKEN_RUN)) set(at.tx, at.tz, 'fence');
+  const run = ringInside(CHICKEN_RUN);
+  for (let tz = run.z0; tz < run.z0 + run.depth; tz++) for (let tx = run.x0; tx < run.x0 + run.width; tx++) set(tx, tz, 'shut');
+  return changes;
+}
+
+const FENCE_TILE_V10 = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
+
+/** The saved tile version 10 puts where `change` falls on `tile`; `displace` is called with anything that has to move. */
+function changedTileV10(tile: Obj, change: TileChangeV10, displace: (object: unknown) => void): Obj {
+  const object: unknown = tile.object;
+  const isFence = isObj(object) && object.kind === 'woodFence';
+  // The fence a v9 save holds at Cosmo's door front is the map's own, so it goes rather than moves.
+  const stays = object === null || object === undefined || (isFence && (change === 'fence' || change === 'gap'));
+  if (!stays) displace(object);
+  if (change === 'block') return { ...blockedTile(Blocker.Building) };
+  if (change === 'fence') return FENCE_TILE_V10;
+  return { ...tile, object: null };
+}
+
+/**
+ * One map's part of the v9 → v10 step: its changed tiles (tileChangesV10), then the player and
+ * that map's robots off a tile they can no longer stand on, then every displaced object, each in
+ * scan order to `freeSpotNear` on that map. A spot once given is taken, and so is every changed
+ * tile and every robot or player who stays, so nothing lands on anything else, in the run or on
+ * Cosmo's door front. Chunk revisions are kept. A malformed map passes through unchanged for the
+ * validator to reject.
+ */
+function migrateMapV10(save: Obj, mapId: 'town' | 'neighbours'): Obj {
+  const { maps, player, robots } = save;
+  if (!isObj(maps)) return save;
+  const { width } = MAPS[mapId].grid;
+  const changes = tileChangesV10(mapId);
+  const displaced: { readonly object: unknown; readonly from: TileCoord }[] = [];
+  const reshaped = mapSavedTiles(maps[mapId], (tile, tx, tz) => {
+    const change = changes.get(tz * width + tx);
+    return change === undefined ? tile : changedTileV10(tile, change, (object) => displaced.push({ object, from: { tx, tz } }));
+  });
+  if (reshaped === null || !isValidWorld(reshaped, mapId)) return save;
+  const mustLeave = (tx: number, tz: number): boolean => {
+    const change = changes.get(tz * width + tx);
+    return change === 'block' || change === 'fence' || change === 'shut';
+  };
+  const standing = (v: unknown): v is Obj & { tx: number; tz: number } => isObj(v) && v.mapId === mapId && isInt(v.tx) && isInt(v.tz);
+  const list: readonly unknown[] = isObj(robots) && Array.isArray(robots.list) ? robots.list : [];
+  const taken: TileCoord[] = [...changes.keys()].map((k) => ({ tx: k % width, tz: Math.floor(k / width) }));
+  for (const at of [player, ...list]) if (standing(at) && !mustLeave(at.tx, at.tz)) taken.push({ tx: at.tx, tz: at.tz });
+  const moveOff = <T>(at: T): T => {
+    if (!standing(at) || !mustLeave(at.tx, at.tz)) return at;
+    const spot = freeSpotNear(reshaped, { tx: at.tx, tz: at.tz }, taken, mapId);
+    taken.push(spot);
+    return { ...at, tx: spot.tx, tz: spot.tz };
+  };
+  let migrated: Obj = { ...save, player: moveOff(player) };
+  if (isObj(robots) && Array.isArray(robots.list)) migrated = { ...migrated, robots: { ...robots, list: robots.list.map(moveOff) } };
+  const placed = new Map<number, unknown>();
+  for (const { object, from } of displaced) {
+    const spot = freeSpotNear(reshaped, from, taken, mapId);
+    taken.push(spot);
+    placed.set(spot.tz * width + spot.tx, object);
+  }
+  const world = mapSavedTiles(reshaped, (tile, tx, tz) => {
+    const object = placed.get(tz * width + tx);
+    return object === undefined ? tile : { ...tile, object };
+  });
+  return { ...migrated, maps: { ...maps, [mapId]: world } };
+}
+
+/**
+ * Version 9 predates SLOPMART's booth, the town's props and exits, Cosmo's door gap and his
+ * chicken run (farmclaws part 4d spec §9.2). The booth stands on the old hedge's tiles, so only
+ * the props, the exits, the door gap and the run change saved tiles, on the town and the
+ * Neighbours map (migrateMapV10).
+ */
+function migrateV9toV10(save: Obj): Obj {
+  return migrateMapV10(migrateMapV10({ ...save, version: 10 }, 'town'), 'neighbours');
+}
+
+/**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
  * validator.
@@ -595,6 +698,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 6) v = migrateV6toV7(v);
   if (isObj(v) && v.version === 7) v = migrateV7toV8(v);
   if (isObj(v) && v.version === 8) v = migrateV8toV9(v);
+  if (isObj(v) && v.version === 9) v = migrateV9toV10(v);
   return v;
 }
 
