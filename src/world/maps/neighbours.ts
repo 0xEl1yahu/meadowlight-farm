@@ -185,10 +185,6 @@ export const NEIGHBOURS_MAP: MapDefinition = {
   warps: [{ from: { tx: 0, tz: 14 }, exit: Direction.West, to: { mapId: 'town', tx: 38, tz: 16, facing: Direction.West } }],
   reserved: [{ tx: 0, tz: 14 }, ARRIVAL],
   structures,
-  npcs: [
-    { id: 'cosmo', tx: 7, tz: 13, facing: Direction.South },
-    { id: 'barnaby', tx: 25, tz: 15, facing: Direction.North },
-  ],
   wild: null,
   farmstead: null,
   scenery: 'farm',

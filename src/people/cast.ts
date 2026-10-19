@@ -1,12 +1,10 @@
 /**
- * The cast (farmclaws part 4a spec §2): who each character is, how they look, where they stand
- * and what their chat box offers. Pure data and lookups. The spots themselves live on the map
- * definitions (`MapDefinition.npcs`), so the startup check, movement, placement and the renderer
- * all read the same list.
+ * The cast (farmclaws part 4a spec §2): who each character is, how they look and what their chat
+ * box offers. Pure data and lookups. Where they are is their saved place (part 4d spec §4.1),
+ * found through `walkerAt`.
  */
-import type { Appearance, GameState, MapId, NpcActionKind, NpcId } from '../core/types';
+import type { Appearance, GameState, NpcActionKind, NpcId } from '../core/types';
 import { giverJob, isGateOpen, type ShopGate } from '../jobs/jobs';
-import { MAPS, type NpcPlacement } from '../world/maps';
 
 export interface CastMember {
   readonly name: string;
@@ -49,23 +47,6 @@ export const CAST_LOOKS: Readonly<Record<NpcId, CastLook>> = {
   juniper: { appearance: { skinTone: 2, hairStyle: 1, hairColor: 0, shirtColor: 7, overallsColor: 0, hat: 1 }, prop: 'pencil' },
   tallulah: { appearance: { skinTone: 1, hairStyle: 2, hairColor: 5, shirtColor: 4, overallsColor: 2, hat: 0 }, prop: 'neckerchief' },
 };
-
-/** The character standing on (tx, tz) of map `mapId`, or null. */
-export function npcAt(mapId: MapId, tx: number, tz: number): NpcId | null {
-  for (const placement of MAPS[mapId].npcs) {
-    if (placement.tx === tx && placement.tz === tz) return placement.id;
-  }
-  return null;
-}
-
-/** Where `npc` stands. The startup check places every character on exactly one map. */
-export function npcSpot(npc: NpcId): { readonly mapId: MapId; readonly placement: NpcPlacement } {
-  for (const def of Object.values(MAPS)) {
-    const placement = def.npcs.find((p) => p.id === npc);
-    if (placement !== undefined) return { mapId: def.id, placement };
-  }
-  throw new RangeError(`Character ${npc} is placed on no map`);
-}
 
 /** A button in the chat box (spec §3.2). */
 export interface NpcAction {

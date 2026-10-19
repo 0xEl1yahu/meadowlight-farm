@@ -6,8 +6,9 @@
  * minutes one at a time; and everyone indoors the next morning.
  */
 import { describe, expect, it } from 'vitest';
-import { INVENTORY, TIME } from '../src/config';
+import { INVENTORY, JOBS, ROBOTS, TIME } from '../src/config';
 import {
+  DIRECTIONS,
   Direction,
   NPC_IDS,
   TOWNSFOLK_IDS,
@@ -18,13 +19,18 @@ import {
   type WalkerId,
   type WalkerPlace,
 } from '../src/core/types';
-import { legsFor, targetOf } from '../src/people/timetable';
-import { runWalkersMinute, walkerPlace, walkersIndoors, withWalkerPlace } from '../src/people/walk';
+import { LINE_BANKS, STUCK_LINE, lineFor } from '../src/people/lines';
+import { farmerStops, legsFor, targetOf } from '../src/people/timetable';
+import { isStuck, nudgeWalkersOff, runWalkersMinute, walkerAt, walkerPlace, walkersIndoors, withWalkerPlace } from '../src/people/walk';
 import { runMinutesThrough } from '../src/robots/run';
+import { freeSpotInReach } from '../src/robots/world';
 import { actions } from '../src/state/actions';
+import { placementProblem } from '../src/state/intents';
+import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
-import { manhattanDistance } from '../src/world/grid';
-import { BASE, placesOf, robotOf, tileAt, withPlaces, withPlayer, withRobots, withTile } from './testUtils';
+import { chebyshevDistance, manhattanDistance, stepTile } from '../src/world/grid';
+import { getTile, isWalkable } from '../src/world/tiles';
+import { BASE, emptyHanded, holding, placesOf, robotOf, tileAt, withPlaces, withPlayer, withRobots, withTile } from './testUtils';
 
 const WALKER_IDS: readonly WalkerId[] = [...NPC_IDS, ...TOWNSFOLK_IDS];
 
@@ -62,6 +68,17 @@ function tileOf(place: WalkerPlace): TileCoord & { readonly mapId: MapId } {
 
 const onTile = (place: WalkerPlace, mapId: MapId, tile: TileCoord): boolean =>
   place.kind === 'out' && place.mapId === mapId && place.tx === tile.tx && place.tz === tile.tz;
+
+/** `state` with the player on the first free walkable tile next to `tile` (in DIRECTIONS order), facing it. */
+function standBeside(state: GameState, tile: TileCoord & { readonly mapId: MapId }): GameState {
+  for (const way of DIRECTIONS) {
+    const step = stepTile(tile, way);
+    const stand = { tx: 2 * tile.tx - step.tx, tz: 2 * tile.tz - step.tz };
+    const ground = getTile(state.maps[tile.mapId], stand.tx, stand.tz);
+    if (ground !== null && isWalkable(ground) && walkerAt(state, tile.mapId, stand.tx, stand.tz) === null) return withPlayer(state, stand, way, tile.mapId);
+  }
+  throw new Error(`standBeside: no free tile next to (${tile.tx}, ${tile.tz})`);
+}
 
 /** A dry day at 6:00 am on the maps with nothing placed, the player at home on the farm. */
 const DRY = BASE;
@@ -355,5 +372,172 @@ describe('Review Focus 5: the morning', () => {
     const reset = walkersIndoors(away);
     for (const id of WALKER_IDS) expect(walkerPlace(reset, id)).toEqual(INDOORS);
     expect(reset.npcs.marigold).toBe(away.npcs.marigold);
+  });
+});
+
+describe('walkerAt', () => {
+  it('finds a walker mid-walk on their tile and map, and nobody anywhere else', () => {
+    const walking = runTo(DRY, at(6, 4));
+    const sol = tileOf(walkerPlace(walking, 'sol'));
+    expect(manhattanDistance(sol, { tx: 20, tz: 7 })).toBe(3);
+    expect(walkerAt(walking, 'town', sol.tx, sol.tz)).toBe('sol');
+    expect(walkerAt(walking, 'town', 20, 7)).toBeNull();
+    expect(walkerAt(walking, 'farm', sol.tx, sol.tz)).toBeNull();
+    expect(walkerAt(walking, 'town', -1, 7)).toBeNull();
+    // Indoors is off the map: Marigold's 4a spot is empty before she comes out.
+    expect(walkerAt(walking, 'town', 7, 7)).toBeNull();
+  });
+
+  it('gives the first walker on a shared tile: characters before townsfolk, each in id order', () => {
+    const shared = withPlaces(DRY, {
+      kid: out('town', 18, 12, Direction.South),
+      busker: out('town', 18, 12, Direction.South),
+      marigold: out('town', 18, 12, Direction.East),
+      sol: out('town', 18, 12, Direction.West),
+    });
+    expect(walkerAt(shared, 'town', 18, 12)).toBe('sol');
+    expect(walkerAt(withPlaces(shared, { sol: INDOORS, marigold: INDOORS }), 'town', 18, 12)).toBe('busker');
+  });
+});
+
+describe('a walker’s tile and the player', () => {
+  const walking = runTo(DRY, at(6, 4));
+  const sol = tileOf(walkerPlace(walking, 'sol'));
+  /** The player beside Sol, facing him. */
+  const beside = standBeside(walking, sol);
+
+  it('refuses the player’s step onto it: they only turn to face the walker', () => {
+    const way = beside.player.facing;
+    const sideways = { ...beside, player: { ...beside.player, facing: way === Direction.North ? Direction.East : Direction.North } };
+    expect(gameReducer(sideways, actions.move(way)).player).toEqual({ ...sideways.player, facing: way });
+    const busker = withPlaces(beside, { sol: INDOORS, busker: out('town', sol.tx, sol.tz, Direction.South) });
+    expect(gameReducer(busker, actions.move(way))).toBe(busker);
+  });
+
+  it("refuses to place anything on it: Someone's standing there.", () => {
+    const placing = holding(beside, 'chest');
+    expect(placementProblem(placing, 'chest', sol)).toBe("Someone's standing there.");
+    const refused = gameReducer(placing, actions.useTool());
+    expect(refused.maps).toBe(placing.maps);
+    expect(refused.messages.entries.at(-1)?.text).toBe("Someone's standing there.");
+  });
+});
+
+describe('Review Focus 4: a chest on a stop', () => {
+  const lunch = { tx: 18, tz: 13 };
+  /** Marigold on her way to lunch, one step from her spot. */
+  const nearly = runTo(DRY, at(12, 15));
+  const chest = { ...tileAt(nearly, lunch, 'town'), object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
+  const blocked = withTile(nearly, lunch, chest, 'town');
+  const beside = tileOf(walkerPlace(blocked, 'marigold'));
+
+  it('stops Marigold beside it, stuck, and keeps her still for the next 30 minutes', () => {
+    expect(manhattanDistance(beside, lunch)).toBe(1);
+    expect(isStuck(nearly, 'marigold')).toBe(false);
+    const states = timeline(blocked, at(12, 45));
+    expect(states).toHaveLength(30);
+    for (const state of states) {
+      expect(walkerPlace(state, 'marigold'), `${state.time.minuteOfDay}`).toBe(walkerPlace(blocked, 'marigold'));
+      expect(isStuck(state, 'marigold')).toBe(true);
+    }
+  });
+
+  it('opens her chat with the stuck line, after her introduction', () => {
+    const facing = emptyHanded(standBeside(blocked, beside));
+    expect(walkerAt(facing, 'town', beside.tx, beside.tz)).toBe('marigold');
+    expect(isStuck(facing, 'marigold')).toBe(true);
+    const first = gameReducer(facing, actions.interact());
+    expect(first.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: LINE_BANKS.marigold.introduction, card: 'line' });
+    const second = gameReducer(gameReducer(first, actions.closePanel()), actions.interact());
+    expect(second.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: "Someone's put something in my way. I'll wait.", card: 'line' });
+    expect(STUCK_LINE).toBe("Someone's put something in my way. I'll wait.");
+  });
+
+  it('is not stuck while only the player is in the way, indoors, or at the target', () => {
+    const well = { tx: 21, tz: 13 };
+    const onStop = withPlayer(DRY, well, Direction.North, 'town');
+    const waiting = runTo(onStop, at(6, 20));
+    expect(walkerPlace(waiting, 'sol').kind).toBe('out');
+    expect(isStuck(waiting, 'sol')).toBe(false);
+    expect(isStuck(DRY, 'sol')).toBe(false);
+    expect(isStuck(runTo(DRY, at(6, 9)), 'sol')).toBe(false);
+  });
+
+  it('is stuck behind a chest in the only way out, and says so', () => {
+    const inYard = withPlaces(DRY, { cosmo: out('neighbours', 6, 10, Direction.South) });
+    const gap = { tx: 6, tz: 12 };
+    const shut = withTile(inYard, gap, { ...tileAt(inYard, gap, 'neighbours'), object: { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) } }, 'neighbours');
+    expect(isStuck(inYard, 'cosmo')).toBe(false);
+    expect(isStuck(shut, 'cosmo')).toBe(true);
+    const talked: GameState = { ...shut, npcs: { ...shut.npcs, cosmo: { ...shut.npcs.cosmo, talks: 1 } } };
+    expect(lineFor(talked, 'cosmo')).toBe(STUCK_LINE);
+  });
+});
+
+describe('a generator placed under a walker', () => {
+  it('moves Barnaby off (26, 15) to the nearest free tile when job 3 is taken', () => {
+    const gen = JOBS.generators.barnaby;
+    expect(gen).toEqual({ tx: 26, tz: 15 });
+    const offered: GameState = { ...DRY, jobs: { ...DRY.jobs, status: { spinningRobot: 'done', showHim: 'done', knowTheLimits: 'offered' } } };
+    const onGen = withPlayer(withPlaces(offered, { barnaby: out('neighbours', gen.tx, gen.tz, Direction.North) }), { tx: gen.tx, tz: gen.tz - 1 }, Direction.South, 'neighbours');
+    const chat = gameReducer(onGen, actions.interact());
+    expect(chat.ui.panel).toMatchObject({ kind: 'talk', npc: 'barnaby' });
+    const taken = gameReducer(gameReducer(chat, actions.npcAct('barnaby', 'job')), actions.takeJob('knowTheLimits'));
+    expect(taken.jobs.status.knowTheLimits).toBe('active');
+    expect(tileAt(taken, gen, 'neighbours').object?.kind).toBe('woodBurner');
+    const moved = walkerPlace(taken, 'barnaby');
+    const now = tileOf(moved);
+    expect(now.mapId).toBe('neighbours');
+    expect(manhattanDistance(now, gen)).toBe(1);
+    expect(now).not.toEqual({ mapId: 'neighbours', tx: gen.tx, tz: gen.tz - 1 });
+    expect(isWalkable(tileAt(taken, now, 'neighbours'))).toBe(true);
+    expect(isValidGameState(taken)).toBe(true);
+  });
+
+  it('leaves the walkers alone when nobody stands on the tile', () => {
+    expect(nudgeWalkersOff(DRY, 'neighbours', JOBS.generators.barnaby)).toBe(DRY);
+    const elsewhere = withPlaces(DRY, { barnaby: out('neighbours', 25, 15, Direction.North) });
+    expect(nudgeWalkersOff(elsewhere, 'neighbours', JOBS.generators.barnaby)).toBe(elsewhere);
+  });
+
+  it('moves every walker on the tile, never onto another walker or a robot', () => {
+    const gen = JOBS.generators.barnaby;
+    const crowd = withRobots(
+      withPlaces(DRY, {
+        barnaby: out('neighbours', gen.tx, gen.tz, Direction.North),
+        cosmo: out('neighbours', gen.tx, gen.tz, Direction.West),
+        sol: out('neighbours', gen.tx, gen.tz - 1, Direction.West),
+      }),
+      [robotOf({ id: 1, mapId: 'neighbours', owner: 'barnaby', tx: gen.tx + 1, tz: gen.tz })],
+    );
+    const nudged = nudgeWalkersOff(crowd, 'neighbours', gen);
+    const barnaby = tileOf(walkerPlace(nudged, 'barnaby'));
+    const cosmo = tileOf(walkerPlace(nudged, 'cosmo'));
+    for (const tile of [barnaby, cosmo]) {
+      expect(tile).not.toEqual({ mapId: 'neighbours', ...gen });
+      expect(tile).not.toEqual({ mapId: 'neighbours', tx: gen.tx, tz: gen.tz - 1 });
+      expect(tile).not.toEqual({ mapId: 'neighbours', tx: gen.tx + 1, tz: gen.tz });
+    }
+    expect(barnaby).not.toEqual(cosmo);
+    expect(walkerPlace(nudged, 'sol')).toBe(walkerPlace(crowd, 'sol'));
+  });
+});
+
+describe('4c’s drag-back', () => {
+  it('never picks a farmer’s stop beside Barnaby’s generator, even with every other tile in reach taken', () => {
+    const gen = JOBS.generators.barnaby;
+    const stops = farmerStops('neighbours');
+    const inReach = stops.filter((stop) => chebyshevDistance(stop, gen) <= ROBOTS.chargeRadius);
+    expect(inReach.length).toBeGreaterThan(0);
+    let state = DRY;
+    const picked: TileCoord[] = [];
+    for (let id = 1; ; id++) {
+      const spot = freeSpotInReach(state, 'neighbours', gen, 0);
+      if (spot === null) break;
+      picked.push(spot);
+      state = withRobots(state, [...state.robots.list, robotOf({ id, mapId: 'neighbours', owner: 'barnaby', tx: spot.tx, tz: spot.tz })]);
+    }
+    expect(picked.length).toBeGreaterThan(0);
+    for (const spot of picked) expect(stops.some((stop) => stop.tx === spot.tx && stop.tz === spot.tz), `${spot.tx},${spot.tz}`).toBe(false);
   });
 });

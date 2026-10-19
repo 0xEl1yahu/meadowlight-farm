@@ -8,12 +8,12 @@ import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '../src/core/store';
 import { Direction, NPC_IDS, ROBOT_SIZES, type GameState, type UiPanel } from '../src/core/types';
 import { JOBS_TABLE, isGateOpen } from '../src/jobs/jobs';
-import { npcActions, npcSpot } from '../src/people/cast';
+import { npcActions } from '../src/people/cast';
 import { actions } from '../src/state/actions';
 import { deserializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { workshopView } from '../src/ui/shops/viewModel';
-import { BASE, must, robotOf, v8Save, withGold, withJobsDone, withMigratedJobs, withPlayer, withRobots } from './testUtils';
+import { BASE, must, robotOf, v8Save, withGold, withJobsDone, withMigratedJobs, withPlayer, withRobots, withWalkerAt } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel): GameState => ({ ...state, ui: { ...state.ui, panel } });
 
@@ -79,8 +79,8 @@ describe('the buttons', () => {
   });
 
   it("opens Juniper's workshop from a real chat once job 1 is done", () => {
-    const { mapId, placement } = must(npcSpot('juniper'));
-    const talking = gameReducer(withPlayer(JOB1, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId), actions.interact());
+    const atCounter = withWalkerAt(JOB1, 'juniper', 'town', 24, 7, Direction.South);
+    const talking = gameReducer(withPlayer(atCounter, { tx: 24, tz: 8 }, Direction.North, 'town'), actions.interact());
     expect(gameReducer(talking, actions.npcAct('juniper', 'workshop')).ui.panel).toEqual({ kind: 'workshop' });
   });
 });

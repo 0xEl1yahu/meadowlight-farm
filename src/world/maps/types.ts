@@ -9,7 +9,6 @@ import type {
   Direction,
   GridSpec,
   MapId,
-  NpcId,
   StructureKind,
   TileCoord,
   TileRect,
@@ -31,14 +30,6 @@ export interface StructurePlacement {
   readonly kind: StructureKind;
   readonly rect: TileRect;
   readonly door: TileCoord | null;
-}
-
-/** A character's fixed spot on a map (part 4a spec §2.2), facing `facing`. */
-export interface NpcPlacement {
-  readonly id: NpcId;
-  readonly tx: number;
-  readonly tz: number;
-  readonly facing: Direction;
 }
 
 export interface WildTuning {
@@ -65,8 +56,6 @@ export interface MapDefinition {
   readonly reserved: readonly TileCoord[];
   /** Blocker.Building footprints (the town and the Neighbours). */
   readonly structures: readonly StructurePlacement[];
-  /** The characters standing on this map, each on a fixed spot; their tiles block the player like a structure. */
-  readonly npcs: readonly NpcPlacement[];
   /** null → no wild crops on this map. */
   readonly wild: WildTuning | null;
   /** Farm only: house, door, bin, pond, clear zones, densities, plots. */

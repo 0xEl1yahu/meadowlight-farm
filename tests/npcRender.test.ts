@@ -1,15 +1,16 @@
 /**
  * The characters on screen (farmclaws part 4a spec §2.3, refinement R14): the appearance
  * palettes and the player's model built from an Appearance, the cast's props, the idle sway, the
- * nameplate rule and layout, and NpcRenderer standing each map's characters on their spots.
+ * nameplate rule and layout, and NpcRenderer standing each map's characters where their places put them.
  * three's geometry and scene graph run in node; a canvas doesn't, so the renderer gets stand-in
  * nameplate textures here and the plates themselves are checked in the browser playbook.
  */
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { APPEARANCE, NPC_LOOKS } from '../src/config';
-import { DIRECTIONS, Direction, MAP_IDS, NPC_IDS, type GameState, type MapId } from '../src/core/types';
-import { CAST, CAST_LOOKS, NPC_PROPS, npcAt } from '../src/people/cast';
+import { DIRECTIONS, Direction, NPC_IDS, type GameState, type MapId, type NpcId, type TileCoord } from '../src/core/types';
+import { CAST, CAST_LOOKS, NPC_PROPS } from '../src/people/cast';
+import { walkerAt } from '../src/people/walk';
 import { NAMEPLATE_CANVAS, nameplateRect } from '../src/render/nameplates';
 import { NpcRenderer, nameplateFor, swayAngle } from '../src/render/NpcRenderer';
 import { NPC_PROP_BONES, createNpcPropGeometry, modelAppearance } from '../src/render/npcProps';
@@ -19,10 +20,31 @@ import { playerGroundHeight, playerRootHeight } from '../src/render/PlayerRender
 import type { SceneContext } from '../src/render/SceneContext';
 import type { FrameContext } from '../src/render/types';
 import { DIRECTION_STEPS, directionYaw, tileCenterX, tileCenterZ } from '../src/world/grid';
-import { MAPS } from '../src/world/maps';
-import type { NpcPlacement } from '../src/world/maps/types';
 import { getTile, isWalkable } from '../src/world/tiles';
-import { BASE, must, withPlayer } from './testUtils';
+import { BASE, must, withPlayer, withWalkerAt } from './testUtils';
+
+/** A character standing still: who, where and which way they face. */
+interface Placement extends TileCoord {
+  readonly id: NpcId;
+  readonly facing: Direction;
+}
+
+/** Every character on their 4a spot, with the map they stand on. */
+const PLACED: readonly (readonly [MapId, Placement])[] = [
+  ['town', { id: 'sol', tx: 21, tz: 7, facing: Direction.South }],
+  ['town', { id: 'marigold', tx: 7, tz: 7, facing: Direction.South }],
+  ['town', { id: 'berlioz', tx: 16, tz: 7, facing: Direction.South }],
+  ['town', { id: 'juniper', tx: 24, tz: 7, facing: Direction.South }],
+  ['town', { id: 'tallulah', tx: 35, tz: 7, facing: Direction.South }],
+  ['neighbours', { id: 'cosmo', tx: 7, tz: 13, facing: Direction.South }],
+  ['neighbours', { id: 'barnaby', tx: 25, tz: 15, facing: Direction.North }],
+];
+
+/** The characters PLACED puts on `mapId`. */
+const placedOn = (mapId: MapId): readonly Placement[] => PLACED.filter(([m]) => m === mapId).map(([, p]) => p);
+
+/** BASE with every character out where PLACED puts them. */
+const ALL_OUT: GameState = PLACED.reduce<GameState>((state, [mapId, p]) => withWalkerAt(state, p.id, mapId, p.tx, p.tz, p.facing), BASE);
 
 /** `state` with the player on `mapId`, on a free tile next to (tx, tz) and facing it. */
 function facing(state: GameState, mapId: MapId, tx: number, tz: number): GameState {
@@ -30,26 +52,23 @@ function facing(state: GameState, mapId: MapId, tx: number, tz: number): GameSta
     const step = DIRECTION_STEPS[direction];
     const stand = { tx: tx - step.dx, tz: tz - step.dz };
     const tile = getTile(state.maps[mapId], stand.tx, stand.tz);
-    if (tile !== null && isWalkable(tile) && npcAt(mapId, stand.tx, stand.tz) === null) return withPlayer(state, stand, direction, mapId);
+    if (tile !== null && isWalkable(tile) && walkerAt(state, mapId, stand.tx, stand.tz) === null) return withPlayer(state, stand, direction, mapId);
   }
   throw new Error(`facing: no free tile next to (${tx}, ${tz}) on ${mapId}`);
 }
 
-/** Every map's placements, with the map they stand on. */
-const PLACED: readonly (readonly [MapId, NpcPlacement])[] = MAP_IDS.flatMap((mapId) => MAPS[mapId].npcs.map((p) => [mapId, p] as const));
-
-function placementOf(npc: string): readonly [MapId, NpcPlacement] {
+function placementOf(npc: string): readonly [MapId, Placement] {
   return must(PLACED.find(([, p]) => p.id === npc), `${npc} is placed nowhere`);
 }
 
 const [, SOL] = placementOf('sol');
 const [, COSMO] = placementOf('cosmo');
 /** In town, facing Sol. */
-const AT_SOL = facing(BASE, 'town', SOL.tx, SOL.tz);
+const AT_SOL = facing(ALL_OUT, 'town', SOL.tx, SOL.tz);
 /** In town on the square, facing an empty tile. */
-const TOWN = withPlayer(BASE, { tx: 21, tz: 10 }, Direction.South, 'town');
+const TOWN = withPlayer(ALL_OUT, { tx: 21, tz: 10 }, Direction.South, 'town');
 /** On the Neighbours map, facing Cosmo. */
-const AT_COSMO = facing(BASE, 'neighbours', COSMO.tx, COSMO.tz);
+const AT_COSMO = facing(ALL_OUT, 'neighbours', COSMO.tx, COSMO.tz);
 
 const frozenBy = (state: GameState, ui: Partial<GameState['ui']>): GameState => ({ ...state, ui: { ...state.ui, ...ui } });
 
@@ -222,7 +241,7 @@ describe('idle sway', () => {
 describe('nameplateFor', () => {
   it('names the character on the tile ahead, on every map', () => {
     expect(PLACED).toHaveLength(NPC_IDS.length);
-    for (const [mapId, p] of PLACED) expect(nameplateFor(facing(BASE, mapId, p.tx, p.tz)), p.id).toBe(p.id);
+    for (const [mapId, p] of PLACED) expect(nameplateFor(facing(ALL_OUT, mapId, p.tx, p.tz)), p.id).toBe(p.id);
   });
 
   it('shows nothing while the game is frozen: a chat, another panel or the pause menu', () => {
@@ -237,8 +256,8 @@ describe('nameplateFor', () => {
   });
 
   it('never names a character standing on another map', () => {
-    expect(npcAt('town', COSMO.tx, COSMO.tz)).toBeNull();
-    expect(nameplateFor(facing(BASE, 'town', COSMO.tx, COSMO.tz))).toBeNull();
+    expect(walkerAt(ALL_OUT, 'town', COSMO.tx, COSMO.tz)).toBeNull();
+    expect(nameplateFor(facing(ALL_OUT, 'town', COSMO.tx, COSMO.tz))).toBeNull();
   });
 });
 
@@ -268,7 +287,7 @@ describe('NpcRenderer', () => {
       const { renderer, scene } = standUp();
       renderer.sync(state, null);
       const world = state.maps[state.player.mapId];
-      for (const p of MAPS[state.player.mapId].npcs) {
+      for (const p of placedOn(state.player.mapId)) {
         const root = must(scene.getObjectByName(`npc-${p.id}`), p.id);
         expect(isShown(root), p.id).toBe(true);
         expect(root.position.x).toBeCloseTo(tileCenterX(world.grid, p.tx), 9);
@@ -306,9 +325,9 @@ describe('NpcRenderer', () => {
     const { renderer, scene } = standUp();
     const plate = (npc: string): THREE.Object3D => must(scene.getObjectByName(`nameplate-${npc}`), npc);
     renderer.sync(TOWN, null);
-    for (const p of MAPS.town.npcs) expect(isShown(plate(p.id)), p.id).toBe(false);
+    for (const p of placedOn('town')) expect(isShown(plate(p.id)), p.id).toBe(false);
     renderer.sync(AT_SOL, TOWN);
-    for (const p of MAPS.town.npcs) expect(isShown(plate(p.id)), p.id).toBe(p.id === 'sol');
+    for (const p of placedOn('town')) expect(isShown(plate(p.id)), p.id).toBe(p.id === 'sol');
     expect(plate('sol').position.y).toBe(NPC_LOOKS.nameplateHeight);
     expect(plate('sol').scale.y).toBe(NPC_LOOKS.nameplateScale);
     const chatting = frozenBy(AT_SOL, { panel: { kind: 'talk', npc: 'sol', line: 'Hello.', card: 'line' } });
@@ -325,7 +344,7 @@ describe('NpcRenderer', () => {
     const { renderer, scene } = standUp();
     renderer.sync(TOWN, null);
     renderer.update(frame(TOWN, 1.3));
-    for (const p of MAPS.town.npcs) {
+    for (const p of placedOn('town')) {
       const torso = must(must(scene.getObjectByName(`npc-${p.id}`)).getObjectByName('torso'));
       expect(torso.rotation.z, p.id).toBeCloseTo(swayAngle(1.3, NPC_IDS.indexOf(p.id)), 9);
     }

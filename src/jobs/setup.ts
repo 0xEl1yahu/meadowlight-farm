@@ -6,6 +6,7 @@ import { GENERATORS, JOBS, PLAYER, WORKBENCH } from '../config';
 import { invariant } from '../core/invariant';
 import { Direction, TileState, type BlockProgram, type CropInstance, type GameState, type MdCard, type RobotOwner, type TileCoord, type TileRect } from '../core/types';
 import { CROPS, createCropInstance, stageCount } from '../farming/crops';
+import { nudgeWalkersOff } from '../people/walk';
 import { addRobot } from '../robots/create';
 import { withZone } from '../robots/edits';
 import { findFreeBlock, freeSpotNear } from '../robots/workbench';
@@ -84,14 +85,15 @@ const HELLO_CHICKENS: BlockProgram = {
 /**
  * `owner`'s generator (spec §5.4): a wood burner with a full hopper at JOBS.generators[owner] on
  * the Neighbours map. It never runs out, since the night only burns the farm's burners, and the
- * player can't place anything on its tile (placementProblem). A robot on the tile steps off to
- * the nearest free walkable one. The same state when the generator is already there.
+ * player can't place anything on its tile (placementProblem). A walker on the tile first moves to
+ * the nearest free walkable one (part 4d spec §4.5), and a robot on it steps off to the nearest
+ * free walkable one. The same state when the generator is already there.
  */
 export function withGenerator(state: GameState, owner: Exclude<RobotOwner, 'player'>): GameState {
   const at: TileCoord = JOBS.generators[owner];
-  const world = state.maps.neighbours;
-  if (requireTile(world, at.tx, at.tz).object?.kind === 'woodBurner') return state;
-  let next = withMap(state, 'neighbours', setTiles(world, [{ ...at, tile: { ...EMPTY_TILE, object: { kind: 'woodBurner', fuel: GENERATORS.woodBurner.hopper } } }]));
+  if (requireTile(state.maps.neighbours, at.tx, at.tz).object?.kind === 'woodBurner') return state;
+  const clear = nudgeWalkersOff(state, 'neighbours', at);
+  let next = withMap(clear, 'neighbours', setTiles(clear.maps.neighbours, [{ ...at, tile: { ...EMPTY_TILE, object: { kind: 'woodBurner', fuel: GENERATORS.woodBurner.hopper } } }]));
   for (const robot of robotsOnTile(next, 'neighbours', at.tx, at.tz)) {
     const off = nearestFreeWalkable(next, 'neighbours', at, robot.id);
     next = withRobot(next, { ...robot, tx: off.tx, tz: off.tz, teleportSeq: robot.teleportSeq + 1 });

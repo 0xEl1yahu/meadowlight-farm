@@ -10,7 +10,7 @@ import { PLAYER, ROBOTS, WORKBENCH } from '../src/config';
 import { hash32 } from '../src/core/hash';
 import { deepFreeze } from '../src/core/store';
 import { Direction, ROBOT_SIZES, type GameState, type RobotDelivery, type TileCoord, type UiPanel } from '../src/core/types';
-import { npcActions, npcSpot } from '../src/people/cast';
+import { npcActions } from '../src/people/cast';
 import { b } from '../src/robots/blocks';
 import { checkMd, checkProgram } from '../src/robots/check';
 import { addRobot } from '../src/robots/create';
@@ -20,7 +20,7 @@ import { actions } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { workshopView } from '../src/ui/shops/viewModel';
-import { BASE, must, robotOf, withGold, withJobsDone, withPlayer, withRobots } from './testUtils';
+import { BASE, must, robotOf, withGold, withJobsDone, withPlayer, withRobots, withWalkerAt } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel, paused = false): GameState => ({ ...state, ui: { ...state.ui, panel, paused } });
 const withDeliveries = (state: GameState, deliveries: readonly RobotDelivery[]): GameState => ({
@@ -53,8 +53,7 @@ describe("Juniper's Workshop action", () => {
   });
 
   it("swaps Juniper's chat for the workshop, from a real chat", () => {
-    const { mapId, placement } = must(npcSpot('juniper'));
-    const before = withPlayer(OPEN, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+    const before = withPlayer(withWalkerAt(OPEN, 'juniper', 'town', 24, 7, Direction.South), { tx: 24, tz: 8 }, Direction.North, 'town');
     const talking = gameReducer(before, actions.interact());
     expect(talking.ui.panel.kind).toBe('talk');
     const shopping = gameReducer(talking, actions.npcAct('juniper', 'workshop'));

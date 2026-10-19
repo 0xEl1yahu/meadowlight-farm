@@ -21,7 +21,7 @@ import {
 } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, jobProgress } from '../src/jobs/jobs';
 import { ZONE_H_TOAST } from '../src/jobs/setup';
-import { npcActions, npcSpot } from '../src/people/cast';
+import { npcActions } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
 import { batteryFor } from '../src/robots/stats';
@@ -31,7 +31,7 @@ import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { chebyshevDistance, rectContains } from '../src/world/grid';
 import { BARNABY_FENCE, BARNABY_FIELD, NEIGHBOURS_LANE, NEIGHBOURS_MAP } from '../src/world/maps/neighbours';
-import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withZones } from './testUtils';
+import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withWalkerAt, withZones } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
@@ -39,9 +39,9 @@ const texts = (state: GameState): string[] => state.messages.entries.map((m) => 
 /** BASE with jobs 1 and 2 done and job 3 offered. */
 const OFFERED: GameState = deepFreeze({ ...BASE, jobs: { ...BASE.jobs, status: { spinningRobot: 'done', showHim: 'done', knowTheLimits: 'offered' } } });
 
-/** `state` with the player on the lane north of Barnaby, facing him (he faces North). */
+/** `state` with Barnaby on the lane by his field and the player north of him, facing him (he faces North). */
 function facingBarnaby(state: GameState): GameState {
-  return withPlayer(state, { tx: 25, tz: 14 }, Direction.South, 'neighbours');
+  return withPlayer(withWalkerAt(state, 'barnaby', 'neighbours', 25, 15, Direction.North), { tx: 25, tz: 14 }, Direction.South, 'neighbours');
 }
 
 /** Job 3 taken through Barnaby's job card. */
@@ -112,8 +112,8 @@ describe('taking job 3', () => {
     expect(reach(gate)).toBeLessThanOrEqual(ROBOTS.chargeRadius);
     expect(reach({ tx: gate.tx, tz: BARNABY_FIELD.z0 })).toBeLessThanOrEqual(ROBOTS.chargeRadius);
     // Not the gate, the tile in front of it, a character's spot or a reserved tile.
-    const { placement } = npcSpot('barnaby');
-    for (const tile of [gate, { tx: gate.tx, tz: gate.tz - 1 }, placement, ...NEIGHBOURS_MAP.reserved]) {
+    const lane = { tx: 25, tz: 15 };
+    for (const tile of [gate, { tx: gate.tx, tz: gate.tz - 1 }, lane, ...NEIGHBOURS_MAP.reserved]) {
       expect({ tx: tile.tx, tz: tile.tz }).not.toEqual(gen);
     }
   });

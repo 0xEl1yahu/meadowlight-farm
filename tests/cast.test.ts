@@ -1,24 +1,32 @@
 /**
- * The cast (farmclaws part 4a spec §2): names, role lines and looks; the characters' spots on the
- * maps and the startup check over them (one broken definition per rule); `npcAt`; a character's
- * tile blocking movement and placement; and the chat box's action list (spec §3.2). The
- * Neighbours map adds Cosmo's and Barnaby's cases.
+ * The cast (farmclaws part 4a spec §2): names, role lines and looks; their 4a spots, now their
+ * places at work (part 4d spec §2); `walkerAt` finding them where they stand; a character's tile
+ * blocking movement and placement; and the chat box's action list (spec §3.2). The Neighbours map
+ * adds Cosmo's and Barnaby's cases.
  */
 import { describe, expect, it } from 'vitest';
 import { APPEARANCE } from '../src/config';
-import { DIRECTIONS, Direction, MAP_IDS, NPC_IDS, type GameState, type MapId, type NpcId } from '../src/core/types';
-import { CAST, CAST_LOOKS, NPC_PROPS, npcActions, npcAt, npcSpot } from '../src/people/cast';
+import { TIMETABLES } from '../src/config';
+import { DIRECTIONS, Direction, NPC_IDS, type GameState, type MapId, type NpcId, type TileCoord } from '../src/core/types';
+import { CAST, CAST_LOOKS, NPC_PROPS, npcActions } from '../src/people/cast';
+import { walkerAt } from '../src/people/walk';
 import { actions } from '../src/state/actions';
 import { placementProblem } from '../src/state/intents';
 import { gameReducer } from '../src/state/reducer';
 import { stepTile } from '../src/world/grid';
-import { MAPS, assertMapDefinitions, isReservedTile, type MapDefinition, type NpcPlacement } from '../src/world/maps';
+import { MAPS, assertMapDefinitions, isReservedTile } from '../src/world/maps';
 import { arrivalTiles } from '../src/world/maps/lookup';
 import { isWalkable } from '../src/world/tiles';
-import { BASE, holding, reachableFrom, tileAt, withPlayer } from './testUtils';
+import { BASE, holding, reachableFrom, tileAt, withPlayer, withWalkerAt } from './testUtils';
 
-/** The town's characters as spec §2.1 places them. */
-const TOWN_SPOTS: readonly NpcPlacement[] = [
+/** A character's 4a spot: where they stand, and which way they face. */
+interface Spot extends TileCoord {
+  readonly id: NpcId;
+  readonly facing: Direction;
+}
+
+/** The town's characters as part 4a spec §2.1 placed them: now where each stands at work. */
+const TOWN_SPOTS: readonly Spot[] = [
   { id: 'sol', tx: 21, tz: 7, facing: Direction.South },
   { id: 'marigold', tx: 7, tz: 7, facing: Direction.South },
   { id: 'berlioz', tx: 16, tz: 7, facing: Direction.South },
@@ -26,19 +34,26 @@ const TOWN_SPOTS: readonly NpcPlacement[] = [
   { id: 'tallulah', tx: 35, tz: 7, facing: Direction.South },
 ];
 
-/** The shipped definitions with the town's characters replaced by `npcs`. */
-function withTownNpcs(npcs: readonly NpcPlacement[]): Record<MapId, MapDefinition> {
-  return { ...MAPS, town: { ...MAPS.town, npcs } };
-}
+/** Cosmo and Barnaby, as part 4a spec §2.1 placed them on the Neighbours map: now their evening spots on the lane. */
+const NEIGHBOURS_SPOTS: readonly Spot[] = [
+  { id: 'cosmo', tx: 7, tz: 13, facing: Direction.South },
+  { id: 'barnaby', tx: 25, tz: 15, facing: Direction.North },
+];
 
-/** The town's characters with `npc` moved to (tx, tz). */
-function moved(npc: NpcId, tx: number, tz: number): readonly NpcPlacement[] {
-  return MAPS.town.npcs.map((p) => (p.id === npc ? { ...p, tx, tz } : p));
-}
+/** BASE with every character out on their 4a spot. */
+const ALL_OUT: GameState = [
+  ...TOWN_SPOTS.map((spot) => ['town', spot] as const),
+  ...NEIGHBOURS_SPOTS.map((spot) => ['neighbours', spot] as const),
+].reduce<GameState>((state, [mapId, spot]) => withWalkerAt(state, spot.id, mapId, spot.tx, spot.tz, spot.facing), BASE);
 
 /** The player in town on the tile south of `spot`, facing `facing` (by default, the character). */
-function southOf(spot: NpcPlacement, facing: Direction = Direction.North): GameState {
-  return withPlayer(BASE, { tx: spot.tx, tz: spot.tz + 1 }, facing, 'town');
+function southOf(spot: Spot, facing: Direction = Direction.North): GameState {
+  return withPlayer(ALL_OUT, { tx: spot.tx, tz: spot.tz + 1 }, facing, 'town');
+}
+
+/** Whether `id`'s timetable stands them on `spot`, facing its way, on `mapId`. */
+function isTimetabled(id: NpcId, mapId: MapId, spot: Spot): boolean {
+  return TIMETABLES[id].dry.some(({ to }) => to.kind === 'spot' && to.mapId === mapId && to.tx === spot.tx && to.tz === spot.tz && to.facing === spot.facing);
 }
 
 function lastText(state: GameState): string | undefined {
@@ -99,10 +114,8 @@ describe('the cast', () => {
 });
 
 describe('spots on the map', () => {
-  it('stands Sol and the shopkeepers in town, facing south, and no one on the farm or in the forest', () => {
-    expect(MAPS.town.npcs).toEqual(TOWN_SPOTS);
-    expect(MAPS.farm.npcs).toEqual([]);
-    expect(MAPS.forest.npcs).toEqual([]);
+  it('stands Sol and the shopkeepers at work on their 4a spots in town, facing south', () => {
+    for (const spot of TOWN_SPOTS) expect(isTimetabled(spot.id, 'town', spot), spot.id).toBe(true);
   });
 
   it('keeps every spot walkable, unreserved, off the door paths and reachable from the gate', () => {
@@ -120,16 +133,13 @@ describe('spots on the map', () => {
     }
   });
 
-  it('finds each character with npcAt and npcSpot, and no one anywhere else', () => {
-    for (const spot of TOWN_SPOTS) {
-      expect(npcAt('town', spot.tx, spot.tz)).toBe(spot.id);
-      expect(npcSpot(spot.id)).toEqual({ mapId: 'town', placement: spot });
-    }
-    expect(npcAt('town', 20, 7)).toBeNull();
-    expect(npcAt('town', 21, 8)).toBeNull();
-    expect(npcAt('town', -1, 7)).toBeNull();
-    expect(npcAt('farm', 21, 7)).toBeNull();
-    expect(npcAt('forest', 7, 7)).toBeNull();
+  it('finds each character with walkerAt, and no one anywhere else', () => {
+    for (const spot of TOWN_SPOTS) expect(walkerAt(ALL_OUT, 'town', spot.tx, spot.tz)).toBe(spot.id);
+    expect(walkerAt(ALL_OUT, 'town', 20, 7)).toBeNull();
+    expect(walkerAt(ALL_OUT, 'town', 21, 8)).toBeNull();
+    expect(walkerAt(ALL_OUT, 'town', -1, 7)).toBeNull();
+    expect(walkerAt(ALL_OUT, 'farm', 21, 7)).toBeNull();
+    expect(walkerAt(ALL_OUT, 'forest', 7, 7)).toBeNull();
   });
 
   it('lists the arrival tiles of a map from every warp into it, in map order', () => {
@@ -141,43 +151,9 @@ describe('spots on the map', () => {
   });
 });
 
-describe('the startup check on the characters', () => {
-  it('accepts the shipped spots', () => {
+describe('the startup check', () => {
+  it('accepts the shipped definitions', () => {
     expect(() => assertMapDefinitions(MAPS)).not.toThrow();
-  });
-
-  const broken: readonly (readonly [string, Record<MapId, MapDefinition>, string])[] = [
-    ['a spot off the map', withTownNpcs(moved('sol', 40, 7)), 'Map town: sol at (40, 7) is out of bounds'],
-    ['a spot inside a structure', withTownNpcs(moved('sol', 21, 6)), 'Map town: sol at (21, 6) is not walkable'],
-    ['a spot on a door, which is part of its building', withTownNpcs(moved('marigold', 6, 6)), 'Map town: marigold at (6, 6) is not walkable'],
-    ['a spot on a reserved tile', withTownNpcs(moved('sol', 1, 16)), 'Map town: sol at (1, 16) is on a reserved tile'],
-    [
-      'a spot in front of a door',
-      withTownNpcs(moved('marigold', 6, 7)),
-      'Map town: marigold at (6, 7) is on a door or the tile in front of one',
-    ],
-    ['two characters on one tile', withTownNpcs(moved('berlioz', 21, 7)), 'Map town: berlioz at (21, 7) shares its tile with sol'],
-    [
-      'a spot walled in by the other characters',
-      withTownNpcs([
-        { id: 'sol', tx: 21, tz: 9, facing: Direction.South },
-        { id: 'marigold', tx: 20, tz: 9, facing: Direction.South },
-        { id: 'berlioz', tx: 22, tz: 9, facing: Direction.South },
-        { id: 'juniper', tx: 21, tz: 10, facing: Direction.South },
-        { id: 'tallulah', tx: 21, tz: 8, facing: Direction.South },
-      ]),
-      "Map town: sol at (21, 9) can't be reached from the map's arrival tiles",
-    ],
-    [
-      'a character on two maps',
-      { ...MAPS, forest: { ...MAPS.forest, npcs: [{ id: 'sol', tx: 30, tz: 14, facing: Direction.South }] } },
-      'Character sol is placed more than once',
-    ],
-  ];
-
-  it.each(broken)('throws on %s, naming the character', (_name, defs, message) => {
-    expect(() => assertMapDefinitions(defs)).toThrow(RangeError);
-    expect(() => assertMapDefinitions(defs)).toThrow(new RangeError(message));
   });
 });
 
@@ -238,21 +214,14 @@ describe('npcActions', () => {
   });
 });
 
-/** Cosmo and Barnaby, as spec §2.1 places them on the Neighbours map. */
-const NEIGHBOURS_SPOTS: readonly NpcPlacement[] = [
-  { id: 'cosmo', tx: 7, tz: 13, facing: Direction.South },
-  { id: 'barnaby', tx: 25, tz: 15, facing: Direction.North },
-];
-
 describe('the Neighbours cast', () => {
-  it('stands Cosmo and Barnaby on the lane by their fields, facing it', () => {
-    expect(MAPS.neighbours.npcs).toEqual(NEIGHBOURS_SPOTS);
+  it('stands Cosmo and Barnaby on the lane by their fields in the evening, facing it', () => {
     for (const spot of NEIGHBOURS_SPOTS) {
-      expect(npcAt('neighbours', spot.tx, spot.tz)).toBe(spot.id);
-      expect(npcSpot(spot.id)).toEqual({ mapId: 'neighbours', placement: spot });
+      expect(isTimetabled(spot.id, 'neighbours', spot), spot.id).toBe(true);
+      expect(walkerAt(ALL_OUT, 'neighbours', spot.tx, spot.tz)).toBe(spot.id);
     }
-    expect(npcAt('neighbours', 6, 13)).toBeNull();
-    expect(npcAt('town', 7, 13)).toBeNull();
+    expect(walkerAt(ALL_OUT, 'neighbours', 6, 13)).toBeNull();
+    expect(walkerAt(ALL_OUT, 'town', 7, 13)).toBeNull();
     expect(arrivalTiles(MAPS, 'neighbours')).toEqual([{ tx: 1, tz: 14 }]);
     expect(arrivalTiles(MAPS, 'town')).toEqual([
       { tx: 1, tz: 16 },
@@ -260,25 +229,10 @@ describe('the Neighbours cast', () => {
     ]);
   });
 
-  it('places every character on exactly one map', () => {
-    for (const id of NPC_IDS) {
-      const maps = MAP_IDS.filter((mapId) => MAPS[mapId].npcs.some((p) => p.id === id));
-      expect(maps, id).toEqual([npcSpot(id).mapId]);
-    }
-  });
-
-  it('throws on a character placed on no map, naming them', () => {
-    const defs: Record<MapId, MapDefinition> = {
-      ...MAPS,
-      neighbours: { ...MAPS.neighbours, npcs: MAPS.neighbours.npcs.filter((p) => p.id !== 'barnaby') },
-    };
-    expect(() => assertMapDefinitions(defs)).toThrow(new RangeError('Character barnaby is placed on no map'));
-  });
-
   it("blocks walking into Cosmo and placing a chest on Barnaby's tile", () => {
-    const beside = withPlayer(BASE, { tx: 6, tz: 13 }, Direction.West, 'neighbours');
+    const beside = withPlayer(ALL_OUT, { tx: 6, tz: 13 }, Direction.West, 'neighbours');
     expect(gameReducer(beside, actions.move(Direction.East)).player).toEqual({ ...beside.player, facing: Direction.East });
-    const facingBarnaby = holding(withPlayer(BASE, { tx: 25, tz: 14 }, Direction.South, 'neighbours'), 'chest');
+    const facingBarnaby = holding(withPlayer(ALL_OUT, { tx: 25, tz: 14 }, Direction.South, 'neighbours'), 'chest');
     expect(placementProblem(facingBarnaby, 'chest', { tx: 25, tz: 15 })).toBe("Someone's standing there.");
     expect(lastText(gameReducer(facingBarnaby, actions.useTool()))).toBe("Someone's standing there.");
   });

@@ -14,6 +14,10 @@ import { playerRobotCount } from '../robots/create';
 import { robotOnBench } from '../robots/workbench';
 import { countItem } from '../state/inventory';
 import { weatherWaters } from '../time/weather';
+import { isStuck } from './walk';
+
+/** What a stuck walker says (farmclaws part 4d spec §4.4), character or townsperson. */
+export const STUCK_LINE = "Someone's put something in my way. I'll wait.";
 
 /** The farm conditions a reactive line answers (spec §3.5's table). */
 export const REACTIVE_KINDS = [
@@ -184,13 +188,14 @@ export function reactiveFill(state: GameState, when: ReactiveKind): LineFill | n
 
 /**
  * The line `npc` says today (spec §3.3): the introduction until the first chat is recorded, then
- * their job's hook while it's offered (part 4c spec §2.2), then the first reactive line whose
- * condition holds, else the day's everyday line. Pick it before the chat is recorded, so the
- * first chat shows the introduction.
+ * the stuck line while they're stuck (part 4d spec §4.4), then their job's hook while it's offered
+ * (part 4c spec §2.2), then the first reactive line whose condition holds, else the day's everyday
+ * line. Pick it before the chat is recorded, so the first chat shows the introduction.
  */
 export function lineFor(state: GameState, npc: NpcId): string {
   const bank = LINE_BANKS[npc];
   if (state.npcs[npc].talks === 0) return bank.introduction;
+  if (isStuck(state, npc)) return STUCK_LINE;
   const job = giverJob(state, npc);
   if (job !== null && state.jobs.status[job] === 'offered') return JOBS_TABLE[job].hook;
   for (const line of bank.reactive) {

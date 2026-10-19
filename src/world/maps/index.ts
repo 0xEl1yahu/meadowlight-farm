@@ -3,20 +3,20 @@
  * game, and lookups. The definitions are validated once at module load.
  */
 import { PLAYER } from '../../config';
-import { DIRECTIONS, MAP_IDS, NPC_IDS, type MapId, type NpcId, type TileRect, type WorldState } from '../../core/types';
+import { MAP_IDS, type MapId, type TileRect, type WorldState } from '../../core/types';
 import { assertTimetables } from '../../people/timetable';
 import { inBounds, rectContains, rectInBounds, stepTile, tileCount } from '../grid';
 import { getTile, isWalkable } from '../tiles';
 import { isPondTile } from '../worldgen';
 import { FARM_MAP } from './farm';
 import { FOREST_MAP } from './forest';
-import { arrivalTiles, coordIn, reachableTiles } from './lookup';
+import { coordIn } from './lookup';
 import { NEIGHBOURS_MAP, assertNeighboursLayout } from './neighbours';
 import { TOWN_MAP, assertTownLayout } from './town';
 import type { MapDefinition } from './types';
 
 export { findWarp, isReservedTile, mapSeed, structureAt } from './lookup';
-export type { MapDefinition, NpcPlacement, SceneryStyle, StructurePlacement, Surface, Warp, WildTuning } from './types';
+export type { MapDefinition, SceneryStyle, StructurePlacement, Surface, Warp, WildTuning } from './types';
 
 function rectsOverlap(a: TileRect, b: TileRect): boolean {
   return a.x0 < b.x0 + b.width && b.x0 < a.x0 + a.width && a.z0 < b.z0 + b.depth && b.z0 < a.z0 + a.depth;
@@ -85,50 +85,13 @@ function assertDoorFronts(def: MapDefinition): void {
 }
 
 /**
- * The characters' spots (part 4a spec §2.2). Each must be on its map, walkable, not reserved,
- * neither a door nor the tile in front of one, alone on its tile, and reachable: one of its
- * orthogonal neighbours can be walked to from one of the map's arrival tiles, over walkable
- * tiles that aren't characters' spots. A map that lists characters generates the same world for
- * every seed, so the world from seed 0 is the one walked, generated once per map. Every
- * character stands on exactly one map.
- */
-function assertNpcPlacements(defs: Readonly<Record<MapId, MapDefinition>>): void {
-  const placed = new Set<NpcId>();
-  for (const id of MAP_IDS) {
-    const def = defs[id];
-    if (def.npcs.length === 0) continue;
-    const world = def.generate(0);
-    const isSpot = (tx: number, tz: number): boolean => def.npcs.some((p) => p.tx === tx && p.tz === tz);
-    const reachable = reachableTiles(world, arrivalTiles(defs, id), isSpot);
-    def.npcs.forEach((p, i) => {
-      const name = `Map ${id}: ${p.id} at (${p.tx}, ${p.tz})`;
-      if (!inBounds(def.grid, p.tx, p.tz)) throw new RangeError(`${name} is out of bounds`);
-      const tile = getTile(world, p.tx, p.tz);
-      if (tile === null || !isWalkable(tile)) throw new RangeError(`${name} is not walkable`);
-      if (coordIn(def.reserved, p.tx, p.tz)) throw new RangeError(`${name} is on a reserved tile`);
-      const atDoor = def.structures.some((s) => s.door !== null && s.door.tx === p.tx && (s.door.tz === p.tz || s.door.tz + 1 === p.tz));
-      if (atDoor) throw new RangeError(`${name} is on a door or the tile in front of one`);
-      const other = def.npcs.slice(0, i).find((o) => o.tx === p.tx && o.tz === p.tz);
-      if (other !== undefined) throw new RangeError(`${name} shares its tile with ${other.id}`);
-      const neighbours = DIRECTIONS.map((direction) => stepTile(p, direction));
-      if (!neighbours.some((n) => reachable(n.tx, n.tz))) throw new RangeError(`${name} can't be reached from the map's arrival tiles`);
-      if (placed.has(p.id)) throw new RangeError(`Character ${p.id} is placed more than once`);
-      placed.add(p.id);
-    });
-  }
-  for (const npc of NPC_IDS) {
-    if (!placed.has(npc)) throw new RangeError(`Character ${npc} is placed on no map`);
-  }
-}
-
-/**
  * Throws on a broken set of definitions: a warp not on the edge or exiting into the grid, a
  * target out of bounds, a warp without a reciprocal (the target map must have a warp to this
  * map arriving orthogonally next to `from`), an unreserved warp or arrival tile, a structure
  * outside the grid or overlapping another structure or a reserved tile, a door whose front tile
  * isn't walkable, a farm spawn that isn't clear, the town's and the Neighbours' own layout rules
- * (`assertTownLayout`, `assertNeighboursLayout`), a character's spot that breaks a rule of
- * `assertNpcPlacements`, and a walker's timetable that breaks a rule of `assertTimetables`.
+ * (`assertTownLayout`, `assertNeighboursLayout`), and a walker's timetable that breaks a rule of
+ * `assertTimetables`.
  */
 export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>>): void {
   for (const id of MAP_IDS) {
@@ -141,7 +104,6 @@ export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>
     assertStructures(def);
     assertDoorFronts(def);
   }
-  assertNpcPlacements(defs);
   assertFarmSpawn(defs.farm);
   assertTownLayout(defs.town);
   assertNeighboursLayout(defs.neighbours);

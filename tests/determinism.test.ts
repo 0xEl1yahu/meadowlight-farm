@@ -27,7 +27,7 @@ import {
   type WorldState,
 } from '../src/core/types';
 import { seedItemId } from '../src/farming/crops';
-import { npcAt } from '../src/people/cast';
+import { walkerAt } from '../src/people/walk';
 import { actions, type GameAction } from '../src/state/actions';
 import { createInitialState } from '../src/state/initialState';
 import { serializeGame } from '../src/state/persistence';
@@ -83,10 +83,12 @@ function randomSession(seed: number, length: number): GameAction[] {
 }
 
 /**
- * Walking distance from every tile of `world` (map `mapId`) to `goal` over walkable tiles where no
- * character stands, as the player walks (-1: unreachable).
+ * Walking distance from every tile of `state`'s active world to `goal` over walkable tiles where no
+ * walker stands, as the player walks (-1: unreachable).
  */
-function distanceField(world: WorldState, mapId: MapId, goal: TileCoord): Int32Array {
+function distanceField(state: GameState, goal: TileCoord): Int32Array {
+  const world = selectActiveWorld(state);
+  const mapId = state.player.mapId;
   const { width } = world.grid;
   const dist = new Int32Array(width * world.grid.depth).fill(-1);
   dist[goal.tz * width + goal.tx] = 0;
@@ -97,7 +99,7 @@ function distanceField(world: WorldState, mapId: MapId, goal: TileCoord): Int32A
     for (const direction of DIRECTIONS) {
       const next = stepTile(current, direction);
       const tile = getTile(world, next.tx, next.tz);
-      if (tile === null || !isWalkable(tile) || npcAt(mapId, next.tx, next.tz) !== null || dist[next.tz * width + next.tx] !== -1) continue;
+      if (tile === null || !isWalkable(tile) || walkerAt(state, mapId, next.tx, next.tz) !== null || dist[next.tz * width + next.tx] !== -1) continue;
       dist[next.tz * width + next.tx] = d + 1;
       queue.push(next);
     }
@@ -125,8 +127,8 @@ function stepDown(world: WorldState, dist: Int32Array, from: TileCoord): Directi
 function traveller(seed: number): (state: GameState) => GameAction {
   const rng = mulberry32(seed);
   let goal: { readonly mapId: MapId; readonly warp: Warp } | null = null;
-  /** The distance field to the goal, rebuilt whenever the goal or the active world changes. */
-  let field: { readonly world: WorldState; readonly warp: Warp; readonly dist: Int32Array } | null = null;
+  /** The distance field to the goal, rebuilt whenever the goal, the active world or a walker's place changes. */
+  let field: { readonly world: WorldState; readonly walkers: readonly [GameState['npcs'], GameState['townsfolk']]; readonly warp: Warp; readonly dist: Int32Array } | null = null;
   return (state) => {
     if (rng() >= 0.7) return randomAction(rng);
     // A traveller doesn't wait for menus: it closes them and walks on.
@@ -137,7 +139,10 @@ function traveller(seed: number): (state: GameState) => GameAction {
     const { warp } = goal;
     if (player.tx === warp.from.tx && player.tz === warp.from.tz) return actions.move(warp.exit);
     const world = selectActiveWorld(state);
-    if (field === null || field.world !== world || field.warp !== warp) field = { world, warp, dist: distanceField(world, player.mapId, warp.from) };
+    const moved = field === null || field.walkers[0] !== state.npcs || field.walkers[1] !== state.townsfolk;
+    if (field === null || field.world !== world || field.warp !== warp || moved) {
+      field = { world, walkers: [state.npcs, state.townsfolk], warp, dist: distanceField(state, warp.from) };
+    }
     return actions.move(stepDown(world, field.dist, player) ?? pick(rng, DIRECTIONS));
   };
 }

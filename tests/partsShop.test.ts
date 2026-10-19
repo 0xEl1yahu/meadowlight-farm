@@ -10,12 +10,12 @@ import { deepFreeze } from '../src/core/store';
 import { BASIC_PART_IDS, Direction, ROBOT_PART_IDS, type GameState, type UiPanel } from '../src/core/types';
 import { getItem } from '../src/items/items';
 import { panelKeyCommand } from '../src/input/panelKeys';
-import { npcActions, npcSpot } from '../src/people/cast';
+import { npcActions } from '../src/people/cast';
 import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
 import { gameReducer } from '../src/state/reducer';
 import { partsShopView } from '../src/ui/shops/viewModel';
-import { BASE, must, stack, withGold, withJobsDone, withPlayer, withSlots } from './testUtils';
+import { BASE, stack, withGold, withJobsDone, withPlayer, withSlots, withWalkerAt } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel, paused = false): GameState => ({ ...state, ui: { ...state.ui, panel, paused } });
 
@@ -35,8 +35,7 @@ describe("Sol's Shop action", () => {
   });
 
   it("swaps Sol's chat for the parts shop, from a real chat", () => {
-    const { mapId, placement } = must(npcSpot('sol'));
-    const before = withPlayer(OPEN, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+    const before = withPlayer(withWalkerAt(OPEN, 'sol', 'town', 21, 7, Direction.South), { tx: 21, tz: 8 }, Direction.North, 'town');
     const talking = gameReducer(before, actions.interact());
     expect(talking.ui.panel.kind).toBe('talk');
     const shopping = gameReducer(talking, actions.npcAct('sol', 'partsShop'));

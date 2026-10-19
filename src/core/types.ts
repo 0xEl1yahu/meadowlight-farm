@@ -501,12 +501,13 @@ export type UiPanel =
    */
   | { readonly kind: 'robot'; readonly mode: 'preview'; readonly size: RobotSize }
   /**
-   * A character's chat box (farmclaws part 4a spec §3.2). `line` is picked as the chat opens,
-   * before the chat is recorded, so the first chat shows the introduction and the line never
-   * changes while the box is open. `card` is what the box shows: the line, or the giver's job
-   * card in its place (part 4c spec §2.2).
+   * A walker's chat box (farmclaws part 4a spec §3.2, part 4d spec §3.3): a character's or a
+   * townsperson's. `line` is picked as the chat opens, before the chat is recorded, so the first
+   * chat shows the introduction and the line never changes while the box is open. `card` is what
+   * the box shows: the line, or the giver's job card in its place (part 4c spec §2.2); a
+   * townsperson's is always the line.
    */
-  | { readonly kind: 'talk'; readonly npc: NpcId; readonly line: string; readonly card: 'line' | 'job' };
+  | { readonly kind: 'talk'; readonly npc: WalkerId; readonly line: string; readonly card: 'line' | 'job' };
 
 export interface UiState {
   readonly panel: UiPanel;

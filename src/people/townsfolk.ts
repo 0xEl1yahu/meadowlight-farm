@@ -1,9 +1,13 @@
 /**
  * The townsfolk (farmclaws part 4d spec §3): six anonymous types who walk short loops in
- * Brookhollow. Who each is, how they look and what they say. Pure data; their days live in config
+ * Brookhollow. Who each is, how they look and what they say. Pure; their days live in config
  * (`TOWNSFOLK`) and the timetables.
  */
-import type { Appearance, TownsfolkId } from '../core/types';
+import { hash32 } from '../core/hash';
+import { defined } from '../core/invariant';
+import { TOWNSFOLK_IDS, type Appearance, type GameState, type TownsfolkId } from '../core/types';
+import { STUCK_LINE } from './lines';
+import { isStuck } from './walk';
 
 /** The name over each townsperson's head and in the chat box (spec §3.1). */
 export const TOWNSFOLK_PLATES: Readonly<Record<TownsfolkId, string>> = {
@@ -72,3 +76,15 @@ export const TOWNSFOLK_LINES: Readonly<Record<TownsfolkId, readonly [string, str
     "DEALZ called me pal. We're basically friends.",
   ],
 };
+
+/**
+ * What `id` says today (spec §3.3, §4.4): the stuck line while they're stuck, else
+ * `lines[hash32(seed, absoluteDay, index) % 3]`, `index` their place in TOWNSFOLK_IDS. The same
+ * line all day; they have no introduction, no reactive lines and no talk counts.
+ */
+export function townsfolkLine(state: GameState, id: TownsfolkId): string {
+  if (isStuck(state, id)) return STUCK_LINE;
+  const lines = TOWNSFOLK_LINES[id];
+  const index = hash32(state.seed, state.time.absoluteDay, TOWNSFOLK_IDS.indexOf(id)) % lines.length;
+  return defined(lines[index], `${id} has a line ${index}`);
+}

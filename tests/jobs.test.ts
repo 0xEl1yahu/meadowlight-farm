@@ -7,10 +7,10 @@
 import { describe, expect, it } from 'vitest';
 import { UNLOCKS } from '../src/config';
 import { deepFreeze } from '../src/core/store';
-import { Direction, type GameState, type NpcId } from '../src/core/types';
+import { Direction, type GameState, type MapId, type NpcId, type TileCoord } from '../src/core/types';
 import { sprinkleOf } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, activeJob, giverJob, jobMorning } from '../src/jobs/jobs';
-import { npcActions, npcSpot } from '../src/people/cast';
+import { npcActions } from '../src/people/cast';
 import { LINE_BANKS, lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
 import { programmedRobot } from '../src/robots/edits';
@@ -18,14 +18,22 @@ import { withRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
 import { chatBoxView } from '../src/ui/chatBoxView';
-import { BASE, must, robotOf, withPlayer, withRobots } from './testUtils';
+import { BASE, must, robotOf, withPlayer, withRobots, withWalkerAt } from './testUtils';
 
 const SOL_JOB = JOBS_TABLE.spinningRobot;
 
-/** `state` with the player in front of `npc`, facing them (every character faces South). */
+/** Where these tests stand each job giver to talk to them, facing South. */
+const SPOTS: Readonly<Partial<Record<NpcId, readonly [MapId, TileCoord]>>> = {
+  sol: ['town', { tx: 21, tz: 7 }],
+  cosmo: ['neighbours', { tx: 7, tz: 13 }],
+  marigold: ['town', { tx: 7, tz: 7 }],
+};
+
+/** `state` with `npc` on their spot and the player in front of them, facing them (they face South). */
 function facing(state: GameState, npc: NpcId): GameState {
-  const { mapId, placement } = npcSpot(npc);
-  return withPlayer(state, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+  const [mapId, at] = must(SPOTS[npc], `no spot for ${npc}`);
+  const out = withWalkerAt(state, npc, mapId, at.tx, at.tz, Direction.South);
+  return withPlayer(out, { tx: at.tx, tz: at.tz + 1 }, Direction.North, mapId);
 }
 
 const talk = (state: GameState, npc: NpcId): GameState => gameReducer(facing(state, npc), actions.interact());

@@ -195,6 +195,11 @@ export function withPlaces(state: GameState, places: Partial<Record<WalkerId, Wa
   return { ...state, npcs, townsfolk };
 }
 
+/** `state` with walker `id` out on (tx, tz) of `mapId`, facing `facing` (farmclaws part 4d spec §4.1). */
+export function withWalkerAt(state: GameState, id: WalkerId, mapId: MapId, tx: number, tz: number, facing: Direction): GameState {
+  return withPlaces(state, { [id]: { kind: 'out', mapId, tx, tz, facing } });
+}
+
 /**
  * Every walker's saved place: the characters', then the townsfolk's (farmclaws part 4d spec §4.1).
  */

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { GENERATORS, JOBS, ROBOTS, TIME, UNLOCKS } from '../src/config';
 import { mulberry32 } from '../src/core/hash';
 import { Blocker, DIRECTIONS, Direction, TileState, type BlockProgram, type GameState, type Robot, type TileCoord } from '../src/core/types';
+import { farmerStops } from '../src/people/timetable';
 import { b } from '../src/robots/blocks';
 import { ROBOT_CAP_RULE, addRobot } from '../src/robots/create';
 import { planRobotAction } from '../src/robots/execute';
@@ -23,7 +24,6 @@ import { ALL_UNLOCKS } from '../src/robots/unlocks';
 import { workshopView } from '../src/ui/shops/viewModel';
 import { hasBenchActions, isReadOnly, looksEditable, partsSectionView, switchView, visibleTabs } from '../src/ui/robotScreen/viewModel';
 import { chebyshevDistance } from '../src/world/grid';
-import { NEIGHBOURS_MAP } from '../src/world/maps/neighbours';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import { addBlockRobot, programmed } from './programGen';
 import { BASE, atDay, holding, matureCrop, must, robotOf, soilTile, stack, tileAt, withGold, withJobsDone, withPlayer, withRobots, withTile, withZones } from './testUtils';
@@ -236,7 +236,7 @@ describe("the neighbours' robots overnight", () => {
         expect(robot.teleportSeq).toBe(1);
         expect(robot.md).toEqual([card]);
         expect(robotsOnTile(next, 'neighbours', robot.tx, robot.tz)).toEqual([robot]);
-        expect(NEIGHBOURS_MAP.npcs.some((p) => p.tx === robot.tx && p.tz === robot.tz)).toBe(false);
+        expect(farmerStops('neighbours').some((p) => p.tx === robot.tx && p.tz === robot.tz)).toBe(false);
       }
       expect(b1.program).toEqual(program);
       expect(b1.power).toBe('working');

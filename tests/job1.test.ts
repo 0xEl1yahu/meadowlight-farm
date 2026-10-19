@@ -10,7 +10,6 @@ import { Blocker, Direction, TileState, type BlockProgram, type GameState, type 
 import { SPRINKLE, bedTiles, bedTilesWatered, spinningRobotDone, spinningRobotProgress, sprinkleOf } from '../src/jobs/checks';
 import { JOBS_TABLE, SPRINKLE_KEPT, takeJob } from '../src/jobs/jobs';
 import { NO_ROOM_FOR_BED } from '../src/jobs/setup';
-import { npcSpot } from '../src/people/cast';
 import { b } from '../src/robots/blocks';
 import { ROBOT_CAP_RULE } from '../src/robots/create';
 import { programmedRobot } from '../src/robots/edits';
@@ -21,15 +20,15 @@ import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { blockedTile } from '../src/world/tiles';
 import { spinningRobotReference, withoutPowerDown } from './jobSolutions';
-import { BASE, holding, must, robotOf, soilTile, tileAt, withPlayer, withRobots, withTile, withZones } from './testUtils';
+import { BASE, holding, must, robotOf, soilTile, tileAt, withPlayer, withRobots, withTile, withWalkerAt, withZones } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
 
 /** Job 1 taken through Sol's job card. */
 function take(state: GameState): GameState {
-  const { mapId, placement } = npcSpot('sol');
-  const chat = act(withPlayer(state, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId), actions.interact());
+  const atCounter = withWalkerAt(state, 'sol', 'town', 21, 7, Direction.South);
+  const chat = act(withPlayer(atCounter, { tx: 21, tz: 8 }, Direction.North, 'town'), actions.interact());
   return act(act(chat, actions.npcAct('sol', 'job')), actions.takeJob('spinningRobot'));
 }
 

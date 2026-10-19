@@ -2,7 +2,9 @@
  * The walk (farmclaws part 4d spec §4.2, §4.3, §4.7): once a game minute, after the robots, every
  * walker comes out of their door or exit, takes one step towards their current leg's target on
  * the live map, steps in at home, or turns to their stop's facing. Pure. No path is saved: a
- * walker re-plans every step, so anything placed in the way is routed round at once.
+ * walker re-plans every step, so anything placed in the way is routed round at once. The world
+ * finds walkers by their saved places (`walkerAt`), asks the same plans whether one is stuck
+ * (`isStuck`, spec §4.4), and moves them off a job's generator tile (`nudgeWalkersOff`, §4.5).
  *
  * Walkers never block each other, so the order they're taken in never changes the outcome. Each
  * walker's world is `state.maps[place.mapId]`.
@@ -22,20 +24,22 @@ import {
   type WalkerPlace,
   type WorldState,
 } from '../core/types';
+import { freeSpotNear } from '../robots/workbench';
 import { isStanding } from '../robots/world';
 import { weatherWaters } from '../time/weather';
 import { stepTile } from '../world/grid';
 import { getMap } from '../world/maps';
 import { findPath } from '../world/path';
 import { forEachTile, isWalkable } from '../world/tiles';
-import { homeFront, targetOf } from './timetable';
+import { homeFront, targetOf, type Target } from './timetable';
 
 const INDOORS: WalkerPlace = { kind: 'indoors' };
 
 /** Every walker, in the order the walk takes them: the characters, then the townsfolk. */
 const WALKER_IDS: readonly WalkerId[] = [...NPC_IDS, ...TOWNSFOLK_IDS];
 
-function isTownsfolk(id: WalkerId): id is TownsfolkId {
+/** Whether `id` is one of the townsfolk rather than a character. */
+export function isTownsfolk(id: WalkerId): id is TownsfolkId {
   return (TOWNSFOLK_IDS as readonly string[]).includes(id);
 }
 
@@ -157,29 +161,41 @@ function directionTo(from: TileCoord, to: TileCoord): Direction {
   return way;
 }
 
+/** One minute's move through a gate: onto the other map's arrival tile, facing the warp's way. */
+type Crossing = { readonly kind: 'cross'; readonly to: OutPlace };
+
 /**
- * One step towards `tile` of `mapId` (spec §4.3), turning to face it. When the target is on the
- * other map, the route goes to the gate tile that leads there, and from the gate tile the step
- * goes through the warp to the other side's arrival tile, facing the warp's way. Waiting and being
- * stuck both stay put.
+ * This minute's move from `place` towards `tile` of `mapId` (spec §4.3). When the target is on the
+ * other map, the route goes to the gate tile that leads there, and from the gate tile the move goes
+ * through the warp to the other side's arrival tile, facing the warp's way: a wait while only the
+ * player stands on it, stuck while anything else does.
  */
-function stepTowards(state: GameState, obstacles: Obstacles, place: OutPlace, mapId: MapId, tile: TileCoord): WalkerPlace {
+function moveTowards(state: GameState, obstacles: Obstacles, place: OutPlace, mapId: MapId, tile: TileCoord): Move | Crossing {
   let to = tile;
   if (mapId !== place.mapId) {
     const warp = getMap(place.mapId).warps.find((w) => w.to.mapId === mapId);
     // The timetables' startup check makes sure every walker's other map has a gate from home.
-    if (warp === undefined) return place;
+    if (warp === undefined) return { kind: 'stuck' };
     if (place.tx === warp.from.tx && place.tz === warp.from.tz) {
       const arrival = { tx: warp.to.tx, tz: warp.to.tz };
-      if (!canEnter(state, obstacles, warp.to.mapId, arrival, false)) return place;
-      return { kind: 'out', mapId: warp.to.mapId, tx: arrival.tx, tz: arrival.tz, facing: warp.to.facing };
+      if (canEnter(state, obstacles, warp.to.mapId, arrival, false)) {
+        return { kind: 'cross', to: { kind: 'out', mapId: warp.to.mapId, tx: arrival.tx, tz: arrival.tz, facing: warp.to.facing } };
+      }
+      return canEnter(state, obstacles, warp.to.mapId, arrival, true) ? { kind: 'wait' } : { kind: 'stuck' };
     }
     to = warp.from;
   }
-  const from = { tx: place.tx, tz: place.tz };
-  const move = rememberedMove(state, obstacles, place.mapId, from, to);
-  if (move.kind !== 'step') return place;
-  return { kind: 'out', mapId: place.mapId, tx: move.to.tx, tz: move.to.tz, facing: directionTo(from, move.to) };
+  return rememberedMove(state, obstacles, place.mapId, { tx: place.tx, tz: place.tz }, to);
+}
+
+/** The tile `id` walks to for `target` (spec §4.2): the target's tile, or their home front for `home`. */
+function goalOf(id: WalkerId, target: Target): { readonly mapId: MapId; readonly tile: TileCoord; readonly facing: Direction | null } {
+  return target === 'home' ? { ...homeFront(id), facing: null } : target;
+}
+
+/** Whether `place` is on `tile` of `mapId`. */
+function isAt(place: OutPlace, mapId: MapId, tile: TileCoord): boolean {
+  return place.mapId === mapId && place.tx === tile.tx && place.tz === tile.tz;
 }
 
 /** Where `id` is after this minute (spec §4.2), from `place`; `place` itself when they don't move or turn. */
@@ -193,12 +209,16 @@ function stepWalker(state: GameState, obstacles: Obstacles, id: WalkerId, place:
     const facing = isTownsfolk(id) ? Direction.North : Direction.South;
     return { kind: 'out', mapId: front.mapId, tx: front.tile.tx, tz: front.tile.tz, facing };
   }
-  const goal = target === 'home' ? { ...homeFront(id), facing: null } : target;
-  if (place.mapId === goal.mapId && place.tx === goal.tile.tx && place.tz === goal.tile.tz) {
+  const goal = goalOf(id, target);
+  if (isAt(place, goal.mapId, goal.tile)) {
     if (target === 'home') return INDOORS;
     return goal.facing === null || goal.facing === place.facing ? place : { ...place, facing: goal.facing };
   }
-  return stepTowards(state, obstacles, place, goal.mapId, goal.tile);
+  const move = moveTowards(state, obstacles, place, goal.mapId, goal.tile);
+  if (move.kind === 'cross') return move.to;
+  if (move.kind !== 'step') return place;
+  const from = { tx: place.tx, tz: place.tz };
+  return { kind: 'out', mapId: place.mapId, tx: move.to.tx, tz: move.to.tz, facing: directionTo(from, move.to) };
 }
 
 function samePlace(a: WalkerPlace, b: WalkerPlace): boolean {
@@ -240,5 +260,55 @@ export function runWalkersMinute(state: GameState): GameState {
 export function walkersIndoors(state: GameState): GameState {
   let next = state;
   for (const id of WALKER_IDS) next = withWalkerPlace(next, id, INDOORS);
+  return next;
+}
+
+/**
+ * The walker on (tx, tz) of `mapId` (spec §4.1), reading the saved places, or null. When walkers
+ * share the tile it's the first in the walk's order: the characters, then the townsfolk.
+ */
+export function walkerAt(state: GameState, mapId: MapId, tx: number, tz: number): WalkerId | null {
+  for (const id of WALKER_IDS) {
+    const place = walkerPlace(state, id);
+    if (place.kind === 'out' && isAt(place, mapId, { tx, tz })) return id;
+  }
+  return null;
+}
+
+/**
+ * Whether `id` is stuck (spec §4.4): out, not at their target, and with no way on even ignoring
+ * the player: the same two plans as their step (spec §4.3), so the chat and the walk agree. A
+ * walker waiting for the player isn't stuck. Worked out when the chat opens; nothing is saved.
+ */
+export function isStuck(state: GameState, id: WalkerId): boolean {
+  const place = walkerPlace(state, id);
+  if (place.kind === 'indoors') return false;
+  const goal = goalOf(id, targetOf(id, state.time.minuteOfDay, weatherWaters(state.weather)));
+  if (isAt(place, goal.mapId, goal.tile)) return false;
+  return moveTowards(state, obstaclesOf(state), place, goal.mapId, goal.tile).kind === 'stuck';
+}
+
+/**
+ * `state` with every walker standing on `tile` of `mapId` moved to the nearest free walkable tile
+ * (spec §4.5): the same search as the save migration's (`freeSpotNear`), never onto `tile`, the
+ * player, a standing robot or another walker. Called before a job's generator goes on `tile`, so a
+ * saved place is never inside one. `state` itself when nobody stands there.
+ */
+export function nudgeWalkersOff(state: GameState, mapId: MapId, tile: TileCoord): GameState {
+  const taken: TileCoord[] = [tile];
+  if (state.player.mapId === mapId) taken.push(state.player);
+  for (const robot of state.robots.list) if (robot.mapId === mapId && isStanding(robot)) taken.push(robot);
+  for (const id of WALKER_IDS) {
+    const place = walkerPlace(state, id);
+    if (place.kind === 'out' && place.mapId === mapId) taken.push(place);
+  }
+  let next = state;
+  for (const id of WALKER_IDS) {
+    const place = walkerPlace(next, id);
+    if (place.kind !== 'out' || !isAt(place, mapId, tile)) continue;
+    const spot = freeSpotNear(next.maps[mapId], tile, taken, mapId);
+    taken.push(spot);
+    next = withWalkerPlace(next, id, { ...place, tx: spot.tx, tz: spot.tz });
+  }
   return next;
 }

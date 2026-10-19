@@ -16,7 +16,6 @@ import {
   type FertilizerKind,
   type GameState,
   type MapId,
-  type NpcId,
   PLACEABLE_ITEM_IDS,
   type PlaceableItemId,
   type PlacedObject,
@@ -24,13 +23,16 @@ import {
   type Robot,
   type RobotOwner,
   type TileCoord,
+  type WalkerId,
   type ZoneId,
   type ZoneRect,
 } from '../core/types';
 import { CROPS, isInSeason, isMature } from '../farming/crops';
 import { getItem, type FertilizerItem, type PlaceableItem, type SeedItem, type ToolItem } from '../items/items';
 import { isJobRobot } from '../jobs/jobs';
-import { CAST, npcAt } from '../people/cast';
+import { CAST } from '../people/cast';
+import { TOWNSFOLK_PLATES } from '../people/townsfolk';
+import { isTownsfolk, walkerAt } from '../people/walk';
 import { carryEnergyFor, repairCost } from '../robots/stats';
 import { robotOnBench } from '../robots/workbench';
 import { requireRobot, robotsOnTile } from '../robots/world';
@@ -81,8 +83,8 @@ export type Intent =
   | { readonly kind: 'peekRobot'; readonly robotId: number; readonly name: string }
   /** E on a neighbour's robot while its job is active: its screen opens in job mode where it stands (part 4c spec §5.2). */
   | { readonly kind: 'workOnRobot'; readonly robotId: number; readonly name: string }
-  /** Talk to the character ahead: their chat box opens with today's line, for free (part 4a spec §3.1). */
-  | { readonly kind: 'talkTo'; readonly npc: NpcId }
+  /** Talk to the walker ahead, character or townsperson: their chat box opens with today's line, for free (part 4a spec §3.1). */
+  | { readonly kind: 'talkTo'; readonly npc: WalkerId }
   /** The zone marker's first press: the draft's corner (part 3 spec §8). */
   | { readonly kind: 'zoneCorner'; readonly corner: TileCoord }
   /** The zone marker's second press: the rectangle from the draft's corner becomes the zone. */
@@ -378,8 +380,8 @@ export function isFarmOnlyPlaceable(itemId: PlaceableItemId): boolean {
 
 /**
  * Why `itemId` can't be placed on `target` of the active map, or null when it can. The tile must
- * be free walkable ground (no object, blocker or crop), not a character's spot, a reserved tile
- * or a neighbour's generator's tile; paths go on grass only, everything else on grass or
+ * be free walkable ground (no object, blocker or crop), not a walker's tile, a reserved tile or
+ * a neighbour's generator's tile; paths go on grass only, everything else on grass or
  * unfertilised soil; sprinklers and scarecrows only on the farm. An empty string means "no,
  * silently" (out of bounds).
  */
@@ -388,7 +390,7 @@ export function placementProblem(state: GameState, itemId: PlaceableItemId, targ
   const tile = getTile(selectActiveWorld(state), target.tx, target.tz);
   if (tile === null) return '';
   if (isFarmOnlyPlaceable(itemId) && state.player.mapId !== 'farm') return `The ${getItem(itemId).name.toLowerCase()} belongs on your farm.`;
-  if (npcAt(state.player.mapId, target.tx, target.tz) !== null) return "Someone's standing there.";
+  if (walkerAt(state, state.player.mapId, target.tx, target.tz) !== null) return "Someone's standing there.";
   // A neighbour's generator goes on its own tile when its job is taken (part 4c spec §5.4).
   if (isReservedTile(selectActiveMap(state), target.tx, target.tz) || isGeneratorTile(state, target)) return 'Keep this spot clear.';
   if (robotsAhead(state, target).length > 0) return "There's a robot in the way.";
@@ -448,13 +450,14 @@ function planScatter(state: GameState, item: SeedItem, target: TileCoord | null)
 }
 
 /**
- * The character standing on the target tile, talked to for free (part 4a spec §3.1), or null
- * when no one stands there. Characters only stand off the farm, so no robot shares their tile.
+ * The walker standing on the target tile, character or townsperson, talked to for free (part 4a
+ * spec §3.1, part 4d spec §4.5), mid-walk too, or null when no one stands there. A robot sharing
+ * their tile doesn't stop the talk.
  */
 function planTalk(state: GameState): ActionPlan | null {
   const target = selectTargetTile(state);
   if (target === null) return null;
-  const npc = npcAt(state.player.mapId, target.tx, target.tz);
+  const npc = walkerAt(state, state.player.mapId, target.tx, target.tz);
   return npc === null ? null : plan(target, { kind: 'talkTo', npc }, 'none');
 }
 
@@ -678,7 +681,7 @@ export function describeIntent(intent: Intent): string | null {
     case 'workOnRobot':
       return `Work on ${intent.name}`;
     case 'talkTo':
-      return `Talk to ${CAST[intent.npc].name}`;
+      return `Talk to ${isTownsfolk(intent.npc) ? TOWNSFOLK_PLATES[intent.npc] : CAST[intent.npc].name}`;
     case 'zoneCorner':
       return 'Mark corner';
     case 'markZone':

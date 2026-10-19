@@ -7,12 +7,12 @@
 import { describe, expect, it } from 'vitest';
 import { ROBOT_SCREEN } from '../src/config';
 import { Direction, NPC_IDS, type GameState, type NpcId } from '../src/core/types';
-import { npcSpot, type NpcAction } from '../src/people/cast';
+import type { NpcAction } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
 import { chatBoxView, isPhoneWidth } from '../src/ui/chatBoxView';
-import { BASE, must, withPlayer } from './testUtils';
+import { BASE, must, withPlayer, withWalkerAt } from './testUtils';
 
 /** Names and role lines, verbatim from spec §2.1. */
 const SPEC_CAST: Readonly<Record<NpcId, readonly [string, string]>> = {
@@ -31,10 +31,9 @@ const talkingTo = (npc: NpcId, line = 'Lovely weather.'): GameState => ({
   ui: { ...BASE.ui, panel: { kind: 'talk', npc, line, card: 'line' } },
 });
 
-/** BASE with the player in town on the tile south of Marigold, facing her (she faces south). */
+/** BASE with Marigold at her counter and the player in town on the tile south of her, facing her (she faces south). */
 function facingMarigold(): GameState {
-  const { mapId, placement } = must(npcSpot('marigold'));
-  return withPlayer(BASE, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+  return withPlayer(withWalkerAt(BASE, 'marigold', 'town', 7, 7, Direction.South), { tx: 7, tz: 8 }, Direction.North, 'town');
 }
 
 describe('chatBoxView', () => {

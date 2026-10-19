@@ -10,28 +10,49 @@ import { INVENTORY } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import { Direction, NPC_IDS, type GameState, type MapId, type NpcId, type TileCoord } from '../src/core/types';
 import { IGNORED, INTERACT_KEYS, panelKeyCommand } from '../src/input/panelKeys';
-import { npcSpot } from '../src/people/cast';
-import { LINE_BANKS, lineFor } from '../src/people/lines';
+import { JOBS_TABLE } from '../src/jobs/jobs';
+import { LINE_BANKS, STUCK_LINE, lineFor } from '../src/people/lines';
+import { TOWNSFOLK_LINES, townsfolkLine } from '../src/people/townsfolk';
 import { actions } from '../src/state/actions';
 import { describeIntent, planInteraction, planPrimaryAction, planShiftInteraction, type ActionPlan } from '../src/state/intents';
 import { gameReducer, startNextDay } from '../src/state/reducer';
 import { selectIsFrozen } from '../src/state/selectors';
 import { EMPTY_TILE } from '../src/world/tiles';
-import { BASE, emptyHanded, holding, must, robotOf, withEnergy, withPlayer, withRobots, withTile } from './testUtils';
+import { BASE, atDay, emptyHanded, holding, robotOf, withEnergy, withPlaces, withPlayer, withRobots, withTile, withWalkerAt } from './testUtils';
 
 const interact = (state: GameState): GameState => gameReducer(state, actions.interact());
 const peek = (state: GameState): GameState => gameReducer(state, actions.peek());
 const useTool = (state: GameState): GameState => gameReducer(state, actions.useTool());
 
-/** Marigold's spot in the town (spec §2.1). */
+/** Marigold's spot at her counter in the town (spec §2.1). */
 const MARIGOLD: TileCoord = { tx: 7, tz: 7 };
 
+/** BASE with Marigold out at her counter, facing South. */
+const MARIGOLD_OUT: GameState = withWalkerAt(BASE, 'marigold', 'town', MARIGOLD.tx, MARIGOLD.tz, Direction.South);
+
 /** The player on the tile south of Marigold, facing her, with empty hands. */
-const AT_MARIGOLD: GameState = deepFreeze(emptyHanded(withPlayer(BASE, { tx: 7, tz: 8 }, Direction.North, 'town')));
+const AT_MARIGOLD: GameState = deepFreeze(emptyHanded(withPlayer(MARIGOLD_OUT, { tx: 7, tz: 8 }, Direction.North, 'town')));
 
 const TALK_PLAN: ActionPlan = { target: MARIGOLD, intent: { kind: 'talkTo', npc: 'marigold' }, feedback: 'none', energyCost: 0 };
 
 const INTRODUCTION = "Welcome! I'm Marigold. Seeds, fertiliser, a bigger backpack one day. Shop with me any time.";
+
+/** Each character's 4a spot, where these tests stand them: the map, the tile and their facing. */
+const SPOTS: Readonly<Record<NpcId, readonly [MapId, TileCoord, Direction]>> = {
+  sol: ['town', { tx: 21, tz: 7 }, Direction.South],
+  marigold: ['town', { tx: 7, tz: 7 }, Direction.South],
+  berlioz: ['town', { tx: 16, tz: 7 }, Direction.South],
+  juniper: ['town', { tx: 24, tz: 7 }, Direction.South],
+  tallulah: ['town', { tx: 35, tz: 7 }, Direction.South],
+  cosmo: ['neighbours', { tx: 7, tz: 13 }, Direction.South],
+  barnaby: ['neighbours', { tx: 25, tz: 15 }, Direction.North],
+};
+
+/** BASE with every character out on their 4a spot. */
+const ALL_OUT: GameState = NPC_IDS.reduce((state, id) => {
+  const [mapId, at, facing] = SPOTS[id];
+  return withWalkerAt(state, id, mapId, at.tx, at.tz, facing);
+}, BASE);
 
 /** Each character, the tile in front of them and the way to face them from it, and the hint's name. */
 const FACING_EACH: readonly (readonly [NpcId, MapId, TileCoord, Direction, string])[] = [
@@ -61,7 +82,7 @@ describe('the talkTo intent', () => {
 
   it('finds every character from the tile in front of them', () => {
     for (const [npc, mapId, stand, facing, name] of FACING_EACH) {
-      const state = withPlayer(BASE, stand, facing, mapId);
+      const state = withPlayer(ALL_OUT, stand, facing, mapId);
       expect(planInteraction(state).intent, npc).toEqual({ kind: 'talkTo', npc });
       expect(describeIntent(planInteraction(state).intent)).toBe(`Talk to ${name}`);
       expect(interact(state).ui.panel).toEqual({ kind: 'talk', npc, line: LINE_BANKS[npc].introduction, card: 'line' });
@@ -179,7 +200,8 @@ describe('a chat', () => {
 });
 
 describe('the morning', () => {
-  const talked = gameReducer(interact(AT_MARIGOLD), actions.closePanel());
+  // Back indoors after the chat, as every walker is each morning, so only the chat records change.
+  const talked = withPlaces(gameReducer(interact(AT_MARIGOLD), actions.closePanel()), { marigold: { kind: 'indoors' } });
 
   it('clears talkedToday, keeping talks and every untouched entry', () => {
     const morning = startNextDay(talked, false);
@@ -248,8 +270,7 @@ describe("the chat box's actions (talk/act)", () => {
   });
 
   it('opens the shop from a real chat with Marigold, and the shop closes as usual', () => {
-    const { mapId, placement } = must(npcSpot('marigold'));
-    const before = withPlayer(BASE, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+    const before = withPlayer(MARIGOLD_OUT, { tx: MARIGOLD.tx, tz: MARIGOLD.tz + 1 }, Direction.North, 'town');
     const talking = gameReducer(before, actions.interact());
     expect(talking.ui.panel.kind).toBe('talk');
     const shopping = shopFor(talking, 'marigold');
@@ -280,5 +301,39 @@ describe("the chat box's actions (talk/act)", () => {
   it('does nothing while paused', () => {
     const state = talkingTo('marigold', true);
     expect(shopFor(state, 'marigold')).toBe(state);
+  });
+});
+
+describe('the stuck line (farmclaws part 4d spec §4.4)', () => {
+  const chest = { ...EMPTY_TILE, object: { kind: 'chest' as const, slots: Array.from({ length: INVENTORY.chestSlots }, () => null) } };
+  /** Sol beside the well at 6:00 am with job 1 offered, the player south of him; `blocked` puts a chest on the well, his stop. */
+  const solBeside = (blocked: boolean): GameState => {
+    const out = withWalkerAt(BASE, 'sol', 'town', 21, 12, Direction.South);
+    const state = blocked ? withTile(out, { tx: 21, tz: 13 }, chest, 'town') : out;
+    return emptyHanded(withPlayer(state, { tx: 20, tz: 12 }, Direction.East, 'town'));
+  };
+  const talkedOnce = (state: GameState): GameState => ({ ...state, npcs: { ...state.npcs, sol: { ...state.npcs.sol, talks: 1 } } });
+
+  it('comes after the introduction and before the job hook', () => {
+    expect(interact(solBeside(true)).ui.panel).toEqual({ kind: 'talk', npc: 'sol', line: LINE_BANKS.sol.introduction, card: 'line' });
+    expect(interact(talkedOnce(solBeside(true))).ui.panel).toEqual({ kind: 'talk', npc: 'sol', line: STUCK_LINE, card: 'line' });
+    expect(lineFor(talkedOnce(solBeside(false)), 'sol')).toBe(JOBS_TABLE.spinningRobot.hook);
+  });
+
+  it('replaces a stuck townsperson’s line of the day', () => {
+    const busker = withTile(withWalkerAt(atDay(BASE, 2, 9 * 60), 'busker', 'town', 18, 11, Direction.South), { tx: 18, tz: 12 }, chest, 'town');
+    const facing = emptyHanded(withPlayer(busker, { tx: 17, tz: 11 }, Direction.East, 'town'));
+    expect(townsfolkLine(facing, 'busker')).toBe(STUCK_LINE);
+    expect(interact(facing).ui.panel).toEqual({ kind: 'talk', npc: 'busker', line: STUCK_LINE, card: 'line' });
+    const free = withTile(facing, { tx: 18, tz: 12 }, EMPTY_TILE, 'town');
+    expect(TOWNSFOLK_LINES.busker).toContain(townsfolkLine(free, 'busker'));
+  });
+
+  it('talks to a walker mid-walk', () => {
+    const walking = gameReducer(BASE, actions.tick(4));
+    const place = walking.npcs.sol.place;
+    if (place.kind !== 'out') throw new Error('Sol should be out');
+    const facing = emptyHanded(withPlayer(walking, { tx: place.tx - 1, tz: place.tz }, Direction.East, 'town'));
+    expect(interact(facing).ui.panel).toEqual({ kind: 'talk', npc: 'sol', line: LINE_BANKS.sol.introduction, card: 'line' });
   });
 });

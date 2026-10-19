@@ -1,13 +1,15 @@
 /**
- * The chat box's pure parts (farmclaws part 4a spec §3.2, part 4c spec §2.2): what it shows for
- * the open talk panel, and when it takes its phone layout. ChatBox.ts draws it; the tests read it
- * without a DOM. The robot screen's phoneQuery lives in its lazy chunk, so the width rule is
- * restated here from the same ROBOT_SCREEN.phoneMaxWidth.
+ * The chat box's pure parts (farmclaws part 4a spec §3.2, part 4c spec §2.2, part 4d spec §3.3):
+ * what it shows for the open talk panel, and when it takes its phone layout. ChatBox.ts draws it;
+ * the tests read it without a DOM. The robot screen's phoneQuery lives in its lazy chunk, so the
+ * width rule is restated here from the same ROBOT_SCREEN.phoneMaxWidth.
  */
 import { ROBOT_SCREEN } from '../config';
-import type { GameState, JobId, NpcId } from '../core/types';
+import type { GameState, JobId, WalkerId } from '../core/types';
 import { JOBS_TABLE, giverJob, jobProgress } from '../jobs/jobs';
 import { CAST, npcActions } from '../people/cast';
+import { TOWNSFOLK_PLATES, TOWNSFOLK_ROLE } from '../people/townsfolk';
+import { isTownsfolk } from '../people/walk';
 import { actions, type GameAction } from '../state/actions';
 
 /** One button in the chat box's row. */
@@ -31,10 +33,11 @@ export interface JobCardView {
 /**
  * What the chat box shows: who is talking, their role line, and either their line or their job
  * card, with the buttons for it: the character's action buttons under the line; Take the job and
- * Not now under an offered job's card, Close under an active one's.
+ * Not now under an offered job's card, Close under an active one's. A townsperson shows their
+ * plate, "Brookhollow" and their line, with no buttons.
  */
 export interface ChatBoxView {
-  readonly npc: NpcId;
+  readonly npc: WalkerId;
   readonly name: string;
   readonly role: string;
   readonly line: string;
@@ -50,6 +53,7 @@ export function chatBoxView(state: GameState): ChatBoxView | null {
   const panel = state.ui.panel;
   if (panel.kind !== 'talk') return null;
   const { npc, line } = panel;
+  if (isTownsfolk(npc)) return { npc, name: TOWNSFOLK_PLATES[npc], role: TOWNSFOLK_ROLE, line, job: null, buttons: [] };
   const member = CAST[npc];
   const job = panel.card === 'job' ? giverJob(state, npc) : null;
   if (job === null) {

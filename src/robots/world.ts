@@ -6,9 +6,11 @@
 import { JOBS, ROBOTS } from '../config';
 import { invariant } from '../core/invariant';
 import { Blocker, DIRECTIONS, type GameState, type Robot, type RobotMapId, type Tile, type TileCoord, type WorldState } from '../core/types';
+import { farmerStops } from '../people/timetable';
 import { withMap } from '../state/selectors';
 import { chebyshevDistance, inBounds, stepTile } from '../world/grid';
 import { MAPS, isReservedTile } from '../world/maps';
+import { coordIn } from '../world/maps/lookup';
 import { forEachTile, getTile, isWalkable } from '../world/tiles';
 import type { Slots } from './bag';
 
@@ -145,17 +147,18 @@ export function nearestFreeWalkable(state: GameState, mapId: RobotMapId, from: T
 
 /**
  * The tile of `mapId` nearest `generator`, within ROBOTS.chargeRadius of it, where a robot can be
- * set down: walkable, not reserved, not a character's spot, with no standing robot on it but
- * `selfId`. Where a neighbour drags a flat robot back to overnight; null when every such tile is
- * taken.
+ * set down: walkable, not reserved, not a stop in the farmers' timetables (part 4d spec §4.5), with
+ * no standing robot on it but `selfId`. Where a neighbour drags a flat robot back to overnight;
+ * null when every such tile is taken.
  */
 export function freeSpotInReach(state: GameState, mapId: RobotMapId, generator: TileCoord, selfId: number): TileCoord | null {
   const def = MAPS[mapId];
+  const stops = farmerStops(mapId);
   const free = (tile: Tile, at: TileCoord): boolean =>
     chebyshevDistance(at, generator) <= ROBOTS.chargeRadius &&
     isWalkable(tile) &&
     !isReservedTile(def, at.tx, at.tz) &&
-    !def.npcs.some((p) => p.tx === at.tx && p.tz === at.tz) &&
+    !coordIn(stops, at.tx, at.tz) &&
     robotsOnTile(state, mapId, at.tx, at.tz).every((r) => r.id === selfId);
   return nearestFittingOrNull(state.maps[mapId], generator, free);
 }

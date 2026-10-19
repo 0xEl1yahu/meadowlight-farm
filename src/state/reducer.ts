@@ -55,9 +55,10 @@ import { advanceWorldOvernight } from '../farming/growth';
 import { runSprinklers } from '../farming/sprinklers';
 import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPriceFor } from '../items/items';
 import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, passedJob, scrapRefusal, sizeGate, takeJob } from '../jobs/jobs';
-import { CAST, npcActions, npcAt } from '../people/cast';
+import { CAST, npcActions } from '../people/cast';
 import { lineFor } from '../people/lines';
-import { walkersIndoors } from '../people/walk';
+import { townsfolkLine } from '../people/townsfolk';
+import { isTownsfolk, walkerAt, walkersIndoors } from '../people/walk';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
 import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
@@ -353,10 +354,10 @@ function isDirection(value: number): value is Direction {
 }
 
 /**
- * One grid step. Inside the grid the destination must be walkable and no character may stand on
- * it (part 4a spec §2.2); a refused step only turns the player. Stepping off the edge takes
- * the map's warp from this tile in this direction, if there is one: the player lands on the
- * warp's arrival tile on the other map, facing into it (a teleport, so `moveSeq` is untouched).
+ * One grid step. Inside the grid the destination must be walkable and no walker may stand on it
+ * (part 4a spec §2.2, part 4d spec §4.5); a refused step only turns the player. Stepping off the
+ * edge takes the map's warp from this tile in this direction, if there is one: the player lands on
+ * the warp's arrival tile on the other map, facing into it (a teleport, so `moveSeq` is untouched).
  * A warp whose arrival tile isn't walkable is refused like any blocked step.
  */
 function movePlayer(state: GameState, direction: Direction): GameState {
@@ -365,7 +366,7 @@ function movePlayer(state: GameState, direction: Direction): GameState {
   const destination = stepTile(player, direction);
   const world = selectActiveWorld(state);
   if (inBounds(world.grid, destination.tx, destination.tz)) {
-    if (isWalkable(requireTile(world, destination.tx, destination.tz)) && npcAt(player.mapId, destination.tx, destination.tz) === null) {
+    if (isWalkable(requireTile(world, destination.tx, destination.tz)) && walkerAt(state, player.mapId, destination.tx, destination.tz) === null) {
       return {
         ...state,
         player: { ...player, tx: destination.tx, tz: destination.tz, facing: direction, moveSeq: player.moveSeq + 1 },
@@ -556,17 +557,22 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       return { ...state, ui: { ...state.ui, panel: { kind: 'robot', robotId: intent.robotId, mode: 'job' } } };
 
     case 'talkTo': {
+      const { npc } = intent;
+      // A townsperson's chat is today's line and nothing else: no job, and nothing recorded (part 4d spec §3.3).
+      if (isTownsfolk(npc)) {
+        return { ...state, ui: { ...state.ui, panel: { kind: 'talk', npc, line: townsfolkLine(state, npc), card: 'line' } } };
+      }
       // Talking to the active job's giver checks the job once more (part 4c spec §2.1), so a job
       // done by now is finished before the line is picked.
       const job = activeJob(state);
-      const checked = job !== null && JOBS_TABLE[job].giver === intent.npc ? applyJobCheck(state) : state;
+      const checked = job !== null && JOBS_TABLE[job].giver === npc ? applyJobCheck(state) : state;
       // The line is picked before the chat is recorded, so the first chat shows the introduction (part 4a spec §3.4).
-      const line = lineFor(checked, intent.npc);
-      const talk = checked.npcs[intent.npc];
+      const line = lineFor(checked, npc);
+      const talk = checked.npcs[npc];
       return {
         ...checked,
-        npcs: { ...checked.npcs, [intent.npc]: { ...talk, talks: talk.talks + 1, talkedToday: true } },
-        ui: { ...checked.ui, panel: { kind: 'talk', npc: intent.npc, line, card: 'line' } },
+        npcs: { ...checked.npcs, [npc]: { ...talk, talks: talk.talks + 1, talkedToday: true } },
+        ui: { ...checked.ui, panel: { kind: 'talk', npc, line, card: 'line' } },
       };
     }
 

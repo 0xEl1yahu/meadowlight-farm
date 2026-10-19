@@ -12,7 +12,7 @@ import { isMature } from '../src/farming/crops';
 import { growCrop } from '../src/farming/growth';
 import { WAVE, cosmoRipeTiles, looksBeforePicking, ripeCropsHarvested, showHimDone, showHimProgress, waveOf } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, jobMorning, jobProgress } from '../src/jobs/jobs';
-import { npcActions, npcSpot } from '../src/people/cast';
+import { npcActions } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
 import { programmedRobot } from '../src/robots/edits';
@@ -22,7 +22,7 @@ import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { COSMO_FIELD } from '../src/world/maps/neighbours';
 import { SHOW_HIM_REFERENCE } from './jobSolutions';
-import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile } from './testUtils';
+import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withWalkerAt } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
@@ -30,10 +30,9 @@ const texts = (state: GameState): string[] => state.messages.entries.map((m) => 
 /** BASE with job 1 done and job 2 offered. */
 const OFFERED: GameState = deepFreeze({ ...BASE, jobs: { ...BASE.jobs, status: { spinningRobot: 'done', showHim: 'offered', knowTheLimits: 'locked' } } });
 
-/** `state` with the player in front of Cosmo, facing him. */
+/** `state` with Cosmo on the lane by his field and the player in front of him, facing him. */
 function facingCosmo(state: GameState): GameState {
-  const { mapId, placement } = npcSpot('cosmo');
-  return withPlayer(state, { tx: placement.tx, tz: placement.tz + 1 }, Direction.North, mapId);
+  return withPlayer(withWalkerAt(state, 'cosmo', 'neighbours', 7, 13, Direction.South), { tx: 7, tz: 14 }, Direction.North, 'neighbours');
 }
 
 /** Job 2 taken through Cosmo's job card. */
