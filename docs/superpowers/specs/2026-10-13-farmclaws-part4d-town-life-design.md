@@ -131,15 +131,15 @@ The farmers work **beside** their fields, never in them, so every field tile sta
 
 | Departs | Cosmo | Barnaby |
 | --- | --- | --- |
-| 6:00 am | Beside his field: pace (11, 10), (16, 7), (4, 13), every 20 minutes, facing West | Beside his field: pace (30, 18), (30, 22), (19, 20), every 20 minutes, facing West |
-| 11:30 am (Cosmo), 11:15 am (Barnaby) | Lunch: town (19, 15), facing North | Lunch: town (20, 15), facing North |
+| 6:00 am | Beside his field: pace (11, 10), (16, 7), (4, 13), every 20 minutes, facing West | Beside his field: pace (30, 18), (30, 22), (19, 20), every 25 minutes, facing West |
+| 11:15 am (Cosmo), 11:05 am (Barnaby) | Lunch: town (19, 15), facing North | Lunch: town (20, 15), facing North |
 | 1:00 pm | Beside his field | Beside his field |
 | 6:00 pm | His 4a spot on the lane (7, 13), facing South | His 4a spot on the lane (25, 15), facing North |
 | 8:00 pm | Home | Home |
 
 (16, 7) is beside Cosmo's chicken run (§7.3).
 
-**Wet day:** the same, except that they skip lunch in town: no 11:30 / 11:15 leg, and the field leg runs until 6:00 pm.
+**Wet day:** the same, except that they skip lunch in town: no 11:15 / 11:05 leg, and the field leg runs until 6:00 pm.
 
 The lunch departures are timed so that, on the maps with nothing placed, both farmers reach the square by 12:00 pm. A test pins this.
 
@@ -248,7 +248,7 @@ Walkers never block each other. Two can share a tile, and the renderer draws the
 - **A walker can enter a tile** when it is walkable and no robot stands on it. Reserved tiles (gates, arrivals and exits) can be walked over, but no stop sits on one.
 - **The player:**
   - First, plan with the player's tile counted as blocked. If there's a route, take its first step.
-  - Otherwise, plan again ignoring the player. If that route exists, the player is the only thing in the way: wait this minute.
+  - Otherwise, plan again ignoring the player. If that route exists, the player is the only thing in the way: take its first step, unless that step is onto the player's tile; only then wait this minute. So a walker walks up to the player and waits beside them.
   - Otherwise the walker is **stuck** and stays where they are.
 - **Crossing maps:** when a farmer's target is on the other map, the route's target is the gate tile that leads there (town (39, 16) east, neighbours (0, 14) west). From the gate tile the next step goes through the warp to the other map's arrival tile (town (38, 16), neighbours (1, 14)), facing the warp's direction. Townsfolk never leave the town.
 
@@ -544,7 +544,7 @@ The props and the run's fences take tiles that saves already hold as open ground
 | File | Covers |
 | --- | --- |
 | `tests/findPath.test.ts` | The general search. The robots' route tests pass unchanged. |
-| `tests/timetable.test.ts` | Every stop and loop spot is valid and reachable. The current leg at each boundary, dry and wet. Pace targets cycle. On the empty maps, a simulated dry day gets everyone to every stop before their next leg, both farmers reach the square by 12:00 pm, and all seven are there from 12:15 pm to 12:50 pm. Sol is out at 6:00 am, dry and wet. No farmer stop is on a field tile, a job's robot tile or a generator tile. |
+| `tests/timetable.test.ts` | Every stop and loop spot is valid and reachable. The current leg at each boundary, dry and wet. Pace targets cycle. On the empty maps, a simulated dry day gets everyone to every stop before their next leg, both farmers reach the square by 12:00 pm, and all seven are there from 12:25 pm to 12:50 pm. Barnaby reaches each of his three pace spots during his morning field leg. Sol is out at 6:00 am, dry and wet. No farmer stop is on a field tile, a job's robot tile or a generator tile. |
 | `tests/walk.test.ts` | One step a minute. Rerouting round a placed chest and round a robot. Waiting for the player. Stuck behind fences, with the stuck line. The east gate both ways. Doors and exits, in and out, including waiting at a blocked one. The morning reset. Sharing tiles. Walking while the player is on another map. No movement while frozen. A generator placed under a walker moves them. 4c's drag-back keeps off the farmers' stops. |
 | `tests/townsfolk.test.ts` | The six loops. Wet days bring out only the jogger and courier. Today's line is stable all day and verbatim, with no buttons. |
 | `tests/shopHours.test.ts` | `shopOpen` at every boundary and `nextOpening`'s three cases. The door, the buttons and B, across gate closed / closed hours / open hours, with the toast and line verbatim. The Job button and job checks at 8:00 pm. |

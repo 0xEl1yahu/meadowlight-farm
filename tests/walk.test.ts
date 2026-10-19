@@ -120,13 +120,26 @@ describe('routing round', () => {
 describe('the player in the way', () => {
   const inYard = withPlaces(DRY, { cosmo: out('neighbours', 6, 10, Direction.South) });
 
-  it('waits while the player stands in the only way out of Cosmo’s yard, then moves on when they step aside', () => {
+  it('walks up to the player standing in the only way out of Cosmo’s yard, waits, then moves on when they step aside', () => {
     const blocking = withPlayer(inYard, { tx: 6, tz: 12 }, Direction.North, 'neighbours');
     const waiting = runTo(blocking, at(6, 5));
-    expect(walkerPlace(waiting, 'cosmo')).toBe(walkerPlace(inYard, 'cosmo'));
+    expect(walkerPlace(waiting, 'cosmo')).toEqual(out('neighbours', 6, 11, Direction.South));
     const aside = withPlayer(waiting, { tx: 7, tz: 13 }, Direction.North, 'neighbours');
-    const moved = runTo(aside, at(6, 7));
+    const moved = runTo(aside, at(6, 6));
     expect(walkerPlace(moved, 'cosmo')).toEqual(out('neighbours', 6, 12, Direction.South));
+  });
+
+  it('walks up next to the player standing on Sol’s stop, never onto them, and steps on once they leave', () => {
+    const well = { tx: 21, tz: 13 };
+    const onStop = withPlayer(DRY, well, Direction.North, 'town');
+    const states = timeline(onStop, at(6, 20));
+    for (const state of states) expect(onTile(walkerPlace(state, 'sol'), 'town', well)).toBe(false);
+    const waiting = states.at(-1) as GameState;
+    const beside = tileOf(walkerPlace(waiting, 'sol'));
+    expect(manhattanDistance(beside, well)).toBe(1);
+    expect(walkerPlace(states.at(-2) as GameState, 'sol')).toBe(walkerPlace(waiting, 'sol'));
+    const aside = withPlayer(waiting, { tx: 23, tz: 15 }, Direction.North, 'town');
+    expect(onTile(walkerPlace(runTo(aside, at(6, 21)), 'sol'), 'town', well)).toBe(true);
   });
 
   it('stays put, stuck, when even without the player there is no way out', () => {
@@ -272,19 +285,28 @@ describe('the day on the empty maps', () => {
     });
   }
 
-  it('has both farmers in the square by 12:14 pm, and all seven characters there from 12:21 to 12:50 pm', () => {
+  it('has both farmers in the square by 12:00 pm, and all seven characters there from 12:25 to 12:50 pm', () => {
     const states = timeline(DRY, at(12, 50));
     const stateAt = (minute: number): GameState => states[minute - DRY.time.minuteOfDay - 1] as GameState;
-    // The last to arrive: Cosmo, 44 steps from (16, 7) at 11:30 am; Barnaby, 49 steps from his
-    // field at 11:15 am; Marigold, 17 steps from her shop at 12:00 pm; Tallulah, 21 steps.
-    expect(walkerPlace(stateAt(at(12, 14)), 'cosmo')).toMatchObject({ kind: 'out', mapId: 'town', tx: 19, tz: 15 });
-    expect(walkerPlace(stateAt(at(12, 14)), 'barnaby')).toMatchObject({ kind: 'out', mapId: 'town', tx: 20, tz: 15 });
-    for (let minute = at(12, 21); minute < at(12, 50); minute++) {
+    expect(walkerPlace(stateAt(at(12)), 'cosmo')).toMatchObject({ kind: 'out', mapId: 'town', tx: 19, tz: 15 });
+    expect(walkerPlace(stateAt(at(12)), 'barnaby')).toMatchObject({ kind: 'out', mapId: 'town', tx: 20, tz: 15 });
+    for (let minute = at(12, 25); minute < at(12, 50); minute++) {
       for (const id of NPC_IDS) {
         const target = targetOf(id, minute, false);
         if (target === 'home' || target.facing === null) throw new Error(`${id} has no lunch spot`);
         expect(walkerPlace(stateAt(minute), id), `${id} at minute ${minute}`).toEqual(out(target.mapId, target.tile.tx, target.tile.tz, target.facing));
       }
+    }
+  });
+
+  it('gets Barnaby to each of his three pace spots during his morning field leg', () => {
+    const states = timeline(DRY, at(11, 5));
+    for (const spot of [
+      { tx: 30, tz: 18 },
+      { tx: 30, tz: 22 },
+      { tx: 19, tz: 20 },
+    ]) {
+      expect(states.some((s) => onTile(walkerPlace(s, 'barnaby'), 'neighbours', spot)), `(${spot.tx}, ${spot.tz})`).toBe(true);
     }
   });
 });

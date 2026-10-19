@@ -154,6 +154,9 @@ export const DEALZ_LINES: { readonly soldOut: string; readonly noGold: string; r
 - **R1.** `findPath` takes the grid and a `canStep(from, to)` callback rather than a world and `canEnter(tx, tz)`, because the robots' rule depends on the step (.MD DON'T cards check `from` → `to`). The behaviour is unchanged. (Spec §4.3)
 - **R2.** The slop panel stores DEALZ's current line in the panel (`{ kind: 'slopShop', line }`), so refusals and results change the line without saved state. The loader resets panels, so nothing is migrated. (Spec §6.2)
 - **R3.** A pace stop's facing may be null: the townsfolk's loops of several spots have no facing in spec §3.1, so a townsperson keeps the facing they walked in with, and `targetOf` reports null. Where the migration has to stand one on a loop spot without a walk, they face South. The single-spot loops (the retiree and the busker) are spot stops with their facing. (Spec §2.1, §9.2)
+- **R4.** The farmers set off for lunch earlier, Cosmo at 11:15 am (was 11:30) and Barnaby at 11:05 am (was 11:15), because from their pace spots the walk took until 12:13 and 12:03; they now reach the square by 11:50 and 11:44. All seven characters are in the square from 12:25 pm (was 12:15): Marigold and Tallulah walk 17 and 21 tiles from their shops from 12:00 pm. (Spec §2.3, §10)
+- **R5.** Barnaby's pace moves on every 25 minutes (was 20): (19, 20) is 21 steps round his field from (30, 22), so at 20 minutes he turned back one tile short every time. (Spec §2.3)
+- **R6.** When only the player is in the way, a walker takes the route's first step and waits only when that step is onto the player's tile, so they walk up to the player and wait beside them, rather than freezing wherever they are. (Spec §4.3)
 
 ---
 
@@ -313,7 +316,8 @@ Walkers move every minute; the minute loop and the morning change. (Spec §4.2, 
   - **the day on the empty maps:**
     - a simulated dry day gets every walker to every stop before their next leg departs;
     - both farmers are in the square by 12:00 pm;
-    - all seven characters are there from 12:15 pm to 12:50 pm;
+    - all seven characters are there from 12:25 pm to 12:50 pm;
+    - Barnaby reaches each of his three pace spots during his morning field leg;
   - **Review Focus 1:** from 6:00 am, `tick(120)` equals 120 × `tick(1)`;
   - **Review Focus 5:** sleeping and passing out with Cosmo in town at 12:30 pm and Barnaby on the gate tile; the next morning everyone is indoors.
 - [ ] **Step 2:** Run `npx vitest run tests/walk.test.ts` and see it fail.

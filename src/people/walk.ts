@@ -129,17 +129,22 @@ function rememberedMove(state: GameState, obstacles: Obstacles, mapId: MapId, fr
 
 /**
  * The two plans of spec §4.3 from `from` to `to` on `mapId`: first with the player's tile
- * blocked, taking that route's first step; then, if there's none, ignoring the player, where a
- * route means the player is the only thing in the way.
+ * blocked, taking that route's first step; then, if there's none, ignoring the player, where the
+ * player is the only thing in the way. That route's first step is taken too, up to the player:
+ * only a step onto the player's tile waits.
  */
 function planMove(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): Move {
   const { grid } = state.maps[mapId];
   const first = findPath(grid, from, to, (_, next) => canEnter(state, obstacles, mapId, next, false))?.[0];
   if (first !== undefined) return { kind: 'step', to: first };
   // Without the player on this map the second plan is the first one again.
-  if (obstacles.player.mapId !== mapId) return { kind: 'stuck' };
+  const { player } = obstacles;
+  if (player.mapId !== mapId) return { kind: 'stuck' };
   const around = findPath(grid, from, to, (_, next) => canEnter(state, obstacles, mapId, next, true));
-  return around === null ? { kind: 'stuck' } : { kind: 'wait' };
+  if (around === null) return { kind: 'stuck' };
+  const next = around[0];
+  if (next === undefined || (next.tx === player.tx && next.tz === player.tz)) return { kind: 'wait' };
+  return { kind: 'step', to: next };
 }
 
 /** The way from a tile to the adjacent tile `to`. */

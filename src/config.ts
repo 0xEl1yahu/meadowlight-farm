@@ -676,7 +676,7 @@ export const TIMETABLES: Readonly<Record<NpcId, Timetable>> = {
       facing: Direction.West,
       everyMinutes: 20,
     },
-    { departs: clock(11, 30), to: spot('town', 19, 15, Direction.North) },
+    { departs: clock(11, 15), to: spot('town', 19, 15, Direction.North) },
     spot('neighbours', 7, 13, Direction.South),
   ),
   barnaby: farmerDay(
@@ -690,9 +690,9 @@ export const TIMETABLES: Readonly<Record<NpcId, Timetable>> = {
         { tx: 19, tz: 20 },
       ],
       facing: Direction.West,
-      everyMinutes: 20,
+      everyMinutes: 25,
     },
-    { departs: clock(11, 15), to: spot('town', 20, 15, Direction.North) },
+    { departs: clock(11, 5), to: spot('town', 20, 15, Direction.North) },
     spot('neighbours', 25, 15, Direction.North),
   ),
 };

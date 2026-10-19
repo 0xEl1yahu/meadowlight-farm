@@ -254,7 +254,7 @@ describe('v9 → v10: walkers', () => {
     for (const id of ['marigold', 'berlioz', 'juniper', 'tallulah'] as const) expect(places[id], id).toEqual(INDOORS);
     expect(places.sol).toEqual(out('town', 21, 7, Direction.South));
     expect(places.cosmo).toEqual(out('neighbours', 16, 7, Direction.West));
-    expect(places.barnaby).toEqual(out('neighbours', 30, 22, Direction.West));
+    expect(places.barnaby).toEqual(out('neighbours', 30, 18, Direction.West));
     for (const id of TOWNSFOLK_IDS) expect(places[id], id).toEqual(INDOORS);
   });
 

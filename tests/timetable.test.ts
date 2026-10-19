@@ -63,10 +63,10 @@ describe('currentLeg', () => {
   });
 
   it('skips the farmers’ lunch in town on a wet day', () => {
-    expect(legsFor('cosmo', false).map((leg) => leg.departs)).toEqual([at(6), at(11, 30), at(13), at(18), at(20)]);
+    expect(legsFor('cosmo', false).map((leg) => leg.departs)).toEqual([at(6), at(11, 15), at(13), at(18), at(20)]);
     expect(legsFor('cosmo', true).map((leg) => leg.departs)).toEqual([at(6), at(18), at(20)]);
-    expect(legsFor('barnaby', false)[1]?.departs).toBe(at(11, 15));
-    expect(currentLeg('cosmo', at(11, 30), false)?.to).toEqual({ kind: 'spot', mapId: 'town', tx: 19, tz: 15, facing: Direction.North });
+    expect(legsFor('barnaby', false)[1]?.departs).toBe(at(11, 5));
+    expect(currentLeg('cosmo', at(11, 15), false)?.to).toEqual({ kind: 'spot', mapId: 'town', tx: 19, tz: 15, facing: Direction.North });
     expect(currentLeg('cosmo', at(11, 30), true)?.departs).toBe(at(6));
     expect(currentLeg('cosmo', at(17, 59), true)?.to.kind).toBe('pace');
   });
@@ -152,7 +152,7 @@ describe('placeAt', () => {
   it('stands a walker on their current target, facing its way, or indoors', () => {
     expect(placeAt('sol', at(6), false)).toEqual({ kind: 'out', mapId: 'town', tx: 21, tz: 13, facing: Direction.West });
     expect(placeAt('marigold', at(6), false)).toEqual({ kind: 'indoors' });
-    expect(placeAt('barnaby', at(11, 40), true)).toEqual({ kind: 'out', mapId: 'neighbours', tx: 19, tz: 20, facing: Direction.West });
+    expect(placeAt('barnaby', at(11, 40), true)).toEqual({ kind: 'out', mapId: 'neighbours', tx: 30, tz: 22, facing: Direction.West });
     expect(placeAt('busker', at(12), false)).toEqual({ kind: 'out', mapId: 'town', tx: 18, tz: 12, facing: Direction.South });
     for (const id of [...NPC_IDS, ...TOWNSFOLK_IDS]) expect(placeAt(id, at(25, 30), false), id).toEqual({ kind: 'indoors' });
   });
