@@ -58,9 +58,14 @@ export function withRobotWorld(state: GameState, robot: Pick<Robot, 'mapId'>, wo
   return withMap(state, robot.mapId, world);
 }
 
-/** Robots standing on a tile of `mapId` (not carried, not on the workbench, not away for repair), lowest id first. */
+/** Whether a robot stands on its tile: not carried, not on the workbench, not away for repair. */
+export function isStanding(robot: Robot): boolean {
+  return !robot.carried && !robot.onBench && robot.power !== 'repairing';
+}
+
+/** Robots standing on a tile of `mapId` (see `isStanding`), lowest id first. */
 export function robotsOnTile(state: GameState, mapId: RobotMapId, tx: number, tz: number): readonly Robot[] {
-  return state.robots.list.filter((r) => r.mapId === mapId && !r.carried && !r.onBench && r.power !== 'repairing' && r.tx === tx && r.tz === tz);
+  return state.robots.list.filter((r) => r.mapId === mapId && isStanding(r) && r.tx === tx && r.tz === tz);
 }
 
 /**

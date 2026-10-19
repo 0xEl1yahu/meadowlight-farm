@@ -57,10 +57,11 @@ import { getItem, isPartItemId, isSeedItemId, partNoun, sellBackPrice, sellPrice
 import { JOBS_TABLE, activeJob, finishJob, isGateOpen, isJobRobot, jobMorning, passedJob, scrapRefusal, sizeGate, takeJob } from '../jobs/jobs';
 import { CAST, npcActions, npcAt } from '../people/cast';
 import { lineFor } from '../people/lines';
+import { walkersIndoors } from '../people/walk';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
 import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
 import { runRobotsOvernight } from '../robots/overnight';
-import { runRobotsThrough } from '../robots/run';
+import { runMinutesThrough } from '../robots/run';
 import { SWITCHABLE_POWERS, carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
 import { findRobot, requireRobot, withRobot } from '../robots/world';
 import { formatDate, nextDay } from '../time/clock';
@@ -199,18 +200,17 @@ function reduceAction(state: GameState, action: GameAction): GameState {
 // ---------------------------------------------------------------------------
 
 /**
- * Advances the clock. With robots or an active job it goes one minute at a time so every robot
- * acts on its minute (farmclaws part 1 §5.5) and the job is checked after each minute's robots
- * (part 4c spec §2.1); however the minutes arrive, the result is the same.
+ * Advances the clock one minute at a time, so every robot acts on its minute (farmclaws part 1
+ * §5.5), the walkers walk after them (part 4d spec §4.2) and the job is checked after both (part
+ * 4c spec §2.1); however the minutes arrive, the result is the same.
  */
 function tick(state: GameState, minutes: number): GameState {
   if (selectIsFrozen(state) || !Number.isFinite(minutes)) return state;
   const whole = Math.min(TIME.maxTickMinutes, Math.floor(minutes));
   if (whole <= 0) return state;
   const target = state.time.minuteOfDay + whole;
-  if (target >= TIME.passOutMinute) return startNextDay(runRobotsThrough(state, TIME.passOutMinute - 1, applyJobCheck), true);
-  if (state.robots.list.length === 0 && activeJob(state) === null) return { ...state, time: { ...state.time, minuteOfDay: target } };
-  return runRobotsThrough(state, target, applyJobCheck);
+  if (target >= TIME.passOutMinute) return startNextDay(runMinutesThrough(state, TIME.passOutMinute - 1, applyJobCheck), true);
+  return runMinutesThrough(state, target, applyJobCheck);
 }
 
 /** The placed object a placeable item becomes: an empty chest, a cold wood burner, or the plain kind. */
@@ -269,9 +269,10 @@ function restocked(sold: ShopsSoldToday): ShopsSoldToday {
  * Day transition: pay out the shipping bin (each stack at its quality's price, counted into the
  * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
  * pipeline on every map with that map's seed, restore energy, clear yesterday's chats
- * (`talkedToday`), restock the shops (part 4b spec §6) and put the player back at the house on
- * the farm. Then the robots' night runs (farmclaws part 1 §5.7), and the active job's morning
- * reset (part 4c spec §2.1); the night's toasts follow the morning's own messages.
+ * (`talkedToday`), restock the shops (part 4b spec §6), send every walker indoors (part 4d spec
+ * §4.7) and put the player back at the house on the farm. Then the robots' night runs (farmclaws
+ * part 1 §5.7), and the active job's morning reset (part 4c spec §2.1); the night's toasts follow
+ * the morning's own messages.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -316,6 +317,7 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     npcs: morningNpcs(state.npcs),
     shopsSoldToday: restocked(state.shopsSoldToday),
   };
+  next = walkersIndoors(next);
   const night = runRobotsOvernight(next);
   next = jobMorning(night.state);
 

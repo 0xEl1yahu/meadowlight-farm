@@ -1,8 +1,10 @@
 /**
- * Robots acting minute by minute (farmclaws part 1 spec §5.1–5.3, part 2 spec §8). Pure.
+ * Robots acting minute by minute (farmclaws part 1 spec §5.1–5.3, part 2 spec §8), and the minute
+ * loop that runs them before the walkers (part 4d spec §4.2). Pure.
  */
 import { invariant } from '../core/invariant';
 import type { GameState, Robot, RobotActionKind, RobotExec, RobotLogEvent } from '../core/types';
+import { runWalkersMinute } from '../people/walk';
 import { pushMessage } from '../state/messages';
 import { findBumps, type MoveIntent } from './bumps';
 import { applyBickerPlan, applyBumpPlan, applyRobotPlan, applyTurn, chargeWake, planRobotAction, type RobotPlan } from './execute';
@@ -137,13 +139,14 @@ export function runRobotsMinute(state: GameState): GameState {
 }
 
 /**
- * Runs every minute after the current one up to and including `lastMinute`; `afterMinute`, when
- * given, follows each minute's robots (the jobs' checks, part 4c spec §2.1).
+ * Runs every minute after the current one up to and including `lastMinute`. Each minute the robots
+ * act, then the walkers walk (part 4d spec §4.2), then `afterMinute`, when given, runs (the jobs'
+ * checks, part 4c spec §2.1).
  */
-export function runRobotsThrough(state: GameState, lastMinute: number, afterMinute?: (state: GameState) => GameState): GameState {
+export function runMinutesThrough(state: GameState, lastMinute: number, afterMinute?: (state: GameState) => GameState): GameState {
   let next = state;
   for (let minute = state.time.minuteOfDay + 1; minute <= lastMinute; minute++) {
-    next = runRobotsMinute({ ...next, time: { ...next.time, minuteOfDay: minute } });
+    next = runWalkersMinute(runRobotsMinute({ ...next, time: { ...next.time, minuteOfDay: minute } }));
     if (afterMinute !== undefined) next = afterMinute(next);
   }
   return next;

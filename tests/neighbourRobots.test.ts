@@ -13,7 +13,7 @@ import { b } from '../src/robots/blocks';
 import { ROBOT_CAP_RULE, addRobot } from '../src/robots/create';
 import { planRobotAction } from '../src/robots/execute';
 import { returnTarget } from '../src/robots/md';
-import { runRobotsThrough } from '../src/robots/run';
+import { runMinutesThrough } from '../src/robots/run';
 import { requireRobot, robotsOnTile, withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
 import { describeIntent, planInteraction, planPrimaryAction, planShiftInteraction, placementProblem } from '../src/state/intents';
@@ -128,7 +128,7 @@ describe('robots on their own map', () => {
     state = withTile(state, crop, soilTile(TileState.Watered, matureCrop('parsnip')), 'neighbours');
     state = withCosmoRobot(state, { tx: 8, tz: 13 }, Direction.North, b.program({ stacks: [b.when(b.morning(), b.goTo(b.tileAt(crop.tx, crop.tz)), b.harvest())] }));
     const farm = state.maps.farm;
-    const after = runRobotsThrough(state, TIME.dayStartMinute + 6 * 60);
+    const after = runMinutesThrough(state, TIME.dayStartMinute + 6 * 60);
     const wave = requireRobot(after, 1);
     expect(wave).toMatchObject({ mapId: 'neighbours', tx: crop.tx, tz: crop.tz });
     expect(wave.bag.map((s) => s.itemId)).toEqual(['parsnip']);
@@ -145,7 +145,7 @@ describe('robots on their own map', () => {
     state = withTile(state, at, EMPTY_TILE, 'farm');
     // Right for a ripe crop under it, left for none.
     state = withCosmoRobot(state, at, Direction.North, b.program({ stacks: [b.when(b.morning(), b.if(b.cropIsReady(), [b.turn('right')], [b.turn('left')]))] }));
-    expect(requireRobot(runRobotsThrough(state, TIME.dayStartMinute + 30), 1).facing).toBe(Direction.East);
+    expect(requireRobot(runMinutesThrough(state, TIME.dayStartMinute + 30), 1).facing).toBe(Direction.East);
   });
 
   it('never bumps or bickers with a robot on the other map', () => {
@@ -168,7 +168,7 @@ describe('robots on their own map', () => {
       robotOf({ id: 5, tx: 3, tz: 14, parts: ['claw'], program: harvest }),
       neighbourBot({ id: 6, tx: 3, tz: 14, parts: ['claw'], program: harvest }),
     ];
-    const after = runRobotsThrough(withRobots(state, robots), TIME.dayStartMinute + 4);
+    const after = runMinutesThrough(withRobots(state, robots), TIME.dayStartMinute + 4);
     expect(after.robots.log.entries.filter((e) => e.event.kind === 'crashed' || e.event.kind === 'bickered')).toEqual([]);
     expect(requireRobot(after, 1)).toMatchObject({ tx: 6, tz: 14, off: null });
     expect(requireRobot(after, 2)).toMatchObject({ tx: 6, tz: 14, off: null });
@@ -186,7 +186,7 @@ describe('robots on their own map', () => {
     // Right when the tile ahead is clear, left when something stands there.
     const program = b.program({ stacks: [b.when(b.morning(), b.if(b.tileAheadIs('clear'), [b.turn('right')], [b.turn('left')]))] });
     state = withCosmoRobot(state, { tx: 8, tz: 13 }, Direction.East, program);
-    expect(requireRobot(runRobotsThrough(state, TIME.dayStartMinute + 30), 3).facing).toBe(Direction.South);
+    expect(requireRobot(runMinutesThrough(state, TIME.dayStartMinute + 30), 3).facing).toBe(Direction.South);
   });
 });
 

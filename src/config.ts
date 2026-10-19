@@ -728,3 +728,12 @@ export const TOWNSFOLK = {
     kid: { exit: SOUTH_EAST_EXIT, loop: loop(25, { tx: 29, tz: 8 }, { tx: 31, tz: 9 }), rainOrShine: false },
   } satisfies Readonly<Record<TownsfolkId, TownsfolkDay>>,
 } as const;
+
+/**
+ * The walk (farmclaws part 4d spec §4.2): how many planned moves each map's world remembers. The
+ * walkers walk the same routes every day, so most minutes' plans were already made on an earlier
+ * day; past this many the world forgets them all and starts again.
+ */
+export const WALK = {
+  plansPerWorld: 4096,
+} as const;
