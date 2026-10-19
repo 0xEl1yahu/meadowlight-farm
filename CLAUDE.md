@@ -42,6 +42,7 @@ A 3D low-poly farming sim in the browser (TypeScript, Three.js, Vite, Vitest). F
 - **Keep plans light.** One writer, no parallel drafting agents. Per task: the files, what changes and why, the signatures other tasks rely on, and the tests that pin the rules. No full quoted code, no verbatim test files, no predicted failure counts; the build writes the code. Eli finds the on-screen bugs by playing, so keep browser playbooks short too.
 - Browser checks use the `game-driven-qa` skill (`.claude/skills/game-driven-qa/`), with playbooks per part in `scenarios/`.
 - **Every feature build gets its own new branch** off `main`, named for the feature (e.g. `p4a-people`). Never work straight on `main`.
+- **Fetch first.** Run `git fetch origin` and branch from `origin/main`, not local `main`: local `main` can be weeks behind, and a spec written against it describes a game that no longer exists.
 - Pushing to `origin` (github.com/0xEl1yahu/meadowlight-farm) needs the GitHub CLI's `0xEl1yahu` account active. Switch back afterwards.
 - Commit messages: a short, plain summary, then why. Part commits start with `Farmclaws part N: `.
 
