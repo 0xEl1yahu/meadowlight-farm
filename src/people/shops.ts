@@ -1,6 +1,6 @@
 /**
  * Shop hours (farmclaws part 4d spec §5): which shops keep hours, where their doors are and who
- * keeps them, whether one is open, and what the closed sign says. Pure. A shop is open by the
+ * keeps them, whether one is open, what the closed line says and what the door sign reads. Pure. A shop is open by the
  * clock alone; it never looks at where its keeper is.
  */
 import { SHOP_HOURS } from '../config';
@@ -41,6 +41,14 @@ function inHours(minute: number): boolean {
 export function shopOpen(state: GameState, shop: ShopId): boolean {
   void shop;
   return inHours(state.time.minuteOfDay);
+}
+
+/** The two faces of a door's hanging sign (spec §5.3). */
+export type SignFace = 'OPEN' | 'CLOSED';
+
+/** What the hanging sign on the door of `shop` reads now: it flips with shopOpen. */
+export function signFace(state: GameState, shop: ShopId): SignFace {
+  return shopOpen(state, shop) ? 'OPEN' : 'CLOSED';
 }
 
 /** The time after "Open again at": the next window's opening, with "tomorrow" once the last has closed. */

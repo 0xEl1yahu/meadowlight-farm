@@ -9,28 +9,34 @@
  * cottage under each farmer's roof colour) and Cosmo's chicken coop, which with the hedges fill
  * that band (z 0–4), so they too can hide only more back band.
  *
- * Shopfronts (farmclaws part 4b spec §7): the parts exchange's display stand, and Juniper's Mini
- * on its stand and her crate, stand in front of the wall in the front inset; the FarmClaw posters
- * hang on the wall. All of it stays inside the building's rect. Poster quads go into the
- * PartSet's `posters` (one atlas mesh per map).
+ * Shopfronts (farmclaws part 4b spec §7, part 4d spec §5.3, §6.1, §7.2): the parts exchange's
+ * display stand, and Juniper's Mini on its stand and her crate, stand in front of the wall in the
+ * front inset; the FarmClaw and brand posters hang on the walls, and each shop's OPEN / CLOSED sign
+ * hangs beside its door, or on the parts exchange's door itself (doorSignParts, built apart so the
+ * renderer can find and flip each one). SLOPMART's booth has DEALZ behind its counter and its
+ * neon on the roof. All of it stays inside the building's rect. Poster quads go into the PartSet's
+ * `posters` (one atlas mesh per map), and the neon and DEALZ's eyes into its `neon` (one self-lit
+ * mesh). The town's bunting and Claw Fair banners (part 4d spec §7.1) hang from its lamp posts.
  *
  * Occlusion: the camera looks from +X/+Z, so a point at height h hides the ground h units further
  * along −X and −Z. Everything stays inside its structure rect: the shops, the booth, the parts
  * exchange and the hedges fill the back band (z 0–6), so all they can hide is more back band,
  * however tall they stand; the well and every prop stay ≤ 0.9 tall and the lamp posts ≤ 0.15
- * wide, as the town layout allows.
+ * wide, as the town layout allows. The bunting and banners hang high and thin between the lamps.
  */
 import * as THREE from 'three';
 import { NEIGHBOUR_ROOFS, ROBOT_PAINTS } from '../config';
 import { Salt, hashFloat } from '../core/hash';
 import { assertNever } from '../core/invariant';
 import type { GridSpec, StructureKind, TileCoord, TileRect } from '../core/types';
+import { SHOP_DOORS, type ShopId } from '../people/shops';
 import { WORKSHOP_ROBOTS } from '../robots/workshop';
-import { tileCenterX, tileMinX, tileMinZ } from '../world/grid';
+import { tileCenterX, tileCenterZ, tileMinX, tileMinZ } from '../world/grid';
 import type { MapDefinition, StructurePlacement } from '../world/maps';
 import { HEIGHTS } from './constants';
 import {
   STRUCTURE_COLORS,
+  at,
   box,
   createPartSet,
   doorParts,
@@ -51,7 +57,7 @@ import {
   type WindowStyle,
 } from './geometryParts';
 import { PALETTE } from './palette';
-import { POSTER_ASPECT, posterQuad, type PosterId } from './posters';
+import { neonPaint, neonSignQuads, posterAspect, posterQuad, type PosterId } from './posters';
 import { SHELL_MESHES, createRobotMeshGeometry } from './robotGeometry';
 import { EYE_COLORS, SIZE_SCALE, robotMeshes, type RobotMeshId } from './robotLayout';
 import { createFarmhouseGeometry, farmhousePlacement } from './structureGeometry';
@@ -62,7 +68,7 @@ interface Offset {
   readonly z: number;
 }
 
-/** Per-feature salts, combined with Salt.Cosmetic (structureGeometry uses 11–61, sceneryGeometry 71–81). */
+/** Per-feature salts, combined with Salt.Cosmetic (structureGeometry uses 11–61, sceneryGeometry 71–81, chickenLayout 121). */
 const FEATURE = { hedge: 91, crate: 101, prop: 111 } as const;
 
 function cosmetic(offset: Offset, feature: number, a: number, b: number, k: number): number {
@@ -86,12 +92,18 @@ function rectBounds(grid: GridSpec, rect: TileRect): RectBounds {
   };
 }
 
-/** Moves a building's local parts (body, glass and posters) to `origin` and appends them to `out`. */
-function placeParts(local: PartSet, origin: THREE.Vector3, out: PartSet): void {
-  const move = new THREE.Matrix4().makeTranslation(origin.x, origin.y, origin.z);
+/** Turns a building's local parts `yaw` about +Y, moves them to `origin` and appends them to `out`. */
+function placeParts(local: PartSet, origin: THREE.Vector3, out: PartSet, yaw = 0): void {
+  const move = new THREE.Matrix4().makeRotationY(yaw).setPosition(origin);
   transformParts(local.body, move, out.body);
   transformParts(local.glass, move, out.glass);
   transformParts(local.posters, move, out.posters);
+  transformParts(local.neon, move, out.neon);
+}
+
+/** Vertices in `parts`, all of them: where the next part's vertices start once they're merged. */
+function vertexCount(parts: readonly THREE.BufferGeometry[]): number {
+  return parts.reduce((sum, part) => sum + part.getAttribute('position').count, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +227,11 @@ export const SHOP_SHAPE = {
   chimneyWidth: 0.55,
 } as const;
 
+/** Half the width of a shop's shuttered front window, shutters and all. */
+const WINDOW_HALF = SHOP_SHAPE.windowWidth / 2 + WINDOW_FRAME.frameWidth + WINDOW_FRAME.shutterWidth + 0.01;
+/** Half the width of a door and its frame. */
+const DOOR_FRAME_HALF = SHOP_SHAPE.doorWidth / 2 + 0.1;
+
 /**
  * How far a shop's walls sit inside its rect. The front inset holds the door step and the awning
  * (≤ 0.47 past the wall), so nothing reaches the walkable row in front of the door.
@@ -261,6 +278,27 @@ function shopFrame(spec: ShopSpec, style: ShopStyle): ShopFrame {
     },
     doorX: THREE.MathUtils.clamp(spec.doorOffsetX, -doorLimit, doorLimit),
   };
+}
+
+/**
+ * The centre of the front window on `side` of the door (−1 west, +1 east), or null where the wall
+ * from the lantern gap out to the corner post is too narrow for one.
+ */
+function frontWindowX(f: ShopFrame, side: -1 | 1): number | null {
+  const S = SHOP_SHAPE;
+  const near = f.doorX + side * (DOOR_FRAME_HALF + S.lanternGap);
+  const far = side * (f.halfW - S.cornerPost / 2);
+  return Math.abs(far - near) < 2 * WINDOW_HALF ? null : (near + far) / 2;
+}
+
+/**
+ * The middle of the bare front wall on `side` of the door, between the door frame and the front
+ * window (or the corner post, where there's no window): where a poster or a door sign hangs.
+ */
+function besideDoorX(f: ShopFrame, side: -1 | 1): number {
+  const window = frontWindowX(f, side);
+  const end = window === null ? side * (f.halfW - SHOP_SHAPE.cornerPost / 2) : window - side * WINDOW_HALF;
+  return (f.doorX + side * DOOR_FRAME_HALF + end) / 2;
 }
 
 /** Foundation, walls, siding, gables, corner posts and trim beams. */
@@ -436,27 +474,22 @@ export function createShopParts(spec: ShopSpec, style: ShopStyle, out: PartSet):
   );
   signParts(f, style, out);
 
-  const frameHalf = S.doorWidth / 2 + 0.1;
   const postInner = f.halfW - S.cornerPost / 2;
-  const windowHalf = S.windowWidth / 2 + WINDOW_FRAME.frameWidth + WINDOW_FRAME.shutterWidth + 0.01;
   const windowY = f.base + S.windowCenterHeight;
   const placement = new THREE.Matrix4();
-  const spans: readonly (readonly [number, number])[] = [
-    [-postInner, f.doorX - frameHalf - S.lanternGap],
-    [f.doorX + frameHalf + S.lanternGap, postInner],
-  ];
-  for (const [start, end] of spans) {
-    if (end - start < windowHalf * 2) continue;
+  for (const side of [-1, 1] as const) {
+    const windowX = frontWindowX(f, side);
+    if (windowX === null) continue;
     const options = { width: S.windowWidth, height: S.windowHeight, shutters: true, planter: style.planters };
-    windowParts(options, style.window, placement.makeTranslation((start + end) / 2, windowY, f.halfD), out);
+    windowParts(options, style.window, placement.makeTranslation(windowX, windowY, f.halfD), out);
   }
-  const right = f.doorX + frameHalf + S.lanternGap / 2;
-  const left = f.doorX - frameHalf - S.lanternGap / 2;
+  const right = f.doorX + DOOR_FRAME_HALF + S.lanternGap / 2;
+  const left = f.doorX - DOOR_FRAME_HALF - S.lanternGap / 2;
   const lanternX = right + 0.08 < postInner ? right : left;
   if (lanternX - 0.08 > -postInner) wallLanternParts(lanternX, f.base + 1.36, f.halfD, out);
 
   const faceEast = new THREE.Matrix4().makeRotationY(Math.PI / 2);
-  if (f.halfD * 2 >= windowHalf * 2 + S.cornerPost) {
+  if (f.halfD * 2 >= WINDOW_HALF * 2 + S.cornerPost) {
     placement.copy(faceEast).setPosition(f.halfW, windowY, 0);
     windowParts({ width: S.windowWidth, height: S.windowHeight, shutters: true, planter: false }, style.window, placement, out);
   }
@@ -482,11 +515,31 @@ export function shopPlacement(grid: GridSpec, rect: TileRect, door: TileCoord | 
   };
 }
 
+/**
+ * Each shop's door sign side and its brand poster (part 4d spec §5.3, §7.2), which hangs on the
+ * door's other side. Juniper's workshop has her own FarmClaw poster (workshopFrontParts).
+ */
+const SHOP_FRONTS: Readonly<Record<ShopKind, { readonly signSide: -1 | 1; readonly poster: PosterId | null }>> = {
+  generalStore: { signSide: 1, poster: 'hollis' },
+  blacksmith: { signSide: -1, poster: 'tokenly' },
+  carpenter: { signSide: -1, poster: null },
+  ranch: { signSide: 1, poster: 'byre' },
+};
+
+/** A brand poster beside a shop's door: its height and centre above the floor, as Juniper's. */
+const BRAND_POSTER = { height: 0.66, centerHeight: 1 } as const;
+
 function shopParts(grid: GridSpec, offset: Offset, kind: ShopKind, s: StructurePlacement, out: PartSet): void {
   const { spec, origin } = shopPlacement(grid, s.rect, s.door);
+  const style = SHOP_STYLES[kind];
+  const f = shopFrame(spec, style);
   const local = createPartSet();
-  createShopParts(spec, SHOP_STYLES[kind], local);
-  if (kind === 'carpenter') workshopFrontParts(shopFrame(spec, SHOP_STYLES[kind]), (i, k) => cosmetic(offset, FEATURE.crate, s.rect.x0, i, k), local);
+  createShopParts(spec, style, local);
+  if (kind === 'carpenter') workshopFrontParts(f, (i, k) => cosmetic(offset, FEATURE.crate, s.rect.x0, i, k), local);
+  const front = SHOP_FRONTS[kind];
+  if (front.poster !== null) {
+    wallPosterParts(front.poster, besideDoorX(f, front.signSide === 1 ? -1 : 1), f.base + BRAND_POSTER.centerHeight, f.halfD, BRAND_POSTER.height, style.trim, local);
+  }
   placeParts(local, origin, out);
 }
 
@@ -559,7 +612,7 @@ export const PARTS_EXCHANGE_SHAPE = {
   partJitter: 0.04,
   partTilt: 0.5,
   cogSides: 8,
-  /** The FarmClaw posters either side of the door: height (POSTER_ASPECT sets the width) and centre above the floor. */
+  /** The FarmClaw posters either side of the door: height (the poster's aspect sets the width) and centre above the floor. */
   posterHeight: 0.4,
   posterCenterHeight: 0.95,
   /** The display stand stands this far west of the door step, and far enough out from the wall that its parts clear the display window's sill. */
@@ -595,7 +648,7 @@ const POSTER_SHAPE = { wallGap: 0.025, board: 0.02, border: 0.02, lift: 0.002 } 
 function wallPosterParts(id: PosterId, x: number, y: number, front: number, height: number, board: number, out: PartSet): void {
   const P = POSTER_SHAPE;
   const z = front + P.wallGap;
-  out.body.push(box(height * POSTER_ASPECT + 2 * P.border, height + 2 * P.border, P.board, { x, y, z: z + P.board / 2 }, board));
+  out.body.push(box(height * posterAspect(id) + 2 * P.border, height + 2 * P.border, P.board, { x, y, z: z + P.board / 2 }, board));
   out.posters.push(posterQuad(id, height, { x, y, z: z + P.board + P.lift }));
 }
 
@@ -767,15 +820,19 @@ const WORKSHOP_FRONT_COLORS = {
 } as const;
 
 /**
- * Juniper's ready-made Mini, standing still on (x, y, z) facing the street: the robot model's
- * meshes merged, the shells in the factory paint and the eyes dark (no lights, no sway).
+ * A ready-made Mini standing still on (x, y, z) facing the street: the robot model's meshes merged
+ * and the shells in the factory paint. Juniper's display Mini has its eyes dark (no lights, no
+ * sway); DEALZ's are lit, in the neon (part 4d spec §6.1).
  */
-function displayRobotParts(x: number, y: number, z: number, out: PartSet): void {
+function displayRobotParts(x: number, y: number, z: number, eyes: 'off' | 'lit', out: PartSet): void {
   const scale = SIZE_SCALE.mini;
   for (const id of robotMeshes(WORKSHOP_ROBOTS.mini)) {
     const mesh = createRobotMeshGeometry(id);
-    const painted = SHELL_MESHES.has(id) ? paint(mesh, ROBOT_PAINTS[0].color) : id === 'eyes' ? paint(mesh, EYE_COLORS.off) : mesh;
-    out.body.push(painted.scale(scale.width, scale.height, scale.width).translate(x, y, z));
+    const painted = SHELL_MESHES.has(id) ? paint(mesh, ROBOT_PAINTS[0].color) : mesh;
+    painted.scale(scale.width, scale.height, scale.width).translate(x, y, z);
+    if (id !== 'eyes') out.body.push(painted);
+    else if (eyes === 'off') out.body.push(paint(painted, EYE_COLORS.off));
+    else out.neon.push(neonPaint(painted, EYE_COLORS.lit));
   }
 }
 
@@ -791,11 +848,71 @@ function workshopFrontParts(f: ShopFrame, unit: (i: number, k: number) => number
   const standX = f.doorX + S.doorWidth / 2 + PARTS_EXCHANGE_SHAPE.stepOverhang + W.standGap + W.standWidth / 2;
   const standZ = f.halfD + W.standWallGap + W.standDepth / 2;
   out.body.push(box(W.standWidth, W.standHeight, W.standDepth, { x: standX, y: W.standHeight / 2, z: standZ }, WORKSHOP_FRONT_COLORS.stand));
-  displayRobotParts(standX, W.standHeight, standZ, out);
+  displayRobotParts(standX, W.standHeight, standZ, 'off', out);
   const postInner = f.halfW - S.cornerPost / 2;
-  const frameEast = f.doorX + S.doorWidth / 2 + PARTS_EXCHANGE_SHAPE.doorFrame;
-  wallPosterParts('farmclawOrder', (frameEast + postInner) / 2, f.base + W.posterCenterHeight, f.halfD, W.posterHeight, style.trim, out);
+  wallPosterParts('farmclawOrder', besideDoorX(f, 1), f.base + W.posterCenterHeight, f.halfD, W.posterHeight, style.trim, out);
   crateParts(-postInner + W.crateGap + PARTS_EXCHANGE_SHAPE.crateWidth / 2, f.halfD, 'plank', unit, out);
+}
+
+// ---------------------------------------------------------------------------
+// Door signs
+// ---------------------------------------------------------------------------
+
+/**
+ * The shops' hanging door signs (part 4d spec §5.3), world units: the face's height (its cell sets
+ * the width), its centre above the floor beside a shop door or on the parts exchange's door, how
+ * far in front of the door's wall face the door's own face is, and the string up to the nail.
+ */
+export const DOOR_SIGN = { height: 0.16, centerHeight: 1, onDoorHeight: 0.78, doorFace: 0.125, string: 0.1 } as const;
+
+const DOOR_SIGN_COLORS = { board: 0x5b4a40, string: 0xd8c7a0 } as const;
+
+/** One shop's sign, built: its shop, and the first of its face's vertices among the posters' (counted in order, as merging lays them out). */
+export interface DoorSign {
+  readonly shop: ShopId;
+  readonly first: number;
+}
+
+/** A small sign hanging flat on the face at `front`, centred on (x, y): a board with the OPEN face on it, on a string from a nail. */
+function hangingSignParts(x: number, y: number, front: number, out: PartSet): void {
+  const D = DOOR_SIGN;
+  const width = D.height * posterAspect('OPEN');
+  out.body.push(box(width + 0.03, D.height + 0.03, 0.02, { x, y, z: front + 0.01 }, DOOR_SIGN_COLORS.board));
+  out.posters.push(posterQuad('OPEN', D.height, { x, y, z: front + 0.022 }));
+  const top = y + D.height / 2 + 0.015;
+  const reach = width * 0.4;
+  for (const side of [-1, 1]) {
+    const string = { x: x + (side * reach) / 2, y: top + D.string / 2, z: front + 0.008, rz: -side * Math.atan2(D.string, reach) };
+    out.body.push(box(Math.hypot(reach, D.string), 0.012, 0.012, string, DOOR_SIGN_COLORS.string));
+  }
+  out.body.push(box(0.03, 0.03, 0.03, { x, y: top + D.string, z: front + 0.015 }, STRUCTURE_COLORS.iron));
+}
+
+/**
+ * A hanging sign at every shop door of `def` (SHOP_DOORS, the town's), reading OPEN as built:
+ * beside the door, on SHOP_FRONTS' side, or on the parts exchange's door itself, which has a
+ * FarmClaw poster each side. The faces go into `out.posters`; StructureRenderer flips each sign
+ * by moving its face's UVs.
+ */
+export function doorSignParts(def: MapDefinition, out: PartSet): DoorSign[] {
+  if (def.id !== 'town') return [];
+  const signs: DoorSign[] = [];
+  for (const s of def.structures) {
+    const shop = SHOP_DOORS.find((d) => s.door !== null && d.door.tx === s.door.tx && d.door.tz === s.door.tz)?.shop;
+    if (shop === undefined) continue;
+    const { spec, origin } = shopPlacement(def.grid, s.rect, s.door);
+    const local = createPartSet();
+    if (isShopKind(s.kind)) {
+      const f = shopFrame(spec, SHOP_STYLES[s.kind]);
+      hangingSignParts(besideDoorX(f, SHOP_FRONTS[s.kind].signSide), f.base + DOOR_SIGN.centerHeight, f.halfD + POSTER_SHAPE.wallGap, local);
+    } else {
+      const f = shopFrame(spec, PARTS_EXCHANGE_STYLE);
+      hangingSignParts(f.doorX, f.base + DOOR_SIGN.onDoorHeight, f.halfD + DOOR_SIGN.doorFace, local);
+    }
+    signs.push({ shop, first: vertexCount(out.posters) });
+    placeParts(local, origin, out);
+  }
+  return signs;
 }
 
 // ---------------------------------------------------------------------------
@@ -850,6 +967,88 @@ function lampPostParts(grid: GridSpec, s: StructurePlacement, out: PartSet): voi
   }
   out.body.push(paint(pose(new THREE.ConeGeometry(0.19, 0.14, 4), { x, y: L.height + 0.37, z, ry: Math.PI / 4 }), LAMP_IRON));
   out.body.push(box(0.04, 0.08, 0.04, { x, y: L.height + 0.48, z }, LAMP_IRON));
+}
+
+// ---------------------------------------------------------------------------
+// Bunting and banners
+// ---------------------------------------------------------------------------
+
+/**
+ * The town's bunting (part 4d spec §7.1), each string between two lamp posts: round the square,
+ * and from its south corners out along the main street to the street's two posts.
+ */
+export const BUNTING: readonly (readonly [TileCoord, TileCoord])[] = [
+  [{ tx: 13, tz: 8 }, { tx: 26, tz: 8 }],
+  [{ tx: 26, tz: 8 }, { tx: 26, tz: 20 }],
+  [{ tx: 26, tz: 20 }, { tx: 13, tz: 20 }],
+  [{ tx: 13, tz: 20 }, { tx: 13, tz: 8 }],
+  [{ tx: 4, tz: 14 }, { tx: 13, tz: 20 }],
+  [{ tx: 26, tz: 20 }, { tx: 36, tz: 14 }],
+];
+
+/** The two Claw Fair banners (spec §7.2), hung over the main street's middle row from the square's west and east strings. */
+export const CLAW_FAIR_BANNERS: readonly TileCoord[] = [
+  { tx: 13, tz: 16 },
+  { tx: 26, tz: 16 },
+];
+
+/**
+ * Bunting and banner proportions (world units): the strings run from just under the lamps' caps
+ * and sag in the middle; a pennant every `spacing`; the banners hang under their strings, high
+ * over the street's walkers.
+ */
+export const BUNTING_SHAPE = { top: LAMP_POST_SHAPE.height + 0.3, sag: 0.25, segments: 8, rope: 0.018, spacing: 0.45, flag: 0.07, flagLength: 0.15, bannerHeight: 0.34 } as const;
+
+const BUNTING_COLORS = { rope: 0xe8dcc4, flags: [0xe2563f, 0xf2c14e, 0x5fa8d3, 0x78c06b, 0xf3ead8] as const, bannerBack: 0xa8433b } as const;
+
+/** Height of a string `t` of the way along it (0–1): a parabola sagging `sag` at the middle. */
+function buntingY(t: number): number {
+  return BUNTING_SHAPE.top - BUNTING_SHAPE.sag * 4 * t * (1 - t);
+}
+
+/** The point `t` of the way along the string from `a` to `b`, in world space. */
+function buntingPoint(grid: GridSpec, a: TileCoord, b: TileCoord, t: number): THREE.Vector3 {
+  const x = tileCenterX(grid, a.tx) + (tileCenterX(grid, b.tx) - tileCenterX(grid, a.tx)) * t;
+  const z = tileCenterZ(grid, a.tz) + (tileCenterZ(grid, b.tz) - tileCenterZ(grid, a.tz)) * t;
+  return new THREE.Vector3(x, buntingY(t), z);
+}
+
+/** Every bunting string with its pennants, skipping the stretch a banner hangs from, and the two banners. */
+function festivalParts(grid: GridSpec, out: PartSet): void {
+  const F = BUNTING_SHAPE;
+  const bannerWidth = F.bannerHeight * posterAspect('clawFair');
+  const banners = CLAW_FAIR_BANNERS.map((tile) => ({ x: tileCenterX(grid, tile.tx), z: tileCenterZ(grid, tile.tz) }));
+  let flag = 0;
+  for (const [a, b] of BUNTING) {
+    for (let i = 0; i < F.segments; i++) {
+      const p0 = buntingPoint(grid, a, b, i / F.segments);
+      const p1 = buntingPoint(grid, a, b, (i + 1) / F.segments);
+      const dx = p1.x - p0.x;
+      const dz = p1.z - p0.z;
+      const along = Math.hypot(dx, dz);
+      const rope = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2, z: (p0.z + p1.z) / 2, rx: -Math.atan2(p1.y - p0.y, along), ry: Math.atan2(dx, dz) };
+      out.body.push(box(F.rope, F.rope, p0.distanceTo(p1), rope, BUNTING_COLORS.rope));
+    }
+    const length = buntingPoint(grid, a, b, 0).distanceTo(buntingPoint(grid, a, b, 1));
+    const count = Math.floor(length / F.spacing);
+    for (let k = 1; k < count; k++) {
+      const p = buntingPoint(grid, a, b, k / count);
+      if (banners.some((banner) => Math.abs(banner.x - p.x) < 0.1 && Math.abs(banner.z - p.z) < bannerWidth / 2 + F.spacing / 2)) continue;
+      // A three-sided pennant hanging point down, each turned a little differently, in the colours in turn.
+      const pennant = pose(new THREE.ConeGeometry(F.flag, F.flagLength, 3), { x: p.x, y: p.y - F.flagLength / 2, z: p.z, rx: Math.PI, ry: flag });
+      out.body.push(paint(pennant, at(BUNTING_COLORS.flags, flag % BUNTING_COLORS.flags.length)));
+      flag += 1;
+    }
+  }
+  for (const tile of CLAW_FAIR_BANNERS) {
+    const string = BUNTING.find(([from, to]) => from.tx === tile.tx && to.tx === tile.tx);
+    if (string === undefined) throw new RangeError(`townGeometry: no bunting string runs over the banner at (${tile.tx}, ${tile.tz})`);
+    const [from, to] = string;
+    // The cloth hangs just under the string, its printed face to +X, where the camera sees it.
+    const middle = { x: tileCenterX(grid, tile.tx), y: buntingY((tile.tz - from.tz) / (to.tz - from.tz)) - F.bannerHeight / 2 - 0.02, z: tileCenterZ(grid, tile.tz) };
+    out.body.push(box(0.012, F.bannerHeight, bannerWidth, middle, BUNTING_COLORS.bannerBack));
+    out.posters.push(posterQuad('clawFair', F.bannerHeight, { ...middle, x: middle.x + 0.008, ry: Math.PI / 2 }));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,9 +1261,11 @@ function coopParts(grid: GridSpec, s: StructurePlacement, out: PartSet): void {
 // ---------------------------------------------------------------------------
 
 /**
- * SLOPMART's booth (part 4d spec §6.1), world units: a narrow, cramped kiosk on the front rows of
- * its rect with the hedge it replaced still filling the rows behind it. Its counter sits in the
- * front wall at the door tile. The neon sign and DEALZ the clerk are drawn on top of this body.
+ * SLOPMART's booth (part 4d spec §6.1, §7.2), world units: a narrow, cramped kiosk on the front
+ * rows of its rect with the hedge it replaced still filling the rows behind it. Its serving hatch
+ * is cut back into the front wall above the counter, at the door tile, and DEALZ stands in it.
+ * The neon sign stands on the roof's front edge, and Sprocket Cereal's poster hangs on the +X
+ * side wall by the front corner, where the camera sees past the ranch.
  */
 export const SLOP_BOOTH_SHAPE = {
   /** The booth stands on this many front rows of its rect; the hedge fills the rest. */
@@ -1077,15 +1278,25 @@ export const SLOP_BOOTH_SHAPE = {
   bandHeight: 0.14,
   roofThickness: 0.12,
   roofOverhang: 0.1,
-  /** The serving hatch above the counter: width, height, and its sill above the ground. */
+  /** The serving hatch above the counter: width, height, its sill above the ground, and how deep it's cut into the wall. */
   hatchWidth: 1.2,
   hatchHeight: 0.72,
   counterHeight: 0.86,
+  hatchDepth: 0.42,
   counterThickness: 0.07,
   /** How far the counter reaches out of the front wall. */
   counterReach: 0.3,
   /** The roller shutter, rolled up above the hatch. */
   shutterHeight: 0.12,
+  /** The neon: its width (its cell sets the height), how far back from the front wall it stands, on posts this tall, before a board this thick. */
+  neonWidth: 2.2,
+  neonInset: 0.18,
+  neonLift: 0.08,
+  neonBoard: 0.06,
+  /** Sprocket Cereal's poster: height, centre above the ground, and its gap from the front corner. */
+  posterHeight: 0.5,
+  posterCenterHeight: 1.15,
+  posterCornerGap: 0.06,
 } as const;
 
 const SLOP_BOOTH_COLORS = {
@@ -1097,6 +1308,7 @@ const SLOP_BOOTH_COLORS = {
   counter: 0xe9dcc4,
   bracket: 0x5f527c,
   shutter: 0xb9b0c8,
+  neonFrame: 0x3a3048,
 } as const;
 
 /** The booth on its front rows, and a hedge on the rows behind it. */
@@ -1116,15 +1328,22 @@ function slopBoothParts(grid: GridSpec, offset: Offset, s: StructurePlacement, o
   const cz = (minZ + front) / 2;
   const top = B.plinthHeight + B.wallHeight;
   out.body.push(box(w + 0.08, B.plinthHeight, d + 0.08, { x: cx, y: B.plinthHeight / 2, z: cz }, C.plinth));
-  out.body.push(box(w, B.wallHeight, d, { x: cx, y: B.plinthHeight + B.wallHeight / 2, z: cz }, C.wall));
-  out.body.push(box(w + 0.04, B.bandHeight, d + 0.04, { x: cx, y: top - B.bandHeight / 2, z: cz }, C.band));
-  const roof = { x: cx, y: top + B.roofThickness / 2, z: cz };
-  out.body.push(box(w + 2 * B.roofOverhang, B.roofThickness, d + 2 * B.roofOverhang, roof, C.roof));
-  // The hatch: a dark opening in the front wall over the counter, centred on the door tile.
+  // The walls, with the hatch cut back into the front wall over the counter, centred on the door tile.
   const hatchX = s.door === null ? cx : tileCenterX(grid, s.door.tx);
-  const hatchY = B.counterHeight + B.hatchHeight / 2;
-  out.body.push(box(B.hatchWidth, B.hatchHeight, 0.04, { x: hatchX, y: hatchY, z: front + 0.01 }, C.hatch));
-  const shutterY = B.counterHeight + B.hatchHeight + B.shutterHeight / 2;
+  const hatchTop = B.counterHeight + B.hatchHeight;
+  const hatchBack = front - B.hatchDepth;
+  const frontZ = front - B.hatchDepth / 2;
+  out.body.push(box(w, B.wallHeight, hatchBack - minZ, { x: cx, y: B.plinthHeight + B.wallHeight / 2, z: (minZ + hatchBack) / 2 }, C.wall));
+  out.body.push(box(w, B.counterHeight - B.plinthHeight, B.hatchDepth, { x: cx, y: (B.plinthHeight + B.counterHeight) / 2, z: frontZ }, C.wall));
+  out.body.push(box(w, top - hatchTop, B.hatchDepth, { x: cx, y: (hatchTop + top) / 2, z: frontZ }, C.wall));
+  for (const [edge, end] of [[hatchX - B.hatchWidth / 2, minX], [hatchX + B.hatchWidth / 2, maxX]] as const) {
+    out.body.push(box(Math.abs(end - edge), B.hatchHeight, B.hatchDepth, { x: (edge + end) / 2, y: B.counterHeight + B.hatchHeight / 2, z: frontZ }, C.wall));
+  }
+  out.body.push(box(B.hatchWidth, B.hatchHeight, 0.02, { x: hatchX, y: B.counterHeight + B.hatchHeight / 2, z: hatchBack + 0.01 }, C.hatch));
+  out.body.push(box(w + 0.04, B.bandHeight, d + 0.04, { x: cx, y: top - B.bandHeight / 2, z: cz }, C.band));
+  const roofTop = top + B.roofThickness;
+  out.body.push(box(w + 2 * B.roofOverhang, B.roofThickness, d + 2 * B.roofOverhang, { x: cx, y: top + B.roofThickness / 2, z: cz }, C.roof));
+  const shutterY = hatchTop + B.shutterHeight / 2;
   out.body.push(box(B.hatchWidth + 0.1, B.shutterHeight, 0.1, { x: hatchX, y: shutterY, z: front + 0.04 }, C.shutter));
   const counterZ = front + B.counterReach / 2 - 0.02;
   out.body.push(box(B.hatchWidth + 0.16, B.counterThickness, B.counterReach, { x: hatchX, y: B.counterHeight, z: counterZ }, C.counter));
@@ -1132,6 +1351,23 @@ function slopBoothParts(grid: GridSpec, offset: Offset, s: StructurePlacement, o
     const bracket = { x: hatchX + side * (B.hatchWidth / 2 - 0.08), y: B.counterHeight - 0.12, z: front + 0.08 };
     out.body.push(box(0.05, 0.18, 0.14, bracket, C.bracket));
   }
+
+  // DEALZ, a Mini in the factory paint, on the hatch's floor behind the counter, eyes lit.
+  displayRobotParts(hatchX, B.counterHeight, frontZ, 'lit', out);
+
+  // The neon on the roof's front edge: a dark board on two posts, the lit letters on its face.
+  const neonZ = front - B.neonInset;
+  const neonBottom = roofTop + B.neonLift;
+  const neonHeight = B.neonWidth / posterAspect('neon');
+  out.body.push(box(B.neonWidth + 0.08, neonHeight + 0.08, B.neonBoard, { x: cx, y: neonBottom + neonHeight / 2, z: neonZ }, C.neonFrame));
+  for (const side of [-1, 1]) out.body.push(box(0.06, B.neonLift, 0.06, { x: cx + side * B.neonWidth * 0.35, y: roofTop + B.neonLift / 2, z: neonZ }, C.neonFrame));
+  out.neon.push(...neonSignQuads(B.neonWidth, { x: cx, y: neonBottom, z: neonZ + B.neonBoard / 2 + 0.003 }));
+
+  // Sprocket Cereal on the +X side wall: built facing +Z, then turned to face +X.
+  const side = createPartSet();
+  wallPosterParts('sprocket', 0, B.posterCenterHeight, 0, B.posterHeight, C.band, side);
+  const posterZ = front - B.posterCornerGap - (B.posterHeight * posterAspect('sprocket')) / 2;
+  placeParts(side, new THREE.Vector3(maxX, 0, posterZ), out, Math.PI / 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1403,7 +1639,11 @@ export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlace
   }
 }
 
-/** Every structure of a map (the town's shops, parts exchange, booth, well, lamp posts, hedges and props; the Neighbours' houses, coop and hedges), in world space. */
+/**
+ * Every structure of a map (the town's shops, parts exchange, booth, well, lamp posts, hedges and
+ * props, and its bunting and banners; the Neighbours' houses, coop and hedges), in world space.
+ */
 export function mapStructureParts(def: MapDefinition, out: PartSet): void {
   for (const s of def.structures) structureParts(def.grid, def.cosmeticOffset, s, out);
+  if (def.id === 'town') festivalParts(def.grid, out);
 }

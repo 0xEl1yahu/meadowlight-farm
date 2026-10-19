@@ -1,17 +1,23 @@
 /**
- * The maps part 4d changes (farmclaws part 4d spec §6.1, §7.1, §7.3, §8): SLOPMART's booth on the
- * old hedge's tiles, the town's props and its two south exits, Cosmo's second fence gap at his
+ * The maps part 4d changes (farmclaws part 4d spec §5.3, §6.1, §7.1, §7.3, §8): SLOPMART's booth on
+ * the old hedge's tiles, the town's props and its two south exits, Cosmo's second fence gap at his
  * door, the chicken run, and the startup checks that hold them: the props' layout rules and a
- * walkable door front on every map.
+ * walkable door front on every map. Also what the door signs read, and the five chickens, who
+ * stay inside their run whenever you look.
  */
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { Blocker, MAP_IDS, type MapId, type StructureKind, type Tile, type TileCoord } from '../src/core/types';
-import { rectContains } from '../src/world/grid';
+import { Blocker, Direction, MAP_IDS, type MapId, type StructureKind, type Tile, type TileCoord } from '../src/core/types';
+import { SHOP_IDS, signFace } from '../src/people/shops';
+import { ChickenRenderer } from '../src/render/ChickenRenderer';
+import { CHICKEN_COUNT, chickenAt } from '../src/render/chickenLayout';
+import type { SceneContext } from '../src/render/SceneContext';
+import { rectContains, tileMinX, tileMinZ } from '../src/world/grid';
 import { MAPS, assertMapDefinitions, isReservedTile, type MapDefinition, type StructurePlacement } from '../src/world/maps';
 import { CHICKEN_RUN, COSMO_FENCE, assertNeighboursLayout, ringInside } from '../src/world/maps/neighbours';
 import { TOWN_EXITS, TOWN_PROP_KINDS, assertTownLayout } from '../src/world/maps/town';
 import { EMPTY_TILE, blockedTile, forEachTile, isWalkable, requireTile, setTile } from '../src/world/tiles';
-import { BASE, reachableFrom } from './testUtils';
+import { BASE, atMinute, reachableFrom, withPlayer } from './testUtils';
 
 const key = (tx: number, tz: number): string => `${tx},${tz}`;
 const r = (x0: number, z0: number, width: number, depth: number) => ({ x0, z0, width, depth });
@@ -176,6 +182,79 @@ describe("Cosmo's chicken run", () => {
     expect(() => assertNeighboursLayout(holed)).toThrow('Neighbours: the fence has a hole at (13, 8)');
     const cluttered: MapDefinition = { ...neighbours, generate: () => setTile(neighbours.generate(0), 13, 6, FENCE) };
     expect(() => assertNeighboursLayout(cluttered)).toThrow('Neighbours: the chicken run is not clear at (13, 6)');
+  });
+});
+
+describe('the door signs', () => {
+  it('read OPEN in hours and CLOSED outside them, flipping on the hour boundaries', () => {
+    const faces: readonly (readonly [number, 'OPEN' | 'CLOSED'])[] = [
+      [6 * 60, 'CLOSED'],
+      [9 * 60 - 1, 'CLOSED'],
+      [9 * 60, 'OPEN'],
+      [12 * 60 - 1, 'OPEN'],
+      [12 * 60, 'CLOSED'],
+      [13 * 60 - 1, 'CLOSED'],
+      [13 * 60, 'OPEN'],
+      [17 * 60 - 1, 'OPEN'],
+      [17 * 60, 'CLOSED'],
+      [25 * 60, 'CLOSED'],
+    ];
+    for (const shop of SHOP_IDS) {
+      for (const [minute, face] of faces) expect(signFace(atMinute(BASE, minute), shop), `${shop} at ${minute}`).toBe(face);
+    }
+  });
+});
+
+describe("Cosmo's chickens", () => {
+  it('are five, inside the run at every one of 1,000 sampled moments, and not all in one place', () => {
+    expect(CHICKEN_COUNT).toBe(5);
+    const run = ringInside(CHICKEN_RUN);
+    const margin = 0.1;
+    const spots = new Set<string>();
+    for (let k = 0; k < 1000; k++) {
+      const time = k * 7.31 + (k % 7) * 0.113;
+      for (let i = 0; i < CHICKEN_COUNT; i++) {
+        const { x, z } = chickenAt(i, time);
+        expect(x, `chicken ${i} at ${time}`).toBeGreaterThan(run.x0 + margin);
+        expect(x, `chicken ${i} at ${time}`).toBeLessThan(run.x0 + run.width - margin);
+        expect(z, `chicken ${i} at ${time}`).toBeGreaterThan(run.z0 + margin);
+        expect(z, `chicken ${i} at ${time}`).toBeLessThan(run.z0 + run.depth - margin);
+        spots.add(`${x.toFixed(1)},${z.toFixed(1)}`);
+      }
+    }
+    expect(spots.size).toBeGreaterThan(50);
+  });
+
+  it('wander on a fixed pattern: the same moment puts each chicken in the same place', () => {
+    for (let i = 0; i < CHICKEN_COUNT; i++) expect(chickenAt(i, 123.4)).toEqual(chickenAt(i, 123.4));
+    expect(chickenAt(0, 50)).not.toEqual(chickenAt(1, 50));
+  });
+
+  it('are drawn only on the Neighbours map, each standing in the run', () => {
+    const scene = new THREE.Scene();
+    const renderer = new ChickenRenderer({ scene } as unknown as SceneContext);
+    const hens = scene.getObjectByName('chickens');
+    if (!(hens instanceof THREE.InstancedMesh)) throw new Error('no chickens');
+    renderer.sync(BASE, null);
+    expect(hens.visible).toBe(false);
+    const there = withPlayer(BASE, { tx: 1, tz: 14 }, Direction.East, 'neighbours');
+    renderer.sync(there, null);
+    expect(hens.visible).toBe(true);
+    renderer.update({ dt: 1 / 60, elapsed: 42, state: there, clockMinutes: 600 });
+    const run = ringInside(CHICKEN_RUN);
+    const grid = neighbours.grid;
+    const at = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+    for (let i = 0; i < CHICKEN_COUNT; i++) {
+      hens.getMatrixAt(i, at);
+      p.setFromMatrixPosition(at);
+      expect(p.x).toBeGreaterThan(tileMinX(grid, run.x0));
+      expect(p.x).toBeLessThan(tileMinX(grid, run.x0 + run.width));
+      expect(p.z).toBeGreaterThan(tileMinZ(grid, run.z0));
+      expect(p.z).toBeLessThan(tileMinZ(grid, run.z0 + run.depth));
+    }
+    renderer.dispose();
+    expect(scene.children).toHaveLength(0);
   });
 });
 

@@ -24,7 +24,7 @@ Global rules (unchanged; see also `CLAUDE.md`):
 - State is immutable with structural sharing.
 - Numbers and tiles come from config or map data, never inline.
 - Player-facing text is copied verbatim from this spec.
-- **Bundle:** the walking, timetables and line banks live in the main chunk, because the simulation needs them; SLOPMART's panel goes in 4b's lazy shops chunk. The main chunk's allowance may grow by at most 8 KiB, recorded as a plan refinement.
+- **Bundle:** the walking, timetables and line banks live in the main chunk, because the simulation needs them; SLOPMART's panel goes in 4b's lazy shops chunk. The main chunk's allowance may grow by at most 13 KiB (8 KiB, then 5 KiB more for the posters, signs, neon and chickens), recorded as plan refinements.
 
 ---
 

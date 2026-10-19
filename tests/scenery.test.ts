@@ -46,7 +46,8 @@ import {
 } from '../src/render/structureGeometry';
 import { ROBOT_COLORS } from '../src/render/robotGeometry';
 import { EYE_COLORS } from '../src/render/robotLayout';
-import { StructureRenderer } from '../src/render/StructureRenderer';
+import { NEON_FLICKER, StructureRenderer, neonLevel } from '../src/render/StructureRenderer';
+import { neonCells, posterAtlasLayout } from '../src/render/posters';
 import {
   LAMP_POST_SHAPE,
   PARTS_EXCHANGE_SHAPE,
@@ -65,7 +66,7 @@ import type { FrameContext } from '../src/render/types';
 import { tileCenterX, tileMinX, tileMinZ, worldRect } from '../src/world/grid';
 import { MAPS, type StructurePlacement } from '../src/world/maps';
 import { TOWN_BACK_BAND_DEPTH, TOWN_PROP_KINDS } from '../src/world/maps/town';
-import { BASE, withPlayer } from './testUtils';
+import { BASE, atMinute, withPlayer } from './testUtils';
 
 const EPS = 1e-6;
 
@@ -630,14 +631,93 @@ describe('StructureRenderer', () => {
     expect(others).toHaveLength(0);
     const material = posters?.material;
     expect(material instanceof THREE.MeshStandardMaterial && material.map === atlases[0]).toBe(true);
-    // Three quads, two triangles each.
-    expect(posters?.geometry.getAttribute('position').count).toBe(3 * 6);
+    // Seven posters, two banners and five door signs, two triangles each.
+    expect(posters?.geometry.getAttribute('position').count).toBe(14 * 6);
     let disposed = false;
     atlases[0]?.addEventListener('dispose', () => {
       disposed = true;
     });
     renderer.dispose();
     expect(disposed).toBe(true);
+  });
+
+  it('flips every door sign with the shop hours, reading the state each frame', () => {
+    const { renderer, root } = setup();
+    const cells = posterAtlasLayout();
+    const facesShown = (): { OPEN: number; CLOSED: number } => {
+      const posters = root.getObjectByName('scenery-town')?.getObjectByName('posters');
+      if (!(posters instanceof THREE.Mesh)) throw new Error('no posters mesh');
+      const uv = posters.geometry.getAttribute('uv') as THREE.BufferAttribute;
+      const count = { OPEN: 0, CLOSED: 0 };
+      for (let i = 0; i < uv.count; i++) {
+        for (const face of ['OPEN', 'CLOSED'] as const) {
+          const c = cells[face];
+          if (uv.getX(i) >= c.u0 - EPS && uv.getX(i) <= c.u1 + EPS && uv.getY(i) >= c.v0 - EPS && uv.getY(i) <= c.v1 + EPS) count[face] += 1;
+        }
+      }
+      return count;
+    };
+    const early = atMinute(TOWN, 8 * 60);
+    renderer.sync(early, null);
+    renderer.update(frameAt(early, 8 * 60));
+    expect(facesShown()).toEqual({ OPEN: 0, CLOSED: 5 * 6 });
+    const open = atMinute(TOWN, 10 * 60);
+    renderer.sync(open, early);
+    renderer.update(frameAt(open, 10 * 60));
+    expect(facesShown()).toEqual({ OPEN: 5 * 6, CLOSED: 0 });
+    // Away to the farm and back after closing time: the signs have caught up.
+    renderer.sync(atMinute(FARM, 18 * 60), null);
+    const late = atMinute(TOWN, 18 * 60);
+    renderer.sync(late, null);
+    renderer.update(frameAt(late, 18 * 60));
+    expect(facesShown()).toEqual({ OPEN: 0, CLOSED: 5 * 6 });
+    renderer.dispose();
+  });
+
+  it("lights SLOPMART's neon and DEALZ's eyes in one self-lit mesh over the atlas, one letter dimming on a fixed cycle", () => {
+    const { renderer, root, atlases } = setup();
+    renderer.sync(FARM, null);
+    expect(root.getObjectByName('neon')).toBeUndefined();
+    renderer.sync(TOWN, null);
+    const neon = root.getObjectByName('scenery-town')?.getObjectByName('neon');
+    if (!(neon instanceof THREE.Mesh)) throw new Error('no neon mesh');
+    expect(neon.material).toBeInstanceOf(THREE.MeshBasicMaterial);
+    expect((neon.material as THREE.MeshBasicMaterial).map).toBe(atlases[0]);
+    expect(drawCalls(root)).toBeLessThanOrEqual(14);
+
+    // The cycle: a short dim every few seconds, the same every period.
+    const P = NEON_FLICKER.period;
+    expect(P).toBeGreaterThanOrEqual(2);
+    expect(P).toBeLessThanOrEqual(8);
+    const samples = Array.from({ length: 400 }, (_, i) => (i / 400) * P);
+    const dim = samples.filter((t) => neonLevel(t) < 1);
+    expect(dim.length).toBeGreaterThan(0);
+    expect(dim.length / samples.length).toBeLessThan(0.2);
+    for (const t of samples) expect(neonLevel(t + 3 * P)).toBeCloseTo(neonLevel(t), 9);
+
+    // Only the flickering letter's vertices dim, and only while the cycle says so.
+    const letter = neonCells().title[NEON_FLICKER.letter];
+    if (letter === undefined) throw new Error('no flickering letter');
+    const shades = (elapsed: number): { readonly letter: Set<number>; readonly rest: Set<number> } => {
+      renderer.update({ ...frameAt(TOWN, 12 * 60), elapsed });
+      const uv = neon.geometry.getAttribute('uv');
+      const color = neon.geometry.getAttribute('color');
+      const out = { letter: new Set<number>(), rest: new Set<number>() };
+      // The letters' cells touch, so a triangle is the letter's when its UVs centre inside the cell.
+      for (let i = 0; i < uv.count; i += 3) {
+        const u = (uv.getX(i) + uv.getX(i + 1) + uv.getX(i + 2)) / 3;
+        const v = (uv.getY(i) + uv.getY(i + 1) + uv.getY(i + 2)) / 3;
+        const inLetter = u > letter.u0 && u < letter.u1 && v > letter.v0 && v < letter.v1;
+        for (let k = i; k < i + 3; k++) (inLetter ? out.letter : out.rest).add(Math.round(color.getX(k) * 1000) / 1000);
+      }
+      return out;
+    };
+    const dark = dim[0]!;
+    const lit = samples.find((t) => neonLevel(t) === 1)!;
+    expect(shades(dark).letter).toEqual(new Set([Math.round(neonLevel(dark) * 1000) / 1000]));
+    expect(shades(lit).letter).toEqual(new Set([1]));
+    expect([...shades(dark).rest].every((c) => c > 0)).toBe(true);
+    renderer.dispose();
   });
 
   it('ignores shipping off the farm and releases everything, the shared glass once, on dispose', () => {

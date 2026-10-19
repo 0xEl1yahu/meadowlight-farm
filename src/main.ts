@@ -19,6 +19,7 @@ import { FixedStepClock } from './core/loop';
 import { createStore, type Store } from './core/store';
 import type { GameState } from './core/types';
 import { InputController } from './input/InputController';
+import { ChickenRenderer } from './render/ChickenRenderer';
 import { CropRenderer } from './render/CropRenderer';
 import { EffectsRenderer } from './render/EffectsRenderer';
 import { LightingManager } from './render/LightingManager';
@@ -89,6 +90,7 @@ function bootstrap(): () => void {
     new ObjectRenderer(ctx),
     new RobotRenderer(ctx, () => player.focus),
     new WalkerRenderer(ctx),
+    new ChickenRenderer(ctx),
     new TileHighlighter(ctx),
     new ZoneRenderer(ctx),
     new WeatherRenderer(ctx),

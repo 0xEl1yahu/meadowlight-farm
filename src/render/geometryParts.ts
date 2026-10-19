@@ -57,15 +57,20 @@ export interface Pose {
   readonly rz?: number;
 }
 
-/** Body parts are painted and opaque; glass parts are unpainted and use the glow material; posters sample the poster atlas. */
+/**
+ * Body parts are painted and opaque; glass parts are unpainted and use the glow material; posters
+ * sample the poster atlas; neon parts sample it too, painted, and are self-lit (SLOPMART's sign
+ * and DEALZ's eyes).
+ */
 export interface PartSet {
   readonly body: THREE.BufferGeometry[];
   readonly glass: THREE.BufferGeometry[];
   readonly posters: THREE.BufferGeometry[];
+  readonly neon: THREE.BufferGeometry[];
 }
 
 export function createPartSet(): PartSet {
-  return { body: [], glass: [], posters: [] };
+  return { body: [], glass: [], posters: [], neon: [] };
 }
 
 export function at<T>(list: ArrayLike<T>, index: number): T {

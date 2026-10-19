@@ -19,18 +19,25 @@
  *   puffs, the lid while it is animating and the coin while it is shown.
  * - The shared glow-glass material (materials.ts) is never disposed per map; dispose() releases
  *   it once, with every cached map's resources.
- * - A map's posters (the town's FarmClaw ads) are merged into one mesh with one material over
- *   the poster atlas (posters.ts). The atlas is drawn once, for the first map with posters, and
- *   shared; dispose() releases it.
+ * - A map's posters (the town's ads, banners and door signs) are merged into one mesh with one
+ *   material over the poster atlas (posters.ts), and its neon (SLOPMART's sign and DEALZ's eyes)
+ *   into one self-lit mesh over the same atlas. The atlas is drawn once, for the first map with
+ *   posters, and shared; dispose() releases it.
+ * - The town's door signs (part 4d spec §5.3) read the state every frame: when a shop's signFace
+ *   changes, update() moves that sign's face to the other cell by rewriting its six UVs. A map's
+ *   signs keep the face they last showed while it's hidden, and catch up when it's shown again.
+ * - The neon flickers on a fixed cycle (neonLevel): one letter dims for a moment every few
+ *   seconds, by its vertex colours.
  *
  * Draw calls on the active map: painted body (farmstead or town structures and wall, merged,
- * vertex-coloured), glow glass, posters, meadow (with its trails), trunks, two canopy species,
- * bushes, flower leaves and blossoms; plus fence posts and rails, bin lid, coin and smoke on the
- * farm — at most fourteen, whatever the size of the woodland.
+ * vertex-coloured), glow glass, posters, neon, meadow (with its trails), trunks, two canopy
+ * species, bushes, flower leaves and blossoms; plus fence posts and rails, bin lid, coin and smoke
+ * on the farm — at most fourteen, whatever the size of the woodland.
  */
 import * as THREE from 'three';
 import { TIME, type FarmLayout } from '../config';
 import { Weather, type GameState, type GridSpec, type MapId, type TileRect } from '../core/types';
+import { signFace, type ShopId, type SignFace } from '../people/shops';
 import { selectActiveMap } from '../state/selectors';
 import { tileMinX, tileMinZ } from '../world/grid';
 import type { MapDefinition } from '../world/maps';
@@ -45,7 +52,7 @@ import {
   sharedUniforms,
 } from './materials';
 import { PALETTE } from './palette';
-import { createPosterAtlas } from './posters';
+import { createPosterAtlas, neonCells, posterAtlasLayout, setQuadCell } from './posters';
 import type { SceneContext } from './SceneContext';
 import { createTrailGeometry, layoutWall, planScenery, wallParts, type SceneryPlan } from './sceneryGeometry';
 import {
@@ -75,7 +82,7 @@ import {
   type ShippingBinSpec,
   type TreePlacement,
 } from './structureGeometry';
-import { mapStructureParts } from './townGeometry';
+import { doorSignParts, mapStructureParts } from './townGeometry';
 import type { FrameContext, RenderSystem } from './types';
 
 // ---------------------------------------------------------------------------
@@ -130,6 +137,12 @@ const MARKER = {
 
 const SMOKE = { puffs: 7, period: 3.8, rise: 1.9, drift: 0.5, size: 0.24 } as const;
 
+/**
+ * SLOPMART's neon flicker (part 4d spec §6.1): the title's fifth letter, the M, dims to `level`
+ * for `dim` seconds at the start of every `period` seconds, so the sign reads SLOP ART for a moment.
+ */
+export const NEON_FLICKER = { letter: 4, period: 4.5, dim: 0.3, level: 0.2 } as const;
+
 const SWAY = {
   canopy: { amplitude: 0.018, frequency: 1.1 },
   bush: { amplitude: 0.06, frequency: 1.5 },
@@ -139,6 +152,12 @@ const SWAY = {
 // ---------------------------------------------------------------------------
 // Pure animation curves
 // ---------------------------------------------------------------------------
+
+/** The flickering neon letter's brightness `elapsed` seconds in: 1, or NEON_FLICKER.level while it's dimmed. */
+export function neonLevel(elapsed: number): number {
+  const F = NEON_FLICKER;
+  return elapsed % F.period < F.dim ? F.level : 1;
+}
 
 /** Target window glow in [0, 1]: off by day, warm from ~18:30, full at night, dimming at dawn. */
 export function windowGlowAt(clockMinutes: number, weather: Weather): number {
@@ -299,6 +318,20 @@ interface FarmsteadHandles {
   readonly markerBase: THREE.Vector3;
 }
 
+/** A door sign in the merged posters: its shop, its face's first vertex, and the face it shows. */
+interface SignHandle {
+  readonly shop: ShopId;
+  readonly first: number;
+  face: SignFace;
+}
+
+/** The flickering neon letter: the neon's colours, the letter's vertices in them, and its brightness now. */
+interface NeonHandle {
+  readonly colors: THREE.BufferAttribute;
+  readonly letter: readonly number[];
+  level: number;
+}
+
 /** One map's static scenery: a group toggled with `visible`, and everything it allocated. */
 interface StaticScenery {
   readonly mapId: MapId;
@@ -306,7 +339,14 @@ interface StaticScenery {
   readonly bag: ResourceBag;
   /** Smoke, lid and coin: null on a map without a farmstead. */
   readonly farmstead: FarmsteadHandles | null;
+  /** The door signs and the UVs of the posters they're merged into (no signs: an empty list). */
+  readonly signs: readonly SignHandle[];
+  readonly posterUvs: THREE.BufferAttribute | null;
+  /** Null on a map without neon. */
+  readonly neon: NeonHandle | null;
 }
+
+const CELLS = posterAtlasLayout();
 
 function binPlacement(grid: GridSpec, rect: TileRect): Placement<ShippingBinSpec> {
   const minX = tileMinX(grid, rect.x0);
@@ -508,8 +548,31 @@ function buildSurroundings(
   if (plan.wall) wallParts(layoutWall(meadow.bounds, meadow.topY, plan.gaps, def.cosmeticOffset), parts.body);
 }
 
-/** Everything static on one map, in a group of its own. `posterMaterial` is asked for only when the map has posters. */
-function buildScenery(def: MapDefinition, posterMaterial: () => THREE.Material): StaticScenery {
+/**
+ * The vertices of the neon's flickering letter: those of every triangle whose UVs centre inside
+ * its cell. (The letters' cells touch, so a vertex on the edge alone could be its neighbour's.)
+ */
+function flickeringLetter(geometry: THREE.BufferGeometry): number[] {
+  const cell = neonCells().title[NEON_FLICKER.letter];
+  const uv = geometry.getAttribute('uv');
+  const vertices: number[] = [];
+  if (cell === undefined) return vertices;
+  for (let i = 0; i + 2 < uv.count; i += 3) {
+    const u = (uv.getX(i) + uv.getX(i + 1) + uv.getX(i + 2)) / 3;
+    const v = (uv.getY(i) + uv.getY(i + 1) + uv.getY(i + 2)) / 3;
+    if (u > cell.u0 && u < cell.u1 && v > cell.v0 && v < cell.v1) vertices.push(i, i + 1, i + 2);
+  }
+  return vertices;
+}
+
+/** Materials over the poster atlas, asked for only when a map has posters or neon. */
+interface AtlasMaterials {
+  readonly posters: () => THREE.Material;
+  readonly neon: () => THREE.Material;
+}
+
+/** Everything static on one map, in a group of its own. */
+function buildScenery(def: MapDefinition, atlas: AtlasMaterials): StaticScenery {
   const bag = new ResourceBag();
   const group = new THREE.Group();
   group.name = `scenery-${def.id}`;
@@ -519,6 +582,7 @@ function buildScenery(def: MapDefinition, posterMaterial: () => THREE.Material):
   const parts = createPartSet();
   const farmstead = def.farmstead === null ? null : buildFarmstead(def.grid, def.farmstead, bag, painted, group, parts);
   mapStructureParts(def, parts);
+  const signs = doorSignParts(def, parts).map((sign): SignHandle => ({ ...sign, face: 'OPEN' }));
   buildSurroundings(def, planScenery(def), bag, painted, tinted, group, parts);
 
   if (parts.body.length > 0) {
@@ -534,13 +598,22 @@ function buildScenery(def: MapDefinition, posterMaterial: () => THREE.Material):
     glass.name = 'glow-glass';
     group.add(glass);
   }
+  let posterUvs: THREE.BufferAttribute | null = null;
   if (parts.posters.length > 0) {
-    const posters = new THREE.Mesh(bag.geometry(mergeParts(parts.posters, `${def.id} posters`)), posterMaterial());
+    const posters = new THREE.Mesh(bag.geometry(mergeParts(parts.posters, `${def.id} posters`)), atlas.posters());
     posters.name = 'posters';
     posters.receiveShadow = true;
+    posterUvs = posters.geometry.getAttribute('uv') as THREE.BufferAttribute;
     group.add(posters);
   }
-  return { mapId: def.id, group, bag, farmstead };
+  let neon: NeonHandle | null = null;
+  if (parts.neon.length > 0) {
+    const mesh = new THREE.Mesh(bag.geometry(mergeParts(parts.neon, `${def.id} neon`)), atlas.neon());
+    mesh.name = 'neon';
+    neon = { colors: mesh.geometry.getAttribute('color') as THREE.BufferAttribute, letter: flickeringLetter(mesh.geometry), level: 1 };
+    group.add(mesh);
+  }
+  return { mapId: def.id, group, bag, farmstead, signs, posterUvs, neon };
 }
 
 // ---------------------------------------------------------------------------
@@ -553,8 +626,10 @@ export type PosterAtlasFactory = () => THREE.Texture;
 export class StructureRenderer implements RenderSystem {
   private readonly ctx: SceneContext;
   private readonly makePosterAtlas: PosterAtlasFactory;
-  /** The atlas and its material, shared by every map's posters (null until a map has posters). */
+  /** The atlas and its materials, shared by every map's posters and neon (null until a map has them). */
+  private posterAtlas: THREE.Texture | null = null;
   private posterMaterial: THREE.MeshStandardMaterial | null = null;
+  private neonMaterial: THREE.MeshBasicMaterial | null = null;
   private readonly root: THREE.Group;
   /** Every visited map's scenery, built on the first visit and kept (hidden) while elsewhere. */
   private readonly sceneries = new Map<MapId, StaticScenery>();
@@ -602,6 +677,10 @@ export class StructureRenderer implements RenderSystem {
   update(frame: FrameContext): void {
     // Every window and lamp on every map shares this one material.
     this.updateWindowGlow(getSharedGlowGlassMaterial(), frame);
+    if (this.active !== null) {
+      this.updateSigns(this.active, frame.state);
+      if (this.active.neon !== null) this.updateNeon(this.active.neon, frame.elapsed);
+    }
     const farmstead = this.active?.farmstead ?? null;
     if (farmstead === null) return;
     this.updateSmoke(farmstead.smoke, farmstead.smokeOrigin, frame.elapsed);
@@ -616,9 +695,12 @@ export class StructureRenderer implements RenderSystem {
     }
     this.sceneries.clear();
     this.active = null;
-    this.posterMaterial?.map?.dispose();
+    this.posterAtlas?.dispose();
     this.posterMaterial?.dispose();
+    this.neonMaterial?.dispose();
+    this.posterAtlas = null;
     this.posterMaterial = null;
+    this.neonMaterial = null;
     disposeSharedGlowGlassMaterial();
     this.ctx.scene.remove(this.root);
   }
@@ -640,7 +722,11 @@ export class StructureRenderer implements RenderSystem {
 
     let scenery = this.sceneries.get(def.id);
     if (scenery === undefined) {
-      scenery = buildScenery(def, () => (this.posterMaterial ??= createFlatMaterial(0xffffff, { map: this.makePosterAtlas() })));
+      const atlas = (): THREE.Texture => (this.posterAtlas ??= this.makePosterAtlas());
+      scenery = buildScenery(def, {
+        posters: () => (this.posterMaterial ??= createFlatMaterial(0xffffff, { map: atlas() })),
+        neon: () => (this.neonMaterial ??= new THREE.MeshBasicMaterial({ map: atlas(), vertexColors: true })),
+      });
       this.sceneries.set(def.id, scenery);
       this.root.add(scenery.group);
     }
@@ -664,6 +750,27 @@ export class StructureRenderer implements RenderSystem {
     const flicker = 1 + 0.035 * Math.sin(frame.elapsed * 9.1) + 0.02 * Math.sin(frame.elapsed * 23.3 + 1.7);
     material.emissiveIntensity = this.glow * WINDOW_GLOW.intensity * flicker;
     material.color.copy(GLASS_DAY).lerp(GLASS_NIGHT, this.glow);
+  }
+
+  /** Turns each door sign whose shop has opened or closed since it was last drawn. */
+  private updateSigns(scenery: StaticScenery, state: GameState): void {
+    const uvs = scenery.posterUvs;
+    if (uvs === null) return;
+    for (const sign of scenery.signs) {
+      const face = signFace(state, sign.shop);
+      if (face === sign.face) continue;
+      setQuadCell(uvs, sign.first, CELLS[sign.face], CELLS[face]);
+      sign.face = face;
+    }
+  }
+
+  /** Dims or relights the flickering letter when the cycle says so. */
+  private updateNeon(neon: NeonHandle, elapsed: number): void {
+    const level = neonLevel(elapsed);
+    if (level === neon.level) return;
+    for (const i of neon.letter) neon.colors.setXYZ(i, level, level, level);
+    neon.colors.needsUpdate = true;
+    neon.level = level;
   }
 
   /** Puffs rise, swell and fade on staggered loops, drifting screen-right with the wind. */
