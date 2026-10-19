@@ -10,7 +10,7 @@
  * every map are replayed and checked the same way. Also covers the seeded hash primitives everything stochastic is built on.
  */
 import { describe, expect, it } from 'vitest';
-import { INVENTORY, TIME } from '../src/config';
+import { INVENTORY, SLOP, TIME } from '../src/config';
 import { hash32, hashFloat, hashRange, mulberry32, Salt } from '../src/core/hash';
 import { createActionRecorder, createStore } from '../src/core/store';
 import {
@@ -36,7 +36,7 @@ import { selectActiveWorld } from '../src/state/selectors';
 import { stepTile } from '../src/world/grid';
 import { MAPS, type Warp } from '../src/world/maps';
 import { countTiles, getTile, isWalkable } from '../src/world/tiles';
-import { HEAVY_TEST_TIMEOUT_MS, must } from './testUtils';
+import { HEAVY_TEST_TIMEOUT_MS, must, withGold } from './testUtils';
 
 function pick<T>(rng: () => number, values: readonly T[]): T {
   return must(values[Math.floor(rng() * values.length)]);
@@ -338,6 +338,46 @@ describe('deterministic replay across maps', () => {
       expect(serializeGame(replayed)).toBe(serializeGame(first.state));
       // Replaying the log through a non-freezing store gives the same result.
       expect(play(first.recorded, false).state).toEqual(first.state);
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('deterministic town life', () => {
+  /**
+   * Seven days of the town at work: each day the clock runs from 6:00 am in 2-hour ticks to midnight,
+   * with DEALZ's chat opened and a full day of boxes bought on the way, then the player sleeps. Walkers
+   * are out and walking at some point of every day.
+   */
+  function townWeek(): { readonly state: GameState; readonly walked: number } {
+    let state = createInitialState();
+    let walked = 0;
+    for (let day = 0; day < 7; day++) {
+      state = withGold(state, 10_000);
+      for (let block = 0; block < 9; block++) {
+        state = gameReducer(state, actions.tick(120));
+        if (Object.values(state.npcs).some((npc) => npc.place.kind === 'out')) walked++;
+        if (block === 4) {
+          state = gameReducer(state, actions.openSlopShop());
+          for (let box = 0; box < SLOP.boxesPerDay; box++) state = gameReducer(state, actions.buySlopBox());
+          state = gameReducer(state, actions.closePanel());
+        }
+      }
+      state = gameReducer(state, actions.sleep());
+    }
+    return { state, walked };
+  }
+
+  it(
+    'gives the same state on two runs of seven days with walkers walking and three boxes bought a day',
+    () => {
+      const first = townWeek();
+      const second = townWeek();
+      expect(first.walked).toBeGreaterThan(14);
+      expect(first.state.slopShop.boxesOpened).toBe(7 * SLOP.boxesPerDay);
+      expect(first.state.time.absoluteDay).toBeGreaterThanOrEqual(7);
+      expect(second.state).toEqual(first.state);
+      expect(serializeGame(second.state)).toBe(serializeGame(first.state));
     },
     HEAVY_TEST_TIMEOUT_MS,
   );

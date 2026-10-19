@@ -200,27 +200,6 @@ const JOB_TILES: readonly TileCoord[] = [...Object.values(JOBS.generators), JOBS
  * through the warp between the two maps when the stop is on the other one.
  */
 export function assertTimetables(): void {
-  const worlds = new Map<MapId, WorldState>();
-  const worldOf = (def: MapDefinition): WorldState => {
-    const known = worlds.get(def.id);
-    if (known !== undefined) return known;
-    const world = def.generate(0);
-    worlds.set(def.id, world);
-    return world;
-  };
-  const walkable = (world: WorldState, tile: TileCoord): boolean => {
-    const at = getTile(world, tile.tx, tile.tz);
-    return at !== null && isWalkable(at);
-  };
-  const reaches = (def: MapDefinition, from: TileCoord, to: TileCoord): boolean => {
-    const world = worldOf(def);
-    return findPath(def.grid, from, to, (_, next) => walkable(world, next)) !== null;
-  };
-  const defOf = (mapId: MapId, name: string): MapDefinition => {
-    const def = WALKED_MAPS[mapId];
-    if (def === undefined) throw new RangeError(`${name} is on ${mapId}, where nobody walks`);
-    return def;
-  };
   for (const id of WALKER_IDS) {
     const home = walkerHome(id);
     if (home.kind === 'exit') {
@@ -231,28 +210,60 @@ export function assertTimetables(): void {
       if (!coordIn(doors, door.tx, door.tz)) throw new RangeError(`Timetable ${id}: (${door.tx}, ${door.tz}) is not a door on ${home.mapId}`);
     }
     const front = homeFront(id);
-    const frontDef = defOf(front.mapId, `Timetable ${id}: the home front`);
-    if (!walkable(worldOf(frontDef), front.tile)) throw new RangeError(`Timetable ${id}: the home front is not walkable`);
-    for (const wet of [false, true]) {
-      const legs = legsFor(id, wet);
-      legs.forEach((leg, i) => {
-        const name = `Timetable ${id} (${wet ? 'wet' : 'dry'}): the leg at minute ${leg.departs}`;
-        const before = legs[i - 1];
-        if (!Number.isInteger(leg.departs) || leg.departs < TIME.dayStartMinute || leg.departs >= TIME.passOutMinute) {
-          throw new RangeError(`${name} departs outside the day`);
-        }
-        if (before !== undefined && before.departs >= leg.departs) throw new RangeError(`${name} departs out of order`);
-        if (i === legs.length - 1 && leg.to.kind !== 'home') throw new RangeError(`${name} is the last, and doesn't go home`);
-        if (leg.to.kind === 'home') return;
-        if (leg.to.kind === 'pace' && (leg.to.spots.length === 0 || !Number.isInteger(leg.to.everyMinutes) || leg.to.everyMinutes < 1)) {
-          throw new RangeError(`${name} paces with no spots or no whole minutes`);
-        }
-        const def = defOf(leg.to.mapId, name);
-        if (isTownsfolk(id) && def.id !== 'town') throw new RangeError(`${name} leaves the town`);
-        for (const tile of stopTiles(leg.to)) assertStop(def, worldOf(def), front, tile, `${name}: (${tile.tx}, ${tile.tz})`, reaches);
-      });
-    }
+    if (!walkable(worldOf(defOf(front.mapId, `Timetable ${id}: the home front`)), front.tile)) throw new RangeError(`Timetable ${id}: the home front is not walkable`);
+    for (const wet of [false, true]) assertLegs(id, wet, legsFor(id, wet));
   }
+}
+
+const worlds = new Map<MapId, WorldState>();
+
+/** A walked map's world with nothing placed, generated once. */
+function worldOf(def: MapDefinition): WorldState {
+  const known = worlds.get(def.id);
+  if (known !== undefined) return known;
+  const world = def.generate(0);
+  worlds.set(def.id, world);
+  return world;
+}
+
+function walkable(world: WorldState, tile: TileCoord): boolean {
+  const at = getTile(world, tile.tx, tile.tz);
+  return at !== null && isWalkable(at);
+}
+
+function reaches(def: MapDefinition, from: TileCoord, to: TileCoord): boolean {
+  const world = worldOf(def);
+  return findPath(def.grid, from, to, (_, next) => walkable(world, next)) !== null;
+}
+
+function defOf(mapId: MapId, name: string): MapDefinition {
+  const def = WALKED_MAPS[mapId];
+  if (def === undefined) throw new RangeError(`${name} is on ${mapId}, where nobody walks`);
+  return def;
+}
+
+/**
+ * One walker's legs for one kind of day (see `assertTimetables`): in order, the last one home, and
+ * every stop passing `assertStop`. Exported so tests can show each rule throwing.
+ */
+export function assertLegs(id: WalkerId, wet: boolean, legs: readonly Leg[]): void {
+  const front = homeFront(id);
+  legs.forEach((leg, i) => {
+    const name = `Timetable ${id} (${wet ? 'wet' : 'dry'}): the leg at minute ${leg.departs}`;
+    const before = legs[i - 1];
+    if (!Number.isInteger(leg.departs) || leg.departs < TIME.dayStartMinute || leg.departs >= TIME.passOutMinute) {
+      throw new RangeError(`${name} departs outside the day`);
+    }
+    if (before !== undefined && before.departs >= leg.departs) throw new RangeError(`${name} departs out of order`);
+    if (i === legs.length - 1 && leg.to.kind !== 'home') throw new RangeError(`${name} is the last, and doesn't go home`);
+    if (leg.to.kind === 'home') return;
+    if (leg.to.kind === 'pace' && (leg.to.spots.length === 0 || !Number.isInteger(leg.to.everyMinutes) || leg.to.everyMinutes < 1)) {
+      throw new RangeError(`${name} paces with no spots or no whole minutes`);
+    }
+    const def = defOf(leg.to.mapId, name);
+    if (isTownsfolk(id) && def.id !== 'town') throw new RangeError(`${name} leaves the town`);
+    for (const tile of stopTiles(leg.to)) assertStop(def, worldOf(def), front, tile, `${name}: (${tile.tx}, ${tile.tz})`);
+  });
 }
 
 /** One stop tile's rules (see `assertTimetables`). */
@@ -262,7 +273,6 @@ function assertStop(
   front: { readonly mapId: MapId; readonly tile: TileCoord },
   tile: TileCoord,
   name: string,
-  reaches: (def: MapDefinition, from: TileCoord, to: TileCoord) => boolean,
 ): void {
   const { tx, tz } = tile;
   const at = getTile(world, tx, tz);

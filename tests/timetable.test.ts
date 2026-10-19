@@ -5,8 +5,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { JOBS, TOWNSFOLK } from '../src/config';
-import { Direction, NPC_IDS, TOWNSFOLK_IDS, type TileCoord } from '../src/core/types';
+import { Direction, NPC_IDS, TOWNSFOLK_IDS, type MapId, type TileCoord } from '../src/core/types';
 import {
+  assertLegs,
   assertTimetables,
   currentLeg,
   farmerStops,
@@ -14,6 +15,7 @@ import {
   legsFor,
   placeAt,
   targetOf,
+  type Leg,
   walkerHome,
 } from '../src/people/timetable';
 import { rectContains } from '../src/world/grid';
@@ -26,6 +28,56 @@ const key = (c: TileCoord): string => `${c.tx},${c.tz}`;
 describe('assertTimetables', () => {
   it('passes for every walker’s stops and loop spots', () => {
     expect(() => assertTimetables()).not.toThrow();
+  });
+});
+
+describe('assertLegs', () => {
+  const spot = (mapId: MapId, tx: number, tz: number): Leg['to'] => ({ kind: 'spot', mapId, tx, tz, facing: Direction.South });
+  /** One stop, then home: the day passes unless the stop breaks a rule. */
+  const day = (to: Leg['to']): readonly Leg[] => [
+    { departs: at(8), to },
+    { departs: at(18), to: { kind: 'home' } },
+  ];
+
+  it('accepts a good day', () => {
+    expect(() => assertLegs('sol', false, day(spot('town', 21, 13)))).not.toThrow();
+    expect(() => assertLegs('cosmo', false, day(spot('neighbours', 11, 10)))).not.toThrow();
+  });
+
+  it('throws for a stop off the map or not walkable', () => {
+    expect(() => assertLegs('sol', false, day(spot('town', 200, 13)))).toThrow(/not walkable/);
+    expect(() => assertLegs('sol', false, day(spot('town', 15, 6)))).toThrow(/not walkable/);
+  });
+
+  it('throws for a stop on a reserved tile', () => {
+    expect(() => assertLegs('sol', false, day(spot('town', 1, 16)))).toThrow(/reserved/);
+  });
+
+  it('throws for a stop in front of a door', () => {
+    expect(() => assertLegs('sol', false, day(spot('town', 15, 7)))).toThrow(/in front of a door/);
+  });
+
+  it('throws for a stop on a field, a generator or a job robot’s tile', () => {
+    expect(() => assertLegs('cosmo', false, day(spot('neighbours', 5, 8)))).toThrow(/on a field/);
+    expect(() => assertLegs('cosmo', false, day(spot('neighbours', JOBS.generators.cosmo.tx, JOBS.generators.cosmo.tz)))).toThrow(/generator/);
+    expect(() => assertLegs('cosmo', false, day(spot('neighbours', JOBS.waveAt.tx, JOBS.waveAt.tz)))).toThrow(/job robot/);
+  });
+
+  it('throws for a stop that can’t be reached from the walker’s home front', () => {
+    expect(() => assertLegs('cosmo', false, day(spot('neighbours', 12, 6)))).toThrow(/can't be reached/);
+  });
+
+  it('throws for legs out of order', () => {
+    const legs: readonly Leg[] = [
+      { departs: at(9), to: spot('town', 21, 13) },
+      { departs: at(8), to: spot('town', 21, 7) },
+      { departs: at(18), to: { kind: 'home' } },
+    ];
+    expect(() => assertLegs('sol', false, legs)).toThrow(/out of order/);
+  });
+
+  it('throws when the last leg doesn’t go home', () => {
+    expect(() => assertLegs('sol', false, [{ departs: at(8), to: spot('town', 21, 13) }])).toThrow(/doesn't go home/);
   });
 });
 
@@ -67,7 +119,7 @@ describe('currentLeg', () => {
     expect(legsFor('cosmo', true).map((leg) => leg.departs)).toEqual([at(6), at(18), at(20)]);
     expect(legsFor('barnaby', false)[1]?.departs).toBe(at(11, 5));
     expect(currentLeg('cosmo', at(11, 15), false)?.to).toEqual({ kind: 'spot', mapId: 'town', tx: 19, tz: 15, facing: Direction.North });
-    expect(currentLeg('cosmo', at(11, 30), true)?.departs).toBe(at(6));
+    expect(currentLeg('cosmo', at(11, 15), true)?.departs).toBe(at(6));
     expect(currentLeg('cosmo', at(17, 59), true)?.to.kind).toBe('pace');
   });
 });
