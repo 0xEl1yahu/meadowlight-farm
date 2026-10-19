@@ -141,10 +141,10 @@ describe('a chat', () => {
 
   it('counts each chat and marks today, leaving the other characters alone', () => {
     const first = interact(AT_MARIGOLD);
-    expect(first.npcs.marigold).toEqual({ talks: 1, talkedToday: true });
+    expect(first.npcs.marigold).toEqual({ ...AT_MARIGOLD.npcs.marigold, talks: 1, talkedToday: true });
     for (const id of NPC_IDS) if (id !== 'marigold') expect(first.npcs[id]).toBe(AT_MARIGOLD.npcs[id]);
     const second = interact(gameReducer(first, actions.closePanel()));
-    expect(second.npcs.marigold).toEqual({ talks: 2, talkedToday: true });
+    expect(second.npcs.marigold).toEqual({ ...AT_MARIGOLD.npcs.marigold, talks: 2, talkedToday: true });
   });
 
   it('costs no energy and no time, even when exhausted', () => {
@@ -183,9 +183,9 @@ describe('the morning', () => {
 
   it('clears talkedToday, keeping talks and every untouched entry', () => {
     const morning = startNextDay(talked, false);
-    expect(morning.npcs.marigold).toEqual({ talks: 1, talkedToday: false });
+    expect(morning.npcs.marigold).toEqual({ ...talked.npcs.marigold, talks: 1, talkedToday: false });
     for (const id of NPC_IDS) if (id !== 'marigold') expect(morning.npcs[id]).toBe(talked.npcs[id]);
-    expect(gameReducer(talked, actions.sleep()).npcs.marigold).toEqual({ talks: 1, talkedToday: false });
+    expect(gameReducer(talked, actions.sleep()).npcs.marigold).toEqual({ ...talked.npcs.marigold, talks: 1, talkedToday: false });
   });
 
   it('keeps the npcs section itself when no one was talked to', () => {

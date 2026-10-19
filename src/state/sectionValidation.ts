@@ -1,7 +1,8 @@
 /**
  * Save validation for the GameState sections later workstreams fill in (profile, tools,
- * crafting, cooking, buildings, NPCs, quests, stats, festival, shop stock, jobs). Phase 0 only
- * stores them, so these checks pin down exactly the shapes and ranges the section types document.
+ * crafting, cooking, buildings, NPCs, townsfolk, quests, stats, festival, shop stock, jobs).
+ * Phase 0 only stores them, so these checks pin down exactly the shapes and ranges the section
+ * types document.
  */
 import { APPEARANCE, JOBS, LAYOUT, PROFILE, SHOP_STOCK } from '../config';
 import {
@@ -9,22 +10,27 @@ import {
   BASIC_PART_IDS,
   CRAFTING_RECIPE_IDS,
   CROP_IDS,
+  DIRECTIONS,
   DISH_IDS,
   FARM_BUILDING_KINDS,
   JOB_IDS,
   JOB_STATUSES,
+  MAP_IDS,
   NPC_IDS,
   ROBOT_SIZES,
   STORY_QUEST_IDS,
+  TOWNSFOLK_IDS,
   UPGRADABLE_TOOLS,
   type AnimalKind,
   type FarmBuildingKind,
   type GameSections,
+  type GameState,
 } from '../core/types';
 import { seedItemId } from '../farming/crops';
 import { isItemId } from '../items/items';
 import { inBounds } from '../world/grid';
 import { MAPS } from '../world/maps';
+import { getTile, isWalkable } from '../world/tiles';
 import {
   hasExactKeys,
   isBool,
@@ -39,7 +45,9 @@ import {
 } from './validation';
 
 /** The fields of an NpcTalk, exactly. */
-const NPC_TALK_KEYS = ['talks', 'talkedToday'] as const;
+const NPC_TALK_KEYS = ['talks', 'talkedToday', 'place'] as const;
+/** The fields of an `out` WalkerPlace, exactly. */
+const OUT_PLACE_KEYS = ['kind', 'mapId', 'tx', 'tz', 'facing'] as const;
 /** Every coop and barn has room for this many animals. */
 const MAX_ANIMALS_PER_BUILDING = 4;
 /** Which building houses each animal kind. */
@@ -93,13 +101,38 @@ function isValidCooking(v: unknown): boolean {
   return isObj(v) && isCanonicalSubset(v.known, DISH_IDS) && isIntIn(v.kitchenLevel, 0, 1);
 }
 
-function isValidNpcTalk(v: unknown): boolean {
-  return isObj(v) && hasExactKeys(v, NPC_TALK_KEYS) && isCount(v.talks) && isBool(v.talkedToday);
+/**
+ * A walker's place (farmclaws part 4d spec §9.3), with exact keys: indoors, or out on a map that
+ * exists, on a walkable tile within it, facing a direction.
+ */
+function isWalkerPlace(v: unknown, maps: GameState['maps']): boolean {
+  if (!isObj(v)) return false;
+  if (v.kind === 'indoors') return hasExactKeys(v, ['kind']);
+  if (v.kind !== 'out' || !hasExactKeys(v, OUT_PLACE_KEYS) || !isOneOf(v.mapId, MAP_IDS) || !isOneOf(v.facing, DIRECTIONS)) return false;
+  if (!isInt(v.tx) || !isInt(v.tz)) return false;
+  const tile = getTile(maps[v.mapId], v.tx, v.tz);
+  return tile !== null && isWalkable(tile);
+}
+
+function isValidNpcTalk(v: unknown, maps: GameState['maps']): boolean {
+  return isObj(v) && hasExactKeys(v, NPC_TALK_KEYS) && isCount(v.talks) && isBool(v.talkedToday) && isWalkerPlace(v.place, maps);
 }
 
 /** Exactly the seven characters (farmclaws part 4a spec §6.3), each with exactly an NpcTalk's fields. */
-function isValidNpcs(v: unknown): boolean {
-  return isObj(v) && hasExactKeys(v, NPC_IDS) && NPC_IDS.every((id) => isValidNpcTalk(v[id]));
+function isValidNpcs(v: unknown, maps: GameState['maps']): boolean {
+  return isObj(v) && hasExactKeys(v, NPC_IDS) && NPC_IDS.every((id) => isValidNpcTalk(v[id], maps));
+}
+
+/** Exactly the six townsfolk (farmclaws part 4d spec §9.3), each with exactly a place. */
+function isValidTownsfolk(v: unknown, maps: GameState['maps']): boolean {
+  return (
+    isObj(v) &&
+    hasExactKeys(v, TOWNSFOLK_IDS) &&
+    TOWNSFOLK_IDS.every((id) => {
+      const townsperson = v[id];
+      return isObj(townsperson) && hasExactKeys(townsperson, ['place']) && isWalkerPlace(townsperson.place, maps);
+    })
+  );
 }
 
 function isValidAnimal(v: unknown, home: FarmBuildingKind): v is Obj {
@@ -230,15 +263,19 @@ function isValidJobs(v: unknown): boolean {
   return bedOk && isBool(v.rescued) && isIntIn(v.fieldDay, -1, Number.MAX_SAFE_INTEGER);
 }
 
-/** Every section `createDefaultSections()` produces, read from an untrusted save object. */
-export function isValidSections(v: Obj): v is Obj & GameSections {
+/**
+ * Every section `createDefaultSections()` produces, read from an untrusted save object whose
+ * `maps` have already passed validation.
+ */
+export function isValidSections(v: Obj, maps: GameState['maps']): v is Obj & GameSections {
   return (
     isValidProfile(v.profile) &&
     isValidTools(v.tools) &&
     isValidCrafting(v.crafting) &&
     isValidCooking(v.cooking) &&
     isValidBuildings(v.buildings, v.nextEntityId) &&
-    isValidNpcs(v.npcs) &&
+    isValidNpcs(v.npcs, maps) &&
+    isValidTownsfolk(v.townsfolk, maps) &&
     isValidQuests(v.quests) &&
     isValidStats(v.stats) &&
     isValidFestival(v.festival) &&

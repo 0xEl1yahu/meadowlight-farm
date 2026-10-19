@@ -10,11 +10,13 @@ import { hasExactKeys, isObj } from '../src/state/validation';
 import { MAPS } from '../src/world/maps';
 import { EMPTY_TILE } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, atDay, livelySections, must, v6Save, v7Save, withPlayer, withTile, type SaveJson } from './testUtils';
+import { BASE, atDay, chatsOf, livelySections, must, v6Save, v7Save, withMigratedPlaces, withPlayer, withTile, type SaveJson } from './testUtils';
 
 /** `state` with the given characters' chats replaced. */
-function withTalks(state: GameState, talks: Partial<Record<NpcId, NpcTalk>>): GameState {
-  return { ...state, npcs: { ...state.npcs, ...talks } };
+function withTalks(state: GameState, talks: Partial<Record<NpcId, Omit<NpcTalk, 'place'>>>): GameState {
+  const npcs = { ...state.npcs };
+  for (const [id, talk] of Object.entries(talks) as [NpcId, Omit<NpcTalk, 'place'>][]) npcs[id] = { ...npcs[id], ...talk };
+  return { ...state, npcs };
 }
 
 /** BASE with every section filled in far from its defaults, still valid. */
@@ -57,14 +59,14 @@ describe('the cast in saves', () => {
     expect(BASE.version).toBe(10);
   });
 
-  it('starts every character at no chats', () => {
+  it('starts every character at no chats, indoors', () => {
     expect(Object.keys(BASE.npcs)).toEqual(['sol', 'cosmo', 'barnaby', 'marigold', 'berlioz', 'juniper', 'tallulah']);
-    for (const id of NPC_IDS) expect(BASE.npcs[id]).toEqual({ talks: 0, talkedToday: false });
+    for (const id of NPC_IDS) expect(BASE.npcs[id]).toEqual({ talks: 0, talkedToday: false, place: { kind: 'indoors' } });
   });
 
   it('round-trips a farm with lively sections', () => {
     const state = lively();
-    expect(state.npcs.berlioz).toEqual({ talks: 40, talkedToday: true });
+    expect(state.npcs.berlioz).toEqual({ talks: 40, talkedToday: true, place: { kind: 'indoors' } });
     expect(deserializeGame(serializeGame(state))).toEqual(state);
   });
 
@@ -79,9 +81,9 @@ describe('v6 → v7', () => {
     expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(10);
   });
 
-  it('loads a v6 save as the state it was taken from', () => {
+  it('loads a v6 save as the state it was taken from, its walkers placed by version 10', () => {
     const state = chatted();
-    expect(must(load(v6Save(state)))).toEqual(state);
+    expect(must(load(v6Save(state)))).toEqual(withMigratedPlaces(state));
   });
 
   it("keeps the shopkeepers' chats, starts Sol, Cosmo and Barnaby at none, and drops Fennick, Pip and friendship", () => {
@@ -94,7 +96,7 @@ describe('v6 → v7', () => {
     });
     expect(Object.keys(npcsOf(save))).toEqual(['marigold', 'bram', 'juniper', 'tess', 'fennick', 'pip']);
     const migrated = migrateSave(save) as SaveJson;
-    expect(npcsOf(migrated)).toEqual({
+    expect(chatsOf(npcsOf(migrated) as GameState['npcs'])).toEqual({
       sol: { talks: 0, talkedToday: false },
       cosmo: { talks: 0, talkedToday: false },
       barnaby: { talks: 0, talkedToday: false },
@@ -103,9 +105,9 @@ describe('v6 → v7', () => {
       juniper: { talks: 1, talkedToday: true },
       tallulah: { talks: 30, talkedToday: false },
     });
-    for (const id of NPC_IDS) expect(hasExactKeys(npcOf(migrated, id), ['talks', 'talkedToday']), id).toBe(true);
+    for (const id of NPC_IDS) expect(hasExactKeys(npcOf(migrated, id), ['talks', 'talkedToday', 'place']), id).toBe(true);
     const loaded = must(load(save));
-    expect(loaded).toEqual(state);
+    expect(loaded).toEqual(withMigratedPlaces(state));
     expect(loaded.player.mapId).toBe('town');
   });
 
@@ -116,7 +118,7 @@ describe('v6 → v7', () => {
     for (const npc of ['fennick', 'pip']) {
       const save = v6With(state, (s) => void (must(questsOf(s).board).npc = npc));
       expect(questsOf(migrateSave(save) as SaveJson).board, npc).toBeNull();
-      expect(must(load(save))).toEqual({ ...state, quests: { ...state.quests, board: null } });
+      expect(must(load(save))).toEqual(withMigratedPlaces({ ...state, quests: { ...state.quests, board: null } }));
     }
   });
 
@@ -127,7 +129,7 @@ describe('v6 → v7', () => {
     for (const npc of ['fennick', 'pip']) {
       const save = v6With(state, (s) => void (festivalOf(s).giftTarget = npc));
       expect(festivalOf(migrateSave(save) as SaveJson).giftTarget, npc).toBeNull();
-      expect(must(load(save))).toEqual({ ...state, festival: { ...state.festival, giftTarget: null } });
+      expect(must(load(save))).toEqual(withMigratedPlaces({ ...state, festival: { ...state.festival, giftTarget: null } }));
     }
   });
 
@@ -135,20 +137,20 @@ describe('v6 → v7', () => {
     const state = chatted();
     const save = v6With(state, (s) => void (s.npcs = v7Save(state).npcs));
     expect(Object.keys(npcsOf(save))).toContain('bram');
-    expect(must(load(save))).toEqual(state);
+    expect(must(load(save))).toEqual(withMigratedPlaces(state));
   });
 
   it('accepts a v6 save whose npcs have the v8 shape, as migrateV2toV3 leaves them', () => {
     const state = chatted();
-    const save = v6With(state, (s) => void (s.npcs = JSON.parse(JSON.stringify(state.npcs)) as SaveJson));
+    const save = v6With(state, (s) => void (s.npcs = JSON.parse(JSON.stringify(chatsOf(state.npcs))) as SaveJson));
     expect(Object.keys(npcsOf(save))).toContain('berlioz');
-    expect(must(load(save))).toEqual(state);
+    expect(must(load(save))).toEqual(withMigratedPlaces(state));
   });
 
   it('migrates the version-2 fixture through every version to 10', () => {
     const loaded = must(deserializeGame(saveV2Text));
     expect(loaded.version).toBe(10);
-    expect(loaded.npcs).toEqual(BASE.npcs);
+    expect(chatsOf(loaded.npcs)).toEqual(chatsOf(BASE.npcs));
     expect(loaded.quests.board).toBeNull();
     expect(loaded.festival.giftTarget).toBeNull();
   });

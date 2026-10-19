@@ -20,6 +20,7 @@ import {
   TileState,
   UPGRADABLE_TOOLS,
   type ActionKind,
+  type GameSections,
   type GameState,
   type ItemStack,
   type MapId,
@@ -60,6 +61,7 @@ import {
   tileAt,
   withPlayer,
   withSlots,
+  withMigratedPlaces,
   withTile,
   type SaveJson,
 } from './testUtils';
@@ -795,8 +797,9 @@ describe('loading the real legacy saves', () => {
     expect(loaded.shipping).toEqual({ pending: save.shipping.pending.map((held) => ({ ...held, quality: 0 })), lastPayout: save.shipping.lastPayout });
     // The open shop and the pause are dropped; the time scale is kept.
     expect(loaded.ui).toEqual({ panel: { kind: 'none' }, paused: false, timeScale: 2, zoneDraft: null, zoneLetter: 'A' });
-    const sections = createDefaultSections();
-    for (const key of Object.keys(sections) as (keyof typeof sections)[]) expect(loaded[key], key).toEqual(sections[key]);
+    // A new game's sections, with every walker placed by the save's clock and weather (part 4d spec §9.2).
+    const sections = withMigratedPlaces({ ...loaded, ...createDefaultSections() });
+    for (const key of Object.keys(createDefaultSections()) as (keyof GameSections)[]) expect(loaded[key], key).toEqual(sections[key]);
   });
 
   it.each(LEGACY_SAVES)('version %i: the migrated state round-trips exactly and idempotently', (_version, text) => {

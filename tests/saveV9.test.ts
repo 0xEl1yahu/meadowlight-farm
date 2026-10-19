@@ -12,7 +12,7 @@ import { createDefaultSections } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { getTile, isWalkable } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, must, robotOf, v8Save, withMigratedJobs, withRobots, withZones, type SaveJson } from './testUtils';
+import { BASE, must, robotOf, v8Save, withMigratedJobs, withMigratedPlaces, withRobots, withZones, type SaveJson } from './testUtils';
 
 /** Lane tiles on the Neighbours map (z 13–15), open ground for the neighbours' robots. */
 const LANE_WEST = { tx: 8, tz: 13 };
@@ -140,7 +140,7 @@ describe('v8 → v9', () => {
     ]);
     expect(robotsOf(migrated).zones.A).toEqual({ x0: 3, z0: 9, w: 3, d: 3, mapId: 'farm' });
     expect(robotsOf(migrated).zones.B).toBeNull();
-    expect(must(load(save))).toEqual(state);
+    expect(must(load(save))).toEqual(withMigratedPlaces(state));
   });
 
   it('counts job 1 done and offers job 2 for a farm with any robot', () => {
@@ -159,7 +159,7 @@ describe('v8 → v9', () => {
     const save = v8Save(BASE);
     expect('jobs' in save).toBe(false);
     expect((migrateSave(save) as SaveJson).jobs).toEqual(createDefaultSections().jobs);
-    expect(must(load(save))).toEqual(BASE);
+    expect(must(load(save))).toEqual(withMigratedPlaces(BASE));
   });
 
   it('migrates the version-2 fixture through every version to 10', () => {

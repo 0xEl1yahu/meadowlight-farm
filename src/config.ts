@@ -7,6 +7,8 @@ import {
   EVERY_CHOICES,
   type ItemStack,
   type JobId,
+  type MapId,
+  type NpcId,
   type RobotActionKind,
   type RobotOwner,
   type RobotPartId,
@@ -15,7 +17,9 @@ import {
   type RobotUnlocks,
   type TileCoord,
   type TileRect,
+  type TownsfolkId,
 } from './core/types';
+import type { Leg, OutStop, Stop, Timetable, TownsfolkDay } from './people/timetable';
 
 /** Settings shared by every map. Each map's size lives in its definition (src/world/maps/). */
 export const WORLD = {
@@ -548,4 +552,179 @@ export const JOBS = {
   barnabyRows: 6,
   /** Job 3's budget (spec §3.3): Barnaby's team may spend at most this many tokens a sown crop of his field in the day. */
   tokensPerCrop: 6,
+} as const;
+
+/** A minute of the day: `hour` in 24-hour time. */
+const clock = (hour: number, minute = 0): number => hour * 60 + minute;
+const spot = (mapId: MapId, tx: number, tz: number, facing: Direction): OutStop => ({ kind: 'spot', mapId, tx, tz, facing });
+const HOME: Stop = { kind: 'home' };
+
+/** A tradie's stops (farmclaws part 4d spec §2.2): their 4a spot is work. */
+interface TradieStops {
+  readonly door: TileCoord;
+  readonly morningAt: number;
+  readonly morning: Stop;
+  readonly work: Stop;
+  readonly lunch: Stop;
+  readonly evening: Stop;
+  /** When a wet day's first leg goes to work: 8:30 am, but Sol's 6:00 am. */
+  readonly wetWorkAt: number;
+}
+
+/**
+ * A tradie's day (spec §2.2). Dry: the morning stop, work at 8:30 am, lunch in the square at
+ * 12:00 pm, work again at 12:50 pm, the evening stop at 5:00 pm, home at 7:00 pm. Wet: they stay
+ * in until work and spend lunch and the evening indoors.
+ */
+function tradieDay(stops: TradieStops): Timetable {
+  const { work } = stops;
+  return {
+    home: { mapId: 'town', door: stops.door },
+    dry: [
+      { departs: stops.morningAt, to: stops.morning },
+      { departs: clock(8, 30), to: work },
+      { departs: clock(12), to: stops.lunch },
+      { departs: clock(12, 50), to: work },
+      { departs: clock(17), to: stops.evening },
+      { departs: clock(19), to: HOME },
+    ],
+    wet: [
+      { departs: stops.wetWorkAt, to: work },
+      { departs: clock(12), to: HOME },
+      { departs: clock(12, 50), to: work },
+      { departs: clock(17), to: HOME },
+    ],
+  };
+}
+
+/**
+ * A farmer's day (spec §2.3). Dry: beside the field from 6:00 am, lunch in town, the field again
+ * at 1:00 pm, their 4a spot on the lane at 6:00 pm, home at 8:00 pm. Wet: no lunch in town, so the
+ * field leg runs until 6:00 pm.
+ */
+function farmerDay(door: TileCoord, field: Stop, lunch: Leg, lane: Stop): Timetable {
+  const evening: readonly Leg[] = [
+    { departs: clock(18), to: lane },
+    { departs: clock(20), to: HOME },
+  ];
+  const morning: Leg = { departs: clock(6), to: field };
+  return {
+    home: { mapId: 'neighbours', door },
+    dry: [morning, lunch, { departs: clock(13), to: field }, ...evening],
+    wet: [morning, ...evening],
+  };
+}
+
+/** The cast's days (farmclaws part 4d spec §2): each character's home door and their dry-day and wet-day legs. */
+export const TIMETABLES: Readonly<Record<NpcId, Timetable>> = {
+  sol: tradieDay({
+    door: { tx: 20, tz: 6 },
+    morningAt: clock(6),
+    morning: spot('town', 21, 13, Direction.West),
+    work: spot('town', 21, 7, Direction.South),
+    lunch: spot('town', 19, 12, Direction.South),
+    evening: spot('town', 14, 22, Direction.South),
+    // Sol is out at 6:00 am on a wet day too, so job 1 can still be found on a wet first morning.
+    wetWorkAt: clock(6),
+  }),
+  tallulah: tradieDay({
+    door: { tx: 34, tz: 6 },
+    morningAt: clock(6, 30),
+    morning: spot('town', 34, 12, Direction.North),
+    work: spot('town', 35, 7, Direction.South),
+    lunch: spot('town', 21, 14, Direction.West),
+    evening: spot('town', 33, 16, Direction.North),
+    wetWorkAt: clock(8, 30),
+  }),
+  marigold: tradieDay({
+    door: { tx: 6, tz: 6 },
+    morningAt: clock(7),
+    morning: spot('town', 8, 22, Direction.South),
+    work: spot('town', 7, 7, Direction.South),
+    lunch: spot('town', 18, 13, Direction.East),
+    evening: spot('town', 5, 16, Direction.South),
+    wetWorkAt: clock(8, 30),
+  }),
+  berlioz: tradieDay({
+    door: { tx: 15, tz: 6 },
+    morningAt: clock(7),
+    morning: spot('town', 16, 23, Direction.South),
+    work: spot('town', 16, 7, Direction.South),
+    lunch: spot('town', 18, 14, Direction.East),
+    evening: spot('town', 20, 12, Direction.South),
+    wetWorkAt: clock(8, 30),
+  }),
+  juniper: tradieDay({
+    door: { tx: 25, tz: 6 },
+    morningAt: clock(7, 30),
+    morning: spot('town', 18, 14, Direction.East),
+    work: spot('town', 24, 7, Direction.South),
+    lunch: spot('town', 21, 13, Direction.West),
+    evening: spot('town', 26, 22, Direction.South),
+    wetWorkAt: clock(8, 30),
+  }),
+  cosmo: farmerDay(
+    { tx: 5, tz: 4 },
+    {
+      kind: 'pace',
+      mapId: 'neighbours',
+      spots: [
+        { tx: 11, tz: 10 },
+        { tx: 16, tz: 7 },
+        { tx: 4, tz: 13 },
+      ],
+      facing: Direction.West,
+      everyMinutes: 20,
+    },
+    { departs: clock(11, 30), to: spot('town', 19, 15, Direction.North) },
+    spot('neighbours', 7, 13, Direction.South),
+  ),
+  barnaby: farmerDay(
+    { tx: 26, tz: 4 },
+    {
+      kind: 'pace',
+      mapId: 'neighbours',
+      spots: [
+        { tx: 30, tz: 18 },
+        { tx: 30, tz: 22 },
+        { tx: 19, tz: 20 },
+      ],
+      facing: Direction.West,
+      everyMinutes: 20,
+    },
+    { departs: clock(11, 15), to: spot('town', 20, 15, Direction.North) },
+    spot('neighbours', 25, 15, Direction.North),
+  ),
+};
+
+/** The town's two south exits (spec §3.1): the south-west and south-east corners of the river's south bank. */
+const SOUTH_WEST_EXIT: TileCoord = { tx: 0, tz: 30 };
+const SOUTH_EAST_EXIT: TileCoord = { tx: 39, tz: 30 };
+
+/** A townsperson's loop of several spots, walked in order, moving on every `everyMinutes`; they keep the facing they walked in with. */
+const loop = (everyMinutes: number, ...spots: readonly TileCoord[]): OutStop => ({ kind: 'pace', mapId: 'town', spots, facing: null, everyMinutes });
+
+/**
+ * The townsfolk (farmclaws part 4d spec §3.1, §3.2): out at 8:00 am to their loop, home at
+ * 7:00 pm, by their exit. On a wet day only the jogger and the courier come out ("rain or shine").
+ */
+export const TOWNSFOLK = {
+  outAt: clock(8),
+  homeAt: clock(19),
+  days: {
+    jogger: { exit: SOUTH_WEST_EXIT, loop: loop(35, { tx: 3, tz: 22 }, { tx: 36, tz: 22 }), rainOrShine: true },
+    dogWalker: {
+      exit: SOUTH_WEST_EXIT,
+      loop: loop(15, { tx: 14, tz: 9 }, { tx: 25, tz: 10 }, { tx: 25, tz: 18 }, { tx: 14, tz: 18 }),
+      rainOrShine: false,
+    },
+    retiree: { exit: SOUTH_EAST_EXIT, loop: spot('town', 17, 21, Direction.South), rainOrShine: false },
+    courier: {
+      exit: SOUTH_EAST_EXIT,
+      loop: loop(30, { tx: 7, tz: 8 }, { tx: 16, tz: 8 }, { tx: 24, tz: 8 }, { tx: 35, tz: 8 }),
+      rainOrShine: true,
+    },
+    busker: { exit: SOUTH_WEST_EXIT, loop: spot('town', 18, 12, Direction.South), rainOrShine: false },
+    kid: { exit: SOUTH_EAST_EXIT, loop: loop(25, { tx: 29, tz: 8 }, { tx: 31, tz: 9 }), rainOrShine: false },
+  } satisfies Readonly<Record<TownsfolkId, TownsfolkDay>>,
 } as const;

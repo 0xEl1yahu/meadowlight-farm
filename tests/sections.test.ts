@@ -43,6 +43,7 @@ import {
   soilTile,
   stack,
   tileAt,
+  withMigratedPlaces,
   withTile,
   type SaveJson,
 } from './testUtils';
@@ -141,7 +142,8 @@ describe('hash salts', () => {
 });
 
 describe('createDefaultSections', () => {
-  const idle = { talks: 0, talkedToday: false };
+  const indoors = { kind: 'indoors' } as const;
+  const idle = { talks: 0, talkedToday: false, place: indoors };
   const expected: GameSections = {
     profile: {
       playerName: 'Farmer',
@@ -154,6 +156,14 @@ describe('createDefaultSections', () => {
     buildings: [],
     nextEntityId: 1,
     npcs: { sol: idle, cosmo: idle, barnaby: idle, marigold: idle, berlioz: idle, juniper: idle, tallulah: idle },
+    townsfolk: {
+      jogger: { place: indoors },
+      dogWalker: { place: indoors },
+      retiree: { place: indoors },
+      courier: { place: indoors },
+      busker: { place: indoors },
+      kid: { place: indoors },
+    },
     quests: { completed: [], board: null },
     stats: {
       parsnipsShipped: 0,
@@ -208,6 +218,8 @@ describe('createDefaultSections', () => {
     expect(a).toEqual(b);
     expect(a.npcs).not.toBe(b.npcs);
     expect(a.npcs.berlioz).not.toBe(b.npcs.berlioz);
+    expect(a.townsfolk).not.toBe(b.townsfolk);
+    expect(a.townsfolk.kid).not.toBe(b.townsfolk.kid);
     expect(a.profile).not.toBe(b.profile);
     expect(a.festival.display).not.toBe(b.festival.display);
   });
@@ -349,6 +361,12 @@ describe('saved NPCs, quests, stats and festival reject', () => {
     ['negative talks', ['npcs', 'juniper', 'talks'], -1],
     ['a non-boolean talkedToday', ['npcs', 'cosmo', 'talkedToday'], 'yes'],
     ['an NPC that is not an object', ['npcs', 'tallulah'], 1000],
+    ['an NPC without a place', ['npcs', 'juniper', 'place'], undefined],
+    ['an NPC with an extra key', ['npcs', 'juniper', 'friendship'], 0],
+    ['an NPC out with no map', ['npcs', 'sol', 'place', 'mapId'], undefined],
+    ['a townsperson with an unknown place kind', ['townsfolk', 'jogger', 'place', 'kind'], 'away'],
+    ['a townsperson out on the river', ['townsfolk', 'jogger', 'place', 'tz'], 25],
+    ['a missing townsperson', ['townsfolk', 'busker'], undefined],
     // Quests
     ['an unknown story quest', ['quests', 'completed'], ['shipParsnips', 'slayDragon']],
     ['a repeated story quest', ['quests', 'completed'], ['visitTown', 'visitTown']],
@@ -418,14 +436,15 @@ describe('migrating older saves to the current version', () => {
     const migrated = migrateSave(v2) as SaveJson;
     expect(migrated.version).toBe(SAVE_VERSION);
     const loaded = must(deserializeGame(JSON.stringify(v2)));
-    expect(loaded).toEqual(state);
+    expect(loaded).toEqual(withMigratedPlaces(state));
     expect(loaded.maps.farm.chunks.map((chunk) => chunk.revision)).toEqual(state.maps.farm.chunks.map((chunk) => chunk.revision));
     expect(loaded.maps.farm.chunks.some((chunk) => chunk.revision > 0)).toBe(true);
   });
 
-  it('gives a version-2 save the section defaults and plain tiles', () => {
+  it('gives a version-2 save the section defaults, its walkers placed by its clock and weather, and plain tiles', () => {
     const loaded = must(deserializeGame(JSON.stringify(legacySave(played(), 2))));
-    for (const [key, value] of Object.entries(createDefaultSections())) expect(loaded[key as keyof GameSections], key).toEqual(value);
+    const sections = withMigratedPlaces({ ...loaded, ...createDefaultSections() });
+    for (const key of Object.keys(createDefaultSections()) as (keyof GameSections)[]) expect(loaded[key], key).toEqual(sections[key]);
     forEachTile(loaded.maps.farm, (tile, tx, tz) => {
       expect(tile.object).toEqual(tx === WORKBENCH.home.tx && tz === WORKBENCH.home.tz ? { kind: 'workbench' } : null);
       expect(tile.fertilizer).toBeNull();
@@ -452,8 +471,9 @@ describe('migrating older saves to the current version', () => {
       const expected = tile.crop?.wild === true ? { ...tile, crop: null } : tile;
       expect(tileAt(loaded, { tx, tz }), `${tx},${tz}`).toEqual(expected);
     });
-    expect({ ...loaded, maps: { ...loaded.maps, farm: null } }).toEqual({ ...state, maps: { ...state.maps, farm: null } });
-    for (const [key, value] of Object.entries(createDefaultSections())) expect(loaded[key as keyof GameSections], key).toEqual(value);
+    const placed = withMigratedPlaces(state);
+    expect({ ...loaded, maps: { ...loaded.maps, farm: null } }).toEqual({ ...placed, maps: { ...placed.maps, farm: null } });
+    for (const key of Object.keys(createDefaultSections()) as (keyof GameSections)[]) expect(loaded[key], key).toEqual(placed[key]);
   });
 
   it('leaves malformed old saves untouched, so validation rejects them', () => {

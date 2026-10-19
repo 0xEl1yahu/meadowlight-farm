@@ -9,7 +9,7 @@ import { Direction, NPC_IDS, SAVE_VERSION, type GameState, type RobotDelivery, t
 import { createDefaultSections } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, atDay, livelySections, must, robotOf, v7Save, withMigratedJobs, withPlayer, withRobots, type SaveJson } from './testUtils';
+import { BASE, atDay, chatsOf, livelySections, must, robotOf, v7Save, withMigratedJobs, withMigratedPlaces, withPlayer, withRobots, type SaveJson } from './testUtils';
 
 /** `state` with these robots ordered from Juniper's workshop. */
 function withDeliveries(state: GameState, deliveries: readonly RobotDelivery[]): GameState {
@@ -40,7 +40,7 @@ function chatted(): GameState {
   const lively = { ...BASE, ...livelySections() };
   const state: GameState = {
     ...lively,
-    npcs: { ...lively.npcs, berlioz: { talks: 12, talkedToday: true }, tallulah: { talks: 30, talkedToday: false } },
+    npcs: { ...lively.npcs, berlioz: { ...lively.npcs.berlioz, talks: 12, talkedToday: true }, tallulah: { ...lively.npcs.tallulah, talks: 30, talkedToday: false } },
     quests: { ...lively.quests, board: { week: 3, npc: 'berlioz', itemId: 'copperOre', quantity: 5, dueDay: 30, delivered: 2, status: 'active' } },
     festival: { ...lively.festival, giftTarget: 'tallulah' },
   };
@@ -105,9 +105,9 @@ describe('v7 → v8', () => {
     expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(10);
   });
 
-  it('loads a v7 save as the state it was taken from', () => {
+  it('loads a v7 save as the state it was taken from, its walkers placed by version 10', () => {
     const state = chatted();
-    expect(must(load(v7Save(state)))).toEqual(state);
+    expect(must(load(v7Save(state)))).toEqual(withMigratedPlaces(state));
   });
 
   it('gives a v7 save no deliveries and nothing sold today', () => {
@@ -125,8 +125,8 @@ describe('v7 → v8', () => {
     expect(Object.keys(npcsOf(save))).toEqual(['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess']);
     const migrated = migrateSave(save) as SaveJson;
     expect(Object.keys(npcsOf(migrated))).toEqual([...NPC_IDS]);
-    expect(npcsOf(migrated)).toEqual(state.npcs);
-    expect(must(load(save)).npcs.berlioz).toEqual({ talks: 12, talkedToday: true });
+    expect(npcsOf(migrated)).toEqual(withMigratedPlaces(state).npcs);
+    expect(must(load(save)).npcs.berlioz).toMatchObject({ talks: 12, talkedToday: true });
   });
 
   it('moves a board request from Bram and a gift target of Tess with them', () => {
@@ -145,15 +145,15 @@ describe('v7 → v8', () => {
       quests: { ...state.quests, board: { ...must(state.quests.board), npc: 'juniper' } },
       festival: { ...state.festival, giftTarget: 'sol' },
     };
-    expect(must(load(v7Save(others)))).toEqual(others);
+    expect(must(load(v7Save(others)))).toEqual(withMigratedPlaces(others));
     const none: GameState = { ...state, quests: { ...state.quests, board: null }, festival: { ...state.festival, giftTarget: null } };
-    expect(must(load(v7Save(none)))).toEqual(none);
+    expect(must(load(v7Save(none)))).toEqual(withMigratedPlaces(none));
   });
 
   it('migrates the version-2 fixture through every version to 10', () => {
     const loaded = must(deserializeGame(saveV2Text));
     expect(loaded.version).toBe(10);
-    expect(loaded.npcs).toEqual(BASE.npcs);
+    expect(chatsOf(loaded.npcs)).toEqual(chatsOf(BASE.npcs));
     expect(loaded.robots.deliveries).toEqual([]);
     expect(loaded.shopsSoldToday).toEqual(BASE.shopsSoldToday);
   });

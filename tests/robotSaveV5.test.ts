@@ -13,7 +13,7 @@ import { requireRobot } from '../src/robots/world';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { isValidExec } from '../src/state/robotValidation';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, must, robotOf, v5Save, withMigratedJobs, withRobots, withZones, type SaveJson } from './testUtils';
+import { BASE, must, robotOf, v5Save, withMigratedJobs, withMigratedPlaces, withRobots, withZones, type SaveJson } from './testUtils';
 
 /** A Standard waterer and harvester: four stacks, a helper, two variables. 21 blocks. */
 const PROGRAM: BlockProgram = b.program({
@@ -136,7 +136,7 @@ describe('save version 5', () => {
       [null, [], null],
     ]);
     expect(robotsOf(migrated).zones).toEqual(Object.fromEntries(ZONE_IDS.map((id) => [id, null])));
-    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(state);
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(withMigratedPlaces(state));
   });
 
   it('migrates the version-2 fixture through eight steps to 10', () => {

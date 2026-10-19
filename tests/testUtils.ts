@@ -16,6 +16,8 @@ import {
   CRAFTING_RECIPE_IDS,
   Direction,
   JOB_IDS,
+  NPC_IDS,
+  TOWNSFOLK_IDS,
   TileState,
   type Animal,
   type Robot,
@@ -29,16 +31,21 @@ import {
   type JobId,
   type JobStatus,
   type MapId,
+  type NpcId,
   type NpcTalk,
   type RobotStats,
   type Quality,
   type Tile,
   type TileCoord,
+  type TownsfolkId,
+  type WalkerId,
+  type WalkerPlace,
   type WorldState,
   type ZoneId,
   type ZoneRect,
 } from '../src/core/types';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
+import { placeAt } from '../src/people/timetable';
 import { ZERO_ROBOT_STATS } from '../src/robots/stats';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { countItem } from '../src/state/inventory';
@@ -48,6 +55,7 @@ import { MAPS } from '../src/world/maps';
 import { CHICKEN_RUN, COSMO_DOOR_GAP, ringTiles } from '../src/world/maps/neighbours';
 import { TOWN_PROP_KINDS } from '../src/world/maps/town';
 import { calendarTime } from '../src/time/clock';
+import { weatherWaters } from '../src/time/weather';
 import { locateTile } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile, isWalkable, requireTile, setTile } from '../src/world/tiles';
 
@@ -172,6 +180,50 @@ export function withWater(state: GameState, water: number): GameState {
 
 export function withGold(state: GameState, gold: number): GameState {
   return { ...state, player: { ...state.player, gold } };
+}
+
+const isTownsfolk = (id: WalkerId): id is TownsfolkId => (TOWNSFOLK_IDS as readonly string[]).includes(id);
+
+/** Sets the saved places of the walkers named in `places` (farmclaws part 4d spec §4.1); everyone else stays where they are. */
+export function withPlaces(state: GameState, places: Partial<Record<WalkerId, WalkerPlace>>): GameState {
+  let npcs = state.npcs;
+  let townsfolk = state.townsfolk;
+  for (const [id, place] of Object.entries(places) as [WalkerId, WalkerPlace][]) {
+    if (isTownsfolk(id)) townsfolk = { ...townsfolk, [id]: { place } };
+    else npcs = { ...npcs, [id]: { ...npcs[id], place } };
+  }
+  return { ...state, npcs, townsfolk };
+}
+
+/**
+ * Every walker's saved place: the characters', then the townsfolk's (farmclaws part 4d spec §4.1).
+ */
+export function placesOf(state: GameState): Record<WalkerId, WalkerPlace> {
+  const places = {} as Record<WalkerId, WalkerPlace>;
+  for (const id of NPC_IDS) places[id] = state.npcs[id].place;
+  for (const id of TOWNSFOLK_IDS) places[id] = state.townsfolk[id].place;
+  return places;
+}
+
+/** Each character's chats without their place: what a save before version 10 records of them. */
+export function chatsOf(npcs: GameState['npcs']): Record<NpcId, Omit<NpcTalk, 'place'>> {
+  return Object.fromEntries(NPC_IDS.map((id) => [id, { talks: npcs[id].talks, talkedToday: npcs[id].talkedToday }])) as Record<NpcId, Omit<NpcTalk, 'place'>>;
+}
+
+/**
+ * `state` with the places a save migrated from version 9 gets (farmclaws part 4d spec §9.2): each
+ * walker where their current leg puts them by the state's clock and weather, or indoors when that
+ * tile isn't walkable.
+ */
+export function withMigratedPlaces(state: GameState): GameState {
+  const wet = weatherWaters(state.weather);
+  const places: Partial<Record<WalkerId, WalkerPlace>> = {};
+  for (const id of [...NPC_IDS, ...TOWNSFOLK_IDS]) {
+    const place = placeAt(id, state.time.minuteOfDay, wet);
+    const blocked = place.kind === 'out' && !isWalkable(tileAt(state, place, place.mapId));
+    places[id] = blocked ? { kind: 'indoors' } : place;
+  }
+  return withPlaces(state, places);
 }
 
 /** Moves the calendar to `absoluteDay` (weather is left as-is). */
@@ -348,14 +400,18 @@ const FENCE_TILE: Tile = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
 
 /**
  * Hand-transforms a current (version 10) state back into the JSON of a version-9 save (farmclaws
- * part 4d spec §9.2): the town's prop tiles are open grass, Cosmo's door gap is fence and the
- * chicken run's ring is open grass, with chunk revisions as they are. The state must hold those
- * tiles as version 10 makes them, since nothing else on them migrates back. v8Save starts from
+ * part 4d spec §9.2): no walker has a place and there are no townsfolk, the town's prop tiles are
+ * open grass, Cosmo's door gap is fence and the chicken run's ring is open grass, with chunk
+ * revisions as they are. The state must hold those tiles as version 10 makes them, since nothing
+ * else on them migrates back. The migration gives every walker the place their timetable puts
+ * them in, so a state loaded from this save is `withMigratedPlaces(state)`. v8Save starts from
  * this, so every older-save builder inherits it.
  */
 export function v9Save(state: GameState): SaveJson {
   const save = JSON.parse(serializeGame(state)) as SaveJson;
   save.version = 9;
+  for (const talk of Object.values(save.npcs as Record<string, SaveJson>)) delete talk.place;
+  delete save.townsfolk;
   const turnBack = (mapId: MapId, at: TileCoord, now: Tile, then: Tile): void => {
     if (!deepEqual(tileAt(state, at, mapId), now)) throw new Error(`v9Save: version 9 can't hold what is at (${at.tx}, ${at.tz}) on ${mapId}`);
     setSavedTile(save, mapId, at, then);
@@ -452,7 +508,7 @@ export function v6Save(state: GameState): SaveJson {
     if (npcs[id].talks !== 0 || npcs[id].talkedToday) throw new Error(`v6Save: a version-6 save has no ${id} to have talked to`);
   }
   const relation = ({ talks, talkedToday }: NpcTalk): SaveJson => ({ points: 0, talkedToday, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks });
-  const idle: NpcTalk = { talks: 0, talkedToday: false };
+  const idle: NpcTalk = { talks: 0, talkedToday: false, place: { kind: 'indoors' } };
   save.npcs = {
     marigold: relation(npcs.marigold),
     bram: relation(npcs.berlioz),
@@ -549,7 +605,8 @@ export const animal = (id: number, kind: AnimalKind, name: string): Animal => ({
 /**
  * Every later-workstream section filled in far from its defaults, still valid: a steel hoe with
  * an upgrade under way, every recipe, a full coop and a barn, chats with Berlioz and Tallulah, a board
- * request, lifetime stats and a festival in progress with a full display.
+ * request, lifetime stats, a festival in progress with a full display, and walkers out in town, on
+ * Cosmo's door front and on the town's east arrival tile, and indoors.
  */
 export function livelySections(): GameSections {
   return {
@@ -575,8 +632,15 @@ export function livelySections(): GameSections {
     nextEntityId: 8,
     npcs: {
       ...BASE.npcs,
-      berlioz: { talks: 40, talkedToday: true },
-      tallulah: { talks: 3, talkedToday: false },
+      sol: { talks: 0, talkedToday: false, place: { kind: 'out', mapId: 'town', tx: 21, tz: 13, facing: Direction.West } },
+      cosmo: { talks: 0, talkedToday: false, place: { kind: 'out', mapId: 'neighbours', tx: 5, tz: 5, facing: Direction.South } },
+      berlioz: { talks: 40, talkedToday: true, place: { kind: 'indoors' } },
+      tallulah: { talks: 3, talkedToday: false, place: { kind: 'out', mapId: 'town', tx: 38, tz: 16, facing: Direction.East } },
+    },
+    townsfolk: {
+      ...BASE.townsfolk,
+      jogger: { place: { kind: 'out', mapId: 'town', tx: 3, tz: 22, facing: Direction.East } },
+      kid: { place: { kind: 'out', mapId: 'town', tx: 31, tz: 9, facing: Direction.North } },
     },
     quests: {
       completed: ['shipParsnips', 'visitTown', 'earnGold'],

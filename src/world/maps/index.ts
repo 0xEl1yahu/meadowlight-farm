@@ -4,6 +4,7 @@
  */
 import { PLAYER } from '../../config';
 import { DIRECTIONS, MAP_IDS, NPC_IDS, type MapId, type NpcId, type TileRect, type WorldState } from '../../core/types';
+import { assertTimetables } from '../../people/timetable';
 import { inBounds, rectContains, rectInBounds, stepTile, tileCount } from '../grid';
 import { getTile, isWalkable } from '../tiles';
 import { isPondTile } from '../worldgen';
@@ -126,8 +127,8 @@ function assertNpcPlacements(defs: Readonly<Record<MapId, MapDefinition>>): void
  * map arriving orthogonally next to `from`), an unreserved warp or arrival tile, a structure
  * outside the grid or overlapping another structure or a reserved tile, a door whose front tile
  * isn't walkable, a farm spawn that isn't clear, the town's and the Neighbours' own layout rules
- * (`assertTownLayout`, `assertNeighboursLayout`), and a character's spot that breaks a rule of
- * `assertNpcPlacements`.
+ * (`assertTownLayout`, `assertNeighboursLayout`), a character's spot that breaks a rule of
+ * `assertNpcPlacements`, and a walker's timetable that breaks a rule of `assertTimetables`.
  */
 export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>>): void {
   for (const id of MAP_IDS) {
@@ -144,6 +145,7 @@ export function assertMapDefinitions(defs: Readonly<Record<MapId, MapDefinition>
   assertFarmSpawn(defs.farm);
   assertTownLayout(defs.town);
   assertNeighboursLayout(defs.neighbours);
+  assertTimetables();
 }
 
 export const MAPS: Readonly<Record<MapId, MapDefinition>> = {

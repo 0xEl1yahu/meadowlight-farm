@@ -18,7 +18,7 @@ import { gameReducer } from '../src/state/reducer';
 import { locateTile } from '../src/world/grid';
 import { EMPTY_TILE, blockedTile } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, TARGET, benchedRobotOf, must, robotOf, stack, v5Save, withMigratedJobs, withPlayer, withRobots as withRobotList, withSlots, withTile, withZones, type SaveJson } from './testUtils';
+import { BASE, TARGET, benchedRobotOf, must, robotOf, stack, v5Save, withMigratedJobs, withMigratedPlaces, withPlayer, withRobots as withRobotList, withSlots, withTile, withZones, type SaveJson } from './testUtils';
 
 /** withRobots for a farm a v5 save can hold: with robots, job 1 is done, as the v8 → v9 migration gives it (part 4c spec §4.3). */
 const withRobots = (state: GameState, robots: readonly Robot[]): GameState => withMigratedJobs(withRobotList(state, robots));
@@ -62,7 +62,7 @@ describe('v5 → v6', () => {
 
   it('loads a v5 save as the state it was taken from', () => {
     const state = v5Farm();
-    expect(must(deserializeGame(JSON.stringify(v5Save(state))))).toEqual(state);
+    expect(must(deserializeGame(JSON.stringify(v5Save(state))))).toEqual(withMigratedPlaces(state));
   });
 
   it('migrates the version-2 fixture through every version to 9', () => {
@@ -93,7 +93,7 @@ describe('robot stats in save version 6', () => {
     const save = v5Save(state);
     expect(firstRobot(save).tokensToday).toBe(12);
     expect(firstRobot(save)).not.toHaveProperty('stats');
-    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(state);
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(withMigratedPlaces(state));
   });
 
   it('cannot write counters a v5 save has no room for', () => {
@@ -122,7 +122,7 @@ describe('unlocks in save version 6', () => {
     const save = v5Save(BASE);
     expect(robotsOf(save)).not.toHaveProperty('unlocks');
     expect(robotsOf(migrateSave(save) as SaveJson).unlocks).toEqual(UNLOCKS.job1);
-    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(withMigratedPlaces(BASE));
   });
 
   it('round-trips every unlock', () => {
@@ -181,7 +181,7 @@ describe('the workbench in save version 6', () => {
     const migrated = migrateSave(v5) as SaveJson;
     expect(farmTile(migrated, HOME.tx, HOME.tz).object).toEqual({ kind: 'workbench' });
     expect([savedRobot(migrated, 0).onBench, savedRobot(migrated, 1).onBench]).toEqual([false, false]);
-    expect(load(v5)).toEqual(state);
+    expect(load(v5)).toEqual(withMigratedPlaces(state));
   });
 
   it('puts the workbench on the nearest free tile when home is built on, past robots and the player', () => {
@@ -192,7 +192,7 @@ describe('the workbench in save version 6', () => {
     const v5 = v5Save(state);
     expect(farmTile(v5, AT_BENCH.tx, AT_BENCH.tz).object).toBeNull();
     expect(farmTile(migrateSave(v5) as SaveJson, AT_BENCH.tx, AT_BENCH.tz).object).toEqual({ kind: 'workbench' });
-    expect(load(v5)).toEqual(state);
+    expect(load(v5)).toEqual(withMigratedPlaces(state));
   });
 
   it('never puts the migrated workbench on the spawn tile, even when it is the nearest free tile', () => {
@@ -216,10 +216,10 @@ describe('the workbench in save version 6', () => {
     let standing = withTile(BASE, HOME, EMPTY_TILE, 'farm');
     standing = withTile(standing, { tx: HOME.tx, tz: HOME.tz - 1 }, benchTile, 'farm');
     standing = withRobots(standing, [robotOf({ tx: HOME.tx, tz: HOME.tz })]);
-    expect(load(v5Save(standing))).toEqual(standing);
+    expect(load(v5Save(standing))).toEqual(withMigratedPlaces(standing));
     const lifted = gameReducer(carryToBench(), actions.liftOffBench(1));
     expect(requireRobot(lifted, 1)).toMatchObject({ carried: true, tx: HOME.tx, tz: HOME.tz });
-    expect(load(v5Save(lifted))).toEqual(lifted);
+    expect(load(v5Save(lifted))).toEqual(withMigratedPlaces(lifted));
   });
 
   it('cannot write a robot on the bench or switched off to a v5 save', () => {
@@ -338,7 +338,7 @@ describe('v6: the zone marker and the zone draft', () => {
     expect(loaded.robots.pendingMarker).toBe(false);
     expect(loaded.ui.zoneDraft).toBeNull();
     expect(loaded.ui.zoneLetter).toBe('A');
-    expect(loaded).toEqual(BASE);
+    expect(loaded).toEqual(withMigratedPlaces(BASE));
   });
 
   it('owes the marker to a migrated save whose backpack is full', () => {
@@ -346,12 +346,12 @@ describe('v6: the zone marker and the zone draft', () => {
     expect((migrateSave(save) as { robots: SaveJson }).robots.pendingMarker).toBe(true);
     const loaded = must(deserializeGame(JSON.stringify(save)));
     expect(countItem(loaded.inventory, 'zoneMarker')).toBe(0);
-    expect(loaded).toEqual({ ...FULL, robots: { ...FULL.robots, pendingMarker: true } });
+    expect(loaded).toEqual(withMigratedPlaces({ ...FULL, robots: { ...FULL.robots, pendingMarker: true } }));
   });
 
   it('never hands out a second marker', () => {
     const save = { ...v5Save(BASE), inventory: (JSON.parse(serializeGame(BASE)) as SaveJson).inventory };
-    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(withMigratedPlaces(BASE));
   });
 
   it('round-trips a pending marker', () => {

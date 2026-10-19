@@ -6,7 +6,9 @@ import { INVENTORY, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
   MAP_IDS,
+  NPC_IDS,
   SAVE_VERSION,
+  TOWNSFOLK_IDS,
   TileState,
   Weather,
   ZONE_IDS,
@@ -17,10 +19,14 @@ import {
   type MapId,
   type NpcId,
   type TileCoord,
+  type WalkerId,
+  type WalkerPlace,
   type WorldState,
 } from '../core/types';
+import { placeAt } from '../people/timetable';
 import { freeSpotNear, withWorkbenchAt } from '../robots/workbench';
 import { calendarTime } from '../time/clock';
+import { weatherWaters } from '../time/weather';
 import { chunkCount, chunkRectByIndex, createGridSpec, inBounds } from '../world/grid';
 import { MAPS, isReservedTile } from '../world/maps';
 import { CHICKEN_RUN, COSMO_DOOR_GAP, ringInside, ringTiles } from '../world/maps/neighbours';
@@ -272,7 +278,7 @@ export function isValidGameState(v: unknown): v is GameState {
     isValidShipping(v.shipping) &&
     isValidUi(v.ui) &&
     isValidMessages(v.messages) &&
-    isValidSections(v) &&
+    isValidSections(v, v.maps) &&
     isValidRobotsSection(v.robots, v.maps, v.player) &&
     isValidZoneMarker(v as unknown as GameState)
   );
@@ -674,13 +680,56 @@ function migrateMapV10(save: Obj, mapId: 'town' | 'neighbours'): Obj {
 }
 
 /**
+ * Where version 10 puts each walker (farmclaws part 4d spec §9.2): where their current leg puts
+ * them at the save's minute and weather (`placeAt`), or indoors when the save holds something on
+ * that tile, so nobody stands on what the player has built. Every character's record gains its
+ * place, and the townsfolk join. A save with a malformed clock, weather, map or cast passes
+ * through for the validator to reject.
+ */
+function placeWalkersV10(save: Obj): Obj {
+  const { time, weather, maps, npcs } = save;
+  if (!isObj(time) || !isInt(time.minuteOfDay) || !isOneOf(weather, WEATHERS) || !isObj(maps) || !isObj(npcs)) return save;
+  const minute = time.minuteOfDay;
+  const wet = weatherWaters(weather as Weather);
+  const worlds = new Map<MapId, WorldState | null>();
+  const worldOf = (mapId: MapId): WorldState | null => {
+    if (!worlds.has(mapId)) worlds.set(mapId, isValidWorld(maps[mapId], mapId) ? maps[mapId] : null);
+    return worlds.get(mapId) ?? null;
+  };
+  const placeOf = (id: WalkerId): WalkerPlace | null => {
+    const place = placeAt(id, minute, wet);
+    if (place.kind === 'indoors') return place;
+    const world = worldOf(place.mapId);
+    if (world === null) return null;
+    const tile = getTile(world, place.tx, place.tz);
+    return tile !== null && isWalkable(tile) ? place : { kind: 'indoors' };
+  };
+  const places = new Map<WalkerId, WalkerPlace>();
+  for (const id of [...NPC_IDS, ...TOWNSFOLK_IDS]) {
+    const place = placeOf(id);
+    if (place === null) return save;
+    places.set(id, place);
+  }
+  const placed = (id: string, talk: unknown): unknown => {
+    const place = isOneOf(id, NPC_IDS) ? places.get(id) : undefined;
+    return isObj(talk) && place !== undefined ? { ...talk, place } : talk;
+  };
+  return {
+    ...save,
+    npcs: Object.fromEntries(Object.entries(npcs).map(([id, talk]) => [id, placed(id, talk)])),
+    townsfolk: Object.fromEntries(TOWNSFOLK_IDS.map((id) => [id, { place: places.get(id) }])),
+  };
+}
+
+/**
  * Version 9 predates SLOPMART's booth, the town's props and exits, Cosmo's door gap and his
- * chicken run (farmclaws part 4d spec §9.2). The booth stands on the old hedge's tiles, so only
- * the props, the exits, the door gap and the run change saved tiles, on the town and the
- * Neighbours map (migrateMapV10).
+ * chicken run, and the walkers (farmclaws part 4d spec §9.2). The booth stands on the old hedge's
+ * tiles, so only the props, the exits, the door gap and the run change saved tiles, on the town
+ * and the Neighbours map (migrateMapV10). Then every walker is placed on the reshaped maps
+ * (placeWalkersV10).
  */
 function migrateV9toV10(save: Obj): Obj {
-  return migrateMapV10(migrateMapV10({ ...save, version: 10 }, 'town'), 'neighbours');
+  return placeWalkersV10(migrateMapV10(migrateMapV10({ ...save, version: 10 }, 'town'), 'neighbours'));
 }
 
 /**

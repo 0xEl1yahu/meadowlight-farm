@@ -1080,12 +1080,28 @@ export interface FarmBuilding {
   readonly animals: readonly Animal[];
 }
 
-/** The player's chats with one character (farmclaws part 4a spec §3.4). */
+/** The six anonymous townsfolk (farmclaws part 4d spec §3.1). A townsperson's index here picks their line of the day. */
+export const TOWNSFOLK_IDS = ['jogger', 'dogWalker', 'retiree', 'courier', 'busker', 'kid'] as const;
+export type TownsfolkId = (typeof TOWNSFOLK_IDS)[number];
+
+/** Everyone who walks the valley on a timetable (part 4d spec §4.1): the cast, then the townsfolk. */
+export type WalkerId = NpcId | TownsfolkId;
+
+/**
+ * Where a walker is (part 4d spec §4.1): indoors, off the map behind their door or gone by their
+ * exit, or out on a tile of a map, facing one way.
+ */
+export type WalkerPlace =
+  | { readonly kind: 'indoors' }
+  | { readonly kind: 'out'; readonly mapId: MapId; readonly tx: number; readonly tz: number; readonly facing: Direction };
+
+/** The player's chats with one character (farmclaws part 4a spec §3.4), and where the character is (part 4d spec §9.1). */
 export interface NpcTalk {
   /** Lifetime chats. Rotates nothing in 4a, but 0 picks the introduction. */
   readonly talks: number;
   /** Whether the player talked to them today; reset each morning. */
   readonly talkedToday: boolean;
+  readonly place: WalkerPlace;
 }
 
 export interface BoardRequest {
@@ -1166,6 +1182,8 @@ export interface GameSections {
   /** Next id for buildings and animals (shared counter, starts at 1). */
   readonly nextEntityId: number;
   readonly npcs: Readonly<Record<NpcId, NpcTalk>>;
+  /** Where each townsperson is (part 4d spec §9.1); nothing about a chat with them is saved. */
+  readonly townsfolk: Readonly<Record<TownsfolkId, { readonly place: WalkerPlace }>>;
   readonly quests: QuestState;
   readonly stats: LifetimeStats;
   readonly festival: FestivalState;

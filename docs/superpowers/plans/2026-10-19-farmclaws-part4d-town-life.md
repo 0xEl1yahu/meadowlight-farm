@@ -153,6 +153,7 @@ export const DEALZ_LINES: { readonly soldOut: string; readonly noGold: string; r
 
 - **R1.** `findPath` takes the grid and a `canStep(from, to)` callback rather than a world and `canEnter(tx, tz)`, because the robots' rule depends on the step (.MD DON'T cards check `from` → `to`). The behaviour is unchanged. (Spec §4.3)
 - **R2.** The slop panel stores DEALZ's current line in the panel (`{ kind: 'slopShop', line }`), so refusals and results change the line without saved state. The loader resets panels, so nothing is migrated. (Spec §6.2)
+- **R3.** A pace stop's facing may be null: the townsfolk's loops of several spots have no facing in spec §3.1, so a townsperson keeps the facing they walked in with, and `targetOf` reports null. Where the migration has to stand one on a loop spot without a walk, they face South. The single-spot loops (the retiree and the busker) are spot stops with their facing. (Spec §2.1, §9.2)
 
 ---
 

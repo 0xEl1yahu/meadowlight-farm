@@ -2,12 +2,26 @@
  * Save version 10 (farmclaws part 4d spec §9): the v9 → v10 migration of the tiles part 4d changes.
  * The town's prop tiles become buildings, Cosmo's door front loses its fence and the chicken run
  * gains its own; anything a v9 save left on those tiles moves to the nearest free tile of its map
- * (spec §7.4), and so does anything shut inside the run or left on a town exit.
+ * (spec §7.4), and so does anything shut inside the run or left on a town exit. Every walker gets
+ * the place their timetable gives them at the save's minute and weather, and saved places are
+ * validated (spec §9.3).
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
-import { Blocker, Direction, SAVE_VERSION, type GameState, type MapId, type Tile, type TileCoord } from '../src/core/types';
-import { deserializeGame, migrateSave } from '../src/state/persistence';
+import {
+  Blocker,
+  Direction,
+  NPC_IDS,
+  SAVE_VERSION,
+  TOWNSFOLK_IDS,
+  Weather,
+  type GameState,
+  type MapId,
+  type Tile,
+  type TileCoord,
+  type WalkerPlace,
+} from '../src/core/types';
+import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { rectContains } from '../src/world/grid';
 import { CHICKEN_RUN, COSMO_DOOR_GAP, ringInside, ringTiles } from '../src/world/maps/neighbours';
 import { TOWN_EXITS } from '../src/world/maps/town';
@@ -15,7 +29,9 @@ import { EMPTY_TILE, blockedTile, isWalkable, requireTile } from '../src/world/t
 import saveV2Text from './fixtures/save-v2.json?raw';
 import {
   BASE,
+  atDay,
   must,
+  placesOf,
   reachableFrom,
   robotOf,
   savedTileAt,
@@ -24,8 +40,11 @@ import {
   tileAt,
   townPropTiles,
   v9Save,
+  withMigratedPlaces,
+  withPlaces,
   withPlayer,
   withRobots,
+  withTile,
   type SaveJson,
 } from './testUtils';
 
@@ -67,10 +86,16 @@ describe('save version 10', () => {
     expect(BASE.version).toBe(10);
   });
 
-  it('migrates a v9 save to version 10, and back to the same state', () => {
+  it('migrates a v9 save to version 10, and back to the same state with its walkers placed', () => {
     const save = v9Save(BASE);
     expect((migrateSave(save) as SaveJson).version).toBe(10);
-    expect(must(load(save))).toEqual(BASE);
+    expect(must(load(save))).toEqual(withMigratedPlaces(BASE));
+  });
+
+  it('v9Save leaves out every place and the townsfolk, as version 9 had none', () => {
+    const save = v9Save(BASE);
+    expect(save.townsfolk).toBeUndefined();
+    for (const id of NPC_IDS) expect(Object.keys((save.npcs as Record<string, SaveJson>)[id] ?? {}), id).toEqual(['talks', 'talkedToday']);
   });
 
   it('v9Save opens the props and the run and fences Cosmo’s door front, as version 9 held them', () => {
@@ -195,5 +220,116 @@ describe('v9 → v10: the Neighbours', () => {
     }
     expect(key(robot.tx, robot.tz)).not.toBe(key(loaded.player.tx, loaded.player.tz));
     expect(loaded.player.mapId).toBe('neighbours');
+  });
+});
+
+/** A minute of the day: `hour` in 24-hour time. */
+const clock = (hour: number, minute = 0): number => hour * 60 + minute;
+const out = (mapId: MapId, tx: number, tz: number, facing: Direction): WalkerPlace => ({ kind: 'out', mapId, tx, tz, facing });
+const INDOORS: WalkerPlace = { kind: 'indoors' };
+
+/** BASE on day 0 at `minute`, in `weather`. */
+function when(minute: number, weather: Weather): GameState {
+  return { ...atDay(BASE, 0, minute), weather };
+}
+
+describe('v9 → v10: walkers', () => {
+  it('puts all seven characters on their lunch spots at 12:30 pm on a dry day', () => {
+    const loaded = must(load(v9Save(when(clock(12, 30), Weather.Sunny))));
+    expect(Object.fromEntries(NPC_IDS.map((id) => [id, loaded.npcs[id].place]))).toEqual({
+      sol: out('town', 19, 12, Direction.South),
+      cosmo: out('town', 19, 15, Direction.North),
+      barnaby: out('town', 20, 15, Direction.North),
+      marigold: out('town', 18, 13, Direction.East),
+      berlioz: out('town', 18, 14, Direction.East),
+      juniper: out('town', 21, 13, Direction.West),
+      tallulah: out('town', 21, 14, Direction.West),
+    });
+    expect(loaded.npcs.berlioz).toEqual({ talks: 0, talkedToday: false, place: out('town', 18, 14, Direction.East) });
+  });
+
+  it('at 7:30 am on a wet day keeps the tradies in, Sol at work and the farmers by their fields', () => {
+    const loaded = must(load(v9Save(when(clock(7, 30), Weather.Rain))));
+    const places = placesOf(loaded);
+    for (const id of ['marigold', 'berlioz', 'juniper', 'tallulah'] as const) expect(places[id], id).toEqual(INDOORS);
+    expect(places.sol).toEqual(out('town', 21, 7, Direction.South));
+    expect(places.cosmo).toEqual(out('neighbours', 16, 7, Direction.West));
+    expect(places.barnaby).toEqual(out('neighbours', 30, 22, Direction.West));
+    for (const id of TOWNSFOLK_IDS) expect(places[id], id).toEqual(INDOORS);
+  });
+
+  it('puts the townsfolk out on their loops on a dry morning, and only the jogger and courier on a wet one', () => {
+    const dry = placesOf(must(load(v9Save(when(clock(9), Weather.Sunny)))));
+    expect(dry.busker).toEqual(out('town', 18, 12, Direction.South));
+    expect(dry.courier).toEqual(out('town', 24, 8, Direction.South));
+    const wet = placesOf(must(load(v9Save(when(clock(9), Weather.Storm)))));
+    expect(TOWNSFOLK_IDS.filter((id) => wet[id].kind === 'out')).toEqual(['jogger', 'courier']);
+  });
+
+  it('at 1:30 am has everyone indoors (Review Focus 3)', () => {
+    const state = when(clock(25, 30), Weather.Sunny);
+    expect(state.time.minuteOfDay).toBe(1530);
+    const places = placesOf(must(load(v9Save(state))));
+    for (const [id, place] of Object.entries(places)) expect(place, id).toEqual(INDOORS);
+  });
+
+  it('keeps a walker indoors when something has been built on their stop', () => {
+    const chest = chestTile(stack('wood', 1));
+    const state = withTile(when(clock(12, 30), Weather.Sunny), { tx: 19, tz: 12 }, chest, 'town');
+    const loaded = must(load(v9Save(state)));
+    expect(loaded.npcs.sol.place).toEqual(INDOORS);
+    expect(tileAt(loaded, { tx: 19, tz: 12 }, 'town')).toEqual(chest);
+    expect(loaded.npcs.marigold.place).toEqual(out('town', 18, 13, Direction.East));
+    expect(loaded).toEqual(withMigratedPlaces(state));
+  });
+});
+
+describe('saved places', () => {
+  it('round-trip a save made mid-walk: Barnaby on the town side of the east gate at 11:40 am in the rain, Cosmo on his door front (Review Focus 2)', () => {
+    const state = withPlaces(withPlayer(when(clock(11, 40), Weather.Rain), { tx: 5, tz: 6 }, Direction.North, 'neighbours'), {
+      barnaby: out('town', 38, 16, Direction.West),
+      cosmo: out('neighbours', COSMO_DOOR_GAP.tx, COSMO_DOOR_GAP.tz, Direction.South),
+      jogger: out('town', 0, 30, Direction.North),
+    });
+    expect(must(load(JSON.parse(serializeGame(state)) as SaveJson))).toEqual(state);
+  });
+
+  /** A valid v10 save with walkers out, its JSON at `path` set to `value` (undefined deletes it). */
+  function corrupted(path: readonly string[], value: unknown): SaveJson {
+    const save = JSON.parse(serializeGame(must(load(v9Save(when(clock(12, 30), Weather.Sunny)))))) as SaveJson;
+    let node = save;
+    for (const step of path.slice(0, -1)) node = node[step] as SaveJson;
+    const last = must(path[path.length - 1]);
+    if (value === undefined) delete node[last];
+    else node[last] = value;
+    return save;
+  }
+
+  const sol: readonly string[] = ['npcs', 'sol', 'place'];
+  const cases: readonly (readonly [string, readonly string[], unknown])[] = [
+    ['an unknown place kind', sol, { kind: 'outside' }],
+    ['an out place with no facing', [...sol, 'facing'], undefined],
+    ['an out place with a facing that is not a direction', [...sol, 'facing'], 4],
+    ['an out place on a map that does not exist', [...sol, 'mapId'], 'moon'],
+    ['an out place off the map', ['townsfolk', 'jogger', 'place', 'tx'], 40],
+    ['an out place at a fractional tile', [...sol, 'tz'], 12.5],
+    ['an out place on a blocked tile', sol, out('town', 19, 13, Direction.South)],
+    ['an out place with an extra key', [...sol, 'speed'], 1],
+    ['an indoors place with an extra key', sol, { kind: 'indoors', mapId: 'town' }],
+    ['a character without a place', sol, undefined],
+    ['a townsperson with an extra key', ['townsfolk', 'kid', 'talks'], 0],
+    ['a missing townsperson', ['townsfolk', 'kid'], undefined],
+    ['an unknown townsperson', ['townsfolk', 'mime'], { place: INDOORS }],
+    ['townsfolk that are not an object', ['townsfolk'], []],
+  ];
+
+  it('accept the save the cases corrupt', () => {
+    expect(isValidGameState(corrupted(['version'], 10))).toBe(true);
+  });
+
+  it.each(cases)('reject %s', (_label, path, value) => {
+    const save = corrupted(path, value);
+    expect(isValidGameState(save)).toBe(false);
+    expect(load(save)).toBeNull();
   });
 });

@@ -65,7 +65,7 @@ Global rules (unchanged; see also `CLAUDE.md`):
 ```ts
 type Stop =
   | { readonly kind: 'spot'; readonly mapId: MapId; readonly tx: number; readonly tz: number; readonly facing: Direction }
-  | { readonly kind: 'pace'; readonly mapId: MapId; readonly spots: readonly TileCoord[]; readonly facing: Direction; readonly everyMinutes: number }
+  | { readonly kind: 'pace'; readonly mapId: MapId; readonly spots: readonly TileCoord[]; readonly facing: Direction | null; readonly everyMinutes: number }
   | { readonly kind: 'home' };
 
 interface Leg {
@@ -76,7 +76,7 @@ interface Leg {
 
 - The day comes in a dry and a wet version. Wet means `weatherWaters(today's weather)`: rain and storms are wet, snow is not.
 - **The current leg** is the last leg whose `departs` is at or before the current minute. Before the first leg the walker is at home. The current leg is never saved; it's worked out from the clock and the weather.
-- **A pace stop** walks between its spots in order, moving on every `everyMinutes`, counted from the leg's `departs`: the target is `spots[floor((minute − departs) / everyMinutes) % spots.length]`. A pace stop's facing applies only when the walker reaches a spot and waits there.
+- **A pace stop** walks between its spots in order, moving on every `everyMinutes`, counted from the leg's `departs`: the target is `spots[floor((minute − departs) / everyMinutes) % spots.length]`. A pace stop's facing applies only when the walker reaches a spot and waits there. The townsfolk's loops of several spots have no facing (null): they keep the facing they walked in with.
 - **Home** is a door: the tradies live above their shops, Sol above the parts exchange, and Cosmo and Barnaby in their houses.
 
   | Id | Home door | Map |
@@ -517,7 +517,7 @@ The props and the run's fences take tiles that saves already hold as open ground
 
 ### 9.2 Migration (`migrateV9toV10`)
 
-- **Places:** each walker's `place` becomes where their current leg puts them, using the save's minute and weather. For a `spot` or `pace` stop they stand on its target, facing its direction; for `home`, or before their first leg, they are `indoors`.
+- **Places:** each walker's `place` becomes where their current leg puts them, using the save's minute and weather. For a `spot` or `pace` stop they stand on its target, facing its direction (South for a townsperson's loop, which has none); for `home`, or before their first leg, they are `indoors`. A walker whose target tile the save has built on is `indoors`.
 - **`slopShop`:** `{ boxesOpened: 0 }`. **`shopsSoldToday.slopBoxes`:** 0.
 - **Tiles:**
   - the town's prop tiles become blocked;

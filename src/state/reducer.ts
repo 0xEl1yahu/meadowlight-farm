@@ -563,7 +563,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       const talk = checked.npcs[intent.npc];
       return {
         ...checked,
-        npcs: { ...checked.npcs, [intent.npc]: { talks: talk.talks + 1, talkedToday: true } },
+        npcs: { ...checked.npcs, [intent.npc]: { ...talk, talks: talk.talks + 1, talkedToday: true } },
         ui: { ...checked.ui, panel: { kind: 'talk', npc: intent.npc, line, card: 'line' } },
       };
     }

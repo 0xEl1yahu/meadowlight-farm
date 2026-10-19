@@ -6,11 +6,14 @@ import {
   NPC_IDS,
   ROBOT_SIZES,
   SAVE_VERSION,
+  TOWNSFOLK_IDS,
   type GameSections,
   type GameState,
   type InventoryState,
   type NpcId,
   type NpcTalk,
+  type TownsfolkId,
+  type WalkerPlace,
 } from '../core/types';
 import { seedItemId } from '../farming/crops';
 import { createInitialTime } from '../time/clock';
@@ -30,9 +33,15 @@ function zeroCounts<K extends string>(ids: readonly K[]): Record<K, number> {
  * start from these, so an old save gains exactly the state a fresh game would have.
  */
 export function createDefaultSections(): GameSections {
+  // Everyone starts the day indoors and comes out when their first leg departs (part 4d spec §4.2).
+  const indoors = (): WalkerPlace => ({ kind: 'indoors' });
   const npcs = {} as Record<NpcId, NpcTalk>;
   for (const id of NPC_IDS) {
-    npcs[id] = { talks: 0, talkedToday: false };
+    npcs[id] = { talks: 0, talkedToday: false, place: indoors() };
+  }
+  const townsfolk = {} as Record<TownsfolkId, { readonly place: WalkerPlace }>;
+  for (const id of TOWNSFOLK_IDS) {
+    townsfolk[id] = { place: indoors() };
   }
   return {
     profile: {
@@ -46,6 +55,7 @@ export function createDefaultSections(): GameSections {
     buildings: [],
     nextEntityId: 1,
     npcs,
+    townsfolk,
     quests: { completed: [], board: null },
     stats: {
       parsnipsShipped: 0,

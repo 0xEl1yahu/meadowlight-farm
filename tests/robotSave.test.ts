@@ -8,7 +8,7 @@ import { isValidRobotsSection } from '../src/state/robotValidation';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { blockedTile } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, TARGET, must, robotOf, v5Save, withRobots, withTile, type SaveJson } from './testUtils';
+import { BASE, TARGET, must, robotOf, v5Save, withMigratedPlaces, withRobots, withTile, type SaveJson } from './testUtils';
 
 const WATER = { tx: 6, tz: 10 };
 
@@ -75,7 +75,7 @@ describe('save version 4', () => {
     save.version = 3;
     const migrated = migrateSave(save) as SaveJson;
     expect(migrated.version).toBe(10);
-    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(BASE);
+    expect(must(deserializeGame(JSON.stringify(save)))).toEqual(withMigratedPlaces(BASE));
   });
 
   it('migrates the version-2 fixture all the way to 10', () => {
