@@ -5,7 +5,8 @@
  *
  * - `sync(state, prev)` redraws when `ui.panel` changes: the line changes for a result or a
  *   refusal, so the panel carries it and nothing is saved. What it shows comes from the pure
- *   slopShopView.
+ *   slopShopView. The buttons are built once and only their text follows the view, so a keyboard
+ *   user who buys keeps focus on Buy.
  * - Buy dispatches `slop/buy`, which gives every refusal's line and toast, so it stays enabled;
  *   Leave and Close dispatch `ui/closePanel`. E, K, Enter and Escape close it through panelKeyCommand.
  * - Narrower than ROBOT_SCREEN.phoneMaxWidth (isPhoneWidth) it takes the chat-box--phone modifier,
@@ -41,6 +42,11 @@ export class SlopShopPanel {
     heading.append(this.name, this.role);
     const close = hudButton('hud-btn hud-btn--ghost chat-box__close', 'Close');
     close.title = 'Close (E / Esc)';
+    this.buttons.append(...[0, 1].map((index) => {
+      const button = hudButton(`hud-btn ${index === 0 ? 'hud-btn--primary' : 'hud-btn--ghost'} chat-box__action`);
+      button.dataset.index = String(index);
+      return button;
+    }));
     this.box.append(heading, close, this.line, this.buttons);
     this.element.append(this.box);
 
@@ -83,13 +89,9 @@ export class SlopShopPanel {
     setText(this.name, view.name);
     setText(this.role, view.role);
     setText(this.line, view.line);
-    this.buttons.replaceChildren(
-      ...view.buttons.map((chosen, index) => {
-        const style = chosen.primary ? 'hud-btn--primary' : 'hud-btn--ghost';
-        const button = hudButton(`hud-btn ${style} chat-box__action`, chosen.label);
-        button.dataset.index = String(index);
-        return button;
-      }),
-    );
+    view.buttons.forEach((chosen, index) => {
+      const button = this.buttons.children[index];
+      if (button instanceof HTMLElement) setText(button, chosen.label);
+    });
   }
 }
