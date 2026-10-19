@@ -157,6 +157,7 @@ export const DEALZ_LINES: { readonly soldOut: string; readonly noGold: string; r
 - **R4.** The farmers set off for lunch earlier, Cosmo at 11:15 am (was 11:30) and Barnaby at 11:05 am (was 11:15), because from their pace spots the walk took until 12:13 and 12:03; they now reach the square by 11:50 and 11:44. All seven characters are in the square from 12:25 pm (was 12:15): Marigold and Tallulah walk 17 and 21 tiles from their shops from 12:00 pm. (Spec §2.3, §10)
 - **R5.** Barnaby's pace moves on every 25 minutes (was 20): (19, 20) is 21 steps round his field from (30, 22), so at 20 minutes he turned back one tile short every time. (Spec §2.3)
 - **R6.** When only the player is in the way, a walker takes the route's first step and waits only when that step is onto the player's tile, so they walk up to the player and wait beside them, rather than freezing wherever they are. (Spec §4.3)
+- **R7.** A stuck walker, with no route to their target even ignoring the player, walks to the reachable tile fewest Manhattan steps from the target (ties to the search's first visit) and stays there, rather than freezing wherever they are. A chest on a stop then leaves the walker beside it, as Review Focus 4 describes. `isStuck` is true on the way and once there. (Spec §4.3, §4.4)
 
 ---
 

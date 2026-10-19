@@ -27,9 +27,9 @@ import {
 import { freeSpotNear } from '../robots/workbench';
 import { isStanding } from '../robots/world';
 import { weatherWaters } from '../time/weather';
-import { stepTile } from '../world/grid';
+import { manhattanDistance, stepTile } from '../world/grid';
 import { getMap } from '../world/maps';
-import { findPath } from '../world/path';
+import { findPath, searchFrom } from '../world/path';
 import { forEachTile, isWalkable } from '../world/tiles';
 import { homeFront, targetOf, type Target } from './timetable';
 
@@ -103,18 +103,32 @@ function canEnter(state: GameState, obstacles: Obstacles, mapId: MapId, tile: Ti
   return ignorePlayer || player.mapId !== mapId || player.tx !== tile.tx || player.tz !== tile.tz;
 }
 
-/** One minute's move towards a tile: a step to take, a wait for the player to move, or stuck. */
-type Move = { readonly kind: 'step'; readonly to: TileCoord } | { readonly kind: 'wait' } | { readonly kind: 'stuck' };
+/**
+ * One minute's move: a step to an adjacent tile, a crossing through a gate onto the other map, or
+ * staying put (waiting for the player, or with nowhere nearer to go).
+ */
+type Move = { readonly kind: 'step'; readonly to: TileCoord } | { readonly kind: 'cross'; readonly to: OutPlace } | { readonly kind: 'stay' };
 
 /**
- * Moves already planned, per world. A plan is a pure function of the world, the tiles blocked on
- * it and its two ends, so a remembered plan is exactly the plan the search would make again:
+ * A minute's plan: the move, and whether the walker is stuck (spec §4.4), their target out of
+ * reach even ignoring the player.
+ */
+interface Plan {
+  readonly move: Move;
+  readonly stuck: boolean;
+}
+
+const STAY: Move = { kind: 'stay' };
+
+/**
+ * Plans already made, per world. A plan is a pure function of the world, the tiles blocked on it
+ * and its two ends, so a remembered plan is exactly the plan the search would make again:
  * remembering never changes a walk, it only spares the search on the routes walked every day.
  */
-const plannedMoves = new WeakMap<WorldState, Map<string, Move>>();
+const plannedMoves = new WeakMap<WorldState, Map<string, Plan>>();
 
 /** `planMove`, remembered per world under its ends and what blocks the map (WALK.plansPerWorld at most). */
-function rememberedMove(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): Move {
+function rememberedMove(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): Plan {
   const world = state.maps[mapId];
   const { player } = obstacles;
   const playerAt = player.mapId === mapId ? `${player.tx},${player.tz}` : '';
@@ -123,32 +137,65 @@ function rememberedMove(state: GameState, obstacles: Obstacles, mapId: MapId, fr
   const known = plans?.get(key);
   if (known !== undefined) return known;
   if (plans === undefined || plans.size >= WALK.plansPerWorld) {
-    plans = new Map<string, Move>();
+    plans = new Map<string, Plan>();
     plannedMoves.set(world, plans);
   }
-  const move = planMove(state, obstacles, mapId, from, to);
-  plans.set(key, move);
-  return move;
+  const plan = planMove(state, obstacles, mapId, from, to);
+  plans.set(key, plan);
+  return plan;
 }
 
 /**
  * The two plans of spec §4.3 from `from` to `to` on `mapId`: first with the player's tile
  * blocked, taking that route's first step; then, if there's none, ignoring the player, where the
  * player is the only thing in the way. That route's first step is taken too, up to the player:
- * only a step onto the player's tile waits.
+ * only a step onto the player's tile waits. Null when there's no route even ignoring the player.
  */
-function planMove(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): Move {
+function routeStep(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): Move | null {
   const { grid } = state.maps[mapId];
   const first = findPath(grid, from, to, (_, next) => canEnter(state, obstacles, mapId, next, false))?.[0];
   if (first !== undefined) return { kind: 'step', to: first };
   // Without the player on this map the second plan is the first one again.
   const { player } = obstacles;
-  if (player.mapId !== mapId) return { kind: 'stuck' };
+  if (player.mapId !== mapId) return null;
   const around = findPath(grid, from, to, (_, next) => canEnter(state, obstacles, mapId, next, true));
-  if (around === null) return { kind: 'stuck' };
+  if (around === null) return null;
   const next = around[0];
-  if (next === undefined || (next.tx === player.tx && next.tz === player.tz)) return { kind: 'wait' };
+  if (next === undefined || (next.tx === player.tx && next.tz === player.tz)) return STAY;
   return { kind: 'step', to: next };
+}
+
+/**
+ * The tile reachable from `from` on `mapId`, ignoring the player, with the fewest Manhattan steps
+ * to `to`; ties go to the first the breadth-first search visits, so `from` itself wins any tie and
+ * a walker who has arrived stays there.
+ */
+function nearestReachable(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): TileCoord {
+  const { order } = searchFrom(state.maps[mapId].grid, from, (_, next) => canEnter(state, obstacles, mapId, next, true));
+  let nearest = from;
+  let best = manhattanDistance(from, to);
+  for (const { tile } of order) {
+    const distance = manhattanDistance(tile, to);
+    if (distance < best) {
+      nearest = tile;
+      best = distance;
+    }
+  }
+  return nearest;
+}
+
+/**
+ * This minute's plan from `from` towards `to` on `mapId` (spec §4.3). With a route, even one only
+ * the player is in the way of, the walker follows it. Without one they're stuck: they head for
+ * the reachable tile nearest `to` by the same two plans and stay there, so a walker blocked from
+ * their stop waits as close to it as they can get, and never paces back and forth.
+ */
+function planMove(state: GameState, obstacles: Obstacles, mapId: MapId, from: TileCoord, to: TileCoord): Plan {
+  const routed = routeStep(state, obstacles, mapId, from, to);
+  if (routed !== null) return { move: routed, stuck: false };
+  const nearest = nearestReachable(state, obstacles, mapId, from, to);
+  if (nearest.tx === from.tx && nearest.tz === from.tz) return { move: STAY, stuck: true };
+  return { move: routeStep(state, obstacles, mapId, from, nearest) ?? STAY, stuck: true };
 }
 
 /** The way from a tile to the adjacent tile `to`. */
@@ -161,27 +208,25 @@ function directionTo(from: TileCoord, to: TileCoord): Direction {
   return way;
 }
 
-/** One minute's move through a gate: onto the other map's arrival tile, facing the warp's way. */
-type Crossing = { readonly kind: 'cross'; readonly to: OutPlace };
-
 /**
- * This minute's move from `place` towards `tile` of `mapId` (spec §4.3). When the target is on the
- * other map, the route goes to the gate tile that leads there, and from the gate tile the move goes
- * through the warp to the other side's arrival tile, facing the warp's way: a wait while only the
- * player stands on it, stuck while anything else does.
+ * This minute's plan from `place` towards `tile` of `mapId` (spec §4.3). When the target is on the
+ * other map, the route goes to the gate tile that leads there, and from the gate tile the move
+ * goes through the warp to the other side's arrival tile, facing the warp's way: a wait while only
+ * the player stands on it, stuck while anything else does.
  */
-function moveTowards(state: GameState, obstacles: Obstacles, place: OutPlace, mapId: MapId, tile: TileCoord): Move | Crossing {
+function moveTowards(state: GameState, obstacles: Obstacles, place: OutPlace, mapId: MapId, tile: TileCoord): Plan {
   let to = tile;
   if (mapId !== place.mapId) {
     const warp = getMap(place.mapId).warps.find((w) => w.to.mapId === mapId);
     // The timetables' startup check makes sure every walker's other map has a gate from home.
-    if (warp === undefined) return { kind: 'stuck' };
+    if (warp === undefined) return { move: STAY, stuck: true };
     if (place.tx === warp.from.tx && place.tz === warp.from.tz) {
       const arrival = { tx: warp.to.tx, tz: warp.to.tz };
       if (canEnter(state, obstacles, warp.to.mapId, arrival, false)) {
-        return { kind: 'cross', to: { kind: 'out', mapId: warp.to.mapId, tx: arrival.tx, tz: arrival.tz, facing: warp.to.facing } };
+        const across: OutPlace = { kind: 'out', mapId: warp.to.mapId, tx: arrival.tx, tz: arrival.tz, facing: warp.to.facing };
+        return { move: { kind: 'cross', to: across }, stuck: false };
       }
-      return canEnter(state, obstacles, warp.to.mapId, arrival, true) ? { kind: 'wait' } : { kind: 'stuck' };
+      return { move: STAY, stuck: !canEnter(state, obstacles, warp.to.mapId, arrival, true) };
     }
     to = warp.from;
   }
@@ -214,9 +259,9 @@ function stepWalker(state: GameState, obstacles: Obstacles, id: WalkerId, place:
     if (target === 'home') return INDOORS;
     return goal.facing === null || goal.facing === place.facing ? place : { ...place, facing: goal.facing };
   }
-  const move = moveTowards(state, obstacles, place, goal.mapId, goal.tile);
+  const { move } = moveTowards(state, obstacles, place, goal.mapId, goal.tile);
   if (move.kind === 'cross') return move.to;
-  if (move.kind !== 'step') return place;
+  if (move.kind === 'stay') return place;
   const from = { tx: place.tx, tz: place.tz };
   return { kind: 'out', mapId: place.mapId, tx: move.to.tx, tz: move.to.tz, facing: directionTo(from, move.to) };
 }
@@ -276,16 +321,17 @@ export function walkerAt(state: GameState, mapId: MapId, tx: number, tz: number)
 }
 
 /**
- * Whether `id` is stuck (spec §4.4): out, not at their target, and with no way on even ignoring
- * the player: the same two plans as their step (spec §4.3), so the chat and the walk agree. A
- * walker waiting for the player isn't stuck. Worked out when the chat opens; nothing is saved.
+ * Whether `id` is stuck (spec §4.4): out, not at their target, and with no route to it even
+ * ignoring the player, whether still heading for the nearest tile they can reach or standing on
+ * it. The same plan as their step (spec §4.3), so the chat and the walk agree. A walker waiting
+ * for the player isn't stuck. Worked out when the chat opens; nothing is saved.
  */
 export function isStuck(state: GameState, id: WalkerId): boolean {
   const place = walkerPlace(state, id);
   if (place.kind === 'indoors') return false;
   const goal = goalOf(id, targetOf(id, state.time.minuteOfDay, weatherWaters(state.weather)));
   if (isAt(place, goal.mapId, goal.tile)) return false;
-  return moveTowards(state, obstaclesOf(state), place, goal.mapId, goal.tile).kind === 'stuck';
+  return moveTowards(state, obstaclesOf(state), place, goal.mapId, goal.tile).stuck;
 }
 
 /**

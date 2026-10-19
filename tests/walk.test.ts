@@ -30,7 +30,7 @@ import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { chebyshevDistance, manhattanDistance, stepTile } from '../src/world/grid';
 import { getTile, isWalkable } from '../src/world/tiles';
-import { BASE, emptyHanded, holding, placesOf, robotOf, tileAt, withPlaces, withPlayer, withRobots, withTile } from './testUtils';
+import { BASE, emptyHanded, holding, placesOf, reachableFrom, robotOf, tileAt, withPlaces, withPlayer, withRobots, withTile } from './testUtils';
 
 const WALKER_IDS: readonly WalkerId[] = [...NPC_IDS, ...TOWNSFOLK_IDS];
 
@@ -68,6 +68,11 @@ function tileOf(place: WalkerPlace): TileCoord & { readonly mapId: MapId } {
 
 const onTile = (place: WalkerPlace, mapId: MapId, tile: TileCoord): boolean =>
   place.kind === 'out' && place.mapId === mapId && place.tx === tile.tx && place.tz === tile.tz;
+
+/** `state`'s tile at `tile` of `mapId` with an empty chest on it. */
+function chestOn(state: GameState, tile: TileCoord, mapId: MapId): ReturnType<typeof tileAt> {
+  return { ...tileAt(state, tile, mapId), object: { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
+}
 
 /** `state` with the player on the first free walkable tile next to `tile` (in DIRECTIONS order), facing it. */
 function standBeside(state: GameState, tile: TileCoord & { readonly mapId: MapId }): GameState {
@@ -159,11 +164,25 @@ describe('the player in the way', () => {
     expect(onTile(walkerPlace(runTo(aside, at(6, 21)), 'sol'), 'town', well)).toBe(true);
   });
 
-  it('stays put, stuck, when even without the player there is no way out', () => {
+  it('walks to the yard’s tile nearest his stop and stays there, stuck, when even without the player there is no way out', () => {
     const gap = { tx: 6, tz: 12 };
-    const shut = withTile(inYard, gap, { ...tileAt(inYard, gap, 'neighbours'), object: { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) } }, 'neighbours');
-    const after = runTo(shut, at(6, 20));
-    expect(walkerPlace(after, 'cosmo')).toBe(walkerPlace(inYard, 'cosmo'));
+    const shut = withTile(inYard, gap, chestOn(inYard, gap, 'neighbours'), 'neighbours');
+    const target = targetOf('cosmo', at(6), false);
+    if (target === 'home') throw new Error('Cosmo should be out at 6:00 am');
+    const yard = reachableFrom(shut.maps.neighbours, { tx: 6, tz: 10 });
+    const nearest = Math.min(...[...yard].map((key) => {
+      const [tx = 0, tz = 0] = key.split(',').map(Number);
+      return manhattanDistance({ tx, tz }, target.tile);
+    }));
+    const states = timeline(shut, at(6, 19));
+    for (const state of states) {
+      const now = tileOf(walkerPlace(state, 'cosmo'));
+      expect(yard.has(`${now.tx},${now.tz}`)).toBe(true);
+      expect(isStuck(state, 'cosmo')).toBe(true);
+    }
+    const last = states.at(-1) as GameState;
+    expect(manhattanDistance(tileOf(walkerPlace(last, 'cosmo')), target.tile)).toBe(nearest);
+    for (const state of states.slice(-5)) expect(walkerPlace(state, 'cosmo')).toBe(walkerPlace(last, 'cosmo'));
   });
 });
 
@@ -425,25 +444,36 @@ describe('a walker’s tile and the player', () => {
 
 describe('Review Focus 4: a chest on a stop', () => {
   const lunch = { tx: 18, tz: 13 };
-  /** Marigold on her way to lunch, one step from her spot. */
-  const nearly = runTo(DRY, at(12, 15));
-  const chest = { ...tileAt(nearly, lunch, 'town'), object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
-  const blocked = withTile(nearly, lunch, chest, 'town');
-  const beside = tileOf(walkerPlace(blocked, 'marigold'));
+  /** 11:55 am: Marigold still at her counter, and a chest put down on her lunch spot. */
+  const counter = runTo(DRY, at(11, 55));
+  const blocked = withTile(counter, lunch, chestOn(counter, lunch, 'town'), 'town');
+  /** Every minute from 11:56 am to 12:49 pm, the end of her lunch leg. */
+  const lunchtime = timeline(blocked, at(12, 49));
+  const arrival = lunchtime.findIndex((state) => {
+    const place = walkerPlace(state, 'marigold');
+    return place.kind === 'out' && manhattanDistance(place, lunch) === 1;
+  });
+  const beside = tileOf(walkerPlace(lunchtime[arrival] as GameState, 'marigold'));
 
-  it('stops Marigold beside it, stuck, and keeps her still for the next 30 minutes', () => {
-    expect(manhattanDistance(beside, lunch)).toBe(1);
-    expect(isStuck(nearly, 'marigold')).toBe(false);
-    const states = timeline(blocked, at(12, 45));
-    expect(states).toHaveLength(30);
-    for (const state of states) {
-      expect(walkerPlace(state, 'marigold'), `${state.time.minuteOfDay}`).toBe(walkerPlace(blocked, 'marigold'));
+  it('walks Marigold from her counter to the tile nearest her spot, then keeps her there, stuck, for 30 minutes', () => {
+    expect(onTile(walkerPlace(blocked, 'marigold'), 'town', { tx: 7, tz: 7 })).toBe(true);
+    expect(isStuck(blocked, 'marigold')).toBe(false);
+    for (const state of lunchtime) expect(onTile(walkerPlace(state, 'marigold'), 'town', lunch)).toBe(false);
+    // She sets off at noon and is stuck from then on, walking or standing.
+    const walking = lunchtime.find((state) => state.time.minuteOfDay === at(12, 5)) as GameState;
+    expect(manhattanDistance(tileOf(walkerPlace(walking, 'marigold')), { tx: 7, tz: 7 })).toBeGreaterThan(0);
+    expect(isStuck(walking, 'marigold')).toBe(true);
+    expect(arrival).toBeGreaterThan(-1);
+    const stay = lunchtime.slice(arrival, arrival + 31);
+    expect(stay).toHaveLength(31);
+    for (const state of stay) {
+      expect(walkerPlace(state, 'marigold'), `${state.time.minuteOfDay}`).toBe(walkerPlace(lunchtime[arrival] as GameState, 'marigold'));
       expect(isStuck(state, 'marigold')).toBe(true);
     }
   });
 
   it('opens her chat with the stuck line, after her introduction', () => {
-    const facing = emptyHanded(standBeside(blocked, beside));
+    const facing = emptyHanded(standBeside(lunchtime[arrival] as GameState, beside));
     expect(walkerAt(facing, 'town', beside.tx, beside.tz)).toBe('marigold');
     expect(isStuck(facing, 'marigold')).toBe(true);
     const first = gameReducer(facing, actions.interact());
@@ -451,6 +481,27 @@ describe('Review Focus 4: a chest on a stop', () => {
     const second = gameReducer(gameReducer(first, actions.closePanel()), actions.interact());
     expect(second.ui.panel).toEqual({ kind: 'talk', npc: 'marigold', line: "Someone's put something in my way. I'll wait.", card: 'line' });
     expect(STUCK_LINE).toBe("Someone's put something in my way. I'll wait.");
+  });
+
+  it('walks a walker fenced into a pocket to its tile nearest their stop, and keeps them there', () => {
+    // A two-tile pocket on the square, (21, 9) and (21, 10), walled in by chests; Sol's stop is the well at (21, 13).
+    const walls: readonly TileCoord[] = [
+      { tx: 21, tz: 8 },
+      { tx: 20, tz: 9 },
+      { tx: 22, tz: 9 },
+      { tx: 20, tz: 10 },
+      { tx: 22, tz: 10 },
+      { tx: 21, tz: 11 },
+    ];
+    for (const tile of [...walls, { tx: 21, tz: 9 }, { tx: 21, tz: 10 }]) expect(isWalkable(tileAt(DRY, tile, 'town'))).toBe(true);
+    const pocket = walls.reduce((state, tile) => withTile(state, tile, chestOn(state, tile, 'town'), 'town'), withPlaces(DRY, { sol: out('town', 21, 9, Direction.North) }));
+    expect(isStuck(pocket, 'sol')).toBe(true);
+    const states = timeline(pocket, at(6, 20));
+    expect(walkerPlace(states[0] as GameState, 'sol')).toEqual(out('town', 21, 10, Direction.South));
+    for (const state of states) {
+      expect(walkerPlace(state, 'sol')).toBe(walkerPlace(states[0] as GameState, 'sol'));
+      expect(isStuck(state, 'sol')).toBe(true);
+    }
   });
 
   it('is not stuck while only the player is in the way, indoors, or at the target', () => {
