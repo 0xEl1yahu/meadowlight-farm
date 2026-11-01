@@ -287,6 +287,7 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 - every walkable tile is reachable from the arrival tile;
 - the back band is fully covered;
 - the fence gaps are walkable;
+- every door's front tile is walkable (added in part 4d, §8, and run on every map);
 - every character's spot passes section 2.2.
 
 ---
