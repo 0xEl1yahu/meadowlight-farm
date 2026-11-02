@@ -1,6 +1,6 @@
 /**
  * ObjectRenderer: the player-placed objects of the active map (spec §7.3) — chests, sprinklers,
- * scarecrows, wood fences, paths, giant crops, forage, trophies and decorations.
+ * scarecrows, wood fences, paths, giant crops and forage.
  *
  * Instancing
  * - One InstancedMesh per (kind, part) from objectGeometry.ts's OBJECT_PARTS, each wrapped in an
@@ -32,8 +32,7 @@
  *   bounds are recomputed once when an animation ends.
  *
  * Materials: a white vertex-colour material for painted parts, a gently swaying one for the
- * scarecrow's shirt, the tint-mask sway material for forage, and the shared glow glass (driven by
- * StructureRenderer, never disposed here) for lantern paper and lights.
+ * scarecrow's shirt, and the tint-mask sway material for forage.
  */
 import * as THREE from 'three';
 import type { Chunk, GameState, GridSpec, MapId, PlacedObject, Tile, WorldState } from '../core/types';
@@ -43,14 +42,13 @@ import { inBounds, tileCenterX, tileCenterZ, tileCount, tileIndex } from '../wor
 import { MAX_MAP_TILE_COUNT, getMap } from '../world/maps';
 import { GIANT_CROP_SIZE, requireTile } from '../world/tiles';
 import { InstanceSlotMap } from './InstanceSlotMap';
-import { createFlatMaterial, createSwayMaterial, createTintMaskSwayMaterial, getSharedGlowGlassMaterial } from './materials';
+import { createFlatMaterial, createSwayMaterial, createTintMaskSwayMaterial } from './materials';
 import {
   CHEST_SHAPE,
   FORAGE_LOOKS,
   OBJECT_PARTS,
   OBJECT_PART_IDS,
   OBJECT_SWAY,
-  TROPHY_RIBBONS,
   objectPartsFor,
   type ObjectMaterialKind,
   type ObjectPartId,
@@ -86,7 +84,6 @@ interface Part {
   readonly id: ObjectPartId;
   readonly geometry: THREE.BufferGeometry;
   readonly material: THREE.Material;
-  readonly useColor: boolean;
   mesh: THREE.InstancedMesh;
   slots: InstanceSlotMap;
   /** Edited since the last commit. */
@@ -193,7 +190,6 @@ function createMaterials(): Readonly<Record<ObjectMaterialKind, THREE.Material>>
     painted: createFlatMaterial(0xffffff, { vertexColors: true }),
     cloth: createSwayMaterial(0xffffff, OBJECT_SWAY.cloth, { vertexColors: true }),
     plant: createTintMaskSwayMaterial(OBJECT_SWAY.plant),
-    glass: getSharedGlowGlassMaterial(),
   };
 }
 
@@ -206,14 +202,13 @@ function createInstancing(
   id: ObjectPartId,
   geometry: THREE.BufferGeometry,
   material: THREE.Material,
-  useColor: boolean,
   tiles: number,
 ): { readonly mesh: THREE.InstancedMesh; readonly slots: InstanceSlotMap } {
   const mesh = new THREE.InstancedMesh(geometry, material, partCapacity(id, tiles));
   mesh.name = `object-${id}`;
   mesh.castShadow = OBJECT_PARTS[id].castShadow;
   mesh.receiveShadow = true;
-  const slots = new InstanceSlotMap(mesh, useColor);
+  const slots = new InstanceSlotMap(mesh);
   mesh.visible = false;
   return { mesh, slots };
 }
@@ -227,10 +222,9 @@ function createParts(
     const spec = OBJECT_PARTS[id];
     const geometry = spec.build();
     const material = materials[spec.material];
-    const useColor = spec.material !== 'glass';
-    const { mesh, slots } = createInstancing(id, geometry, material, useColor, tiles);
+    const { mesh, slots } = createInstancing(id, geometry, material, tiles);
     group.add(mesh);
-    return [id, { id, geometry, material, useColor, mesh, slots, dirty: false, settle: false }];
+    return [id, { id, geometry, material, mesh, slots, dirty: false, settle: false }];
   });
   return Object.fromEntries(entries) as Record<ObjectPartId, Part>;
 }
@@ -341,7 +335,6 @@ export class ObjectRenderer implements RenderSystem {
       part.mesh.dispose();
       part.geometry.dispose();
     }
-    // The glow glass is shared by every map and owned by StructureRenderer.
     this.materials.painted.dispose();
     this.materials.cloth.dispose();
     this.materials.plant.dispose();
@@ -567,8 +560,6 @@ export class ObjectRenderer implements RenderSystem {
       case 'giantHead':
       case 'giantGourd':
         return object.kind === 'giantCrop' ? target.set(CROPS[object.cropId].visual.produceColor) : target.copy(WHITE);
-      case 'trophyRibbon':
-        return object.kind === 'trophy' ? target.set(TROPHY_RIBBONS[object.festival]) : target.copy(WHITE);
       case 'foragePlant':
       case 'forageSprig':
       case 'forageBulb':
@@ -588,7 +579,7 @@ export class ObjectRenderer implements RenderSystem {
     for (const id of record.parts) {
       const part = this.parts[id];
       const matrix = this.partMatrix(record, id, scratchMatrix);
-      part.slots.set(record.key, matrix, part.useColor ? this.partColor(record, id, scratchColor) : undefined);
+      part.slots.set(record.key, matrix, this.partColor(record, id, scratchColor));
       part.dirty = true;
     }
   }
@@ -641,7 +632,7 @@ export class ObjectRenderer implements RenderSystem {
     for (const part of this.partList) {
       this.group.remove(part.mesh);
       part.mesh.dispose();
-      const { mesh, slots } = createInstancing(part.id, part.geometry, part.material, part.useColor, required);
+      const { mesh, slots } = createInstancing(part.id, part.geometry, part.material, required);
       this.group.add(mesh);
       part.mesh = mesh;
       part.slots = slots;

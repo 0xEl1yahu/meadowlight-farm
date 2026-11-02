@@ -272,7 +272,7 @@ export function placesOf(state: GameState): Record<WalkerId, WalkerPlace> {
 
 /** Each character's chats without their place: what a save before version 10 records of them. */
 export function chatsOf(npcs: GameState['npcs']): Record<NpcId, Omit<NpcTalk, 'place'>> {
-  return Object.fromEntries(NPC_IDS.map((id) => [id, { talks: npcs[id].talks, talkedToday: npcs[id].talkedToday }])) as Record<NpcId, Omit<NpcTalk, 'place'>>;
+  return Object.fromEntries(NPC_IDS.map((id) => [id, { talks: npcs[id].talks }])) as Record<NpcId, Omit<NpcTalk, 'place'>>;
 }
 
 /**
@@ -399,7 +399,7 @@ function legacyStack(saved: SaveJson, version: 1 | 2): SaveJson {
 export function legacySave(state: GameState, version: 1 | 2): SaveJson {
   if (state.player.mapId !== 'farm') throw new Error(`legacySave: a version-${version} save has only the farm`);
   const save = v5Save(state);
-  for (const key of Object.keys(createDefaultSections())) delete save[key];
+  for (const key of [...Object.keys(createDefaultSections()), ...SECTIONS_DROPPED_IN_V12]) delete save[key];
   save.version = version;
   const inventory = save.inventory as SaveJson;
   const slots = inventory.slots as (SaveJson | null)[];
@@ -468,15 +468,36 @@ export function townPropTiles(): TileCoord[] {
 /** A fence tile, as the Neighbours map holds one. */
 const FENCE_TILE: Tile = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
 
+/** The sections version 12 dropped (release 1 cleanup spec §2.1), which every older save holds. */
+const SECTIONS_DROPPED_IN_V12 = ['cooking', 'quests', 'festival'] as const;
+
 /**
- * Hand-transforms a current (version 11) state back into the JSON of a version-10 save (farmclaws
- * part 4c spec §3.1): the same JSON, since version 10 differs only in not teaching the Wood Burner
- * when job 1 is taken. The migration teaches it then, so a state that has taken job 1 must know it
- * already. v9Save starts from this, so every older-save builder inherits it.
+ * Hand-transforms a current (version 12) state back into the JSON of a version-11 save (release 1
+ * cleanup spec §2.3): the cooking, quests and festival sections come back as a new game had them,
+ * and every character gains `talkedToday: false`. Version 11 doesn't teach job 2's and job 3's
+ * recipes when they're done; the migration teaches them then, so a state that has done either
+ * must know its recipes already. v10Save starts from this, so every older-save builder inherits it.
+ */
+export function v11Save(state: GameState): SaveJson {
+  if (withDoneJobRecipes(state) !== state) throw new Error("v11Save: a state that has done job 2 or job 3 knows that job's recipes");
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 11;
+  save.cooking = { known: ['friedMushrooms', 'veggieStew'], kitchenLevel: 0 };
+  save.quests = { completed: [], board: null };
+  save.festival = { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false };
+  for (const talk of Object.values(save.npcs as Record<string, SaveJson>)) talk.talkedToday = false;
+  return save;
+}
+
+/**
+ * Hand-transforms a state back into the JSON of a version-10 save (farmclaws part 4c spec §3.1): it
+ * starts from v11Save, since version 10 differs only in not teaching the Wood Burner when job 1 is
+ * taken. The migration teaches it then, so a state that has taken job 1 must know it already.
+ * v9Save starts from this, so every older-save builder inherits it.
  */
 export function v10Save(state: GameState): SaveJson {
   if (withBurnerLearned(state) !== state) throw new Error('v10Save: a state that has taken job 1 knows the Wood Burner recipe');
-  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  const save = v11Save(state);
   save.version = 10;
   return save;
 }
@@ -544,7 +565,7 @@ export function v8Save(state: GameState): SaveJson {
 export function withMigratedJobs(state: GameState): GameState {
   const fresh = createDefaultSections().jobs;
   if (state.robots.list.length === 0 && state.robots.deliveries.length === 0) return { ...state, jobs: fresh };
-  return withBurnerLearned({ ...state, jobs: { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } });
+  return withJobRecipes({ ...state, jobs: { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } });
 }
 
 /** `state` knowing the Wood Burner recipe when it has taken job 1, as taking it (and migrating a version-10 save) teaches it. */
@@ -555,6 +576,22 @@ export function withBurnerLearned(state: GameState): GameState {
 }
 
 /**
+ * `state` knowing the recipes of every job it has done past job 1 (release 1 cleanup spec §5.2):
+ * Quality Fertilizer and Speed-Gro for job 2, the Quality Sprinkler for job 3.
+ */
+export function withDoneJobRecipes(state: GameState): GameState {
+  let next = state;
+  if (state.jobs.status.showHim === 'done') next = withRecipes(next, ['qualityFertilizer', 'speedGro']);
+  if (state.jobs.status.knowTheLimits === 'done') next = withRecipes(next, ['qualitySprinkler']);
+  return next;
+}
+
+/** `state` knowing every recipe its jobs teach: job 1's once taken, and each later job's once done. */
+export function withJobRecipes(state: GameState): GameState {
+  return withDoneJobRecipes(withBurnerLearned(state));
+}
+
+/**
  * `state` with every job up to and including `last` done and the next one offered (farmclaws part
  * 4c spec §2.1), so the shop gates those jobs open are open (spec §4.2).
  */
@@ -562,14 +599,14 @@ export function withJobsDone(state: GameState, last: JobId): GameState {
   const upTo = JOB_IDS.indexOf(last);
   const status: Record<JobId, JobStatus> = { ...state.jobs.status };
   for (const [i, id] of JOB_IDS.entries()) status[id] = i <= upTo ? 'done' : i === upTo + 1 ? 'offered' : 'locked';
-  return withBurnerLearned({ ...state, jobs: { ...state.jobs, status, fieldDay: -1 } });
+  return withJobRecipes({ ...state, jobs: { ...state.jobs, status, fieldDay: -1 } });
 }
 
 /**
  * Hand-transforms a state back into the JSON of a version-7 save (farmclaws part 4b spec §9): it
  * starts from v8Save, with no deliveries, no stock counts, and Berlioz and Tallulah back to Bram
- * and Tess in `npcs`, the board and the festival gift target. The state must not hold anything a
- * version-7 save cannot express. v6Save starts from this, so every older-save builder inherits it.
+ * and Tess in `npcs`. The state must not hold anything a version-7 save cannot express. v6Save
+ * starts from this, so every older-save builder inherits it.
  */
 export function v7Save(state: GameState): SaveJson {
   const save = v8Save(state);
@@ -582,10 +619,6 @@ export function v7Save(state: GameState): SaveJson {
   }
   delete save.shopsSoldToday;
   save.npcs = Object.fromEntries(Object.entries(save.npcs as SaveJson).map(([id, talk]) => [v7NpcId(id), talk]));
-  const board = (save.quests as { board: SaveJson | null }).board;
-  if (board !== null) board.npc = v7NpcId(board.npc);
-  const festival = save.festival as SaveJson;
-  festival.giftTarget = v7NpcId(festival.giftTarget);
   return save;
 }
 
@@ -601,10 +634,10 @@ export function v6Save(state: GameState): SaveJson {
   // The cast: version 6 has no Sol, Cosmo or Barnaby, and still has Fennick, Pip and friendship.
   const npcs = state.npcs;
   for (const id of ['sol', 'cosmo', 'barnaby'] as const) {
-    if (npcs[id].talks !== 0 || npcs[id].talkedToday) throw new Error(`v6Save: a version-6 save has no ${id} to have talked to`);
+    if (npcs[id].talks !== 0) throw new Error(`v6Save: a version-6 save has no ${id} to have talked to`);
   }
-  const relation = ({ talks, talkedToday }: NpcTalk): SaveJson => ({ points: 0, talkedToday, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks });
-  const idle: NpcTalk = { talks: 0, talkedToday: false, place: { kind: 'indoors' } };
+  const relation = ({ talks }: NpcTalk): SaveJson => ({ points: 0, talkedToday: false, giftsToday: 0, giftsThisWeek: 0, heartEventsSeen: [], talks });
+  const idle: NpcTalk = { talks: 0, place: { kind: 'indoors' } };
   save.npcs = {
     marigold: relation(npcs.marigold),
     bram: relation(npcs.berlioz),
@@ -700,9 +733,9 @@ export const animal = (id: number, kind: AnimalKind, name: string): Animal => ({
 
 /**
  * Every later-workstream section filled in far from its defaults, still valid: a steel hoe with
- * an upgrade under way, every recipe, a full coop and a barn, chats with Berlioz and Tallulah, a board
- * request, lifetime stats, a festival in progress with a full display, and walkers out in town, on
- * Cosmo's door front and on the town's east arrival tile, and indoors.
+ * an upgrade under way, every recipe, a full coop and a barn, chats with Berlioz and Tallulah,
+ * lifetime stats, and walkers out in town, on Cosmo's door front and on the town's east arrival
+ * tile, and indoors.
  */
 export function livelySections(): GameSections {
   return {
@@ -713,7 +746,6 @@ export function livelySections(): GameSections {
     },
     tools: { levels: { hoe: 2, wateringCan: 1, pickaxe: 0, axe: 1 }, upgrade: { tool: 'pickaxe', level: 1, readyDay: 12 } },
     crafting: { known: [...CRAFTING_RECIPE_IDS] },
-    cooking: { known: ['friedMushrooms', 'berryTart', 'forestSalad'], kitchenLevel: 1 },
     buildings: [
       {
         id: 1,
@@ -728,19 +760,15 @@ export function livelySections(): GameSections {
     nextEntityId: 8,
     npcs: {
       ...BASE.npcs,
-      sol: { talks: 0, talkedToday: false, place: { kind: 'out', mapId: 'town', tx: 21, tz: 13, facing: Direction.West } },
-      cosmo: { talks: 0, talkedToday: false, place: { kind: 'out', mapId: 'neighbours', tx: 5, tz: 5, facing: Direction.South } },
-      berlioz: { talks: 40, talkedToday: true, place: { kind: 'indoors' } },
-      tallulah: { talks: 3, talkedToday: false, place: { kind: 'out', mapId: 'town', tx: 38, tz: 16, facing: Direction.East } },
+      sol: { talks: 0, place: { kind: 'out', mapId: 'town', tx: 21, tz: 13, facing: Direction.West } },
+      cosmo: { talks: 0, place: { kind: 'out', mapId: 'neighbours', tx: 5, tz: 5, facing: Direction.South } },
+      berlioz: { talks: 40, place: { kind: 'indoors' } },
+      tallulah: { talks: 3, place: { kind: 'out', mapId: 'town', tx: 38, tz: 16, facing: Direction.East } },
     },
     townsfolk: {
       ...BASE.townsfolk,
       jogger: { place: { kind: 'out', mapId: 'town', tx: 3, tz: 22, facing: Direction.East } },
       kid: { place: { kind: 'out', mapId: 'town', tx: 31, tz: 9, facing: Direction.North } },
-    },
-    quests: {
-      completed: ['shipParsnips', 'visitTown', 'earnGold'],
-      board: { week: 3, npc: 'juniper', itemId: 'potato', quantity: 5, dueDay: 30, delivered: 5, status: 'completed' },
     },
     stats: {
       parsnipsShipped: 40,
@@ -750,19 +778,6 @@ export function livelySections(): GameSections {
       visitedTown: true,
       craftedChest: true,
       builtCoop: true,
-    },
-    festival: {
-      activeDay: 12,
-      eggsFound: 4095,
-      lanternReleased: true,
-      // Pumpkins (produce) at every quality; wood (a material) has none.
-      display: Array.from({ length: 9 }, (_, i) =>
-        i % 2 === 0
-          ? { itemId: 'pumpkin' as const, quantity: i + 1, quality: ((i / 2) % 3) as 0 | 1 | 2 }
-          : { itemId: 'wood' as const, quantity: i + 1, quality: 0 as const },
-      ),
-      giftTarget: 'tallulah',
-      giftGiven: true,
     },
     robots: createDefaultSections().robots,
     shopsSoldToday: createDefaultSections().shopsSoldToday,

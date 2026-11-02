@@ -47,8 +47,6 @@ const SAMPLE_OBJECTS: Readonly<Record<PlacedObject['kind'], PlacedObject>> = {
   stonePath: { kind: 'stonePath' },
   giantCrop: { kind: 'giantCrop', cropId: 'pumpkin', anchorTx: 0, anchorTz: 0 },
   forage: { kind: 'forage', itemId: 'wildLeek', spawnDay: 1 },
-  trophy: { kind: 'trophy', festival: 'harvestFair', year: 1 },
-  decoration: { kind: 'decoration', variant: 'paperLantern' },
   workbench: { kind: 'workbench' },
 };
 
@@ -119,8 +117,6 @@ describe('highlight box heights', () => {
       stonePath: highlightBoxHeight(EMPTY_TILE),
       giantCrop: 1.6,
       forage: 0.4,
-      trophy: 0.9,
-      decoration: 1.0,
       workbench: 1.1,
     };
     for (const kind of PLACED_OBJECT_KINDS) {

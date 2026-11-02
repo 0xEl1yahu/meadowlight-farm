@@ -15,7 +15,6 @@ import {
   Blocker,
   DIRECTIONS,
   MAP_IDS,
-  NPC_IDS,
   ROBOT_SIZES,
   SEASON_NAMES,
   TileState,
@@ -242,19 +241,6 @@ function shippedStats(state: GameState, payout: number): GameState['stats'] {
   };
 }
 
-/**
- * Every character's `talkedToday` back to false for the new day (part 4a spec §3.4). An entry
- * nobody talked to keeps its reference, and so does the section when no one was talked to.
- */
-function morningNpcs(npcs: GameState['npcs']): GameState['npcs'] {
-  let next = npcs;
-  for (const id of NPC_IDS) {
-    const talk = npcs[id];
-    if (talk.talkedToday) next = { ...next, [id]: { ...talk, talkedToday: false } };
-  }
-  return next;
-}
-
 /** A shop's counts back at zero; the same object when nothing was sold. */
 function zeroed<K extends string>(counts: Readonly<Record<K, number>>): Readonly<Record<K, number>> {
   const ids = Object.keys(counts) as K[];
@@ -277,11 +263,10 @@ function restocked(sold: ShopsSoldToday): ShopsSoldToday {
 /**
  * Day transition: pay out the shipping bin (each stack at its quality's price, counted into the
  * lifetime stats), advance the calendar, roll the (global) weather, run the overnight growth
- * pipeline on every map with that map's seed, restore energy, clear yesterday's chats
- * (`talkedToday`), restock the shops (part 4b spec §6), send every walker indoors (part 4d spec
- * §4.7) and put the player back at the house on the farm. Then the robots' night runs (farmclaws
- * part 1 §5.7), and the active job's morning reset (part 4c spec §2.1); the night's toasts follow
- * the morning's own messages.
+ * pipeline on every map with that map's seed, restore energy, restock the shops (part 4b spec
+ * §6), send every walker indoors (part 4d spec §4.7) and put the player back at the house on the
+ * farm. Then the robots' night runs (farmclaws part 1 §5.7), and the active job's morning reset
+ * (part 4c spec §2.1); the night's toasts follow the morning's own messages.
  */
 export function startNextDay(state: GameState, passedOut: boolean): GameState {
   const payout = selectPendingShipmentValue(state);
@@ -323,7 +308,6 @@ export function startNextDay(state: GameState, passedOut: boolean): GameState {
     },
     shipping: { pending: [], lastPayout: payout },
     stats: shippedStats(state, payout),
-    npcs: morningNpcs(state.npcs),
     shopsSoldToday: restocked(state.shopsSoldToday),
   };
   next = walkersIndoors(next);
@@ -581,7 +565,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
       const talk = checked.npcs[npc];
       return {
         ...checked,
-        npcs: { ...checked.npcs, [npc]: { ...talk, talks: talk.talks + 1, talkedToday: true } },
+        npcs: { ...checked.npcs, [npc]: { ...talk, talks: talk.talks + 1 } },
         ui: { ...checked.ui, panel: { kind: 'talk', npc, line, card: 'line' } },
       };
     }

@@ -7,9 +7,7 @@ import { GENERATORS, INVENTORY } from '../config';
 import {
   Blocker,
   CROP_IDS,
-  DECORATION_IDS,
   FERTILIZER_KINDS,
-  FESTIVAL_IDS,
   FORAGE_IDS,
   GIANT_CROP_IDS,
   PLACED_OBJECT_KINDS,
@@ -99,8 +97,6 @@ const OBJECT_FIELDS: Readonly<Record<PlacedObjectKind, readonly string[]>> = {
   stonePath: [],
   giantCrop: ['cropId', 'anchorTx', 'anchorTz'],
   forage: ['itemId', 'spawnDay'],
-  trophy: ['festival', 'year'],
-  decoration: ['variant'],
   workbench: [],
 };
 
@@ -119,10 +115,6 @@ export function isValidPlacedObject(v: unknown): v is PlacedObject {
       return isOneOf(v.cropId, GIANT_CROP_IDS) && isInt(v.anchorTx) && isInt(v.anchorTz);
     case 'forage':
       return isOneOf(v.itemId, FORAGE_IDS) && isCount(v.spawnDay);
-    case 'trophy':
-      return isOneOf(v.festival, FESTIVAL_IDS) && isIntIn(v.year, 1, Number.MAX_SAFE_INTEGER);
-    case 'decoration':
-      return isOneOf(v.variant, DECORATION_IDS);
     case 'woodBurner':
       return isIntIn(v.fuel, 0, GENERATORS.woodBurner.hopper);
     case 'sprinkler':

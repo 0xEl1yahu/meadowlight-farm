@@ -5,8 +5,8 @@
  * - Anchors: every placed object draws at its own tile, except a giant crop, which draws once,
  *   at its anchor (the min-x, min-z corner of its 3×3 footprint). Covered tiles are skipped.
  * - Looks: what a key shows is the object's kind plus the few fields that change its look (a
- *   forage item, a giant crop's crop, a trophy's festival, a decoration's variant). A chest's
- *   slots and a forage's spawn day are not part of the look.
+ *   forage item, a giant crop's crop). A chest's slots and a forage's spawn day are not part of
+ *   the look.
  * - Placement vs update: a changed object is a placement (pop-in, matrix write) only when the
  *   key showed nothing or another kind. Same kind with a different look is an update (rewrite
  *   without a pop); same kind and look is nothing at all, so a chest deposit never re-pops the
@@ -55,10 +55,6 @@ export function objectLook(object: PlacedObject): ObjectLook {
       return { kind: object.kind, variant: object.cropId };
     case 'forage':
       return { kind: object.kind, variant: object.itemId };
-    case 'trophy':
-      return { kind: object.kind, variant: object.festival };
-    case 'decoration':
-      return { kind: object.kind, variant: object.variant };
     case 'chest':
     case 'woodBurner':
     case 'sprinkler':

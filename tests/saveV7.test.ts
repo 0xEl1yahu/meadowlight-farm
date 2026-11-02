@@ -23,16 +23,16 @@ function withTalks(state: GameState, talks: Partial<Record<NpcId, Omit<NpcTalk, 
 const lively = (): GameState => ({ ...BASE, ...livelySections() });
 
 /**
- * What a v6 save can hold (Review Focus 1): mid-day in town, Berlioz talked to 12 times and today,
- * and chats with the other three shopkeepers. Sol, Cosmo and Barnaby have none, as version 6 has
+ * What a v6 save can hold (Review Focus 1): mid-day in town, Berlioz talked to 12 times, and chats
+ * with the other three shopkeepers. Sol, Cosmo and Barnaby have none, as version 6 has
  * no such characters.
  */
 function chatted(): GameState {
   const state = withTalks(lively(), {
-    marigold: { talks: 5, talkedToday: false },
-    berlioz: { talks: 12, talkedToday: true },
-    juniper: { talks: 1, talkedToday: true },
-    tallulah: { talks: 30, talkedToday: false },
+    marigold: { talks: 5 },
+    berlioz: { talks: 12 },
+    juniper: { talks: 1 },
+    tallulah: { talks: 30 },
   });
   return withPlayer(atDay(state, 3, 780), { tx: 10, tz: 16 }, Direction.East, 'town');
 }
@@ -47,26 +47,24 @@ function v6With(state: GameState, edit: (save: SaveJson) => void): SaveJson {
 const npcsOf = (save: SaveJson) => save.npcs as SaveJson;
 /** One saved character's record. */
 const npcOf = (save: SaveJson, id: string) => must(npcsOf(save)[id]) as SaveJson;
-const questsOf = (save: SaveJson) => save.quests as SaveJson & { board: SaveJson | null };
-const festivalOf = (save: SaveJson) => save.festival as SaveJson;
 
 /** Loads raw save JSON as the game would. */
 const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringify(save));
 
 describe('the cast in saves', () => {
   it('is in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(11);
-    expect(BASE.version).toBe(11);
+    expect(SAVE_VERSION).toBe(12);
+    expect(BASE.version).toBe(12);
   });
 
   it('starts every character at no chats, indoors', () => {
     expect(Object.keys(BASE.npcs)).toEqual(['sol', 'cosmo', 'barnaby', 'marigold', 'berlioz', 'juniper', 'tallulah']);
-    for (const id of NPC_IDS) expect(BASE.npcs[id]).toEqual({ talks: 0, talkedToday: false, place: { kind: 'indoors' } });
+    for (const id of NPC_IDS) expect(BASE.npcs[id]).toEqual({ talks: 0, place: { kind: 'indoors' } });
   });
 
   it('round-trips a farm with lively sections', () => {
     const state = lively();
-    expect(state.npcs.berlioz).toEqual({ talks: 40, talkedToday: true, place: { kind: 'indoors' } });
+    expect(state.npcs.berlioz).toEqual({ talks: 40, place: { kind: 'indoors' } });
     expect(deserializeGame(serializeGame(state))).toEqual(state);
   });
 
@@ -78,7 +76,7 @@ describe('the cast in saves', () => {
 
 describe('v6 → v7', () => {
   it('carries on to version 10', () => {
-    expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(11);
+    expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(12);
   });
 
   it('loads a v6 save as the state it was taken from, its walkers placed by version 10', () => {
@@ -97,40 +95,18 @@ describe('v6 → v7', () => {
     expect(Object.keys(npcsOf(save))).toEqual(['marigold', 'bram', 'juniper', 'tess', 'fennick', 'pip']);
     const migrated = migrateSave(save) as SaveJson;
     expect(chatsOf(npcsOf(migrated) as GameState['npcs'])).toEqual({
-      sol: { talks: 0, talkedToday: false },
-      cosmo: { talks: 0, talkedToday: false },
-      barnaby: { talks: 0, talkedToday: false },
-      marigold: { talks: 5, talkedToday: false },
-      berlioz: { talks: 12, talkedToday: true },
-      juniper: { talks: 1, talkedToday: true },
-      tallulah: { talks: 30, talkedToday: false },
+      sol: { talks: 0 },
+      cosmo: { talks: 0 },
+      barnaby: { talks: 0 },
+      marigold: { talks: 5 },
+      berlioz: { talks: 12 },
+      juniper: { talks: 1 },
+      tallulah: { talks: 30 },
     });
-    for (const id of NPC_IDS) expect(hasExactKeys(npcOf(migrated, id), ['talks', 'talkedToday', 'place']), id).toBe(true);
+    for (const id of NPC_IDS) expect(hasExactKeys(npcOf(migrated, id), ['talks', 'place']), id).toBe(true);
     const loaded = must(load(save));
     expect(loaded).toEqual(withMigratedPlaces(state));
     expect(loaded.player.mapId).toBe('town');
-  });
-
-  it('drops a board request from Fennick or Pip, and keeps one from Juniper', () => {
-    const state = chatted();
-    expect(state.quests.board?.npc).toBe('juniper');
-    expect(must(load(v6Save(state))).quests).toEqual(state.quests);
-    for (const npc of ['fennick', 'pip']) {
-      const save = v6With(state, (s) => void (must(questsOf(s).board).npc = npc));
-      expect(questsOf(migrateSave(save) as SaveJson).board, npc).toBeNull();
-      expect(must(load(save))).toEqual(withMigratedPlaces({ ...state, quests: { ...state.quests, board: null } }));
-    }
-  });
-
-  it('drops a festival gift target of Fennick or Pip, and keeps Tess as Tallulah', () => {
-    const state = chatted();
-    expect(state.festival.giftTarget).toBe('tallulah');
-    expect(must(load(v6Save(state))).festival).toEqual(state.festival);
-    for (const npc of ['fennick', 'pip']) {
-      const save = v6With(state, (s) => void (festivalOf(s).giftTarget = npc));
-      expect(festivalOf(migrateSave(save) as SaveJson).giftTarget, npc).toBeNull();
-      expect(must(load(save))).toEqual(withMigratedPlaces({ ...state, festival: { ...state.festival, giftTarget: null } }));
-    }
   });
 
   it('accepts a v6 save whose npcs already have the v7 shape', () => {
@@ -147,12 +123,10 @@ describe('v6 → v7', () => {
     expect(must(load(save))).toEqual(withMigratedPlaces(state));
   });
 
-  it('migrates the version-2 fixture through every version to 11', () => {
+  it('migrates the version-2 fixture through every version to 12', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     expect(chatsOf(loaded.npcs)).toEqual(chatsOf(BASE.npcs));
-    expect(loaded.quests.board).toBeNull();
-    expect(loaded.festival.giftTarget).toBeNull();
   });
 
   it('leaves a v6 save whose npcs are not an object for the validator to reject', () => {
@@ -164,26 +138,24 @@ describe('v6 → v7', () => {
   it('copies a corrupt shopkeeper as found, so the validator still rejects it', () => {
     const corrupt: readonly [string, (save: SaveJson) => void][] = [
       ['negative talks', (s) => void (npcOf(s, 'bram').talks = -1)],
-      ['a non-boolean talkedToday', (s) => void (npcOf(s, 'tess').talkedToday = 'yes')],
       ['a missing shopkeeper', (s) => void delete npcsOf(s).marigold],
       ['a shopkeeper that is not an object', (s) => void (npcsOf(s).juniper = 7)],
     ];
     for (const [label, edit] of corrupt) {
       const save = v6With(chatted(), edit);
-      expect((migrateSave(save) as SaveJson).version, label).toBe(11);
+      expect((migrateSave(save) as SaveJson).version, label).toBe(12);
       expect(load(save), label).toBeNull();
     }
   });
 
   it('v6Save refuses chats with Sol, Cosmo or Barnaby', () => {
     for (const id of ['sol', 'cosmo', 'barnaby'] as const) {
-      expect(() => v6Save(withTalks(BASE, { [id]: { talks: 1, talkedToday: false } })), id).toThrow('v6Save');
-      expect(() => v6Save(withTalks(BASE, { [id]: { talks: 0, talkedToday: true } })), id).toThrow('v6Save');
+      expect(() => v6Save(withTalks(BASE, { [id]: { talks: 1 } })), id).toThrow('v6Save');
     }
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v6Save(BASE), version: 11 };
+    const save = { ...v6Save(BASE), version: SAVE_VERSION + 1 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });
@@ -193,21 +165,16 @@ describe('the saved cast rejects', () => {
   type JsonPath = readonly string[];
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     ['a missing character', ['npcs', 'cosmo'], undefined],
-    ['a removed character', ['npcs', 'fennick'], { talks: 0, talkedToday: false }],
-    ['an unknown character', ['npcs', 'gus'], { talks: 0, talkedToday: false }],
+    ['a removed character', ['npcs', 'fennick'], { talks: 0, place: { kind: 'indoors' } }],
+    ['an unknown character', ['npcs', 'gus'], { talks: 0, place: { kind: 'indoors' } }],
     ['a friendship field', ['npcs', 'berlioz', 'points'], 0],
     ['an extra field', ['npcs', 'sol', 'mood'], 'happy'],
     ['a missing talks', ['npcs', 'barnaby', 'talks'], undefined],
     ['negative talks', ['npcs', 'juniper', 'talks'], -1],
     ['fractional talks', ['npcs', 'tallulah', 'talks'], 2.5],
     ['talks that are not a number', ['npcs', 'marigold', 'talks'], '3'],
-    ['a missing talkedToday', ['npcs', 'berlioz', 'talkedToday'], undefined],
-    ['a non-boolean talkedToday', ['npcs', 'barnaby', 'talkedToday'], 'yes'],
+    ['a talkedToday', ['npcs', 'barnaby', 'talkedToday'], false],
     ['a character that is not an object', ['npcs', 'sol'], 0],
-    ['a board request from Fennick', ['quests', 'board', 'npc'], 'fennick'],
-    ['a board request from Pip', ['quests', 'board', 'npc'], 'pip'],
-    ['Fennick as the gift target', ['festival', 'giftTarget'], 'fennick'],
-    ['Pip as the gift target', ['festival', 'giftTarget'], 'pip'],
   ];
 
   it.each(cases)('%s', (_label, path, value) => {

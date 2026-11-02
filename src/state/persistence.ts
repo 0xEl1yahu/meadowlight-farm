@@ -5,6 +5,7 @@
 import { INVENTORY, JOBS, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
   Blocker,
+  CRAFTING_RECIPE_IDS,
   MAP_IDS,
   NPC_IDS,
   SAVE_VERSION,
@@ -14,6 +15,7 @@ import {
   ZONE_IDS,
   type ActionEvent,
   type ActionKind,
+  type CraftingRecipeId,
   type GameState,
   type GridSpec,
   type MapId,
@@ -23,6 +25,7 @@ import {
   type WalkerPlace,
   type WorldState,
 } from '../core/types';
+import { knownWith } from '../crafting/known';
 import { placeAt } from '../people/timetable';
 import { freeSpotNear, withWorkbenchAt } from '../robots/workbench';
 import { calendarTime } from '../time/clock';
@@ -39,6 +42,7 @@ import { ZONE_MARKER_STACK, countZoneMarkers } from './zoneMarker';
 import {
   hasExactKeys,
   isBool,
+  isCanonicalSubset,
   isCount,
   isInt,
   isIntIn,
@@ -488,8 +492,6 @@ function migrateZoneMarker(save: Obj): Obj {
 const V7_NPC_IDS: readonly string[] = ['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess'];
 /** The characters version 7 keeps from version 6, with their chats (farmclaws part 4a spec §6.2). */
 const KEPT_NPCS: readonly string[] = ['marigold', 'bram', 'juniper', 'tess'];
-/** The characters the farmclaws design cut; a version-6 save may still name them. */
-const REMOVED_NPCS: readonly string[] = ['fennick', 'pip'];
 /** Part 4b's renames (spec §8): a version-7 character id and the id version 8 gives it. */
 const RENAMED_NPCS: ReadonlyMap<string, NpcId> = new Map([
   ['bram', 'berlioz'],
@@ -517,13 +519,12 @@ function savedNpcV6(npcs: Obj, id: string): unknown {
 /**
  * Version 6 predates the farmclaws cast (part 4a spec §6.2): `npcs` becomes the seven version-7
  * ids, where Marigold, Bram, Juniper and Tess keep their chats and Sol, Cosmo and Barnaby start at
- * none. Fennick, Pip and every friendship field are dropped, and so is a board request or a
- * festival gift target naming Fennick or Pip. `npcs` may already have a later shape, because
- * migrateV2toV3 fills it from the current defaults. The Neighbours map is generated from its fixed
- * definition.
+ * none. Fennick, Pip and every friendship field are dropped. `npcs` may already have a later
+ * shape, because migrateV2toV3 fills it from the current defaults. The Neighbours map is generated
+ * from its fixed definition.
  */
 function migrateV6toV7(save: Obj): Obj {
-  const { npcs, quests, festival } = save;
+  const { npcs } = save;
   if (!isObj(npcs)) return save;
   let migrated: Obj = {
     ...save,
@@ -532,43 +533,32 @@ function migrateV6toV7(save: Obj): Obj {
       V7_NPC_IDS.map((id) => [id, KEPT_NPCS.includes(id) ? migrateNpcV6(savedNpcV6(npcs, id)) : { talks: 0, talkedToday: false }]),
     ),
   };
-  if (isObj(quests) && isObj(quests.board) && isOneOf(quests.board.npc, REMOVED_NPCS)) migrated = { ...migrated, quests: { ...quests, board: null } };
-  if (isObj(festival) && isOneOf(festival.giftTarget, REMOVED_NPCS)) migrated = { ...migrated, festival: { ...festival, giftTarget: null } };
   if (isObj(save.maps) && isIntIn(save.seed, 0, 0xffffffff)) {
     migrated = { ...migrated, maps: { ...save.maps, neighbours: MAPS.neighbours.generate(save.seed) } };
   }
   return migrated;
 }
 
-/** A saved character id as version 8 names it: Bram's and Tess's renamed, anything else as found. */
-function renamedNpc(id: unknown): unknown {
-  return typeof id === 'string' ? (RENAMED_NPCS.get(id) ?? id) : id;
-}
-
 /**
  * Version 7 predates the shops (farmclaws part 4b spec §9): the robots section gains no deliveries,
  * every shop has sold nothing today, and Bram and Tess become Berlioz and Tallulah: their `npcs`
- * records move to the new ids unchanged, and a board request or a festival gift target naming
- * them follows. A record already under a new id stays where it is, so the validator rejects the
- * old id beside it.
+ * records move to the new ids unchanged. A record already under a new id stays where it is, so
+ * the validator rejects the old id beside it.
  */
 function migrateV7toV8(save: Obj): Obj {
-  const { npcs, robots, quests, festival } = save;
+  const { npcs, robots } = save;
   if (!isObj(npcs) || !isObj(robots)) return save;
   const renameKey = (id: string): string => {
     const renamed = RENAMED_NPCS.get(id);
     return renamed === undefined || Object.prototype.hasOwnProperty.call(npcs, renamed) ? id : renamed;
   };
-  let migrated: Obj = {
+  return {
     ...save,
     version: 8,
     robots: { ...robots, deliveries: [] },
     shopsSoldToday: createDefaultSections().shopsSoldToday,
     npcs: Object.fromEntries(Object.entries(npcs).map(([id, talk]) => [renameKey(id), talk])),
   };
-  if (isObj(quests) && isObj(quests.board)) migrated = { ...migrated, quests: { ...quests, board: { ...quests.board, npc: renamedNpc(quests.board.npc) } } };
-  if (isObj(festival)) migrated = { ...migrated, festival: { ...festival, giftTarget: renamedNpc(festival.giftTarget) } };
-  return migrated;
 }
 
 /**
@@ -754,6 +744,51 @@ function migrateV10toV11(save: Obj): Obj {
   return { ...next, crafting: { ...crafting, known: [...crafting.known, 'woodBurner'] } };
 }
 
+/** The placed-object kinds version 12 drops (release 1 cleanup spec §2.1). */
+const REMOVED_OBJECT_KINDS: readonly string[] = ['trophy', 'decoration'];
+
+/** A saved tile without a trophy or a decoration on it; any other tile as found. */
+function withoutRemovedObjectV12(tile: Obj): Obj {
+  return isObj(tile.object) && isOneOf(tile.object.kind, REMOVED_OBJECT_KINDS) ? { ...tile, object: null } : tile;
+}
+
+/**
+ * Version 11 still saves the v2 features release 1 cut (release 1 cleanup spec §2.3): the
+ * cooking, quests and festival sections go whatever they hold, every saved character loses
+ * `talkedToday`, and every trophy and decoration on every map is cleared, chunk revisions kept. A
+ * farm that has done job 2 learns the Quality Fertilizer and Speed-Gro recipes, and one that has
+ * done job 3 the Quality Sprinkler, in canonical order (spec §5.2). The recipes are named here
+ * rather than read from the job table, so a later table can't change what this step did. A
+ * recipe list that isn't already canonical, a malformed map and a malformed character pass
+ * through as found for the validator to reject.
+ */
+function migrateV11toV12(save: Obj): Obj {
+  const next: Obj = { ...save, version: 12 };
+  delete next.cooking;
+  delete next.quests;
+  delete next.festival;
+  const { npcs, maps, jobs, crafting } = save;
+  if (isObj(npcs)) {
+    next.npcs = Object.fromEntries(
+      Object.entries(npcs).map(([id, talk]) => {
+        if (!isObj(talk)) return [id, talk];
+        const kept = { ...talk };
+        delete kept.talkedToday;
+        return [id, kept];
+      }),
+    );
+  }
+  if (isObj(maps)) {
+    next.maps = Object.fromEntries(Object.entries(maps).map(([id, world]) => [id, mapSavedTiles(world, withoutRemovedObjectV12) ?? world]));
+  }
+  if (!isObj(jobs) || !isObj(jobs.status) || !isObj(crafting) || !isCanonicalSubset(crafting.known, CRAFTING_RECIPE_IDS)) return next;
+  const recipes: CraftingRecipeId[] = [];
+  if (jobs.status.showHim === 'done') recipes.push('qualityFertilizer', 'speedGro');
+  if (jobs.status.knowTheLimits === 'done') recipes.push('qualitySprinkler');
+  const known = knownWith(crafting.known, recipes);
+  return known === crafting.known ? next : { ...next, crafting: { ...crafting, known } };
+}
+
 /**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
@@ -771,6 +806,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 8) v = migrateV8toV9(v);
   if (isObj(v) && v.version === 9) v = migrateV9toV10(v);
   if (isObj(v) && v.version === 10) v = migrateV10toV11(v);
+  if (isObj(v) && v.version === 11) v = migrateV11toV12(v);
   return v;
 }
 

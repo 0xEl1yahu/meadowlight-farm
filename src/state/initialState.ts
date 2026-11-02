@@ -37,7 +37,7 @@ export function createDefaultSections(): GameSections {
   const indoors = (): WalkerPlace => ({ kind: 'indoors' });
   const npcs = {} as Record<NpcId, NpcTalk>;
   for (const id of NPC_IDS) {
-    npcs[id] = { talks: 0, talkedToday: false, place: indoors() };
+    npcs[id] = { talks: 0, place: indoors() };
   }
   const townsfolk = {} as Record<TownsfolkId, { readonly place: WalkerPlace }>;
   for (const id of TOWNSFOLK_IDS) {
@@ -51,12 +51,10 @@ export function createDefaultSections(): GameSections {
     },
     tools: { levels: { hoe: 0, wateringCan: 0, pickaxe: 0, axe: 0 }, upgrade: null },
     crafting: { known: ['chest', 'woodFence', 'woodPath', 'stonePath', 'scarecrow', 'sprinkler', 'basicFertilizer'] },
-    cooking: { known: ['friedMushrooms', 'veggieStew'], kitchenLevel: 0 },
     buildings: [],
     nextEntityId: 1,
     npcs,
     townsfolk,
-    quests: { completed: [], board: null },
     stats: {
       parsnipsShipped: 0,
       debrisCleared: 0,
@@ -66,7 +64,6 @@ export function createDefaultSections(): GameSections {
       craftedChest: false,
       builtCoop: false,
     },
-    festival: { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false },
     robots: {
       nextId: 1,
       list: [],

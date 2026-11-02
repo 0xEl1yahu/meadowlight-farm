@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, PLAYER, UNLOCKS, WORKBENCH } from '../src/config';
-import { Blocker, Direction, type GameState, type Robot, type RobotStats } from '../src/core/types';
+import { Blocker, Direction, SAVE_VERSION, type GameState, type Robot, type RobotStats } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { freshExec } from '../src/robots/exec';
 import { freeSpotNear } from '../src/robots/workbench';
@@ -56,8 +56,8 @@ describe('save version 6', () => {
 });
 
 describe('v5 → v6', () => {
-  it('carries a v5 save on through versions 6, 7, 8 and 9 to 11', () => {
-    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(11);
+  it('carries a v5 save on through every later version to 12', () => {
+    expect((migrateSave(v5Save(v5Farm())) as SaveJson).version).toBe(12);
   });
 
   it('loads a v5 save as the state it was taken from', () => {
@@ -67,12 +67,12 @@ describe('v5 → v6', () => {
 
   it('migrates the version-2 fixture through every version to 9', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     expect(loaded.robots.list).toEqual([]);
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v5Save(BASE), version: 11 };
+    const save = { ...v5Save(BASE), version: SAVE_VERSION + 1 };
     expect(migrateSave(save)).toBe(save);
     expect(deserializeGame(JSON.stringify(save))).toBeNull();
   });

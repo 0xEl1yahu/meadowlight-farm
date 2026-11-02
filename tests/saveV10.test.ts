@@ -84,13 +84,13 @@ function chestsOn(state: GameState, mapId: MapId): Map<string, Tile> {
 
 describe('save version 10', () => {
   it('is the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(11);
-    expect(BASE.version).toBe(11);
+    expect(SAVE_VERSION).toBe(12);
+    expect(BASE.version).toBe(12);
   });
 
   it('migrates a v9 save to version 10, and back to the same state with its walkers placed', () => {
     const save = v9Save(BASE);
-    expect((migrateSave(save) as SaveJson).version).toBe(11);
+    expect((migrateSave(save) as SaveJson).version).toBe(12);
     expect(must(load(save))).toEqual(withMigratedPlaces(BASE));
   });
 
@@ -124,15 +124,15 @@ describe('save version 10', () => {
     for (const at of ringTiles(CHICKEN_RUN)) expect(savedTileAt(save, 'neighbours', at), key(at.tx, at.tz)).toEqual(EMPTY_TILE);
   });
 
-  it('migrates the version-2 fixture through every version to 11', () => {
+  it('migrates the version-2 fixture through every version to 12', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     for (const at of townPropTiles()) expect(tileAt(loaded, at, 'town')).toEqual(blockedTile(Blocker.Building));
     expect(loaded.maps.neighbours).toEqual(BASE.maps.neighbours);
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v9Save(BASE), version: 11 };
+    const save = { ...v9Save(BASE), version: SAVE_VERSION + 1 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });
@@ -289,7 +289,7 @@ describe('v9 → v10: walkers', () => {
       juniper: out('town', 21, 13, Direction.West),
       tallulah: out('town', 21, 14, Direction.West),
     });
-    expect(loaded.npcs.berlioz).toEqual({ talks: 0, talkedToday: false, place: out('town', 18, 14, Direction.East) });
+    expect(loaded.npcs.berlioz).toEqual({ talks: 0, place: out('town', 18, 14, Direction.East) });
   });
 
   it('at 7:30 am on a wet day keeps the tradies in, Sol at work and the farmers by their fields', () => {
@@ -382,7 +382,7 @@ describe('saved places', () => {
   ];
 
   it('accept the save the cases corrupt', () => {
-    expect(isValidGameState(corrupted(['version'], 11))).toBe(true);
+    expect(isValidGameState(corrupted(['version'], SAVE_VERSION))).toBe(true);
   });
 
   it.each(cases)('reject %s', (_label, path, value) => {

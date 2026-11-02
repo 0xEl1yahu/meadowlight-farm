@@ -89,8 +89,6 @@ const SAMPLES: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
   stonePath: { kind: 'stonePath' },
   giantCrop: { kind: 'giantCrop', cropId: 'melon', anchorTx: 2, anchorTz: 1 },
   forage: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 },
-  trophy: { kind: 'trophy', festival: 'harvestFair', year: 1 },
-  decoration: { kind: 'decoration', variant: 'stoneLantern' },
   workbench: { kind: 'workbench' },
 };
 
@@ -175,16 +173,8 @@ describe('placement versus update', () => {
     expect(classifyObjectChange(objectLook(leek), objectLook(holly))).toBe('update');
   });
 
-  it('updates in place when a trophy, decoration or giant crop changes its look but keeps its kind', () => {
+  it('updates in place when a giant crop changes its look but keeps its kind', () => {
     const pairs: readonly (readonly [PlacedObject, PlacedObject])[] = [
-      [
-        { kind: 'trophy', festival: 'harvestFair', year: 1 },
-        { kind: 'trophy', festival: 'starfallFeast', year: 1 },
-      ],
-      [
-        { kind: 'decoration', variant: 'paperLantern' },
-        { kind: 'decoration', variant: 'flowerArch' },
-      ],
       [
         { kind: 'giantCrop', cropId: 'melon', anchorTx: 0, anchorTz: 0 },
         { kind: 'giantCrop', cropId: 'cauliflower', anchorTx: 0, anchorTz: 0 },
@@ -193,8 +183,6 @@ describe('placement versus update', () => {
     for (const [before, after] of pairs) {
       expect(classifyObjectChange(objectLook(before), objectLook(after)), before.kind).toBe('update');
     }
-    const trophyNextYear: PlacedObject = { kind: 'trophy', festival: 'harvestFair', year: 2 };
-    expect(classifyObjectChange(objectLook({ kind: 'trophy', festival: 'harvestFair', year: 1 }), objectLook(trophyNextYear))).toBe('none');
   });
 
   it('places again whenever the kind changes, for every pair of kinds', () => {
@@ -391,7 +379,7 @@ describe('object geometry tables', () => {
       const geometry = spec.build();
       expect(geometry.index, id).toBeNull();
       expect(geometry.hasAttribute('normal'), id).toBe(true);
-      expect(geometry.hasAttribute('color'), id).toBe(spec.material !== 'glass');
+      expect(geometry.hasAttribute('color'), id).toBe(true);
       expect(geometry.hasAttribute('tintMask'), id).toBe(spec.material === 'plant');
       // The lid is authored around its hinge; measure it closed, in chest space.
       if (id === 'chestLid') geometry.translate(0, CHEST_SHAPE.hingeY, CHEST_SHAPE.hingeZ);
@@ -487,8 +475,6 @@ describe('ObjectRenderer', () => {
     [13, 12, SAMPLES.woodPath],
     [14, 12, SAMPLES.stonePath],
     [8, 14, SAMPLES.forage],
-    [9, 14, SAMPLES.trophy],
-    [10, 14, SAMPLES.decoration],
     ...giantCropAt(GIANT_ANCHOR.tx, GIANT_ANCHOR.tz),
   ];
 
@@ -644,13 +630,13 @@ describe('ObjectRenderer', () => {
 
   it('rebuilds on a map change and shows only the active map', () => {
     const farm = place(FARM, A, SAMPLES.chest);
-    const forestObjects = withTile(farm, { tx: 10, tz: 10 }, objectTile(SAMPLES.trophy), 'forest');
+    const forestObjects = withTile(farm, { tx: 10, tz: 10 }, objectTile(SAMPLES.scarecrow), 'forest');
     const inForest = withPlayer(forestObjects, { tx: 34, tz: 15 }, Direction.West, 'forest');
     const { scene, renderer } = setup(forestObjects);
     expect(counts(scene)).toEqual({ chestBody: 1, chestLid: 1 });
     renderer.sync(inForest, null);
-    expect(counts(scene)).toEqual({ trophy: 1, trophyRibbon: 1 });
-    expect(pose(scene, 'trophy').s).toBeCloseTo(selectActiveWorld(inForest).grid.tileSize, 6);
+    expect(counts(scene)).toEqual({ scarecrowFrame: 1, scarecrowShirt: 1 });
+    expect(pose(scene, 'scarecrowFrame').s).toBeCloseTo(selectActiveWorld(inForest).grid.tileSize, 6);
     renderer.sync(forestObjects, null);
     expect(counts(scene)).toEqual({ chestBody: 1, chestLid: 1 });
     renderer.dispose();

@@ -12,7 +12,7 @@
 
 import type { BlockKind } from '../robots/blockKinds';
 
-export const SAVE_VERSION = 11 as const;
+export const SAVE_VERSION = 12 as const;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -199,18 +199,6 @@ export const FORAGE_IDS = [
 ] as const;
 export type ForageId = (typeof FORAGE_IDS)[number];
 
-export const DISH_IDS = [
-  'friedMushrooms',
-  'veggieStew',
-  'berryTart',
-  'pumpkinSoup',
-  'snozberryJam',
-  'spectralTea',
-  'omelette',
-  'forestSalad',
-] as const;
-export type DishId = (typeof DISH_IDS)[number];
-
 export const CRAFTING_RECIPE_IDS = [
   'chest',
   'woodFence',
@@ -225,24 +213,6 @@ export const CRAFTING_RECIPE_IDS = [
   'woodBurner',
 ] as const;
 export type CraftingRecipeId = (typeof CRAFTING_RECIPE_IDS)[number];
-
-export const STORY_QUEST_IDS = [
-  'shipParsnips',
-  'clearDebris',
-  'visitTown',
-  'craftChest',
-  'forageForest',
-  'buildCoop',
-  'makeFriend',
-  'earnGold',
-] as const;
-export type StoryQuestId = (typeof STORY_QUEST_IDS)[number];
-
-export const FESTIVAL_IDS = ['blossomFair', 'lanternNight', 'harvestFair', 'starfallFeast'] as const;
-export type FestivalId = (typeof FESTIVAL_IDS)[number];
-
-export const DECORATION_IDS = ['paperLantern', 'stoneLantern', 'flowerArch'] as const;
-export type DecorationId = (typeof DECORATION_IDS)[number];
 
 export const GIANT_CROP_IDS = ['cauliflower', 'melon', 'pumpkin'] as const satisfies readonly CropId[];
 export type GiantCropId = (typeof GIANT_CROP_IDS)[number];
@@ -279,8 +249,6 @@ export const PLACED_OBJECT_KINDS = [
   'stonePath',
   'giantCrop',
   'forage',
-  'trophy',
-  'decoration',
   'woodBurner',
   'workbench',
 ] as const;
@@ -378,8 +346,6 @@ export type PlacedObject =
       readonly anchorTz: number;
     }
   | { readonly kind: 'forage'; readonly itemId: ForageId; readonly spawnDay: number }
-  | { readonly kind: 'trophy'; readonly festival: FestivalId; readonly year: number }
-  | { readonly kind: 'decoration'; readonly variant: DecorationId }
   /** Built into every farm beside the farmhouse; robots are modded on it (farmclaws part 3 spec §2). Never picked up. */
   | { readonly kind: 'workbench' };
 
@@ -1077,12 +1043,6 @@ export interface CraftingState {
   readonly known: readonly CraftingRecipeId[];
 }
 
-export interface CookingState {
-  /** Unique, in DISH_IDS order. */
-  readonly known: readonly DishId[];
-  readonly kitchenLevel: 0 | 1;
-}
-
 export interface Animal {
   readonly id: number;
   readonly kind: AnimalKind;
@@ -1125,25 +1085,7 @@ export type WalkerPlace =
 export interface NpcTalk {
   /** Lifetime chats. Rotates nothing in 4a, but 0 picks the introduction. */
   readonly talks: number;
-  /** Whether the player talked to them today; reset each morning. */
-  readonly talkedToday: boolean;
   readonly place: WalkerPlace;
-}
-
-export interface BoardRequest {
-  readonly week: number;
-  readonly npc: NpcId;
-  readonly itemId: ItemId;
-  readonly quantity: number;
-  readonly dueDay: number;
-  readonly delivered: number;
-  readonly status: 'active' | 'completed' | 'expired';
-}
-
-export interface QuestState {
-  /** Unique, in STORY_QUEST_IDS order. */
-  readonly completed: readonly StoryQuestId[];
-  readonly board: BoardRequest | null;
 }
 
 export interface LifetimeStats {
@@ -1154,18 +1096,6 @@ export interface LifetimeStats {
   readonly visitedTown: boolean;
   readonly craftedChest: boolean;
   readonly builtCoop: boolean;
-}
-
-export interface FestivalState {
-  /** Absolute day the fields below belong to; -1 when no festival progress is stored. */
-  readonly activeDay: number;
-  /** Bitmask of the 12 Blossom Fair eggs (0 … 4095). */
-  readonly eggsFound: number;
-  readonly lanternReleased: boolean;
-  /** Harvest Fair display, ≤ 9 stacks. */
-  readonly display: readonly ItemStack[];
-  readonly giftTarget: NpcId | null;
-  readonly giftGiven: boolean;
 }
 
 /** What each shop has sold today (farmclaws part 4b spec §6); every count is cleared each morning. */
@@ -1211,16 +1141,13 @@ export interface GameSections {
   readonly profile: ProfileState;
   readonly tools: ToolProgressState;
   readonly crafting: CraftingState;
-  readonly cooking: CookingState;
   readonly buildings: readonly FarmBuilding[];
   /** Next id for buildings and animals (shared counter, starts at 1). */
   readonly nextEntityId: number;
   readonly npcs: Readonly<Record<NpcId, NpcTalk>>;
   /** Where each townsperson is (part 4d spec §9.1); nothing about a chat with them is saved. */
   readonly townsfolk: Readonly<Record<TownsfolkId, { readonly place: WalkerPlace }>>;
-  readonly quests: QuestState;
   readonly stats: LifetimeStats;
-  readonly festival: FestivalState;
   readonly robots: RobotsState;
   readonly shopsSoldToday: ShopsSoldToday;
   readonly slopShop: SlopShopState;

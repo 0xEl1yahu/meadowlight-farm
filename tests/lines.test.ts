@@ -19,7 +19,7 @@ const MOVE: RobotLogEvent = { kind: 'did', action: 'move', detail: { kind: 'none
 
 /** Everyone talked to `talks` times, each where they were. */
 function talkedTo(state: GameState, talks = 1): GameState {
-  const npcs = Object.fromEntries(NPC_IDS.map((npc) => [npc, { ...state.npcs[npc], talks, talkedToday: false }])) as Record<NpcId, NpcTalk>;
+  const npcs = Object.fromEntries(NPC_IDS.map((npc) => [npc, { ...state.npcs[npc], talks }])) as Record<NpcId, NpcTalk>;
   return { ...state, npcs };
 }
 

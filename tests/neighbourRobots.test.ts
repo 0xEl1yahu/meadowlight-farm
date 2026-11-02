@@ -388,7 +388,7 @@ describe('the farm-only rules', () => {
   it('plays a farm-only session byte for byte as before robots had maps', () => {
     const end = session().reduce(gameReducer, busyFarm());
     expect(end.robots.list.reduce((sum, robot) => sum + robot.actionSeq, 0)).toBeGreaterThan(100);
-    expect(fingerprint(serializeGame(end))).toBe('468521:8270a9bf');
+    expect(fingerprint(serializeGame(end))).toBe('468158:97988f16');
   });
 });
 

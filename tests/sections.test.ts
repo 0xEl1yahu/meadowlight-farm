@@ -11,22 +11,17 @@ import {
   TileState,
   CROP_IDS,
   CRAFTING_RECIPE_IDS,
-  DECORATION_IDS,
-  DISH_IDS,
-  FESTIVAL_IDS,
   FORAGE_IDS,
   GIANT_CROP_IDS,
   MAP_IDS,
   NPC_IDS,
   PLACED_OBJECT_KINDS,
-  STORY_QUEST_IDS,
   STRUCTURE_KINDS,
   TOOL_TYPES,
   UPGRADABLE_TOOLS,
   type Animal,
   type GameSections,
   type GameState,
-  type ItemStack,
   type SeedItemId,
 } from '../src/core/types';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
@@ -41,7 +36,6 @@ import {
   livelySections,
   must,
   soilTile,
-  stack,
   tileAt,
   withMigratedPlaces,
   withTile,
@@ -54,11 +48,7 @@ describe('identifier lists', () => {
       MAP_IDS,
       NPC_IDS,
       FORAGE_IDS,
-      DISH_IDS,
       CRAFTING_RECIPE_IDS,
-      STORY_QUEST_IDS,
-      FESTIVAL_IDS,
-      DECORATION_IDS,
       GIANT_CROP_IDS,
       STRUCTURE_KINDS,
       PLACED_OBJECT_KINDS,
@@ -138,7 +128,7 @@ describe('hash salts', () => {
 
 describe('createDefaultSections', () => {
   const indoors = { kind: 'indoors' } as const;
-  const idle = { talks: 0, talkedToday: false, place: indoors };
+  const idle = { talks: 0, place: indoors };
   const expected: GameSections = {
     profile: {
       playerName: 'Farmer',
@@ -147,7 +137,6 @@ describe('createDefaultSections', () => {
     },
     tools: { levels: { hoe: 0, wateringCan: 0, pickaxe: 0, axe: 0 }, upgrade: null },
     crafting: { known: ['chest', 'woodFence', 'woodPath', 'stonePath', 'scarecrow', 'sprinkler', 'basicFertilizer'] },
-    cooking: { known: ['friedMushrooms', 'veggieStew'], kitchenLevel: 0 },
     buildings: [],
     nextEntityId: 1,
     npcs: { sol: idle, cosmo: idle, barnaby: idle, marigold: idle, berlioz: idle, juniper: idle, tallulah: idle },
@@ -159,7 +148,6 @@ describe('createDefaultSections', () => {
       busker: { place: indoors },
       kid: { place: indoors },
     },
-    quests: { completed: [], board: null },
     stats: {
       parsnipsShipped: 0,
       debrisCleared: 0,
@@ -169,7 +157,6 @@ describe('createDefaultSections', () => {
       craftedChest: false,
       builtCoop: false,
     },
-    festival: { activeDay: -1, eggsFound: 0, lanternReleased: false, display: [], giftTarget: null, giftGiven: false },
     robots: {
       nextId: 1,
       list: [],
@@ -202,11 +189,10 @@ describe('createDefaultSections', () => {
     }
   });
 
-  it('lists known recipes and dishes in canonical order', () => {
-    const { crafting, cooking } = createDefaultSections();
+  it('lists known recipes in canonical order', () => {
+    const { crafting } = createDefaultSections();
     const order = (list: readonly string[], ids: readonly string[]): number[] => list.map((id) => ids.indexOf(id));
     expect(order(crafting.known, CRAFTING_RECIPE_IDS)).toEqual([...order(crafting.known, CRAFTING_RECIPE_IDS)].sort((a, b) => a - b));
-    expect(order(cooking.known, DISH_IDS)).toEqual([0, 1]);
   });
 
   it('builds fresh objects on every call, so no two states share section data', () => {
@@ -218,7 +204,6 @@ describe('createDefaultSections', () => {
     expect(a.townsfolk).not.toBe(b.townsfolk);
     expect(a.townsfolk.kid).not.toBe(b.townsfolk.kid);
     expect(a.profile).not.toBe(b.profile);
-    expect(a.festival.display).not.toBe(b.festival.display);
   });
 
   it('passes validation and survives a save round trip', () => {
@@ -255,12 +240,11 @@ describe('saved sections', () => {
     expect(deserializeGame(serializeGame(state))).toEqual(state);
   });
 
-  it('accept a building without animals, one still under construction, and an empty display', () => {
+  it('accept a building without animals, one still under construction', () => {
     const state: GameState = {
       ...lively(),
       buildings: [{ id: 5, kind: 'barn', plot: 1, readyDay: 400, troughWheat: 0, animals: [] }],
       nextEntityId: 6,
-      festival: { ...BASE.festival, activeDay: 0 },
     };
     expect(deserializeGame(serializeGame(state))).toEqual(state);
   });
@@ -294,15 +278,11 @@ describe('saved sections reject', () => {
     ['an upgrade of the scythe', ['tools', 'upgrade', 'tool'], 'scythe'],
     ['an upgrade ready on day -1', ['tools', 'upgrade', 'readyDay'], -1],
     ['an upgrade that is not an object', ['tools', 'upgrade'], 'pickaxe'],
-    // Crafting and cooking
+    // Crafting
     ['an unknown recipe', ['crafting', 'known'], ['chest', 'rocket']],
     ['a repeated recipe', ['crafting', 'known'], ['chest', 'chest']],
     ['recipes out of order', ['crafting', 'known'], ['woodFence', 'chest']],
     ['recipes that are not a list', ['crafting', 'known'], 'chest'],
-    ['kitchen level 2', ['cooking', 'kitchenLevel'], 2],
-    ['dishes out of order', ['cooking', 'known'], ['berryTart', 'friedMushrooms']],
-    ['an unknown dish', ['cooking', 'known'], ['friedMushrooms', 'cake']],
-    ['a repeated dish', ['cooking', 'known'], ['veggieStew', 'veggieStew']],
     // Buildings and the shared entity-id counter
     ['nextEntityId 0', ['nextEntityId'], 0],
     ['a building id of 0', ['buildings', 0, 'id'], 0],
@@ -347,16 +327,14 @@ describe('saved sections reject', () => {
   });
 });
 
-describe('saved NPCs, quests, stats and festival reject', () => {
-  // Valid stacks, so the only fault in 'ten display stacks' is the tenth stack.
-  const stacks = (count: number): ItemStack[] => Array.from({ length: count }, () => stack('wood', 1));
+describe('saved NPCs and stats reject', () => {
   const cases: readonly (readonly [string, JsonPath, unknown])[] = [
     // NPCs
     ['a missing NPC', ['npcs', 'sol'], undefined],
     ['an unknown NPC', ['npcs', 'gus'], BASE.npcs.sol],
     ['npcs that are not an object', ['npcs'], []],
     ['negative talks', ['npcs', 'juniper', 'talks'], -1],
-    ['a non-boolean talkedToday', ['npcs', 'cosmo', 'talkedToday'], 'yes'],
+    ['an NPC with a talkedToday', ['npcs', 'cosmo', 'talkedToday'], false],
     ['an NPC that is not an object', ['npcs', 'tallulah'], 1000],
     ['an NPC without a place', ['npcs', 'juniper', 'place'], undefined],
     ['an NPC with an extra key', ['npcs', 'juniper', 'friendship'], 0],
@@ -364,19 +342,6 @@ describe('saved NPCs, quests, stats and festival reject', () => {
     ['a townsperson with an unknown place kind', ['townsfolk', 'jogger', 'place', 'kind'], 'away'],
     ['a townsperson out on the river', ['townsfolk', 'jogger', 'place', 'tz'], 25],
     ['a missing townsperson', ['townsfolk', 'busker'], undefined],
-    // Quests
-    ['an unknown story quest', ['quests', 'completed'], ['shipParsnips', 'slayDragon']],
-    ['a repeated story quest', ['quests', 'completed'], ['visitTown', 'visitTown']],
-    ['story quests out of order', ['quests', 'completed'], ['visitTown', 'shipParsnips']],
-    ['a board request from an unknown NPC', ['quests', 'board', 'npc'], 'gus'],
-    ['a board request for an unknown item', ['quests', 'board', 'itemId'], 'diamond'],
-    ['a board request for nothing', ['quests', 'board', 'quantity'], 0],
-    ['more delivered than requested', ['quests', 'board', 'delivered'], 6],
-    ['a negative delivery', ['quests', 'board', 'delivered'], -1],
-    ['an unknown board status', ['quests', 'board', 'status'], 'failed'],
-    ['a negative board week', ['quests', 'board', 'week'], -1],
-    ['a fractional due day', ['quests', 'board', 'dueDay'], 1.5],
-    ['a board request that is not an object', ['quests', 'board'], 'potato'],
     // Stats
     ['negative parsnips shipped', ['stats', 'parsnipsShipped'], -1],
     ['negative debris cleared', ['stats', 'debrisCleared'], -3],
@@ -385,21 +350,6 @@ describe('saved NPCs, quests, stats and festival reject', () => {
     ['a numeric visitedTown', ['stats', 'visitedTown'], 1],
     ['a missing craftedChest', ['stats', 'craftedChest'], undefined],
     ['a string builtCoop', ['stats', 'builtCoop'], 'true'],
-    // Festival
-    ['a festival day before -1', ['festival', 'activeDay'], -2],
-    ['a fractional festival day', ['festival', 'activeDay'], 1.5],
-    ['a thirteenth egg', ['festival', 'eggsFound'], 4096],
-    ['a negative egg mask', ['festival', 'eggsFound'], -1],
-    ['a non-boolean lantern', ['festival', 'lanternReleased'], 'no'],
-    ['ten display stacks', ['festival', 'display'], stacks(10)],
-    ['an empty display stack', ['festival', 'display', 0, 'quantity'], 0],
-    ['a display stack above maxStack', ['festival', 'display', 0, 'quantity'], INVENTORY.maxStack + 1],
-    ['an unknown display item', ['festival', 'display', 1, 'itemId'], 'diamond'],
-    ['a display stack without quality', ['festival', 'display', 0, 'quality'], undefined],
-    ['a display quality of 3', ['festival', 'display', 0, 'quality'], 3],
-    ['silver wood on display', ['festival', 'display', 1, 'quality'], 1],
-    ['a gift target who is not an NPC', ['festival', 'giftTarget'], 'gus'],
-    ['a missing giftGiven', ['festival', 'giftGiven'], undefined],
   ];
 
   it.each(cases)('%s', (_label, path, value) => {

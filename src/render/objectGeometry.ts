@@ -9,19 +9,18 @@
  * - Built on geometryParts.ts: non-indexed, `position` + `normal` + `color`, flat shaded. Painted
  *   parts bake their real colours and render with a white vertex-colour material; the instance
  *   colour multiplies them (white for most objects, a cosmetic shade, or a tint where noted).
- * - Tinted parts (fence timber, giant-crop produce, trophy ribbons) bake white or grey multipliers
- *   and take their colour from the instance. Forage parts carry TINT_MASK_ATTRIBUTE: only the
- *   masked bits (berries, caps, nuts…) take the forage colour, leaves keep their baked green.
- * - Glass parts (lantern paper and lights) are unpainted and use the shared glow-glass material.
+ * - Tinted parts (fence timber, giant-crop produce) bake white or grey multipliers and take their
+ *   colour from the instance. Forage parts carry TINT_MASK_ATTRIBUTE: only the masked bits
+ *   (berries, caps, nuts…) take the forage colour, leaves keep their baked green.
  *
  * One InstancedMesh per part: see OBJECT_PARTS. The chest lid is its own part so it can open.
  */
 import * as THREE from 'three';
-import type { DecorationId, FestivalId, ForageId, GiantCropId, PlacedObject, PlacedObjectKind } from '../core/types';
+import type { ForageId, GiantCropId, PlacedObject, PlacedObjectKind } from '../core/types';
 import { WORKBENCH } from '../config';
 import { HEIGHTS } from './constants';
 import { createLeafBlade, produceGeometryFor, type LeafSpec } from './cropGeometry';
-import { at, box, convexPrismX, glassBox, mergeParts, paint, pose, shade, withTintMask, type Pose, type Vec2 } from './geometryParts';
+import { at, box, convexPrismX, mergeParts, paint, pose, shade, withTintMask, type Pose, type Vec2 } from './geometryParts';
 import { createFencePostGeometry, createFenceRailGeometry } from './structureGeometry';
 
 // ---------------------------------------------------------------------------
@@ -53,16 +52,6 @@ export const OBJECT_COLORS = {
   leafBed: [0x6fb86a, 0x5fa75e, 0x7cc271] as const,
   forageLeaf: 0x78bf68,
   forageLeafDark: 0x3f7f4a,
-  plinth: 0x9c6e4b,
-  plinthTop: 0xb48259,
-  cup: 0xf4c64a,
-  lanternWood: 0x7e5436,
-  paperTrim: 0xc0453c,
-  stone: 0xc9c3b8,
-  stoneDark: 0xa9a399,
-  archWood: 0xb98a5c,
-  blossoms: [0xffb3c7, 0xfff1a8, 0xc9b6ff, 0xffffff] as const,
-  archLeaf: 0x6fb86a,
   benchTop: 0xc8955c,
   benchTopEdge: 0xa87545,
   benchLeg: 0x8c6440,
@@ -95,14 +84,6 @@ export const FORAGE_LOOKS: Readonly<Record<ForageId, ForageLook>> = {
   chanterelle: { color: 0xf3b23b, form: 'cap' },
   frostRoot: { color: 0xd5e6f5, form: 'root' },
   holly: { color: 0xd8323c, form: 'holly' },
-};
-
-/** Ribbon colour of a trophy, picked by its festival. */
-export const TROPHY_RIBBONS: Readonly<Record<FestivalId, number>> = {
-  blossomFair: 0xf59ac4,
-  lanternNight: 0xf2a65a,
-  harvestFair: 0xe0513f,
-  starfallFeast: 0x6f7fe8,
 };
 
 /** Produce shape of each giant crop (CROPS[id].visual.produce; tests keep the two in step). */
@@ -555,136 +536,15 @@ export function createForageBitsGeometry(form: ForageForm): THREE.BufferGeometry
 }
 
 // ---------------------------------------------------------------------------
-// Trophy
-// ---------------------------------------------------------------------------
-
-/** A gold cup with two handles on a wooden plinth. */
-export function createTrophyGeometry(): THREE.BufferGeometry {
-  const C = OBJECT_COLORS;
-  const parts = [
-    box(0.4, 0.22, 0.4, { y: 0.11 }, C.plinth),
-    box(0.44, 0.04, 0.44, { y: 0.24 }, C.plinthTop),
-    cylinder(0.1, 0.12, 0.04, 10, { y: 0.28 }, C.cup),
-    cylinder(0.025, 0.035, 0.14, 6, { y: 0.37 }, C.cup),
-    paint(pose(new THREE.IcosahedronGeometry(0.04, 0), { y: 0.39 }), C.cup),
-    cylinder(0.15, 0.07, 0.2, 10, { y: 0.54 }, C.cup),
-    cylinder(0.16, 0.16, 0.025, 10, { y: 0.65 }, C.cup),
-  ];
-  for (const side of [-1, 1]) {
-    parts.push(box(0.03, 0.13, 0.03, { x: side * 0.2, y: 0.55 }, C.cup));
-    parts.push(box(0.07, 0.03, 0.03, { x: side * 0.17, y: 0.61 }, C.cup));
-    parts.push(box(0.07, 0.03, 0.03, { x: side * 0.16, y: 0.49 }, C.cup));
-  }
-  return mergeParts(parts, 'trophy');
-}
-
-/** A rosette with two tails on the plinth front; white, so the instance colour is the festival's. */
-export function createTrophyRibbonGeometry(): THREE.BufferGeometry {
-  const parts = [
-    shade(pose(new THREE.CylinderGeometry(0.075, 0.075, 0.016, 10), { y: 0.13, z: 0.208, rx: Math.PI / 2 }), 1),
-    shade(pose(new THREE.CylinderGeometry(0.038, 0.038, 0.012, 8), { y: 0.13, z: 0.22, rx: Math.PI / 2 }), 0.78),
-  ];
-  for (const side of [-1, 1]) {
-    parts.push(shade(pose(new THREE.BoxGeometry(0.035, 0.1, 0.01), { x: side * 0.03, y: 0.05, z: 0.206, rz: side * 0.25 }), 0.9));
-  }
-  return mergeParts(parts, 'trophy ribbon');
-}
-
-// ---------------------------------------------------------------------------
-// Decorations
-// ---------------------------------------------------------------------------
-
-/** Where the paper lantern hangs: from an arm on the post, off to +X. */
-const PAPER_LANTERN = { x: 0.2, y: 0.735, width: 0.18, height: 0.24 } as const;
-
-/** Post, arm, hanger and the lantern's caps and red paper trim (the paper itself is glass). */
-export function createPaperLanternGeometry(): THREE.BufferGeometry {
-  const C = OBJECT_COLORS;
-  const L = PAPER_LANTERN;
-  const top = L.y + L.height / 2;
-  const bottom = L.y - L.height / 2;
-  return mergeParts(
-    [
-      box(0.18, 0.06, 0.18, { y: 0.03 }, C.stoneDark),
-      box(0.07, 1.0, 0.07, { y: 0.5 }, C.lanternWood),
-      box(0.27, 0.04, 0.04, { x: 0.115, y: 0.98 }, C.lanternWood),
-      box(0.012, 0.96 - top, 0.012, { x: L.x, y: (0.96 + top) / 2 }, C.lanternWood),
-      box(L.width + 0.03, 0.03, L.width + 0.03, { x: L.x, y: top + 0.015 }, C.lanternWood),
-      box(L.width + 0.03, 0.03, L.width + 0.03, { x: L.x, y: bottom - 0.015 }, C.lanternWood),
-      box(L.width + 0.012, 0.025, L.width + 0.012, { x: L.x, y: L.y + 0.06 }, C.paperTrim),
-      box(L.width + 0.012, 0.025, L.width + 0.012, { x: L.x, y: L.y - 0.06 }, C.paperTrim),
-      box(0.04, 0.04, 0.04, { x: L.x, y: bottom - 0.05 }, C.paperTrim),
-    ],
-    'paper lantern',
-  );
-}
-
-export function createPaperLanternGlassGeometry(): THREE.BufferGeometry {
-  const L = PAPER_LANTERN;
-  return mergeParts([glassBox(L.width, L.height, L.width, { x: L.x, y: L.y })], 'paper lantern glass');
-}
-
-/** Stone lantern: base, pedestal, platform, four corner posts round the light, and a pyramid roof. */
-export function createStoneLanternGeometry(): THREE.BufferGeometry {
-  const C = OBJECT_COLORS;
-  const parts = [
-    box(0.34, 0.08, 0.34, { y: 0.04 }, C.stoneDark),
-    cylinder(0.08, 0.1, 0.34, 6, { y: 0.25 }, C.stone),
-    box(0.3, 0.06, 0.3, { y: 0.45 }, C.stone),
-    paint(pose(new THREE.ConeGeometry(0.27, 0.16, 4), { y: 0.74, ry: Math.PI / 4 }), C.stoneDark),
-    paint(pose(new THREE.IcosahedronGeometry(0.045, 0), { y: 0.84 }), C.stone),
-  ];
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) parts.push(box(0.05, 0.18, 0.05, { x: sx * 0.105, y: 0.57, z: sz * 0.105 }, C.stone));
-  }
-  return mergeParts(parts, 'stone lantern');
-}
-
-export function createStoneLanternGlassGeometry(): THREE.BufferGeometry {
-  return mergeParts([glassBox(0.17, 0.17, 0.17, { y: 0.57 })], 'stone lantern glass');
-}
-
-/** An arch over the tile (posts at ±0.38, a flattened half circle on top) dressed in flower clusters. */
-export function createFlowerArchGeometry(): THREE.BufferGeometry {
-  const C = OBJECT_COLORS;
-  const postHeight = 0.8;
-  const span = 0.38;
-  const rise = 0.3;
-  const parts = [
-    box(0.08, postHeight, 0.08, { x: -span, y: postHeight / 2 }, C.archWood),
-    box(0.08, postHeight, 0.08, { x: span, y: postHeight / 2 }, C.archWood),
-  ];
-  const points: [number, number][] = [];
-  const segments = 7;
-  for (let i = 0; i <= segments; i++) {
-    const angle = Math.PI - (i * Math.PI) / segments;
-    points.push([Math.cos(angle) * span, postHeight + Math.sin(angle) * rise]);
-  }
-  for (let i = 0; i < segments; i++) {
-    const [x0, y0] = at(points, i);
-    const [x1, y1] = at(points, i + 1);
-    const length = Math.hypot(x1 - x0, y1 - y0) + 0.03;
-    parts.push(box(length, 0.07, 0.07, { x: (x0 + x1) / 2, y: (y0 + y1) / 2, rz: Math.atan2(y1 - y0, x1 - x0) }, C.archWood));
-  }
-  const clusters: [number, number][] = [...points, [-span, 0.3], [span, 0.45], [-span, 0.58], [span, 0.2]];
-  clusters.forEach(([x, y], i) => {
-    const z = i % 2 === 0 ? 0.04 : -0.03;
-    parts.push(paint(pose(new THREE.IcosahedronGeometry(0.065, 0), { x: x + 0.02, y: y - 0.02, z: -z }), C.archLeaf));
-    parts.push(paint(pose(new THREE.IcosahedronGeometry(0.05, 0), { x, y: y + 0.03, z }), at(C.blossoms, i % C.blossoms.length)));
-  });
-  return mergeParts(parts, 'flower arch');
-}
-
-// ---------------------------------------------------------------------------
 // Part table: one InstancedMesh per (kind, part)
 // ---------------------------------------------------------------------------
 
 /**
  * Material a part renders with; the ObjectRenderer creates one of each. `painted`: white with
  * vertex colours; `cloth`: the same, swaying gently (scarecrow shirt); `plant`: the tint-mask sway
- * material (forage); `glass`: the shared glow glass.
+ * material (forage).
  */
-export type ObjectMaterialKind = 'painted' | 'cloth' | 'plant' | 'glass';
+export type ObjectMaterialKind = 'painted' | 'cloth' | 'plant';
 
 /** Sway of the cloth and plant materials (see createSwayMaterial). */
 export const OBJECT_SWAY = {
@@ -717,13 +577,6 @@ export const OBJECT_PART_IDS = [
   'forageCap',
   'forageRoot',
   'forageHolly',
-  'trophy',
-  'trophyRibbon',
-  'paperLantern',
-  'paperLanternGlass',
-  'stoneLantern',
-  'stoneLanternGlass',
-  'flowerArch',
   'workbench',
 ] as const;
 export type ObjectPartId = (typeof OBJECT_PART_IDS)[number];
@@ -731,13 +584,13 @@ export type ObjectPartId = (typeof OBJECT_PART_IDS)[number];
 export interface ObjectPartSpec {
   readonly kind: PlacedObjectKind;
   readonly material: ObjectMaterialKind;
-  /** Flush paths (and glowing glass) cast no shadow. */
+  /** Flush paths cast no shadow. */
   readonly castShadow: boolean;
   readonly build: () => THREE.BufferGeometry;
 }
 
 function part(kind: PlacedObjectKind, material: ObjectMaterialKind, build: () => THREE.BufferGeometry, castShadow = true): ObjectPartSpec {
-  return { kind, material, castShadow: castShadow && material !== 'glass', build };
+  return { kind, material, castShadow, build };
 }
 
 export const OBJECT_PARTS: Readonly<Record<ObjectPartId, ObjectPartSpec>> = {
@@ -765,13 +618,6 @@ export const OBJECT_PARTS: Readonly<Record<ObjectPartId, ObjectPartSpec>> = {
   forageCap: part('forage', 'plant', () => createForageBitsGeometry('cap')),
   forageRoot: part('forage', 'plant', () => createForageBitsGeometry('root')),
   forageHolly: part('forage', 'plant', () => createForageBitsGeometry('holly')),
-  trophy: part('trophy', 'painted', createTrophyGeometry),
-  trophyRibbon: part('trophy', 'painted', createTrophyRibbonGeometry),
-  paperLantern: part('decoration', 'painted', createPaperLanternGeometry),
-  paperLanternGlass: part('decoration', 'glass', createPaperLanternGlassGeometry),
-  stoneLantern: part('decoration', 'painted', createStoneLanternGeometry),
-  stoneLanternGlass: part('decoration', 'glass', createStoneLanternGlassGeometry),
-  flowerArch: part('decoration', 'painted', createFlowerArchGeometry),
   workbench: part('workbench', 'painted', createWorkbenchGeometry),
 };
 
@@ -786,12 +632,6 @@ const FORAGE_PARTS: Readonly<Record<ForageForm, ObjectPartId>> = {
 };
 
 const GIANT_PARTS: Readonly<Record<GiantProduceForm, ObjectPartId>> = { head: 'giantHead', gourd: 'giantGourd' };
-
-const DECORATION_PARTS: Readonly<Record<DecorationId, readonly ObjectPartId[]>> = {
-  paperLantern: ['paperLantern', 'paperLanternGlass'],
-  stoneLantern: ['stoneLantern', 'stoneLanternGlass'],
-  flowerArch: ['flowerArch'],
-};
 
 const STONE_PATH_PARTS: readonly ObjectPartId[] = ['stonePath0', 'stonePath1', 'stonePath2'];
 
@@ -821,10 +661,6 @@ export function objectPartsFor(object: PlacedObject, stoneVariant: number): read
       return ['giantLeaves', GIANT_PARTS[GIANT_PRODUCE[object.cropId]]];
     case 'forage':
       return ['foragePlant', FORAGE_PARTS[FORAGE_LOOKS[object.itemId].form]];
-    case 'trophy':
-      return ['trophy', 'trophyRibbon'];
-    case 'decoration':
-      return DECORATION_PARTS[object.variant];
     case 'workbench':
       return ['workbench'];
   }

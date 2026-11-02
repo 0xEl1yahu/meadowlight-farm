@@ -60,8 +60,8 @@ const valid = (state: GameState): boolean => isValidGameState(JSON.parse(seriali
 
 describe('the jobs in saves', () => {
   it('are in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(11);
-    expect(BASE.version).toBe(11);
+    expect(SAVE_VERSION).toBe(12);
+    expect(BASE.version).toBe(12);
   });
 
   it('starts a new game with job 1 offered and the others locked, no bed, no rescue and no field', () => {
@@ -125,7 +125,7 @@ function midJobOnFarm(): GameState {
 
 describe('v8 → v9', () => {
   it('carries on to version 10', () => {
-    expect((migrateSave(v8Save(withMigratedJobs(midJobOnFarm()))) as SaveJson).version).toBe(11);
+    expect((migrateSave(v8Save(withMigratedJobs(midJobOnFarm()))) as SaveJson).version).toBe(12);
   });
 
   it("puts every robot on the farm as the player's, and every zone on the farm", () => {
@@ -162,9 +162,9 @@ describe('v8 → v9', () => {
     expect(must(load(save))).toEqual(withMigratedPlaces(BASE));
   });
 
-  it('migrates the version-2 fixture through every version to 11', () => {
+  it('migrates the version-2 fixture through every version to 12', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     expect(loaded.jobs).toEqual(BASE.jobs);
     expect(loaded.robots.zones).toEqual(BASE.robots.zones);
   });
@@ -185,7 +185,7 @@ describe('v8 → v9', () => {
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v8Save(BASE), version: 11 };
+    const save = { ...v8Save(BASE), version: SAVE_VERSION + 1 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });

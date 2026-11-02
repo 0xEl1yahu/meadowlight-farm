@@ -308,8 +308,6 @@ const SAMPLE_OBJECTS: Readonly<Record<PlacedObjectKind, PlacedObject>> = {
   stonePath: { kind: 'stonePath' },
   giantCrop: { kind: 'giantCrop', cropId: 'melon', anchorTx: 0, anchorTz: 0 },
   forage: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 },
-  trophy: { kind: 'trophy', festival: 'harvestFair', year: 1 },
-  decoration: { kind: 'decoration', variant: 'stoneLantern' },
   workbench: { kind: 'workbench' },
 };
 const PATHS: readonly PlacedObjectKind[] = ['woodPath', 'stonePath'];

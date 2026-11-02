@@ -3,7 +3,7 @@
  * {name}", before anything else on their tile; Shift + E does the same, and so does Space with
  * nothing usable in hand or while carrying a robot. A chat opens the talk panel with the line
  * picked before the chat is recorded, freezes the game, costs no energy or time, and counts in
- * `npcs`; `talkedToday` clears each morning. E, K, Enter and Escape close the panel.
+ * `npcs`. E, K, Enter and Escape close the panel.
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
@@ -160,12 +160,12 @@ describe('a chat', () => {
     expect(LINE_BANKS.marigold.everyday).toContain(line);
   });
 
-  it('counts each chat and marks today, leaving the other characters alone', () => {
+  it('counts each chat, leaving the other characters alone', () => {
     const first = interact(AT_MARIGOLD);
-    expect(first.npcs.marigold).toEqual({ ...AT_MARIGOLD.npcs.marigold, talks: 1, talkedToday: true });
+    expect(first.npcs.marigold).toEqual({ ...AT_MARIGOLD.npcs.marigold, talks: 1 });
     for (const id of NPC_IDS) if (id !== 'marigold') expect(first.npcs[id]).toBe(AT_MARIGOLD.npcs[id]);
     const second = interact(gameReducer(first, actions.closePanel()));
-    expect(second.npcs.marigold).toEqual({ ...AT_MARIGOLD.npcs.marigold, talks: 2, talkedToday: true });
+    expect(second.npcs.marigold).toEqual({ ...AT_MARIGOLD.npcs.marigold, talks: 2 });
   });
 
   it('costs no energy and no time, even when exhausted', () => {
@@ -200,20 +200,12 @@ describe('a chat', () => {
 });
 
 describe('the morning', () => {
-  // Back indoors after the chat, as every walker is each morning, so only the chat records change.
+  // Back indoors after the chat, as every walker is each morning, so the morning changes nothing of theirs.
   const talked = withPlaces(gameReducer(interact(AT_MARIGOLD), actions.closePanel()), { marigold: { kind: 'indoors' } });
 
-  it('clears talkedToday, keeping talks and every untouched entry', () => {
-    const morning = startNextDay(talked, false);
-    expect(morning.npcs.marigold).toEqual({ ...talked.npcs.marigold, talks: 1, talkedToday: false });
-    for (const id of NPC_IDS) if (id !== 'marigold') expect(morning.npcs[id]).toBe(talked.npcs[id]);
-    expect(gameReducer(talked, actions.sleep()).npcs.marigold).toEqual({ ...talked.npcs.marigold, talks: 1, talkedToday: false });
-  });
-
-  it('keeps the npcs section itself when no one was talked to', () => {
+  it('keeps the npcs section itself, chats and all', () => {
     expect(startNextDay(BASE, false).npcs).toBe(BASE.npcs);
-    const yesterday = startNextDay(talked, false);
-    expect(startNextDay(yesterday, false).npcs).toBe(yesterday.npcs);
+    expect(startNextDay(talked, false).npcs).toBe(talked.npcs);
   });
 });
 

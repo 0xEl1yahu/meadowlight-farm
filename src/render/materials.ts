@@ -143,7 +143,7 @@ let sharedGlowGlass: THREE.MeshStandardMaterial | null = null;
 
 /**
  * The single material for every window pane and lamp glass on every map (farmhouse, town
- * buildings, lamp posts, lantern objects). StructureRenderer drives its colour and emissive
+ * buildings, lamp posts). StructureRenderer drives its colour and emissive
  * intensity once per frame from the clock and the weather, so everything lights up together.
  * Created on first use; never disposed per map, only by {@link disposeSharedGlowGlassMaterial}.
  */

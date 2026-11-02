@@ -34,16 +34,14 @@ function withSold(state: GameState, sold: { readonly [K in keyof ShopsSoldToday]
 const minis = (count: number): RobotDelivery[] => Array.from({ length: count }, (_, i) => ({ size: 'mini', name: `Mini ${i + 1}` }));
 
 /**
- * What a v7 save can hold (Review Focus 3): mid-day in town, chats with Bram and Tess (now
- * Berlioz and Tallulah), a board request from Bram and Tess as the festival gift target.
+ * What a v7 save can hold (Review Focus 3): mid-day in town, and chats with Bram and Tess (now
+ * Berlioz and Tallulah).
  */
 function chatted(): GameState {
   const lively = { ...BASE, ...livelySections() };
   const state: GameState = {
     ...lively,
-    npcs: { ...lively.npcs, berlioz: { ...lively.npcs.berlioz, talks: 12, talkedToday: true }, tallulah: { ...lively.npcs.tallulah, talks: 30, talkedToday: false } },
-    quests: { ...lively.quests, board: { week: 3, npc: 'berlioz', itemId: 'copperOre', quantity: 5, dueDay: 30, delivered: 2, status: 'active' } },
-    festival: { ...lively.festival, giftTarget: 'tallulah' },
+    npcs: { ...lively.npcs, berlioz: { ...lively.npcs.berlioz, talks: 12 }, tallulah: { ...lively.npcs.tallulah, talks: 30 } },
   };
   return withPlayer(atDay(state, 3, 780), { tx: 10, tz: 16 }, Direction.East, 'town');
 }
@@ -62,16 +60,14 @@ function shopping(): GameState {
 }
 
 const npcsOf = (save: SaveJson) => save.npcs as SaveJson;
-const questsOf = (save: SaveJson) => save.quests as SaveJson & { board: SaveJson | null };
-const festivalOf = (save: SaveJson) => save.festival as SaveJson;
 
 /** Loads raw save JSON as the game would. */
 const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringify(save));
 
 describe('the shops in saves', () => {
   it('are in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(11);
-    expect(BASE.version).toBe(11);
+    expect(SAVE_VERSION).toBe(12);
+    expect(BASE.version).toBe(12);
   });
 
   it('starts a new game with no deliveries, nothing sold and the renamed cast', () => {
@@ -95,7 +91,7 @@ describe('the shops in saves', () => {
     expect(deserializeGame(serializeGame(state))).toEqual(state);
   });
 
-  it('round-trips the renamed cast with a board request and a gift target', () => {
+  it('round-trips the renamed cast', () => {
     const state = chatted();
     expect(deserializeGame(serializeGame(state))).toEqual(state);
   });
@@ -103,7 +99,7 @@ describe('the shops in saves', () => {
 
 describe('v7 → v8', () => {
   it('carries on to version 10', () => {
-    expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(11);
+    expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(12);
   });
 
   it('loads a v7 save as the state it was taken from, its walkers placed by version 10', () => {
@@ -127,33 +123,12 @@ describe('v7 → v8', () => {
     const migrated = migrateSave(save) as SaveJson;
     expect(Object.keys(npcsOf(migrated))).toEqual([...NPC_IDS]);
     expect(npcsOf(migrated)).toEqual(withMigratedPlaces(state).npcs);
-    expect(must(load(save)).npcs.berlioz).toMatchObject({ talks: 12, talkedToday: true });
+    expect(must(load(save)).npcs.berlioz).toMatchObject({ talks: 12 });
   });
 
-  it('moves a board request from Bram and a gift target of Tess with them', () => {
-    const save = v7Save(chatted());
-    expect(must(questsOf(save).board).npc).toBe('bram');
-    expect(festivalOf(save).giftTarget).toBe('tess');
-    const migrated = migrateSave(save) as SaveJson;
-    expect(must(questsOf(migrated).board).npc).toBe('berlioz');
-    expect(festivalOf(migrated).giftTarget).toBe('tallulah');
-  });
-
-  it('leaves a board request, a gift target or no target naming anyone else as it was', () => {
-    const state = chatted();
-    const others: GameState = {
-      ...state,
-      quests: { ...state.quests, board: { ...must(state.quests.board), npc: 'juniper' } },
-      festival: { ...state.festival, giftTarget: 'sol' },
-    };
-    expect(must(load(v7Save(others)))).toEqual(withMigratedPlaces(others));
-    const none: GameState = { ...state, quests: { ...state.quests, board: null }, festival: { ...state.festival, giftTarget: null } };
-    expect(must(load(v7Save(none)))).toEqual(withMigratedPlaces(none));
-  });
-
-  it('migrates the version-2 fixture through every version to 11', () => {
+  it('migrates the version-2 fixture through every version to 12', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     expect(chatsOf(loaded.npcs)).toEqual(chatsOf(BASE.npcs));
     expect(loaded.robots.deliveries).toEqual([]);
     expect(loaded.shopsSoldToday).toEqual(BASE.shopsSoldToday);
@@ -182,7 +157,7 @@ describe('v7 → v8', () => {
   });
 
   it('leaves a save from a later version for the validator to reject', () => {
-    const save = { ...v7Save(BASE), version: 11 };
+    const save = { ...v7Save(BASE), version: SAVE_VERSION + 1 };
     expect(migrateSave(save)).toBe(save);
     expect(load(save)).toBeNull();
   });
@@ -216,15 +191,13 @@ describe('save version 8 rejects', () => {
     ['a negative count', ['shopsSoldToday', 'parts', 'tiller'], -1],
     ['a fractional count', ['shopsSoldToday', 'seeds', 'potato_seeds'], 2.5],
     ['a count that is not a number', ['shopsSoldToday', 'robots', 'big'], '0'],
-    ['Bram by his old id', ['npcs', 'bram'], { talks: 0, talkedToday: false }],
-    ['Tess by her old id', ['npcs', 'tess'], { talks: 0, talkedToday: false }],
+    ['Bram by his old id', ['npcs', 'bram'], { talks: 0, place: { kind: 'indoors' } }],
+    ['Tess by her old id', ['npcs', 'tess'], { talks: 0, place: { kind: 'indoors' } }],
     ['a missing Berlioz', ['npcs', 'berlioz'], undefined],
-    ['a board request from Bram', ['quests', 'board', 'npc'], 'bram'],
-    ['Tess as the gift target', ['festival', 'giftTarget'], 'tess'],
   ];
 
   it.each(cases)('%s', (_label, path, value) => {
-    const state = { ...shopping(), quests: chatted().quests, festival: chatted().festival };
+    const state = shopping();
     expect(isValidGameState(JSON.parse(serializeGame(state)))).toBe(true);
     const save = JSON.parse(serializeGame(state)) as SaveJson;
     let node: SaveJson = save;

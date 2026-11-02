@@ -161,7 +161,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('validates real states', () => {
     expect(isValidGameState(BASE)).toBe(true);
     expect(isValidGameState(richState())).toBe(true);
-    expect(SAVE_VERSION).toBe(11);
+    expect(SAVE_VERSION).toBe(12);
   });
 });
 
@@ -453,8 +453,6 @@ describe('placed objects and fertiliser in saves', () => {
       [11, 10, { ...EMPTY_TILE, object: { kind: 'woodPath' } }],
       [12, 10, { ...EMPTY_TILE, object: { kind: 'stonePath' } }],
       [6, 11, { ...EMPTY_TILE, object: { kind: 'forage', itemId: 'chanterelle', spawnDay: 0 } }],
-      [7, 11, { ...EMPTY_TILE, object: { kind: 'trophy', festival: 'harvestFair', year: 2 } }],
-      [8, 11, { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'flowerArch' } }],
       [9, 11, { ...soilTile(TileState.Plowed, cropOf('parsnip')), fertilizer: 'speedGro' }],
       [10, 11, { ...soilTile(TileState.Watered), fertilizer: 'quality' }],
     ];
@@ -503,10 +501,8 @@ describe('placed objects and fertiliser in saves', () => {
     ['a forage object of a crop', [...tileAtPath(6, 11), 'object', 'itemId'], 'parsnip'],
     ['a negative forage spawn day', [...tileAtPath(6, 11), 'object', 'spawnDay'], -1],
     ['a fractional forage spawn day', [...tileAtPath(6, 11), 'object', 'spawnDay'], 0.5],
-    ['a trophy from year 0', [...tileAtPath(7, 11), 'object', 'year'], 0],
-    ['a trophy from an unknown festival', [...tileAtPath(7, 11), 'object', 'festival'], 'mayDay'],
-    ['an unknown decoration', [...tileAtPath(8, 11), 'object', 'variant'], 'gnome'],
-    ['a decoration without a variant', [...tileAtPath(8, 11), 'object', 'variant'], undefined],
+    ['a trophy, which version 12 dropped', [...tileAtPath(7, 11)], { ...EMPTY_TILE, object: { kind: 'trophy', festival: 'harvestFair', year: 2 } }],
+    ['a decoration, which version 12 dropped', [...tileAtPath(8, 11)], { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'flowerArch' } }],
     ['a path on plowed soil', [...tileAtPath(11, 10), 'state'], TileState.Plowed],
     ['fertiliser under a path', [...tileAtPath(11, 10), 'fertilizer'], 'basic'],
     ['fertiliser under a sprinkler', [...tileAtPath(7, 10), 'fertilizer'], 'basic'],
@@ -904,7 +900,7 @@ function chestOf(stacks: readonly (readonly [number, ItemStack])[]): PlacedObjec
 /**
  * A version-3 state that uses every field the version brought: every placed-object kind and
  * fertiliser on the farm, a chest and a path in the forest (the player stands on the path), a
- * decoration and a path in the town, silver and gold stacks in the backpack, the bin and the
+ * scarecrow and a path in the town, silver and gold stacks in the backpack, the bin and the
  * chests, the full 36-slot backpack unlocked, an open panel, and every later-workstream section
  * far from its defaults with no optional field left null or empty.
  */
@@ -919,8 +915,6 @@ function everything(): GameState {
     [11, 10, { ...EMPTY_TILE, object: { kind: 'woodPath' } }],
     [12, 10, { ...EMPTY_TILE, object: { kind: 'stonePath' } }],
     [6, 11, { ...EMPTY_TILE, object: { kind: 'forage', itemId: 'hazelnut', spawnDay: 3 } }],
-    [7, 11, { ...EMPTY_TILE, object: { kind: 'trophy', festival: 'lanternNight', year: 1 } }],
-    [8, 11, { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'paperLantern' } }],
     [9, 11, { ...soilTile(TileState.Plowed, cropOf('parsnip')), fertilizer: 'speedGro' }],
     [10, 11, { ...soilTile(TileState.Watered), fertilizer: 'quality' }],
     [11, 11, { ...soilTile(TileState.Watered, cropOf('potato', { stage: 2 })), fertilizer: 'basic' }],
@@ -935,9 +929,9 @@ function everything(): GameState {
   state = withTile(state, forestChest, { ...EMPTY_TILE, object: chestOf([[12, stack('blackberry', 4, 2)]]) }, 'forest');
   const forestPath = openTile('forest', { tx: forestChest.tx + 1, tz: forestChest.tz });
   state = withTile(state, forestPath, { ...EMPTY_TILE, object: { kind: 'woodPath' } }, 'forest');
-  const townLantern = openTile('town', { tx: 12, tz: 10 });
-  state = withTile(state, townLantern, { ...EMPTY_TILE, object: { kind: 'decoration', variant: 'stoneLantern' } }, 'town');
-  state = withTile(state, openTile('town', { tx: townLantern.tx + 1, tz: townLantern.tz }), { ...EMPTY_TILE, object: { kind: 'stonePath' } }, 'town');
+  const townScarecrow = openTile('town', { tx: 12, tz: 10 });
+  state = withTile(state, townScarecrow, { ...EMPTY_TILE, object: { kind: 'scarecrow' } }, 'town');
+  state = withTile(state, openTile('town', { tx: townScarecrow.tx + 1, tz: townScarecrow.tz }), { ...EMPTY_TILE, object: { kind: 'stonePath' } }, 'town');
   state = withPlayer(state, forestPath, Direction.North, 'forest');
   const slots: (ItemStack | null)[] = [...BASE.inventory.slots];
   slots[12] = stack('parsnip', 10, 2);
@@ -1053,9 +1047,6 @@ const NEW_FIELDS: readonly string[] = [
   'anchorTz',
   'itemId',
   'spawnDay',
-  'festival',
-  'year',
-  'variant',
   ...Object.keys(createDefaultSections()),
   'playerName',
   'farmName',
@@ -1073,7 +1064,6 @@ const NEW_FIELDS: readonly string[] = [
   'level',
   'readyDay',
   'known',
-  'kitchenLevel',
   'id',
   'plot',
   'troughWheat',
@@ -1085,16 +1075,7 @@ const NEW_FIELDS: readonly string[] = [
   'happiness',
   'hasProduct',
   ...NPC_IDS,
-  'talkedToday',
   'talks',
-  'completed',
-  'board',
-  'week',
-  'npc',
-  'quantity',
-  'dueDay',
-  'delivered',
-  'status',
   'parsnipsShipped',
   'debrisCleared',
   'forageFound',
@@ -1102,12 +1083,6 @@ const NEW_FIELDS: readonly string[] = [
   'visitedTown',
   'craftedChest',
   'builtCoop',
-  'activeDay',
-  'eggsFound',
-  'lanternReleased',
-  'display',
-  'giftTarget',
-  'giftGiven',
 ];
 
 /** A value of the wrong type for `value`: a string becomes a number, anything else a string no id list holds. */

@@ -3,8 +3,8 @@
  * the v10 → v11 migration teaches it to a farm that has taken job 1 already, and to no other.
  */
 import { describe, expect, it } from 'vitest';
-import { SAVE_VERSION, type GameState, type JobStatus } from '../src/core/types';
-import { deserializeGame, migrateSave } from '../src/state/persistence';
+import type { GameState, JobStatus } from '../src/core/types';
+import { deserializeGame } from '../src/state/persistence';
 import { BASE, must, v10Save, withBurnerLearned, type SaveJson } from './testUtils';
 
 const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringify(save));
@@ -22,12 +22,6 @@ function v10WithoutBurner(state: GameState): SaveJson {
 }
 
 describe('save version 11', () => {
-  it('is the current version', () => {
-    expect(SAVE_VERSION).toBe(11);
-    expect(BASE.version).toBe(11);
-    expect((migrateSave(v10Save(BASE)) as SaveJson).version).toBe(11);
-  });
-
   it('teaches the Wood Burner to a farm that has taken job 1, active or done', () => {
     for (const status of ['active', 'done'] as const) {
       const loaded = must(load(v10WithoutBurner(atJob1(status))));

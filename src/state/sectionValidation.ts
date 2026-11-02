@@ -1,6 +1,6 @@
 /**
  * Save validation for the GameState sections later workstreams fill in (profile, tools,
- * crafting, cooking, buildings, NPCs, townsfolk, quests, stats, festival, shop stock, SLOPMART, jobs).
+ * crafting, buildings, NPCs, townsfolk, stats, shop stock, SLOPMART, jobs).
  * Phase 0 only stores them, so these checks pin down exactly the shapes and ranges the section
  * types document.
  */
@@ -11,14 +11,12 @@ import {
   CRAFTING_RECIPE_IDS,
   CROP_IDS,
   DIRECTIONS,
-  DISH_IDS,
   FARM_BUILDING_KINDS,
   JOB_IDS,
   JOB_STATUSES,
   MAP_IDS,
   NPC_IDS,
   ROBOT_SIZES,
-  STORY_QUEST_IDS,
   TOWNSFOLK_IDS,
   UPGRADABLE_TOOLS,
   type AnimalKind,
@@ -27,7 +25,6 @@ import {
   type GameState,
 } from '../core/types';
 import { seedItemId } from '../farming/crops';
-import { isItemId } from '../items/items';
 import { inBounds } from '../world/grid';
 import { MAPS } from '../world/maps';
 import { getTile, isWalkable } from '../world/tiles';
@@ -40,12 +37,11 @@ import {
   isIntIn,
   isObj,
   isOneOf,
-  isValidStack,
   type Obj,
 } from './validation';
 
 /** The fields of an NpcTalk, exactly. */
-const NPC_TALK_KEYS = ['talks', 'talkedToday', 'place'] as const;
+const NPC_TALK_KEYS = ['talks', 'place'] as const;
 /** The fields of an `out` WalkerPlace, exactly. */
 const OUT_PLACE_KEYS = ['kind', 'mapId', 'tx', 'tz', 'facing'] as const;
 /** Every coop and barn has room for this many animals. */
@@ -55,9 +51,6 @@ const HOME_OF: Readonly<Record<AnimalKind, FarmBuildingKind>> = { chicken: 'coop
 /** Which of the farm layout's plots each building kind stands on; each plot is sized for its kind. */
 const PLOT_OF: Readonly<Record<FarmBuildingKind, number>> = { coop: 0, barn: 1 };
 const MAX_HAPPINESS = 255;
-/** Blossom Fair has 12 eggs, stored as a bitmask. */
-const MAX_EGG_MASK = 0xfff;
-const MAX_FESTIVAL_DISPLAY = 9;
 /** Every seed item, one per crop: the keys of Marigold's sold-today counts. */
 const SEED_ITEM_IDS = CROP_IDS.map(seedItemId);
 
@@ -97,10 +90,6 @@ function isValidCrafting(v: unknown): boolean {
   return isObj(v) && isCanonicalSubset(v.known, CRAFTING_RECIPE_IDS);
 }
 
-function isValidCooking(v: unknown): boolean {
-  return isObj(v) && isCanonicalSubset(v.known, DISH_IDS) && isIntIn(v.kitchenLevel, 0, 1);
-}
-
 /**
  * A walker's place (farmclaws part 4d spec §9.3), with exact keys: indoors, or out on a map that
  * exists, on a walkable tile within it, facing a direction.
@@ -115,7 +104,7 @@ function isWalkerPlace(v: unknown, maps: GameState['maps']): boolean {
 }
 
 function isValidNpcTalk(v: unknown, maps: GameState['maps']): boolean {
-  return isObj(v) && hasExactKeys(v, NPC_TALK_KEYS) && isCount(v.talks) && isBool(v.talkedToday) && isWalkerPlace(v.place, maps);
+  return isObj(v) && hasExactKeys(v, NPC_TALK_KEYS) && isCount(v.talks) && isWalkerPlace(v.place, maps);
 }
 
 /** Exactly the seven characters (farmclaws part 4a spec §6.3), each with exactly an NpcTalk's fields. */
@@ -177,24 +166,6 @@ function isValidBuildings(buildings: unknown, nextEntityId: unknown): boolean {
   return true;
 }
 
-const BOARD_STATUSES = ['active', 'completed', 'expired'] as const;
-
-function isValidQuests(v: unknown): boolean {
-  if (!isObj(v) || !isCanonicalSubset(v.completed, STORY_QUEST_IDS)) return false;
-  const board = v.board;
-  return (
-    board === null ||
-    (isObj(board) &&
-      isCount(board.week) &&
-      isOneOf(board.npc, NPC_IDS) &&
-      isItemId(board.itemId) &&
-      isIntIn(board.quantity, 1, Number.MAX_SAFE_INTEGER) &&
-      isCount(board.dueDay) &&
-      isIntIn(board.delivered, 0, board.quantity) &&
-      isOneOf(board.status, BOARD_STATUSES))
-  );
-}
-
 function isValidStats(v: unknown): boolean {
   return (
     isObj(v) &&
@@ -205,20 +176,6 @@ function isValidStats(v: unknown): boolean {
     isBool(v.visitedTown) &&
     isBool(v.craftedChest) &&
     isBool(v.builtCoop)
-  );
-}
-
-function isValidFestival(v: unknown): boolean {
-  return (
-    isObj(v) &&
-    isIntIn(v.activeDay, -1, Number.MAX_SAFE_INTEGER) &&
-    isIntIn(v.eggsFound, 0, MAX_EGG_MASK) &&
-    isBool(v.lanternReleased) &&
-    Array.isArray(v.display) &&
-    v.display.length <= MAX_FESTIVAL_DISPLAY &&
-    v.display.every((stack: unknown) => isValidStack(stack, true)) &&
-    (v.giftTarget === null || isOneOf(v.giftTarget, NPC_IDS)) &&
-    isBool(v.giftGiven)
   );
 }
 
@@ -281,13 +238,10 @@ export function isValidSections(v: Obj, maps: GameState['maps']): v is Obj & Gam
     isValidProfile(v.profile) &&
     isValidTools(v.tools) &&
     isValidCrafting(v.crafting) &&
-    isValidCooking(v.cooking) &&
     isValidBuildings(v.buildings, v.nextEntityId) &&
     isValidNpcs(v.npcs, maps) &&
     isValidTownsfolk(v.townsfolk, maps) &&
-    isValidQuests(v.quests) &&
     isValidStats(v.stats) &&
-    isValidFestival(v.festival) &&
     isValidShopsSoldToday(v.shopsSoldToday) &&
     isValidSlopShop(v.slopShop) &&
     isValidJobs(v.jobs)
