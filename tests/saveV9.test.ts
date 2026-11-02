@@ -12,7 +12,7 @@ import { createDefaultSections } from '../src/state/initialState';
 import { deserializeGame, isValidGameState, migrateSave, serializeGame } from '../src/state/persistence';
 import { getTile, isWalkable } from '../src/world/tiles';
 import saveV2Text from './fixtures/save-v2.json?raw';
-import { BASE, must, robotOf, v8Save, withMigratedJobs, withMigratedPlaces, withRobots, withZones, type SaveJson } from './testUtils';
+import { BASE, must, robotOf, v8Save, withBurnerLearned, withMigratedJobs, withMigratedPlaces, withRobots, withZones, type SaveJson } from './testUtils';
 
 /** Lane tiles on the Neighbours map (z 13–15), open ground for the neighbours' robots. */
 const LANE_WEST = { tx: 8, tz: 13 };
@@ -60,8 +60,8 @@ const valid = (state: GameState): boolean => isValidGameState(JSON.parse(seriali
 
 describe('the jobs in saves', () => {
   it('are in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(10);
-    expect(BASE.version).toBe(10);
+    expect(SAVE_VERSION).toBe(11);
+    expect(BASE.version).toBe(11);
   });
 
   it('starts a new game with job 1 offered and the others locked, no bed, no rescue and no field', () => {
@@ -125,7 +125,7 @@ function midJobOnFarm(): GameState {
 
 describe('v8 → v9', () => {
   it('carries on to version 10', () => {
-    expect((migrateSave(v8Save(withMigratedJobs(midJobOnFarm()))) as SaveJson).version).toBe(10);
+    expect((migrateSave(v8Save(withMigratedJobs(midJobOnFarm()))) as SaveJson).version).toBe(11);
   });
 
   it("puts every robot on the farm as the player's, and every zone on the farm", () => {
@@ -162,9 +162,9 @@ describe('v8 → v9', () => {
     expect(must(load(save))).toEqual(withMigratedPlaces(BASE));
   });
 
-  it('migrates the version-2 fixture through every version to 10', () => {
+  it('migrates the version-2 fixture through every version to 11', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(10);
+    expect(loaded.version).toBe(11);
     expect(loaded.jobs).toEqual(BASE.jobs);
     expect(loaded.robots.zones).toEqual(BASE.robots.zones);
   });
@@ -173,7 +173,7 @@ describe('v8 → v9', () => {
     expect(() => v8Save(withRobots(BASE, [wave()]))).toThrow('v8Save');
     expect(() => v8Save(withZones(BASE, { H: COSMO_FIELD_ZONE }))).toThrow('v8Save');
     expect(() => v8Save(withRobots(BASE, [robotOf()]))).toThrow('v8Save');
-    expect(() => v8Save({ ...BASE, jobs: { ...BASE.jobs, status: { ...BASE.jobs.status, spinningRobot: 'active' } } })).toThrow('v8Save');
+    expect(() => v8Save(withBurnerLearned({ ...BASE, jobs: { ...BASE.jobs, status: { ...BASE.jobs.status, spinningRobot: 'active' } } }))).toThrow('v8Save');
   });
 
   it('leaves a v8 save whose robots section is malformed for the validator to reject', () => {

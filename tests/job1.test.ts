@@ -16,11 +16,12 @@ import { programmedRobot } from '../src/robots/edits';
 import { findFreeBlock, freeSpotNear } from '../src/robots/workbench';
 import { withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
+import { countItem } from '../src/state/inventory';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { blockedTile } from '../src/world/tiles';
 import { spinningRobotReference, withoutPowerDown } from './jobSolutions';
-import { BASE, holding, must, robotOf, soilTile, tileAt, withPlayer, withRobots, withTile, withWalkerAt, withZones } from './testUtils';
+import { BASE, holding, must, robotOf, soilTile, stack, tileAt, withPlayer, withRobots, withSlots, withTile, withWalkerAt, withZones } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
@@ -96,6 +97,25 @@ describe('Sprinkle', () => {
     expect(texts(refused).at(-1)).toBe(ROBOT_CAP_RULE);
     expect(refused.jobs.status.spinningRobot).toBe('offered');
     expect(refused.ui.panel).toMatchObject({ kind: 'talk', npc: 'sol', card: 'job' });
+  });
+});
+
+describe('the Wood Burner recipe', () => {
+  it('is taught when the job is taken, so Sprinkle has a way to recharge', () => {
+    expect(BASE.crafting.known).not.toContain('woodBurner');
+    expect(TAKEN.crafting.known).toEqual([...BASE.crafting.known, 'woodBurner']);
+    const stocked = withSlots(TAKEN, [stack('stone', 20), stack('wood', 10), stack('copperOre', 2)]);
+    expect(countItem(act(stocked, actions.craft('woodBurner')).inventory, 'woodBurner')).toBe(1);
+  });
+
+  it("isn't taught when the set-up is refused", () => {
+    const full = withRobots(BASE, Array.from({ length: ROBOTS.maxRobots }, (_, i) => robotOf({ id: i + 1, name: `R${i + 1}`, tx: 20 + (i % 6), tz: 12 + Math.floor(i / 6) })));
+    expect(take(full).crafting.known).not.toContain('woodBurner');
+  });
+
+  it('is learned once, by a farm that knows it already too', () => {
+    const knows: GameState = { ...BASE, crafting: { known: [...BASE.crafting.known, 'woodBurner'] } };
+    expect(take(knows).crafting).toBe(knows.crafting);
   });
 });
 

@@ -84,13 +84,13 @@ function chestsOn(state: GameState, mapId: MapId): Map<string, Tile> {
 
 describe('save version 10', () => {
   it('is the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(10);
-    expect(BASE.version).toBe(10);
+    expect(SAVE_VERSION).toBe(11);
+    expect(BASE.version).toBe(11);
   });
 
   it('migrates a v9 save to version 10, and back to the same state with its walkers placed', () => {
     const save = v9Save(BASE);
-    expect((migrateSave(save) as SaveJson).version).toBe(10);
+    expect((migrateSave(save) as SaveJson).version).toBe(11);
     expect(must(load(save))).toEqual(withMigratedPlaces(BASE));
   });
 
@@ -124,9 +124,9 @@ describe('save version 10', () => {
     for (const at of ringTiles(CHICKEN_RUN)) expect(savedTileAt(save, 'neighbours', at), key(at.tx, at.tz)).toEqual(EMPTY_TILE);
   });
 
-  it('migrates the version-2 fixture through every version to 10', () => {
+  it('migrates the version-2 fixture through every version to 11', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(10);
+    expect(loaded.version).toBe(11);
     for (const at of townPropTiles()) expect(tileAt(loaded, at, 'town')).toEqual(blockedTile(Blocker.Building));
     expect(loaded.maps.neighbours).toEqual(BASE.maps.neighbours);
   });
@@ -382,7 +382,7 @@ describe('saved places', () => {
   ];
 
   it('accept the save the cases corrupt', () => {
-    expect(isValidGameState(corrupted(['version'], 10))).toBe(true);
+    expect(isValidGameState(corrupted(['version'], 11))).toBe(true);
   });
 
   it.each(cases)('reject %s', (_label, path, value) => {

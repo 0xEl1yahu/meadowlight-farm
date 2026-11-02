@@ -333,7 +333,7 @@ A robot added mid-day acts first at `minuteOfDay + periodFor(robot)`. A new robo
 - No sell price.
 - Colour: `0x8a5a3c`.
 
-**Recipe:** `woodBurner`: 20 stone, 10 wood, 2 copper ore, and it makes 1. It's **not** in the default known recipes. Part 4's job 1 teaches it, and in development `__meadowlight.addRobot` also teaches it (section 8.4).
+**Recipe:** `woodBurner`: 20 stone, 10 wood, 2 copper ore, and it makes 1. It's **not** in the default known recipes. Taking part 4c's job 1 teaches it (part 4c spec §3.1, R26), and in development `__meadowlight.addRobot` also teaches it (section 8.4).
 
 **Placement:**
 - Farm-only, like sprinklers: `isFarmOnlyPlaceable` includes it.

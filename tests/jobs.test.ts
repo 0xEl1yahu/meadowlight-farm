@@ -156,7 +156,7 @@ describe('the job card', () => {
 describe('taking a job', () => {
   it('sets the job up, closes the chat and says so', () => {
     expect(TAKEN.ui.panel).toEqual({ kind: 'none' });
-    expect(texts(TAKEN).at(-1)).toBe('The spinning robot: job taken.');
+    expect(texts(TAKEN).slice(-2)).toEqual(['The spinning robot: job taken.', 'Sol taught you the Wood Burner recipe.']);
     expect(sprinkleOf(TAKEN)).not.toBeNull();
     expect(TAKEN.jobs.bed).not.toBeNull();
     expect(TAKEN.jobs.fieldDay).toBe(TAKEN.time.absoluteDay);

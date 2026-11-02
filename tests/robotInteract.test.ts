@@ -159,7 +159,7 @@ describe('the rest', () => {
     expect(lastText(next)).toBe('Put Sprocket down before you leave the farm.');
   });
 
-  it('loads a wood burner from the held wood, up to 10', () => {
+  it('loads a wood burner from the held wood, up to 11', () => {
     const burner = { ...EMPTY_TILE, object: { kind: 'woodBurner' as const, fuel: 3 } };
     const loaded = interact(holding(scenario(burner), 'wood', 25));
     expect(tileAt(loaded, TARGET, 'farm').object).toEqual({ kind: 'woodBurner', fuel: 10 });

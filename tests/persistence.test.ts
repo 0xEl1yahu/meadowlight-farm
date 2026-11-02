@@ -161,7 +161,7 @@ describe('serializeGame / deserializeGame round trip', () => {
   it('validates real states', () => {
     expect(isValidGameState(BASE)).toBe(true);
     expect(isValidGameState(richState())).toBe(true);
-    expect(SAVE_VERSION).toBe(10);
+    expect(SAVE_VERSION).toBe(11);
   });
 });
 

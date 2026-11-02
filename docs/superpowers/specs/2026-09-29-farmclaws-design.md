@@ -458,7 +458,7 @@ Jobs replace the v2 quests and notice board. The first three run in a fixed orde
 
 **Job 1: The spinning robot.** Given by Sol at the parts exchange, who gives you your first Mini (with a Watering head) and explains the zone marker, which is already in every backpack (part 3).
 - **Setup:** its preloaded program is `When morning → Repeat forever → Turn right`. It spins on the spot and burns its whole battery.
-- **Goal:** rewrite it to water the bed and power down, with tokens left over. Taking the job sows the bed with parsnips on the 3×3 block of grass nearest the workbench.
+- **Goal:** rewrite it to water the bed and power down, with tokens left over. Taking the job sows the bed with parsnips on the 3×3 block of grass nearest the workbench, and Sol teaches the Wood Burner recipe so the robot can be recharged.
 - **Teaches:** sequence, repeat, stop conditions.
 - **Unlocks:** the job 1 blocks, the .MD tab, and the DON'T cards "Leave [zone]" and "Go into [water]" (a new farm starts with them). Finishing it opens Juniper's workshop for Minis and pays 500g.
 - **Mid-job beat:** Sol suggests `Move forward` to reach the bed. If the player hasn't written a DON'T, the robot drives into the pond, and Sol fishes it out overnight for free this one time. Then he shows the player how to write their first .MD line.

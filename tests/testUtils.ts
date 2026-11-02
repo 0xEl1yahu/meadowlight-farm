@@ -410,8 +410,21 @@ export function townPropTiles(): TileCoord[] {
 const FENCE_TILE: Tile = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
 
 /**
- * Hand-transforms a current (version 10) state back into the JSON of a version-9 save (farmclaws
- * part 4d spec §9.2): no walker has a place and there are no townsfolk, the town's prop tiles are
+ * Hand-transforms a current (version 11) state back into the JSON of a version-10 save (farmclaws
+ * part 4c spec §3.1): the same JSON, since version 10 differs only in not teaching the Wood Burner
+ * when job 1 is taken. The migration teaches it then, so a state that has taken job 1 must know it
+ * already. v9Save starts from this, so every older-save builder inherits it.
+ */
+export function v10Save(state: GameState): SaveJson {
+  if (withBurnerLearned(state) !== state) throw new Error('v10Save: a state that has taken job 1 knows the Wood Burner recipe');
+  const save = JSON.parse(serializeGame(state)) as SaveJson;
+  save.version = 10;
+  return save;
+}
+
+/**
+ * Hand-transforms a state back into the JSON of a version-9 save (farmclaws part 4d spec §9.2):
+ * it starts from v10Save, and no walker has a place and there are no townsfolk, the town's prop tiles are
  * open grass, Cosmo's door gap is fence and the chicken run's ring is open grass, with chunk
  * revisions as they are, and SLOPMART has no counts. The state must hold those tiles as version 10
  * makes them, since nothing else on them migrates back, and no slop item anywhere nor a box bought,
@@ -420,10 +433,10 @@ const FENCE_TILE: Tile = { ...EMPTY_TILE, object: { kind: 'woodFence' } };
  * this, so every older-save builder inherits it.
  */
 export function v9Save(state: GameState): SaveJson {
-  const json = serializeGame(state);
+  const save = v10Save(state);
+  const json = JSON.stringify(save);
   for (const id of SLOP_IDS) if (json.includes(`"${id}"`)) throw new Error(`v9Save: version 9 has no slop items (${id})`);
   if (state.slopShop.boxesOpened !== 0 || state.shopsSoldToday.slopBoxes !== 0) throw new Error('v9Save: version 9 has no SLOPMART boxes bought');
-  const save = JSON.parse(json) as SaveJson;
   save.version = 9;
   for (const talk of Object.values(save.npcs as Record<string, SaveJson>)) delete talk.place;
   delete save.townsfolk;
@@ -472,7 +485,14 @@ export function v8Save(state: GameState): SaveJson {
 export function withMigratedJobs(state: GameState): GameState {
   const fresh = createDefaultSections().jobs;
   if (state.robots.list.length === 0 && state.robots.deliveries.length === 0) return { ...state, jobs: fresh };
-  return { ...state, jobs: { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } };
+  return withBurnerLearned({ ...state, jobs: { ...fresh, status: { ...fresh.status, spinningRobot: 'done', showHim: 'offered' } } });
+}
+
+/** `state` knowing the Wood Burner recipe when it has taken job 1, as taking it (and migrating a version-10 save) teaches it. */
+export function withBurnerLearned(state: GameState): GameState {
+  const taken = state.jobs.status.spinningRobot === 'active' || state.jobs.status.spinningRobot === 'done';
+  if (!taken || state.crafting.known.includes('woodBurner')) return state;
+  return { ...state, crafting: { ...state.crafting, known: [...state.crafting.known, 'woodBurner'] } };
 }
 
 /**
@@ -483,7 +503,7 @@ export function withJobsDone(state: GameState, last: JobId): GameState {
   const upTo = JOB_IDS.indexOf(last);
   const status: Record<JobId, JobStatus> = { ...state.jobs.status };
   for (const [i, id] of JOB_IDS.entries()) status[id] = i <= upTo ? 'done' : i === upTo + 1 ? 'offered' : 'locked';
-  return { ...state, jobs: { ...state.jobs, status, fieldDay: -1 } };
+  return withBurnerLearned({ ...state, jobs: { ...state.jobs, status, fieldDay: -1 } });
 }
 
 /**

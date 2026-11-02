@@ -741,6 +741,20 @@ function migrateV9toV10(save: Obj): Obj {
 }
 
 /**
+ * Version 10 predates job 1 teaching the Wood Burner recipe when it's taken (part 4c spec §3.1),
+ * so a farm that has taken job 1 learns it now; one with job 1 still offered doesn't.
+ */
+function migrateV10toV11(save: Obj): Obj {
+  const next = { ...save, version: 11 };
+  const jobs = save.jobs;
+  const crafting = save.crafting;
+  if (!isObj(jobs) || !isObj(jobs.status) || !isObj(crafting) || !Array.isArray(crafting.known)) return next;
+  const taken = jobs.status.spinningRobot === 'active' || jobs.status.spinningRobot === 'done';
+  if (!taken || crafting.known.includes('woodBurner')) return next;
+  return { ...next, crafting: { ...crafting, known: [...crafting.known, 'woodBurner'] } };
+}
+
+/**
  * Upgrades older save formats to the current one, one version at a time; each step writes its
  * own literal version. Unexpected shapes pass through untouched and are then rejected by the
  * validator.
@@ -756,6 +770,7 @@ export function migrateSave(value: unknown): unknown {
   if (isObj(v) && v.version === 7) v = migrateV7toV8(v);
   if (isObj(v) && v.version === 8) v = migrateV8toV9(v);
   if (isObj(v) && v.version === 9) v = migrateV9toV10(v);
+  if (isObj(v) && v.version === 10) v = migrateV10toV11(v);
   return v;
 }
 

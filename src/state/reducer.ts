@@ -1227,8 +1227,8 @@ function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
 /**
  * `job/take`: Take the job on the job card. It acts only while the card is open on the job's
  * giver, the game isn't paused and the job is offered: the job is taken (takeJob), the chat closes
- * and "{title}: job taken." is toasted. A set-up that can't run is toasted as a warning instead,
- * with the card left open.
+ * and "{title}: job taken." is toasted, then "{giver} taught you the {recipe} recipe." for each
+ * recipe it teaches. A set-up that can't run is toasted as a warning instead, with the card left open.
  */
 function takeJobAct(state: GameState, job: JobId): GameState {
   const panel = state.ui.panel;
@@ -1238,7 +1238,9 @@ function takeJobAct(state: GameState, job: JobId): GameState {
   const taken = takeJob(state, job);
   if (typeof taken === 'string') return pushMessage(state, taken, 'warn');
   if (taken === state) return state;
-  return pushMessage({ ...taken, ui: { ...taken.ui, panel: { kind: 'none' } } }, `${def.title}: job taken.`, 'success');
+  let next = pushMessage({ ...taken, ui: { ...taken.ui, panel: { kind: 'none' } } }, `${def.title}: job taken.`, 'success');
+  for (const recipe of def.recipesOnTake) next = pushMessage(next, `${CAST[def.giver].name} taught you the ${getItem(recipe).name} recipe.`, 'success');
+  return next;
 }
 
 /**

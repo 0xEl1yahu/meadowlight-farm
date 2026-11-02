@@ -5,7 +5,7 @@
  * and the toasts.
  */
 import { JOBS, UNLOCKS } from '../config';
-import { JOB_IDS, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotSize, type RobotUnlocks } from '../core/types';
+import { JOB_IDS, type CraftingRecipeId, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotSize, type RobotUnlocks } from '../core/types';
 import { withUnlocks } from '../robots/unlocks';
 import { knowTheLimitsDone, knowTheLimitsProgress, showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress, sprinkleOf } from './checks';
 import { setUpBarnabyField, setUpCosmoField, setUpKnowTheLimits, setUpShowHim, setUpSpinningRobot } from './setup';
@@ -24,6 +24,8 @@ export interface JobDef {
   readonly reward: number;
   /** Added through withUnlocks when the job is taken, because the job needs them (spec §4.1). */
   readonly unlocksOnTake: Partial<RobotUnlocks>;
+  /** Learned when the job is taken, each toasted after "job taken" (spec §3.1, R26: job 1 teaches the Wood Burner). */
+  readonly recipesOnTake: readonly CraftingRecipeId[];
   /** Toasted, one each, after "Job done" (spec §4.2's unlock lines). */
   readonly doneLines: readonly string[];
 }
@@ -50,6 +52,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     hook: "I've got a robot that needs a home. Ask me about the job.",
     reward: JOBS.rewards.spinningRobot,
     unlocksOnTake: UNLOCKS.job1,
+    recipesOnTake: ['woodBurner'],
     doneLines: ["Juniper's workshop is open."],
   },
   showHim: {
@@ -60,6 +63,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     hook: 'My robot could do more, I bet. Want a job?',
     reward: JOBS.rewards.showHim,
     unlocksOnTake: UNLOCKS.job2,
+    recipesOnTake: [],
     doneLines: ["Sol's parts shop is open."],
   },
   knowTheLimits: {
@@ -70,6 +74,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     hook: 'My team needs a manager. Interested?',
     reward: JOBS.rewards.knowTheLimits,
     unlocksOnTake: UNLOCKS.job3,
+    recipesOnTake: [],
     doneLines: ['Juniper now builds Standard and Big robots.'],
   },
 };
@@ -137,15 +142,22 @@ export function jobProgress(state: GameState, id: JobId): string | null {
 }
 
 /**
- * Takes the offered job `id` (spec §2.1): its unlocks are added, its set-up runs and it becomes
- * active, with today as its field day. Returns the set-up's refusal, with nothing changed; a job
- * that isn't offered leaves the state as it is.
+ * Takes the offered job `id` (spec §2.1): its unlocks and recipes are added, its set-up runs and it
+ * becomes active, with today as its field day. Returns the set-up's refusal, with nothing changed;
+ * a job that isn't offered leaves the state as it is.
  */
 export function takeJob(state: GameState, id: JobId): GameState | string {
   if (state.jobs.status[id] !== 'offered') return state;
-  const set = JOB_PLAYS[id].setup(withUnlocks(state, JOBS_TABLE[id].unlocksOnTake));
+  const def = JOBS_TABLE[id];
+  const set = JOB_PLAYS[id].setup(withRecipes(withUnlocks(state, def.unlocksOnTake), def.recipesOnTake));
   if (typeof set === 'string') return set;
   return { ...set, jobs: { ...set.jobs, status: withStatus(set.jobs.status, id, 'active'), fieldDay: set.time.absoluteDay } };
+}
+
+/** `state` knowing `recipes` too; the same state when it knows them all already. */
+function withRecipes(state: GameState, recipes: readonly CraftingRecipeId[]): GameState {
+  const learned = recipes.filter((recipe) => !state.crafting.known.includes(recipe));
+  return learned.length === 0 ? state : { ...state, crafting: { ...state.crafting, known: [...state.crafting.known, ...learned] } };
 }
 
 /** Finishes job `id`: done, the next job offered, the reward paid, no field day. Toasts are the caller's. */

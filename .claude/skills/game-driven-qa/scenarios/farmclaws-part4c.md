@@ -25,7 +25,7 @@ const s = __qa.state(); const sp = __qa.robot('Sprinkle');
 ({ panel: s.ui.panel.kind, status: s.jobs.status, bed: s.jobs.bed, zoneA: s.robots.zones.A, sprinkle: [sp.tx, sp.tz, sp.facing, sp.parts], toast: __qa.snap(1).toasts })
 ```
 Expect the chat closed, `spinningRobot: 'active'`, `bed: { tx: 6, tz: 6 }` with Zone A on it,
-Sprinkle at (6,3) facing south with `['wateringHead']`, and "The spinning robot: job taken."
+Sprinkle at (6,3) facing south with `['wateringHead']`, and the toasts "The spinning robot: job taken." and "Sol taught you the Wood Burner recipe."
 ```js
 const J = await __qa.mod('/tests/jobSolutions.ts'); const gold = __qa.state().player.gold;
 __meadowlight.setProgram('Sprinkle', J.spinningRobotReference(__qa.state().jobs.bed));

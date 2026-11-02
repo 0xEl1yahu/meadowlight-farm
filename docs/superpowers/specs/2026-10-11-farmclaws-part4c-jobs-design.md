@@ -92,6 +92,7 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - **Progress:** "{n} / 9 bed tiles watered today."
 - **The pond:** the first time Sprinkle ends a day broken in the water while job 1 is active, Sol fishes it out overnight for free instead of it being ruined. It's back by the workbench in the morning, working and fully charged, as from a repair, and isn't named as away from a generator that morning (R10); the toast says "Sol fished Sprinkle out of the pond, free this once. A DON'T card can keep it out: Go into water." `jobs.rescued` makes it once only.
 - **Scrapping Sprinkle** while job 1 is active is refused with "Sol wants Sprinkle back in one piece." (R23)
+- **The Wood Burner recipe:** taking the job teaches it, so Sprinkle has a way to recharge from the first night: "Sol taught you the Wood Burner recipe." follows "The spinning robot: job taken." as its own toast. A refused set-up teaches nothing (R26).
 - **Reward:** 500g. **Unlocks:** Juniper's workshop (Minis).
 
 ### 3.2 Job 2: Show him what it can do (Cosmo)
@@ -212,6 +213,7 @@ If a reference solution doesn't pass with its margin, the numbers that change ar
 - **Migration (`migrateV8toV9`):** robots get `mapId: 'farm'`, `owner: 'player'`; zones get `mapId: 'farm'`; `jobs` per section 4.3; `SAVE_VERSION = 9`.
 - **Validation:** a player robot is on the farm and a neighbour's robot on the Neighbours map, each on a walkable tile of its map; the player's robots plus deliveries are at most 12; `jobs.status` has every id once, with at most one active job and the order rule, read both ways: after the jobs that are done, the next one is offered or active (job 1 included) and the rest are locked, so a save with every job locked, or a locked job straight after a done one, is rejected (R1); `jobs.bed` is null or a 3 × 3 block on the farm; a zone's rect lies on its map.
 - `v8Save` in `tests/testUtils.ts` turns a v9 state back into v8 JSON, and `v7Save` starts from it.
+- **Version 11 (R26):** no new field. `migrateV10toV11` teaches the Wood Burner recipe to a save whose job 1 is active or done, and `v10Save` in `tests/testUtils.ts` turns a v11 state back into v10 JSON, with `v9Save` starting from it.
 
 ---
 
@@ -307,3 +309,4 @@ Decided by the part 4c implementation plan and its execution, each with the comm
 - **R23** (`4833d91`). Scrapping Sprinkle while job 1 is active is refused with "Sol wants Sprinkle back in one piece." (§3.1)
 - **R24** (`4833d91`). Gold in toasts stays a plain number ("1000g"), as the rest of the game writes it (this spec writes 1,000g). (§2.1)
 - **R25** (`05286cf`). B-1's polling program can run it flat away from Barnaby's generator, and the player can't carry a neighbour's robot, so job 3 could become unwinnable. A neighbour's robot that ends the day flat out of its generator's reach is dragged back beside it overnight, with the toast "{owner} dragged {name} back to the generator." This rewords §5.1's "Barnaby's team drifting away from his generator is the job's lesson". (§5.1)
+- **R26** (Wood Burner fix, on `codebase-audit`). The part 1 spec gave job 1 the Wood Burner recipe, but this spec left it out, so a player could never learn it and their robots never recharged; Sprinkle, spinning flat on day 1, could leave job 1 unwinnable. Taking job 1 now teaches it, with the toast "Sol taught you the Wood Burner recipe.", and save version 11 teaches it to farms that took job 1 under version 10. (§3.1, §7)

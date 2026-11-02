@@ -70,8 +70,8 @@ const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringif
 
 describe('the shops in saves', () => {
   it('are in the current version, and new games start in it', () => {
-    expect(SAVE_VERSION).toBe(10);
-    expect(BASE.version).toBe(10);
+    expect(SAVE_VERSION).toBe(11);
+    expect(BASE.version).toBe(11);
   });
 
   it('starts a new game with no deliveries, nothing sold and the renamed cast', () => {
@@ -103,7 +103,7 @@ describe('the shops in saves', () => {
 
 describe('v7 → v8', () => {
   it('carries on to version 10', () => {
-    expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(10);
+    expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(11);
   });
 
   it('loads a v7 save as the state it was taken from, its walkers placed by version 10', () => {
@@ -151,9 +151,9 @@ describe('v7 → v8', () => {
     expect(must(load(v7Save(none)))).toEqual(withMigratedPlaces(none));
   });
 
-  it('migrates the version-2 fixture through every version to 10', () => {
+  it('migrates the version-2 fixture through every version to 11', () => {
     const loaded = must(deserializeGame(saveV2Text));
-    expect(loaded.version).toBe(10);
+    expect(loaded.version).toBe(11);
     expect(chatsOf(loaded.npcs)).toEqual(chatsOf(BASE.npcs));
     expect(loaded.robots.deliveries).toEqual([]);
     expect(loaded.shopsSoldToday).toEqual(BASE.shopsSoldToday);
