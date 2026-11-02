@@ -4,7 +4,7 @@
  * No DOM, so tests/partsShop.test.ts, tests/workshop.test.ts and tests/shopStock.test.ts cover
  * every rule here; the panels only draw what these return.
  */
-import { PARTS, ROBOTS, SLOP } from '../../config';
+import { INVENTORY, PARTS, ROBOTS, SLOP } from '../../config';
 import {
   BASIC_PART_IDS,
   ROBOT_PART_IDS,
@@ -45,6 +45,18 @@ export function seedStock(state: GameState, seedId: SeedItemId): SeedStock {
   const left = seedsLeft(state, seedId);
   const { left: label, soldOut } = stockLabel(left, 'Out of stock');
   return { left, label, soldOut };
+}
+
+/** Marigold's backpack upgrade row: its price and whether the gold covers it. */
+export interface BackpackRow {
+  readonly price: number;
+  readonly affordable: boolean;
+}
+
+/** The backpack row, or null once the upgrade is bought. */
+export function backpackRow(state: GameState): BackpackRow | null {
+  if (state.inventory.unlockedSlots !== INVENTORY.startingUnlockedSlots) return null;
+  return { price: INVENTORY.backpackUpgradePrice, affordable: state.player.gold >= INVENTORY.backpackUpgradePrice };
 }
 
 /** A part Sol sells: its name, what it provides (its item description, spec §3.2's line) and its price. */

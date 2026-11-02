@@ -34,6 +34,8 @@ export type GameAction =
   /** Moves `quantity` units (null = the whole stack) between two slots: player ↔ player or player ↔ open chest. */
   | { readonly type: 'inventory/move'; readonly from: SlotRef; readonly to: SlotRef; readonly quantity: number | null }
   | { readonly type: 'shop/setOpen'; readonly open: boolean }
+  /** Buys Marigold's backpack upgrade, or hears why not. */
+  | { readonly type: 'shop/backpack' }
   /** Buys one mystery box from DEALZ, or hears why not. */
   | { readonly type: 'slop/buy' }
   | { readonly type: 'ui/setInventoryOpen'; readonly open: boolean }
@@ -97,6 +99,7 @@ export const actions = {
     quantity,
   }),
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
+  buyBackpack: (): GameAction => ({ type: 'shop/backpack' }),
   buySlopBox: (): GameAction => ({ type: 'slop/buy' }),
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),

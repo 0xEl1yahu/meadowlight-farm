@@ -150,6 +150,8 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return closePanel(state);
     case 'ui/notify':
       return pushMessage(state, action.text, action.tone);
+    case 'shop/backpack':
+      return buyBackpack(state);
     case 'shop/buy':
       return buySeeds(state, action.itemId, action.quantity);
     case 'parts/buy':
@@ -831,9 +833,26 @@ function moveItem(state: GameState, from: SlotRef, to: SlotRef, quantity: number
   return moved === null ? state : writeSlots(writeSlots(state, src, moved.src), dst, moved.dst);
 }
 
+/** True while Marigold's seed shop is open and the game runs: the only time `shop/buy` and `shop/backpack` act. */
+function seedShopOpen(state: GameState): boolean {
+  return state.ui.panel.kind === 'shop' && !state.ui.paused;
+}
+
+/** `shop/backpack`: unlocks every inventory slot for the upgrade price, once, or a toast saying it's too dear. */
+function buyBackpack(state: GameState): GameState {
+  if (!seedShopOpen(state) || state.inventory.unlockedSlots !== INVENTORY.startingUnlockedSlots) return state;
+  if (state.player.gold < INVENTORY.backpackUpgradePrice) return pushMessage(state, "You can't afford that.", 'warn');
+  const next: GameState = {
+    ...state,
+    inventory: { ...state.inventory, unlockedSlots: INVENTORY.slotCount },
+    player: { ...state.player, gold: state.player.gold - INVENTORY.backpackUpgradePrice },
+  };
+  return pushMessage(next, `Your backpack holds ${INVENTORY.slotCount} now.`, 'success');
+}
+
 /** `shop/buy`: a batch of in-season seeds from Marigold, within what's left of today's stock, or a toast saying why not. */
 function buySeeds(state: GameState, itemId: SeedItemId, quantity: number): GameState {
-  if (state.ui.panel.kind !== 'shop' || !Number.isInteger(quantity) || quantity < 1 || !isSeedItemId(itemId)) return state;
+  if (!seedShopOpen(state) || !Number.isInteger(quantity) || quantity < 1 || !isSeedItemId(itemId)) return state;
   const item = getItem(itemId);
   if (item.kind !== 'seed') return state;
   if (!selectShopStock(state).some((stock) => stock.id === itemId)) {

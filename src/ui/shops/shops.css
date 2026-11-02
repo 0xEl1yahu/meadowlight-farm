@@ -87,6 +87,12 @@
   box-shadow: inset 0 -3px 0 var(--hud-cream-deep);
 }
 
+.hud-shop__item--backpack {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'info buy';
+  margin-top: 10px;
+}
+
 .hud-shop__icon {
   grid-area: icon;
   display: grid;
@@ -282,6 +288,13 @@
       'icon info'
       'buy buy';
     gap: 8px 10px;
+  }
+
+  .hud-shop__item--backpack {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'info'
+      'buy';
   }
 
   .hud-shop__icon {

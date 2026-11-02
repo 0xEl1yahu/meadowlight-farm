@@ -6,10 +6,13 @@
  *   `shop/buy`, and a button is disabled while its batch is more than today's packets left (spec
  *   §6), costs more gold than the player has or doesn't fit in the bag.
  * - Each row shows "{n} left"; a sold-out row shows "Out of stock" in place of its buttons.
+ * - Under the seeds sits the backpack upgrade (spec §5.1) with its own Buy button, disabled while
+ *   the gold falls short and gone once bought. It shows in winter too.
  * - Rows are rebuilt when the shop opens or the season changes, and only the buttons, counts and
  *   gold readout update otherwise.
  * - Buttons blur after mouse clicks but keep focus on keyboard activation (releasePointerFocus).
  */
+import { INVENTORY } from '../../config';
 import { SEASON_NAMES, Season, type GameState } from '../../core/types';
 import { CROPS, totalGrowDays } from '../../farming/crops';
 import { isSeedItemId, sellPriceFor, type SeedItem } from '../../items/items';
@@ -20,7 +23,7 @@ import { closestWithin, h, hudButton, iconHost, releasePointerFocus, setHidden, 
 import { createCloseIcon, createCoinIcon, createWinterIcon } from '../icons';
 import type { ItemIconCache } from '../slots';
 import type { ShopPanelContext } from './context';
-import { seedStock } from './viewModel';
+import { backpackRow, seedStock } from './viewModel';
 
 const BUY_QUANTITIES: readonly number[] = [1, 5, 10];
 
@@ -54,6 +57,8 @@ export class SeedShopPanel {
   private readonly emptyText = h('p', 'hud-shop__empty-text');
   private readonly season = h('p', 'hud-modal__subtitle');
   private readonly goldValue = h('span', 'hud-shop__gold-value');
+  private readonly backpack = h('div', 'hud-shop__item hud-shop__item--backpack');
+  private readonly backpackButton = hudButton('hud-btn hud-btn--buy', 'Buy');
   private readonly icons: ItemIconCache;
   private rows: ShopRow[] = [];
 
@@ -87,7 +92,16 @@ export class SeedShopPanel {
 
     const footer = h('p', 'hud-shop__footer', 'Seeds only grow in their season, and only on days they are watered.');
 
-    card.append(header, this.list, this.empty, footer);
+    const backpackInfo = h('div', 'hud-shop__info');
+    const backpackName = h('div', 'hud-shop__name-row');
+    backpackName.append(h('span', 'hud-shop__name', `Backpack upgrade · ${INVENTORY.slotCount} slots · ${INVENTORY.backpackUpgradePrice}g`));
+    backpackInfo.append(backpackName);
+    const backpackBuy = h('div', 'hud-shop__buy');
+    this.backpackButton.setAttribute('aria-label', `Buy the backpack upgrade for ${INVENTORY.backpackUpgradePrice}g`);
+    backpackBuy.append(this.backpackButton);
+    this.backpack.append(backpackInfo, backpackBuy);
+
+    card.append(header, this.list, this.empty, this.backpack, footer);
     this.element.append(backdrop, card);
 
     const closeShop = (event: MouseEvent): void => {
@@ -96,6 +110,14 @@ export class SeedShopPanel {
     };
     close.addEventListener('click', closeShop, { signal: context.signal });
     backdrop.addEventListener('click', closeShop, { signal: context.signal });
+    this.backpackButton.addEventListener(
+      'click',
+      (event) => {
+        releasePointerFocus(this.backpackButton, event);
+        if (!this.backpackButton.disabled) context.dispatch(actions.buyBackpack());
+      },
+      { signal: context.signal },
+    );
     this.list.addEventListener(
       'click',
       (event) => {
@@ -193,6 +215,18 @@ export class SeedShopPanel {
   private syncAvailability(state: GameState): void {
     const gold = state.player.gold;
     setText(this.goldValue, numberFormat.format(gold));
+    const upgrade = backpackRow(state);
+    setHidden(this.backpack, upgrade === null);
+    if (upgrade !== null) {
+      const disabled = !upgrade.affordable;
+      if (this.backpackButton.disabled !== disabled) this.backpackButton.disabled = disabled;
+      setTitle(
+        this.backpackButton,
+        upgrade.affordable
+          ? `Buy for ${numberFormat.format(upgrade.price)}g`
+          : `Costs ${numberFormat.format(upgrade.price)}g, you have ${numberFormat.format(gold)}g`,
+      );
+    }
     for (const row of this.rows) {
       const inBag = countItem(state.inventory, row.item.id);
       setHidden(row.owned, inBag === 0);

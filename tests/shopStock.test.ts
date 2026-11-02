@@ -6,7 +6,7 @@
  * morning. The panels' view models show "{n} left" and the sold-out labels.
  */
 import { describe, expect, it } from 'vitest';
-import { SHOP_STOCK } from '../src/config';
+import { INVENTORY, SHOP_STOCK } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import { BASIC_PART_IDS, ROBOT_SIZES, type GameState, type UiPanel } from '../src/core/types';
 import { actions } from '../src/state/actions';
@@ -14,7 +14,7 @@ import { countItem } from '../src/state/inventory';
 import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer, startNextDay } from '../src/state/reducer';
 import { partsLeft, robotsLeft, seedsLeft } from '../src/state/selectors';
-import { partsShopView, seedStock, workshopView } from '../src/ui/shops/viewModel';
+import { backpackRow, partsShopView, seedStock, workshopView } from '../src/ui/shops/viewModel';
 import { BASE, must, withGold, withJobsDone, withSlots } from './testUtils';
 
 const withPanel = (state: GameState, panel: UiPanel): GameState => ({ ...state, ui: { ...state.ui, panel } });
@@ -191,5 +191,17 @@ describe('what the panels show', () => {
     const all = buySeeds(most, 8);
     expect(seedStock(all, 'parsnip_seeds')).toEqual({ left: 0, label: '0 left', soldOut: 'Out of stock' });
     expect(seedStock(all, 'potato_seeds').left).toBe(30);
+  });
+});
+
+describe('the backpack row', () => {
+  it('shows the price and whether the gold covers it', () => {
+    expect(backpackRow(withGold(BASE, INVENTORY.backpackUpgradePrice))).toEqual({ price: INVENTORY.backpackUpgradePrice, affordable: true });
+    expect(backpackRow(withGold(BASE, INVENTORY.backpackUpgradePrice - 1))).toEqual({ price: INVENTORY.backpackUpgradePrice, affordable: false });
+  });
+
+  it('is gone once the slots are unlocked', () => {
+    const bought = gameReducer(withPanel(withGold(BASE, 5000), { kind: 'shop' }), actions.buyBackpack());
+    expect(backpackRow(bought)).toBeNull();
   });
 });

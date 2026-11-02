@@ -144,6 +144,8 @@ export const INVENTORY = {
   slotCount: 36,
   /** The hotbar plus the first backpack row; Marigold's backpack upgrade at the general store unlocks all 36. */
   startingUnlockedSlots: 24,
+  /** Marigold's backpack upgrade, in gold. */
+  backpackUpgradePrice: 2000,
   maxStack: 999,
   /** Slots in every placed chest. */
   chestSlots: 36,
