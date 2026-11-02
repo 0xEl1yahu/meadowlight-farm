@@ -106,6 +106,11 @@ describe('a robot with nothing to run', () => {
     expect(idlePower('flat', freshExec(WALK))).toBe('flat');
     expect(idlePower('standby', morningExec(WALK))).toBe('standby');
   });
+
+  it('keeps a robot on a DO return working: it is going somewhere', () => {
+    const returning = { ...freshExec(WALK), frames: [{ kind: 'route' as const, target: { tx: 9, tz: 6 }, path: [], why: 'doReturn' as const }] };
+    expect(idlePower('working', returning)).toBe('working');
+  });
 });
 
 describe('withMd', () => {
@@ -134,6 +139,11 @@ describe('withMd', () => {
       power: 'standby',
       exec: { ...freshExec(WALK), frames: [], doneCards: [] },
     });
+  });
+
+  it('puts an idle robot that was left working on standby', () => {
+    const idle = { ...BLOCKY, power: 'working' as const };
+    expect(withMd(idle, [{ kind: 'dontGoIntoWater' }])).toMatchObject({ power: 'standby', exec: { ...freshExec(WALK), doneCards: [] } });
   });
 
   it('leaves a running program running', () => {

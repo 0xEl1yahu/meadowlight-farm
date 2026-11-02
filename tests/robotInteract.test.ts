@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
 import { Blocker, Direction, type GameState, type MdCard } from '../src/core/types';
 import { b } from '../src/robots/blocks';
-import { morningExec } from '../src/robots/exec';
+import { freshExec, morningExec } from '../src/robots/exec';
 import { periodFor, resumedPower } from '../src/robots/stats';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
@@ -19,6 +19,7 @@ import { blockedTile, EMPTY_TILE } from '../src/world/tiles';
 import { BASE, TARGET, emptyHanded, holding, robotOf, scenario, tileAt, withEnergy, withGold, withPlayer, withRobots } from './testUtils';
 
 const interact = (state: GameState) => gameReducer(state, actions.interact());
+const TURN = b.program({ stacks: [b.when(b.morning(), b.turn('right'))] });
 const lastText = (state: GameState) => state.messages.entries.at(-1)?.text;
 const carrying = (state: GameState, id = 1) => withRobots({ ...state, player: { ...state.player, carrying: id } }, [robotOf({ carried: true })]);
 
@@ -83,6 +84,19 @@ describe('putting robots down', () => {
     expect(lastText(interact(carrying(scenario(blockedTile(Blocker.Water)))))).toBe('Put Sprocket down on open ground.');
     const chest = { ...EMPTY_TILE, object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
     expect(lastText(interact(carrying(scenario(chest))))).toBe('Put Sprocket down on open ground.');
+  });
+
+  it('puts an idle block robot down on standby, waiting for a trigger', () => {
+    const idle = robotOf({ carried: true, program: TURN, exec: freshExec(TURN), power: 'standby' });
+    const state = withRobots({ ...scenario(EMPTY_TILE), player: { ...scenario(EMPTY_TILE).player, carrying: 1 } }, [idle]);
+    expect(requireRobot(interact(state), 1).power).toBe('standby');
+  });
+
+  it('puts a robot on a DO return down working, still on its way', () => {
+    const route = { kind: 'route' as const, target: { tx: 9, tz: 6 }, path: [], why: 'doReturn' as const };
+    const returning = robotOf({ carried: true, program: TURN, exec: { ...freshExec(TURN), frames: [route] }, power: 'working' });
+    const state = withRobots({ ...scenario(EMPTY_TILE), player: { ...scenario(EMPTY_TILE).player, carrying: 1 } }, [returning]);
+    expect(requireRobot(interact(state), 1).power).toBe('working');
   });
 
   it('keeps a broken robot broken on land', () => {

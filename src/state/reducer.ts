@@ -63,6 +63,7 @@ import { townsfolkLine } from '../people/townsfolk';
 import { isTownsfolk, swapWithPlayer, walkersIndoors } from '../people/walk';
 import { ROBOT_CAP_RULE, ROBOT_NAME_RULE, playerRobotCount } from '../robots/create';
 import { programmedRobot, withMd, withPartFitted, withPartRemoved, withZone } from '../robots/edits';
+import { idlePower } from '../robots/exec';
 import { runRobotsOvernight } from '../robots/overnight';
 import { runMinutesThrough } from '../robots/run';
 import { SWITCHABLE_POWERS, carryEnergyFor, paintAt, periodFor, putDownPower, scrapValue } from '../robots/stats';
@@ -520,7 +521,7 @@ function applyIntent(state: GameState, intent: Exclude<Intent, { kind: 'blocked'
           tx: target.tx,
           tz: target.tz,
           facing: state.player.facing,
-          power: putDownPower(robot),
+          power: idlePower(putDownPower(robot), robot.exec),
           nextActMinute: state.time.minuteOfDay + periodFor(robot),
           teleportSeq: robot.teleportSeq + 1,
         },

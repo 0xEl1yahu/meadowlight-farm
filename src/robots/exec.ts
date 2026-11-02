@@ -52,9 +52,10 @@ export function morningExec(program: BlockProgram): RobotExec {
 }
 
 /**
- * The power a robot has once its program is set: a working block robot with no running stack
- * waits on standby for a trigger; every other power, and a script robot (no exec), is as given.
+ * The power a robot has once its program is set, its .MD changed or it is put down: a working
+ * block robot with no running stack and no DO return under way waits on standby for a trigger;
+ * every other power, and a script robot (no exec), is as given.
  */
 export function idlePower(power: RobotPower, exec: RobotExec | null): RobotPower {
-  return power === 'working' && exec !== null && exec.running === null ? 'standby' : power;
+  return power === 'working' && exec !== null && exec.running === null && exec.frames.length === 0 ? 'standby' : power;
 }

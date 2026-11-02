@@ -8,7 +8,7 @@
  */
 import { ROBOTS, TIME } from '../config';
 import { withArticle } from '../core/text';
-import { ROBOT_MAP_IDS, ROBOT_PART_IDS, ZONE_IDS, type GameState, type MdCard, type Robot, type RobotPartId, type RobotProgram, type ZoneId, type ZoneRect } from '../core/types';
+import { ROBOT_MAP_IDS, ROBOT_PART_IDS, ZONE_IDS, type GameState, type MdCard, type Robot, type RobotExec, type RobotPartId, type RobotProgram, type ZoneId, type ZoneRect } from '../core/types';
 import { partNoun } from '../items/items';
 import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { isInt, isObj, isOneOf } from '../state/validation';
@@ -55,9 +55,10 @@ export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay
 /**
  * `robot` with a new .MD. The cards apply at once: today's carried-out DO cards are forgotten
  * (their indices may name other cards now), and a DO return under way stops, because its card
- * may be gone; a working robot then stands by until a trigger or a DO card moves it. A robot
- * running a script is refused: .MD cards only apply to block programs. Returns the checker's
- * sentence for cards the robot can't hold, or MD_SHAPE when `md` isn't a list of cards.
+ * may be gone; a working robot with nothing left running then stands by (idlePower) until a
+ * trigger or a DO card moves it. A robot running a script is refused: .MD cards only apply to
+ * block programs. Returns the checker's sentence for cards the robot can't hold, or MD_SHAPE
+ * when `md` isn't a list of cards.
  */
 export function withMd(robot: Robot, md: readonly MdCard[]): Robot | string {
   if (!isMdShape(md)) return MD_SHAPE;
@@ -66,12 +67,8 @@ export function withMd(robot: Robot, md: readonly MdCard[]): Robot | string {
   const problem = checkMd(md, robot);
   if (problem !== null) return problem;
   const returning = exec.running === null && exec.frames.length > 0;
-  return {
-    ...robot,
-    md,
-    exec: { ...exec, frames: returning ? [] : exec.frames, doneCards: [] },
-    power: returning && robot.power === 'working' ? 'standby' : robot.power,
-  };
+  const nextExec: RobotExec = { ...exec, frames: returning ? [] : exec.frames, doneCards: [] };
+  return { ...robot, md, exec: nextExec, power: idlePower(robot.power, nextExec) };
 }
 
 /**
