@@ -4,7 +4,6 @@
  */
 import type { Store } from '../core/store';
 import {
-  CRAFTING_RECIPE_IDS,
   type GameState,
   type MdCard,
   type Robot,
@@ -16,6 +15,7 @@ import {
   type ZoneId,
   type ZoneRect,
 } from '../core/types';
+import { withRecipes } from '../crafting/known';
 import { b } from '../robots/blocks';
 import { addRobot, type RobotSpec } from '../robots/create';
 import { MD_SHAPE, PROGRAM_SHAPE, ZONE_SHAPE, programmedRobot, withMd, withZone } from '../robots/edits';
@@ -108,12 +108,6 @@ function robotNamed(state: GameState, name: unknown): Robot | null {
   return [...state.robots.list].reverse().find((r) => r.name === name) ?? null;
 }
 
-function withBurnerKnown(state: GameState): GameState {
-  if (state.crafting.known.includes('woodBurner')) return state;
-  const known = CRAFTING_RECIPE_IDS.filter((id) => id === 'woodBurner' || state.crafting.known.includes(id));
-  return { ...state, crafting: { known } };
-}
-
 /** A zone as the console gives it: its map may be left out, for the farm. */
 type DevZoneRect = Omit<ZoneRect, 'mapId'> & { readonly mapId?: ZoneRect['mapId'] };
 
@@ -135,7 +129,7 @@ export function installRobotDev(store: Store<GameState, GameAction>): void {
 
   /** Teaches the wood burner, adds each spec (built for the delivery tile) and loads the result; returns the message to print. */
   const deliver = (specsAt: (at: RobotPlace) => RobotSpec[], place?: RobotPlace): string => {
-    let state = withBurnerKnown(store.getState());
+    let state = withRecipes(store.getState(), ['woodBurner']);
     const target = selectTargetTile(state) ?? { tx: state.player.tx, tz: state.player.tz };
     const at = place ?? { tx: target.tx, tz: target.tz, facing: state.player.facing };
     const added: string[] = [];

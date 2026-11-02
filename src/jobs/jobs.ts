@@ -6,6 +6,7 @@
  */
 import { JOBS, UNLOCKS } from '../config';
 import { JOB_IDS, type CraftingRecipeId, type GameState, type JobId, type JobStatus, type JobsState, type NpcId, type Robot, type RobotSize, type RobotUnlocks } from '../core/types';
+import { withRecipes } from '../crafting/known';
 import { withUnlocks } from '../robots/unlocks';
 import { knowTheLimitsDone, knowTheLimitsProgress, showHimDone, showHimProgress, spinningRobotDone, spinningRobotProgress, sprinkleOf } from './checks';
 import { setUpBarnabyField, setUpCosmoField, setUpKnowTheLimits, setUpShowHim, setUpSpinningRobot } from './setup';
@@ -152,12 +153,6 @@ export function takeJob(state: GameState, id: JobId): GameState | string {
   const set = JOB_PLAYS[id].setup(withRecipes(withUnlocks(state, def.unlocksOnTake), def.recipesOnTake));
   if (typeof set === 'string') return set;
   return { ...set, jobs: { ...set.jobs, status: withStatus(set.jobs.status, id, 'active'), fieldDay: set.time.absoluteDay } };
-}
-
-/** `state` knowing `recipes` too; the same state when it knows them all already. */
-function withRecipes(state: GameState, recipes: readonly CraftingRecipeId[]): GameState {
-  const learned = recipes.filter((recipe) => !state.crafting.known.includes(recipe));
-  return learned.length === 0 ? state : { ...state, crafting: { ...state.crafting, known: [...state.crafting.known, ...learned] } };
 }
 
 /** Finishes job `id`: done, the next job offered, the reward paid, no field day. Toasts are the caller's. */

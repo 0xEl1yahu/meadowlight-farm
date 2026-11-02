@@ -46,6 +46,7 @@ import {
   type ZoneId,
   type ZoneRect,
 } from '../src/core/types';
+import { withRecipes } from '../src/crafting/known';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
 import { SHOP_DOORS, type ShopId } from '../src/people/shops';
 import { placeAt } from '../src/people/timetable';
@@ -549,8 +550,8 @@ export function withMigratedJobs(state: GameState): GameState {
 /** `state` knowing the Wood Burner recipe when it has taken job 1, as taking it (and migrating a version-10 save) teaches it. */
 export function withBurnerLearned(state: GameState): GameState {
   const taken = state.jobs.status.spinningRobot === 'active' || state.jobs.status.spinningRobot === 'done';
-  if (!taken || state.crafting.known.includes('woodBurner')) return state;
-  return { ...state, crafting: { ...state.crafting, known: [...state.crafting.known, 'woodBurner'] } };
+  if (!taken) return state;
+  return withRecipes(state, ['woodBurner']);
 }
 
 /**

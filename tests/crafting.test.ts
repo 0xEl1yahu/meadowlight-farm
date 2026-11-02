@@ -6,10 +6,12 @@
 import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
 import { CRAFTING_RECIPE_IDS, type CraftingRecipeId, type GameState } from '../src/core/types';
+import { knownWith, unknownRecipes, withRecipes } from '../src/crafting/known';
 import { RECIPES, craftCheck } from '../src/crafting/recipes';
 import { getItem } from '../src/items/items';
 import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
+import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { BASE, stack, withSlots } from './testUtils';
 
@@ -120,5 +122,25 @@ describe('crafting/craft', () => {
     // An existing stack of the output still has room.
     const topUp = withSlots(ALL, [stack('wood', 2), stack('woodPath', 3), ...fillers.slice(1)]);
     expect(countItem(craft(topUp, 'woodPath').inventory, 'woodPath')).toBe(4);
+  });
+});
+
+describe('teaching recipes', () => {
+  const known = (list: readonly CraftingRecipeId[]): GameState => ({ ...BASE, crafting: { ...BASE.crafting, known: list } });
+
+  it('inserts new recipes in canonical order, and the result passes save validation', () => {
+    const taught = withRecipes(known(['chest', 'woodBurner']), ['qualityFertilizer', 'speedGro']);
+    expect(taught.crafting.known).toEqual(['chest', 'qualityFertilizer', 'speedGro', 'woodBurner']);
+    expect(isValidGameState(taught)).toBe(true);
+  });
+
+  it('returns the same state when every recipe is already known', () => {
+    const state = known(['chest', 'woodBurner']);
+    expect(withRecipes(state, ['woodBurner', 'chest'])).toBe(state);
+    expect(knownWith(state.crafting.known, [])).toBe(state.crafting.known);
+  });
+
+  it('lists the unknown recipes in the order given', () => {
+    expect(unknownRecipes(known(['chest']), ['speedGro', 'chest', 'sprinkler'])).toEqual(['speedGro', 'sprinkler']);
   });
 });
