@@ -25,9 +25,9 @@ export interface JobDef {
   readonly reward: number;
   /** Added through withUnlocks when the job is taken, because the job needs them (spec §4.1). */
   readonly unlocksOnTake: Partial<RobotUnlocks>;
-  /** Learned when the job is taken, each toasted after "job taken" (spec §3.1, R26: job 1 teaches the Wood Burner). */
+  /** Learned when the job is taken; each one newly learned is toasted after "job taken" (spec §3.1, R26: job 1 teaches the Wood Burner). */
   readonly recipesOnTake: readonly CraftingRecipeId[];
-  /** Learned when the job is done, each toasted after the done lines (release 1 cleanup spec §5.2). */
+  /** Learned when the job is done; each one newly learned is toasted after the done lines (release 1 cleanup spec §5.2). */
   readonly recipesOnDone: readonly CraftingRecipeId[];
   /** Toasted, one each, after "Job done" (spec §4.2's unlock lines). */
   readonly doneLines: readonly string[];

@@ -738,16 +738,19 @@ function migrateV9toV10(save: Obj): Obj {
 
 /**
  * Version 10 predates job 1 teaching the Wood Burner recipe when it's taken (part 4c spec §3.1),
- * so a farm that has taken job 1 learns it now; one with job 1 still offered doesn't.
+ * so a farm that has taken job 1 learns it now, in canonical order; one with job 1 still offered
+ * doesn't. As in the v12 step, a recipe list that isn't already canonical passes through as found
+ * for the validator to reject.
  */
 function migrateV10toV11(save: Obj): Obj {
   const next = { ...save, version: 11 };
   const jobs = save.jobs;
   const crafting = save.crafting;
-  if (!isObj(jobs) || !isObj(jobs.status) || !isObj(crafting) || !Array.isArray(crafting.known)) return next;
+  if (!isObj(jobs) || !isObj(jobs.status) || !isObj(crafting) || !isCanonicalSubset(crafting.known, CRAFTING_RECIPE_IDS)) return next;
   const taken = jobs.status.spinningRobot === 'active' || jobs.status.spinningRobot === 'done';
-  if (!taken || crafting.known.includes('woodBurner')) return next;
-  return { ...next, crafting: { ...crafting, known: [...crafting.known, 'woodBurner'] } };
+  if (!taken) return next;
+  const known = knownWith(crafting.known, ['woodBurner']);
+  return known === crafting.known ? next : { ...next, crafting: { ...crafting, known } };
 }
 
 /** The placed-object kinds version 12 drops (release 1 cleanup spec §2.1). */

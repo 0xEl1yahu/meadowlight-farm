@@ -148,7 +148,7 @@ export function showHimDone(state: GameState): boolean {
   return wave !== null && looksBeforePicking(wave.program) && ripe > 0 && ripeCropsHarvested(state) === ripe;
 }
 
-/** Job 2's progress line: "{n} / 18 ripe crops harvested today." */
+/** Job 2's progress line: "{n} / {ripe} ripe crops harvested today.", {ripe} being the sown tiles ripe at the set-up (cosmoRipeTiles). */
 export function showHimProgress(state: GameState): string {
   return `${ripeCropsHarvested(state)} / ${cosmoRipeTiles(state.maps.neighbours).length} ripe crops harvested today.`;
 }

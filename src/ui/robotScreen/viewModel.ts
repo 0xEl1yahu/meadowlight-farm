@@ -90,8 +90,8 @@ export const PREVIEW_TAG = "From Juniper's workshop";
 const previews = new Map<RobotSize, Robot>();
 
 /**
- * The robot a panel shows: the state's robot for the bench or a peek (null when it's gone), or
- * the size's catalogue robot for a workshop preview, which isn't in the state.
+ * The robot a panel shows: the state's robot for the bench, a peek or job mode (null when it's
+ * gone), or the size's catalogue robot for a workshop preview, which isn't in the state.
  */
 export function screenRobot(state: GameState, panel: RobotPanel): Robot | null {
   if (panel.mode !== 'preview') return findRobot(state, panel.robotId);

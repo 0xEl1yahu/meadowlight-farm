@@ -98,7 +98,7 @@ describe('the shops in saves', () => {
 });
 
 describe('v7 → v8', () => {
-  it('carries on to version 10', () => {
+  it('carries on to the current version', () => {
     expect((migrateSave(v7Save(chatted())) as SaveJson).version).toBe(12);
   });
 

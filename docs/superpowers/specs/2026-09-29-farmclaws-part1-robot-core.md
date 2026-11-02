@@ -340,7 +340,7 @@ A robot added mid-day acts first at `minuteOfDay + periodFor(robot)`. **A new bl
 - Farm-only, like sprinklers: `isFarmOnlyPlaceable` includes it.
 - It blocks movement.
 - It's picked up with the pickaxe, and only when `fuel === 0` ("Burn off the wood first.").
-- `pickUpTool('woodBurner') === 'pickaxe'`.
+- `PICKUP_TOOL` (`src/state/intents.ts`) pins it to the pickaxe: the axe lifts wooden things, and the pickaxe everything else, the wood burner included.
 
 ---
 

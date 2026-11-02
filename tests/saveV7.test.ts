@@ -75,7 +75,7 @@ describe('the cast in saves', () => {
 });
 
 describe('v6 → v7', () => {
-  it('carries on to version 10', () => {
+  it('carries on to the current version', () => {
     expect((migrateSave(v6Save(chatted())) as SaveJson).version).toBe(12);
   });
 
