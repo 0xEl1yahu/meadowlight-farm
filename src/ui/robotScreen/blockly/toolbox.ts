@@ -192,6 +192,18 @@ export interface ToolboxJson {
   readonly contents: readonly ToolboxCategoryJson[];
 }
 
+/** What a built toolbox depends on: the global unlocks and the robot's fitted parts. */
+export interface ToolboxInputs {
+  readonly unlocks: RobotUnlocks;
+  readonly parts: Robot['parts'];
+}
+
+/** True when the toolbox built from `prev` no longer matches `next`: new unlocks (by reference) or different parts (by contents). */
+export function toolboxStale(prev: ToolboxInputs, next: ToolboxInputs): boolean {
+  if (prev.unlocks !== next.unlocks) return true;
+  return prev.parts.length !== next.parts.length || prev.parts.some((part, index) => part !== next.parts[index]);
+}
+
 /**
  * The toolbox for a robot and the unlocked blocks (spec §4.2, §7): the five categories in order,
  * each with its unlocked block types in BLOCK_KINDS order, empty categories left out. The

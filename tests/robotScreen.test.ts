@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROBOTS, ROBOT_CARE, ROBOT_PAINTS, ROBOT_SCREEN, TIME, UNLOCKS } from '../src/config';
 import { createStore, type Store } from '../src/core/store';
 import { mulberry32 } from '../src/core/hash';
-import { MD_CARD_KINDS, ROBOT_SIZES, type GameState, type MdCard, type RobotLogEntry, type RobotLogEvent } from '../src/core/types';
+import { MD_CARD_KINDS, ROBOT_SIZES, type GameState, type MdCard, type Robot, type RobotLogEntry, type RobotUnlocks, type RobotLogEvent } from '../src/core/types';
 import { InputController } from '../src/input/InputController';
 import type { CameraRig } from '../src/render/CameraRig';
 import { b } from '../src/robots/blocks';
@@ -32,6 +32,7 @@ import {
   nameOptions,
   scriptNote,
   toolboxFor,
+  toolboxStale,
   variableCounter,
   type MenuKind,
 } from '../src/ui/robotScreen/blockly/toolbox';
@@ -492,6 +493,23 @@ describe('InputController while a robot screen is open (spec §4.1)', () => {
     expect(press('KeyP', 'p').defaultPrevented).toBe(true);
     expect(dispatched).toEqual([actions.setPaused(true)]);
     dispose();
+  });
+});
+
+describe('toolboxStale', () => {
+  const inputs = (parts: readonly Robot['parts'][number][], unlocks: RobotUnlocks = UNLOCKS.job1) => ({ unlocks, parts });
+
+  it('is true for new unlocks', () => {
+    expect(toolboxStale(inputs(['claw']), inputs(['claw'], ALL_UNLOCKS))).toBe(true);
+  });
+
+  it('is true when a sensor eye is fitted or removed', () => {
+    expect(toolboxStale(inputs(['claw']), inputs(['claw', 'sensorEye']))).toBe(true);
+    expect(toolboxStale(inputs(['claw', 'sensorEye']), inputs(['claw']))).toBe(true);
+  });
+
+  it('is false for the same unlocks and an equal new parts array', () => {
+    expect(toolboxStale(inputs(['claw', 'sensorEye']), inputs(['claw', 'sensorEye']))).toBe(false);
   });
 });
 

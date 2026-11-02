@@ -38,8 +38,10 @@ import {
   isValueType,
   scriptNote,
   toolboxFor,
+  toolboxStale,
   variableCounter,
   type CounterView,
+  type ToolboxInputs,
   type ToolboxJson,
 } from '../blockly/toolbox';
 import { countWorkspaceBlocks, programToWorkspace, workspaceMatchesProgram, workspaceToProgram, type BlocklyWorkspaceJson } from '../translate';
@@ -108,7 +110,8 @@ export class ProgramTab implements RobotTabView {
   private requested = false;
   private disposed = false;
   private readOnly = false;
-  private unlocks: RobotUnlocks | null = null;
+  /** What the toolbox was last built from. */
+  private toolboxInputs: ToolboxInputs | null = null;
   /** The program the workspace was last loaded from or saved to. */
   private baseline: RobotProgram | null = null;
   private dirty = false;
@@ -169,7 +172,7 @@ export class ProgramTab implements RobotTabView {
     const robot = this.context.robot(state);
     if (robot === null) return;
     this.readOnly = isReadOnly(robot, this.context.mode);
-    this.unlocks = state.robots.unlocks;
+    this.toolboxInputs = { unlocks: state.robots.unlocks, parts: robot.parts };
     for (const button of [this.blocksButton, this.revertButton, this.saveButton]) setHidden(button, this.readOnly);
     this.syncVariableButton();
     setText(this.status, EDITOR_TEXT.opening);
@@ -179,7 +182,8 @@ export class ProgramTab implements RobotTabView {
   sync(state: GameState): void {
     const robot = this.context.robot(state);
     if (robot === null) return;
-    if (state.robots.unlocks !== this.unlocks) this.syncUnlocks(state.robots.unlocks, robot);
+    const inputs: ToolboxInputs = { unlocks: state.robots.unlocks, parts: robot.parts };
+    if (this.toolboxInputs === null || toolboxStale(this.toolboxInputs, inputs)) this.syncToolbox(inputs, robot);
     if (this.saving || robot.program === this.baseline || this.dirty) return;
     this.loadProgram(robot.program);
   }
@@ -519,7 +523,7 @@ export class ProgramTab implements RobotTabView {
   // -------------------------------------------------------------------------
 
   private variablesUnlocked(): boolean {
-    return this.unlocks?.blocks.includes('var') ?? false;
+    return this.toolboxInputs?.unlocks.blocks.includes('var') ?? false;
   }
 
   private syncVariableButton(): void {
@@ -592,8 +596,9 @@ export class ProgramTab implements RobotTabView {
   // Toolbox, layout and notes
   // -------------------------------------------------------------------------
 
-  private syncUnlocks(unlocks: RobotUnlocks, robot: Robot): void {
-    this.unlocks = unlocks;
+  private syncToolbox(inputs: ToolboxInputs, robot: Robot): void {
+    const { unlocks } = inputs;
+    this.toolboxInputs = inputs;
     this.syncVariableButton();
     const workspace = this.workspace;
     if (workspace !== null && !this.readOnly) {
