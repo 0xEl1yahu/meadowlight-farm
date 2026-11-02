@@ -10,7 +10,7 @@ import { nudgeWalkersOff } from '../people/walk';
 import { addRobot } from '../robots/create';
 import { withZone } from '../robots/edits';
 import { findFreeBlock, freeSpotNear } from '../robots/workbench';
-import { nearestFreeWalkable, robotsOnTile, withFarm, withRobot } from '../robots/world';
+import { nearestFreeWalkable, nearestRobotGround, robotsOnTile, withFarm, withRobot } from '../robots/world';
 import { pushMessage } from '../state/messages';
 import { withMap } from '../state/selectors';
 import { COSMO_FIELD } from '../world/maps/neighbours';
@@ -145,11 +145,12 @@ export function setUpCosmoField(state: GameState): GameState {
  * Job 2's set-up (spec §3.2): Cosmo's generator, his field, and his Big Wave (Claw, Sensor eye,
  * Basket; the hello-chickens program; Cosmo's) on the lane at JOBS.waveAt, facing North, fully
  * charged. Something on Wave's tile doesn't refuse the job: Wave is set down on the nearest free
- * walkable tile instead, as Barnaby's Minis are (part 4c spec R17).
+ * open ground instead (nearestRobotGround, never a reserved tile), as Barnaby's Minis are (part 4c
+ * spec R17).
  */
 export function setUpShowHim(state: GameState): GameState {
   const fielded = setUpCosmoField(withGenerator(state, 'cosmo'));
-  const at = nearestFreeWalkable(fielded, 'neighbours', JOBS.waveAt, fielded.robots.nextId);
+  const at = nearestRobotGround(fielded, 'neighbours', JOBS.waveAt);
   const added = addRobot(fielded, {
     name: WAVE,
     size: 'big',
@@ -195,7 +196,7 @@ export const ZONE_H_TOAST = 'Barnaby marked his field as Zone H.';
  * to the field's sown rows on the Neighbours map whatever it was ("Barnaby marked his field as
  * Zone H."), and his Minis B-1 to B-4 (a Claw each, Barnaby's .MD, fully charged, Barnaby's) on
  * JOBS.barnabyRobots: B-1 with the polling program, the rest idle. A Mini whose tile is taken by a robot or an object stands on
- * the nearest free walkable tile instead.
+ * the nearest free open ground instead (nearestRobotGround).
  */
 export function setUpKnowTheLimits(state: GameState): GameState {
   const { x0, z0, width, depth } = BARNABY_SOWN;
@@ -205,7 +206,7 @@ export function setUpKnowTheLimits(state: GameState): GameState {
   BARNABY_TEAM.forEach((name, i) => {
     const place = JOBS.barnabyRobots[i];
     invariant(place !== undefined, `JOBS.barnabyRobots places ${name}`);
-    const at = nearestFreeWalkable(next, 'neighbours', place, next.robots.nextId);
+    const at = nearestRobotGround(next, 'neighbours', place);
     const added = addRobot(next, {
       name,
       size: 'mini',

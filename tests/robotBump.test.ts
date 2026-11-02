@@ -14,12 +14,13 @@ import { findBumps, forgetRunningStack } from '../src/robots/bumps';
 import { addRobot } from '../src/robots/create';
 import { evaluate } from '../src/robots/eval';
 import { robotSays, whatHappened } from '../src/robots/logText';
-import { nearestFreeWalkable, requireRobot } from '../src/robots/world';
+import { isRobotGround, nearestFreeWalkable, nearestRobotGround, requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { isValidExec } from '../src/state/robotValidation';
-import { blockedTile } from '../src/world/tiles';
+import { MAPS, isReservedTile } from '../src/world/maps';
+import { blockedTile, isWalkable, requireTile } from '../src/world/tiles';
 import { programmed } from './programGen';
 import { BASE, TARGET, matureCrop, robotOf, soilTile, withPlayer, withRobots, withTile, type SaveJson } from './testUtils';
 
@@ -310,6 +311,19 @@ describe('seeing and avoiding robots', () => {
     const state = farmWith([robotOf({ id: 1 }), robotOf({ id: 2, name: 'Bolt', tx: TARGET.tx + 1 })]);
     expect(nearestFreeWalkable(state, 'farm', TARGET, 1)).toEqual(TARGET);
     expect(nearestFreeWalkable(state, 'farm', TARGET, 2)).toEqual({ tx: TARGET.tx, tz: TARGET.tz - 1 });
+  });
+
+  it('nearestRobotGround skips exactly the tiles addRobot refuses: reserved ones', () => {
+    const gate = { tx: 0, tz: 13 };
+    const tile = requireTile(BASE.maps.farm, gate.tx, gate.tz);
+    expect(isWalkable(tile) && isReservedTile(MAPS.farm, gate.tx, gate.tz)).toBe(true);
+    expect(isRobotGround('farm', tile, gate)).toBe(false);
+    const spec = { name: 'Bolt', size: 'mini' as const, parts: [], program: b.program({ stacks: [b.when(b.morning(), b.move())] }), place: { ...gate, facing: Direction.South } };
+    expect(addRobot(BASE, spec)).toEqual({ error: 'Robots are delivered to open ground on the farm.' });
+    expect(nearestFreeWalkable(BASE, 'farm', gate, 1)).toEqual(gate);
+    const ground = nearestRobotGround(BASE, 'farm', gate);
+    expect(isRobotGround('farm', requireTile(BASE.maps.farm, ground.tx, ground.tz), ground)).toBe(true);
+    expect('error' in addRobot(BASE, { ...spec, place: { ...ground, facing: Direction.South } })).toBe(false);
   });
 
   it('keeps the pair preset bickering without ever bumping', () => {

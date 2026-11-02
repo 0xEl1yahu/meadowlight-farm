@@ -22,12 +22,12 @@ import {
 import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { isValidName } from '../state/sectionValidation';
 import { isCanonicalSubset, isInt, isOneOf } from '../state/validation';
-import { MAPS, isReservedTile } from '../world/maps';
-import { getTile, isWalkable } from '../world/tiles';
+import { getTile } from '../world/tiles';
 import { checkMd, checkProgram } from './check';
 import { MD_SHAPE, PROGRAM_SHAPE } from './edits';
 import { execAt, idlePower } from './exec';
 import { ZERO_ROBOT_STATS, batteryFor, hasPart, periodFor } from './stats';
+import { isRobotGround } from './world';
 
 export interface RobotSpec {
   readonly name: string;
@@ -79,8 +79,7 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
   if (typeof place !== 'object' || place === null) return 'A robot needs a place: tx, tz and facing.';
   const { tx, tz, facing } = place as Record<string, unknown>;
   if (!isInt(tx) || !isInt(tz) || !(DIRECTIONS as readonly unknown[]).includes(facing)) return 'A robot needs a place: tx, tz and facing.';
-  const tile = getTile(state.maps[mapId], tx, tz);
-  if (tile === null || !isWalkable(tile) || isReservedTile(MAPS[mapId], tx, tz)) {
+  if (!isRobotGround(mapId, getTile(state.maps[mapId], tx, tz), { tx, tz })) {
     return mapId === 'farm' ? 'Robots are delivered to open ground on the farm.' : 'Robots are delivered to open ground on the Neighbours map.';
   }
   return null;

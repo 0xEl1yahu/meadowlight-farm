@@ -146,6 +146,24 @@ export function nearestFreeWalkable(state: GameState, mapId: RobotMapId, from: T
 }
 
 /**
+ * Whether a new robot may stand on `tile`, at `at` on `mapId` (part 1 spec §3.4): open ground,
+ * walkable and not reserved. addRobot refuses any other tile.
+ */
+export function isRobotGround(mapId: RobotMapId, tile: Tile | null, at: TileCoord): boolean {
+  return tile !== null && isWalkable(tile) && !isReservedTile(MAPS[mapId], at.tx, at.tz);
+}
+
+/**
+ * The nearest tile of `mapId` to `from` that a new robot may stand on (isRobotGround) with no
+ * standing robot on it: where the jobs set a neighbour's robot down when its own tile is taken
+ * (part 4c spec R17), so addRobot never refuses the tile.
+ */
+export function nearestRobotGround(state: GameState, mapId: RobotMapId, from: TileCoord): TileCoord {
+  const free = (tile: Tile, at: TileCoord): boolean => isRobotGround(mapId, tile, at) && robotsOnTile(state, mapId, at.tx, at.tz).length === 0;
+  return nearestFitting(state.maps[mapId], from, free, 'nearestRobotGround: the map has no free open ground');
+}
+
+/**
  * The tile of `mapId` nearest `generator`, within ROBOTS.chargeRadius of it, where a robot can be
  * set down: walkable, not reserved, not a stop in the farmers' timetables (part 4d spec §4.5), with
  * no standing robot on it but `selfId`. Where a neighbour drags a flat robot back to overnight;

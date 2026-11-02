@@ -21,7 +21,7 @@ import {
   sowableTiles,
 } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, jobProgress } from '../src/jobs/jobs';
-import { ZONE_H_TOAST } from '../src/jobs/setup';
+import { ZONE_H_TOAST, setUpKnowTheLimits } from '../src/jobs/setup';
 import { npcActions } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
@@ -32,7 +32,7 @@ import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { chebyshevDistance, rectContains } from '../src/world/grid';
 import { BARNABY_FENCE, BARNABY_FIELD, NEIGHBOURS_LANE, NEIGHBOURS_MAP } from '../src/world/maps/neighbours';
-import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withWalkerAt, withZones } from './testUtils';
+import { BASE, beyondReserved, must, robotOf, tileAt, withChestsAllOver, withPlayer, withRobots, withTile, withWalkerAt, withZones } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
@@ -256,6 +256,15 @@ describe("Barnaby's team", () => {
     expect({ tx: b1.tx, tz: b1.tz }).not.toEqual({ tx: place.tx, tz: place.tz });
     expect(Math.abs(b1.tx - place.tx) + Math.abs(b1.tz - place.tz)).toBe(1);
     expect(isValidGameState(taken)).toBe(true);
+  });
+
+  it('never sets a Mini down on a reserved tile, even when one is the nearest open ground', () => {
+    const keep = beyondReserved(OFFERED, 'neighbours', JOBS.barnabyRobots).slice(-BARNABY_TEAM.length);
+    expect(keep).toHaveLength(BARNABY_TEAM.length);
+    const set = setUpKnowTheLimits(withChestsAllOver(OFFERED, 'neighbours', keep));
+    const stands = team(set).map((robot) => ({ tx: robot.tx, tz: robot.tz }));
+    expect([...stands].sort((a, c) => a.tz - c.tz || a.tx - c.tx)).toEqual([...keep].sort((a, c) => a.tz - c.tz || a.tx - c.tx));
+    expect(isValidGameState(set)).toBe(true);
   });
 });
 

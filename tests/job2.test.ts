@@ -12,17 +12,18 @@ import { isMature } from '../src/farming/crops';
 import { growCrop } from '../src/farming/growth';
 import { WAVE, cosmoRipeTiles, looksBeforePicking, ripeCropsHarvested, showHimDone, showHimProgress, waveOf } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, jobMorning, jobProgress } from '../src/jobs/jobs';
+import { setUpShowHim } from '../src/jobs/setup';
 import { npcActions } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
 import { programmedRobot } from '../src/robots/edits';
-import { nearestFreeWalkable, withRobot } from '../src/robots/world';
+import { nearestRobotGround, withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { COSMO_FIELD } from '../src/world/maps/neighbours';
 import { SHOW_HIM_REFERENCE } from './jobSolutions';
-import { BASE, must, robotOf, tileAt, withPlayer, withRobots, withTile, withWalkerAt } from './testUtils';
+import { BASE, beyondReserved, must, robotOf, tileAt, withChestsAllOver, withPlayer, withRobots, withTile, withWalkerAt } from './testUtils';
 
 const act = (state: GameState, action: GameAction): GameState => gameReducer(state, action);
 const texts = (state: GameState): string[] => state.messages.entries.map((m) => m.text);
@@ -125,9 +126,16 @@ describe('taking job 2', () => {
     expect(tileAt(taken, JOBS.waveAt, 'neighbours')).toEqual(chest);
     const wave = must(waveOf(taken));
     expect(wave).toMatchObject({ mapId: 'neighbours', facing: Direction.North });
-    expect({ tx: wave.tx, tz: wave.tz }).toEqual(nearestFreeWalkable(taken, 'neighbours', JOBS.waveAt, wave.id));
+    expect({ tx: wave.tx, tz: wave.tz }).toEqual(nearestRobotGround(withRobots(taken, []), 'neighbours', JOBS.waveAt));
     expect({ tx: wave.tx, tz: wave.tz }).not.toEqual(JOBS.waveAt);
     expect(isValidGameState(taken)).toBe(true);
+  });
+
+  it('never sets Wave down on a reserved tile, even when one is the nearest open ground', () => {
+    const keep = must(beyondReserved(OFFERED, 'neighbours', [JOBS.waveAt]).at(-1), 'open ground past the reserved tiles');
+    const set = setUpShowHim(withChestsAllOver(OFFERED, 'neighbours', [keep]));
+    expect(must(waveOf(set))).toMatchObject({ tx: keep.tx, tz: keep.tz, facing: Direction.North });
+    expect(isValidGameState(set)).toBe(true);
   });
 
   it('takes job 2 with the player on the lane at the wave tile, and the state stays valid', () => {

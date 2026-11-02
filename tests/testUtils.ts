@@ -35,6 +35,7 @@ import {
   type MapId,
   type NpcId,
   type NpcTalk,
+  type PlacedObject,
   type RobotStats,
   type Quality,
   type Tile,
@@ -58,14 +59,14 @@ import { createDefaultSections, createInitialState } from '../src/state/initialS
 import { countItem } from '../src/state/inventory';
 import { serializeGame } from '../src/state/persistence';
 import { withMap } from '../src/state/selectors';
-import { MAPS } from '../src/world/maps';
+import { MAPS, isReservedTile } from '../src/world/maps';
 import { CHICKEN_RUN, COSMO_DOOR_GAP, ringTiles } from '../src/world/maps/neighbours';
 import { TOWN_PROP_KINDS } from '../src/world/maps/town';
 import { calendarTime } from '../src/time/clock';
 import { weatherWaters } from '../src/time/weather';
 import { locateTile } from '../src/world/grid';
 import type { MapDefinition } from '../src/world/maps/types';
-import { EMPTY_TILE, blockedTile, forEachTile, isWalkable, requireTile, setTile } from '../src/world/tiles';
+import { EMPTY_TILE, blockedTile, forEachTile, isWalkable, requireTile, setTile, setTiles } from '../src/world/tiles';
 
 /** Tile the canonical scenario stands on (clear zone, always walkable). */
 export const STAND: TileCoord = { tx: 5, tz: 9 };
@@ -130,6 +131,36 @@ export function tileAt(state: GameState, coord: TileCoord, mapId: MapId = state.
 /** Writes one tile on `mapId` (default: the map the player stands on). */
 export function withTile(state: GameState, coord: TileCoord, tile: Tile, mapId: MapId = state.player.mapId): GameState {
   return withMap(state, mapId, setTile(state.maps[mapId], coord.tx, coord.tz, tile));
+}
+
+/**
+ * `state` with an empty chest on every walkable, unreserved tile of `mapId` but `keep`: the
+ * reserved tiles and `keep` are then the only open ground left.
+ */
+export function withChestsAllOver(state: GameState, mapId: MapId, keep: readonly TileCoord[]): GameState {
+  const chest: PlacedObject = { kind: 'chest', slots: new Array<null>(INVENTORY.chestSlots).fill(null) };
+  const edits: { tx: number; tz: number; tile: Tile }[] = [];
+  forEachTile(state.maps[mapId], (tile, tx, tz) => {
+    const kept = keep.some((at) => at.tx === tx && at.tz === tz);
+    if (!kept && isWalkable(tile) && !isReservedTile(MAPS[mapId], tx, tz)) edits.push({ tx, tz, tile: { ...tile, object: chest } });
+  });
+  return withMap(state, mapId, setTiles(state.maps[mapId], edits));
+}
+
+/**
+ * The walkable, unreserved tiles of `mapId` in `state` that are further, step for step, from
+ * every tile of `from` than that tile's nearest reserved tile: a breadth-first search from any
+ * of `from` reaches a reserved tile first.
+ */
+export function beyondReserved(state: GameState, mapId: MapId, from: readonly TileCoord[]): TileCoord[] {
+  const steps = (a: TileCoord, b: TileCoord): number => Math.abs(a.tx - b.tx) + Math.abs(a.tz - b.tz);
+  const reserved = MAPS[mapId].reserved;
+  const far: TileCoord[] = [];
+  forEachTile(state.maps[mapId], (tile, tx, tz) => {
+    if (!isWalkable(tile) || isReservedTile(MAPS[mapId], tx, tz)) return;
+    if (from.every((at) => reserved.some((r) => steps(at, r) < steps(at, { tx, tz })))) far.push({ tx, tz });
+  });
+  return far;
 }
 
 /**
