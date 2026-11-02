@@ -15,7 +15,7 @@ import { pushMessage } from '../state/messages';
 import { withMap } from '../state/selectors';
 import { COSMO_FIELD } from '../world/maps/neighbours';
 import { EMPTY_TILE, requireTile, setTiles, type TileEdit } from '../world/tiles';
-import { BARNABY_SOWN, BARNABY_TEAM, SPRINKLE, WAVE, bedTiles } from './checks';
+import { BARNABY_SOWN, BARNABY_TEAM, SPRINKLE, WAVE, bedTiles, sowableTiles } from './checks';
 
 /** Sprinkle's program as Sol hands it over: when morning comes, repeat forever, turn right. */
 const SPINNING: BlockProgram = {
@@ -121,15 +121,11 @@ function parsnipDaysFromRipe(day: number, daysLeft: number): CropInstance {
  */
 function sowField(state: GameState, field: TileRect, cropAt: (tx: number, tz: number) => CropInstance): GameState {
   const world = state.maps.neighbours;
-  const edits: TileEdit[] = [];
-  const { x0, z0, width, depth } = field;
-  for (let tz = z0; tz < z0 + depth; tz++) {
-    for (let tx = x0; tx < x0 + width; tx++) {
-      const tile = requireTile(world, tx, tz);
-      if (tile.object !== null) continue;
-      edits.push({ tx, tz, tile: { ...tile, state: TileState.Plowed, crop: cropAt(tx, tz) } });
-    }
-  }
+  const edits: TileEdit[] = sowableTiles(world, field).map(({ tx, tz }) => ({
+    tx,
+    tz,
+    tile: { ...requireTile(world, tx, tz), state: TileState.Plowed, crop: cropAt(tx, tz) },
+  }));
   return withMap(state, 'neighbours', setTiles(world, edits));
 }
 

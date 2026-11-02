@@ -18,6 +18,7 @@ import {
   barnabyTokensSpent,
   knowTheLimitsDone,
   knowTheLimitsProgress,
+  sowableTiles,
 } from '../src/jobs/checks';
 import { JOBS_TABLE, JOB_PLAYS, jobProgress } from '../src/jobs/jobs';
 import { ZONE_H_TOAST } from '../src/jobs/setup';
@@ -51,7 +52,7 @@ function take(state: GameState): GameState {
 }
 
 const TAKEN: GameState = deepFreeze(take(OFFERED));
-const FIELD = barnabyFieldTiles();
+const FIELD = barnabyFieldTiles(BASE.maps.neighbours);
 
 /** Barnaby's robots, by id. */
 function team(state: GameState): Robot[] {
@@ -160,6 +161,51 @@ describe("Barnaby's field", () => {
   });
 });
 
+describe('the sown tiles', () => {
+  const chestTile = (tile: TileCoord) => ({ ...tileAt(OFFERED, tile, 'neighbours'), object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } });
+
+  it('counts 47 with a chest on a sown tile, and the budget follows', () => {
+    const corner = must(FIELD[0]);
+    const taken = take(withTile(OFFERED, corner, chestTile(corner), 'neighbours'));
+    const world = taken.maps.neighbours;
+    expect(barnabyFieldTiles(world)).toHaveLength(47);
+    expect(barnabyBudget(world)).toBe(JOBS.tokensPerCrop * 47);
+    expect(knowTheLimitsProgress(taken)).toBe('0 / 47 crops harvested today · 0 tokens spent.');
+    const ready = withHarvests(at(taken, 17 * 60 + 59), barnabyFieldTiles(world));
+    expect(knowTheLimitsDone(ready)).toBe(true);
+  });
+
+  it("counts 48 again once the chest is taken off, but the tile has no crop, so the job doesn't pass", () => {
+    const corner = must(FIELD[0]);
+    const taken = take(withTile(OFFERED, corner, chestTile(corner), 'neighbours'));
+    const cleared = withTile(taken, corner, { ...tileAt(taken, corner, 'neighbours'), object: null }, 'neighbours');
+    expect(barnabyFieldTiles(cleared.maps.neighbours)).toHaveLength(48);
+    expect(tileAt(cleared, corner, 'neighbours').crop).toBeNull();
+    const harvested = withHarvests(at(cleared, 17 * 60 + 59), FIELD.filter((tile) => tile.tx !== corner.tx || tile.tz !== corner.tz));
+    expect(knowTheLimitsDone(harvested)).toBe(false);
+  });
+
+  it('cannot pass with every sown tile under an object', () => {
+    let covered = OFFERED;
+    for (const tile of FIELD) covered = withTile(covered, tile, chestTile(tile), 'neighbours');
+    const taken = take(covered);
+    expect(barnabyFieldTiles(taken.maps.neighbours)).toHaveLength(0);
+    expect(knowTheLimitsDone(at(taken, 12 * 60))).toBe(false);
+  });
+});
+
+describe('sowableTiles', () => {
+  it('returns every tile of an empty rect, row by row', () => {
+    const rect = { x0: BARNABY_SOWN.x0, z0: BARNABY_SOWN.z0, width: 2, depth: 2 };
+    expect(sowableTiles(BASE.maps.neighbours, rect)).toEqual([
+      { tx: rect.x0, tz: rect.z0 },
+      { tx: rect.x0 + 1, tz: rect.z0 },
+      { tx: rect.x0, tz: rect.z0 + 1 },
+      { tx: rect.x0 + 1, tz: rect.z0 + 1 },
+    ]);
+  });
+});
+
 describe("Barnaby's team", () => {
   it('is four Minis with a Claw each, on their tiles, fully charged, with his .MD', () => {
     expect(TEAM.map((r) => r.name)).toEqual([...BARNABY_TEAM]);
@@ -215,7 +261,7 @@ describe("Barnaby's team", () => {
 
 describe('the check', () => {
   it("passes before 6:00 pm once Barnaby's robots harvested every tile today within the budget", () => {
-    expect(barnabyBudget()).toBe(288);
+    expect(barnabyBudget(TAKEN.maps.neighbours)).toBe(288);
     const ready = withSpent(withHarvests(at(TAKEN, 17 * 60 + 59), FIELD), 288);
     expect(knowTheLimitsDone(ready)).toBe(true);
   });

@@ -43,7 +43,7 @@ function take(state: GameState): GameState {
 
 const TAKEN: GameState = deepFreeze(take(OFFERED));
 const WAVE_ROBOT = must(waveOf(TAKEN));
-const RIPE = cosmoRipeTiles();
+const RIPE = cosmoRipeTiles(BASE.maps.neighbours);
 
 /** Every tile of Cosmo's field, row by row. */
 function fieldTiles(): TileCoord[] {
@@ -169,6 +169,21 @@ describe("Cosmo's field", () => {
     const taken = take(withTile(OFFERED, corner, chest, 'neighbours'));
     expect(tileAt(taken, corner, 'neighbours')).toEqual(chest);
     expect(isValidGameState(taken)).toBe(true);
+  });
+
+  it('counts only the free ripe tiles: a chest on a ripe tile leaves 17, on an unripe tile 18', () => {
+    const chestOn = (tile: TileCoord): GameState => {
+      const chest = { ...tileAt(OFFERED, tile, 'neighbours'), object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
+      return take(withTile(OFFERED, tile, chest, 'neighbours'));
+    };
+    const onRipe = chestOn(must(RIPE[0]));
+    const ripeLeft = cosmoRipeTiles(onRipe.maps.neighbours);
+    expect(ripeLeft).toHaveLength(17);
+    expect(showHimProgress(onRipe)).toBe('0 / 17 ripe crops harvested today.');
+    const passed = withHarvests(programmed(onRipe, REFERENCE), ripeLeft);
+    expect(showHimDone(passed)).toBe(true);
+    const unripe = must(fieldTiles().find((tile) => (tile.tx + tile.tz) % 2 !== 0));
+    expect(cosmoRipeTiles(chestOn(unripe).maps.neighbours)).toHaveLength(18);
   });
 
   it("keeps its last state once the job is done, and isn't set up again", () => {

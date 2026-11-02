@@ -141,14 +141,14 @@ describe("job 2, Cosmo's harvest", () => {
     expect(done(end)).toBe(false);
     // Trying the unripe tiles too, Wave runs out of tokens before the field is done.
     expect(must(waveOf(end)).power).toBe('flat');
-    expect(ripeCropsHarvested(end)).toBeLessThan(cosmoRipeTiles().length);
+    expect(ripeCropsHarvested(end)).toBeLessThan(cosmoRipeTiles(BASE.maps.neighbours).length);
   });
 
   it('fails with the hello-chickens program', () => {
     const end = runDay(act(TAKEN, actions.sleep()), done);
     expect(done(end)).toBe(false);
     expect(ripeCropsHarvested(end)).toBe(0);
-    expect(cosmoRipeTiles()).toHaveLength(18);
+    expect(cosmoRipeTiles(BASE.maps.neighbours)).toHaveLength(18);
   });
 });
 
@@ -171,13 +171,13 @@ describe("job 3, Barnaby's team", () => {
     expect(done(end)).toBe(true);
     expect(end.time.absoluteDay).toBe(morning.time.absoluteDay);
     expect(end.time.minuteOfDay).toBeLessThanOrEqual(12 * 60);
-    expect(barnabyTokensSpent(end)).toBeLessThanOrEqual(barnabyBudget() - barnabyFieldTiles().length);
+    expect(barnabyTokensSpent(end)).toBeLessThanOrEqual(barnabyBudget(BASE.maps.neighbours) - barnabyFieldTiles(BASE.maps.neighbours).length);
     for (const robot of team(end)) expect(robot.tokens, robot.name).toBeGreaterThanOrEqual(left);
   }
 
   it('is four zones of 4 × 3 on the sown rows, one per Mini, with blocks unlocked by job 3', () => {
-    expect(barnabyFieldTiles()).toHaveLength(48);
-    expect(barnabyBudget()).toBe(JOBS.tokensPerCrop * 48);
+    expect(barnabyFieldTiles(BASE.maps.neighbours)).toHaveLength(48);
+    expect(barnabyBudget(BASE.maps.neighbours)).toBe(JOBS.tokensPerCrop * 48);
     for (const zone of Object.values(BARNABY_QUARTERS)) expect([zone.w, zone.d]).toEqual([4, 3]);
     const unlocked: readonly BlockKind[] = [...UNLOCKS.job1.blocks, ...UNLOCKS.job2.blocks, ...UNLOCKS.job3.blocks];
     for (const zone of ['A', 'B', 'C', 'D'] as const satisfies readonly ZoneId[]) {
@@ -202,7 +202,7 @@ describe("job 3, Barnaby's team", () => {
   it("fails with B-1's polling program alone", () => {
     const end = runDay(act(TAKEN, actions.sleep()), done);
     expect(done(end)).toBe(false);
-    expect(barnabyCropsHarvested(end)).toBeLessThan(barnabyFieldTiles().length);
+    expect(barnabyCropsHarvested(end)).toBeLessThan(barnabyFieldTiles(BASE.maps.neighbours).length);
   });
 
   it('fails with the four Minis on polling programs', () => {
@@ -220,7 +220,7 @@ describe("job 3, Barnaby's team", () => {
     if ('error' in added) throw new Error(added.error);
     const end = runDay(act(added.state, actions.sleep()), done);
     expect(done(end)).toBe(false);
-    expect(barnabyTokensSpent(end)).toBeGreaterThan(barnabyBudget());
-    expect(barnabyCropsHarvested(end)).toBeLessThan(barnabyFieldTiles().length);
+    expect(barnabyTokensSpent(end)).toBeGreaterThan(barnabyBudget(BASE.maps.neighbours));
+    expect(barnabyCropsHarvested(end)).toBeLessThan(barnabyFieldTiles(BASE.maps.neighbours).length);
   });
 });

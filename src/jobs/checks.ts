@@ -4,10 +4,11 @@
  * counts towards a job.
  */
 import { JOBS } from '../config';
-import type { GameState, Robot, RobotOwner, RobotProgram, TileCoord, TileRect } from '../core/types';
+import type { GameState, Robot, RobotOwner, RobotProgram, TileCoord, TileRect, WorldState } from '../core/types';
 import { BLOCK_CATEGORY } from '../robots/blockKinds';
 import { allExprNodes, programStatements, statementExprs } from '../robots/program';
 import { BARNABY_FIELD, COSMO_FIELD } from '../world/maps/neighbours';
+import { requireTile } from '../world/tiles';
 
 /** Sol's Mini, job 1's robot (spec §3.1). */
 export const SPRINKLE = 'Sprinkle';
@@ -99,16 +100,25 @@ export function spinningRobotProgress(state: GameState): string {
 }
 
 /**
- * The tiles of Cosmo's field that are ripe at the morning set-up (spec §3.2), row by row: the
- * checkerboard's (tx + tz) even half.
+ * The tiles of `rect` a job's morning set-up sows, row by row: those with no placed object (a
+ * tile under an object keeps it). The checks count these, so a chest on the field takes its tile
+ * out of the goal.
  */
-export function cosmoRipeTiles(): readonly TileCoord[] {
+export function sowableTiles(world: WorldState, rect: TileRect): readonly TileCoord[] {
   const tiles: TileCoord[] = [];
-  const { x0, z0, width, depth } = COSMO_FIELD;
+  const { x0, z0, width, depth } = rect;
   for (let tz = z0; tz < z0 + depth; tz++) {
-    for (let tx = x0; tx < x0 + width; tx++) if ((tx + tz) % 2 === 0) tiles.push({ tx, tz });
+    for (let tx = x0; tx < x0 + width; tx++) if (requireTile(world, tx, tz).object === null) tiles.push({ tx, tz });
   }
   return tiles;
+}
+
+/**
+ * The tiles of Cosmo's field that are ripe at the morning set-up (spec §3.2), row by row: the
+ * sown tiles of the checkerboard's (tx + tz) even half.
+ */
+export function cosmoRipeTiles(world: WorldState): readonly TileCoord[] {
+  return sowableTiles(world, COSMO_FIELD).filter((tile) => (tile.tx + tile.tz) % 2 === 0);
 }
 
 /**
@@ -120,7 +130,7 @@ export function ripeCropsHarvested(state: GameState): number {
   const wave = waveOf(state);
   if (wave === null) return 0;
   const harvested = tilesDidToday(state, wave, 'harvest');
-  return cosmoRipeTiles().filter((tile) => harvested.has(`${tile.tx},${tile.tz}`)).length;
+  return cosmoRipeTiles(state.maps.neighbours).filter((tile) => harvested.has(`${tile.tx},${tile.tz}`)).length;
 }
 
 /** Job 2's program rule (spec §3.2): a block program with at least one If and at least one sensor block. */
@@ -134,25 +144,21 @@ export function looksBeforePicking(program: RobotProgram): boolean {
 /** Job 2's check (spec §3.2): Wave harvested every crop that was ripe at the morning set-up today, with a program that looks before it picks. */
 export function showHimDone(state: GameState): boolean {
   const wave = waveOf(state);
-  return wave !== null && looksBeforePicking(wave.program) && ripeCropsHarvested(state) === cosmoRipeTiles().length;
+  const ripe = cosmoRipeTiles(state.maps.neighbours).length;
+  return wave !== null && looksBeforePicking(wave.program) && ripe > 0 && ripeCropsHarvested(state) === ripe;
 }
 
 /** Job 2's progress line: "{n} / 18 ripe crops harvested today." */
 export function showHimProgress(state: GameState): string {
-  return `${ripeCropsHarvested(state)} / ${cosmoRipeTiles().length} ripe crops harvested today.`;
+  return `${ripeCropsHarvested(state)} / ${cosmoRipeTiles(state.maps.neighbours).length} ripe crops harvested today.`;
 }
 
 /** The part of Barnaby's field job 3 sows (spec §3.3): its first JOBS.barnabyRows rows from the gate side. */
 export const BARNABY_SOWN: TileRect = { ...BARNABY_FIELD, depth: JOBS.barnabyRows };
 
-/** The tiles of Barnaby's field that job 3 sows, row by row: every one has a ripe crop at the morning set-up. */
-export function barnabyFieldTiles(): readonly TileCoord[] {
-  const tiles: TileCoord[] = [];
-  const { x0, z0, width, depth } = BARNABY_SOWN;
-  for (let tz = z0; tz < z0 + depth; tz++) {
-    for (let tx = x0; tx < x0 + width; tx++) tiles.push({ tx, tz });
-  }
-  return tiles;
+/** The tiles of Barnaby's field that job 3 sows, row by row (those with no placed object): every one has a ripe crop at the morning set-up. */
+export function barnabyFieldTiles(world: WorldState): readonly TileCoord[] {
+  return sowableTiles(world, BARNABY_SOWN);
 }
 
 /** Barnaby's robots: his team, set up by job 3; none before. */
@@ -167,7 +173,7 @@ function barnabyTeam(state: GameState): readonly Robot[] {
 export function barnabyCropsHarvested(state: GameState): number {
   const harvested = new Set<string>();
   for (const robot of barnabyTeam(state)) for (const tile of tilesDidToday(state, robot, 'harvest')) harvested.add(tile);
-  return barnabyFieldTiles().filter((tile) => harvested.has(`${tile.tx},${tile.tz}`)).length;
+  return barnabyFieldTiles(state.maps.neighbours).filter((tile) => harvested.has(`${tile.tx},${tile.tz}`)).length;
 }
 
 /** The tokens Barnaby's robots have spent today: actions, bickers, bumps and wakes (their stats). */
@@ -176,23 +182,25 @@ export function barnabyTokensSpent(state: GameState): number {
 }
 
 /** Job 3's budget: JOBS.tokensPerCrop for each sown tile of Barnaby's field. */
-export function barnabyBudget(): number {
-  return JOBS.tokensPerCrop * barnabyFieldTiles().length;
+export function barnabyBudget(world: WorldState): number {
+  return JOBS.tokensPerCrop * barnabyFieldTiles(world).length;
 }
 
 /**
  * Job 3's check (spec §3.3): before JOBS.barnabyDeadline (6:00 pm), Barnaby's robots have
- * harvested every sown tile of his field today, spending at most barnabyBudget tokens between them.
+ * harvested every sown tile of his field today (an empty field can't pass), spending at most barnabyBudget tokens between them.
  */
 export function knowTheLimitsDone(state: GameState): boolean {
+  const sown = barnabyFieldTiles(state.maps.neighbours).length;
   return (
     state.time.minuteOfDay < JOBS.barnabyDeadline &&
-    barnabyCropsHarvested(state) === barnabyFieldTiles().length &&
-    barnabyTokensSpent(state) <= barnabyBudget()
+    sown > 0 &&
+    barnabyCropsHarvested(state) === sown &&
+    barnabyTokensSpent(state) <= barnabyBudget(state.maps.neighbours)
   );
 }
 
 /** Job 3's progress line: "{n} / {crops} crops harvested today · {t} tokens spent." */
 export function knowTheLimitsProgress(state: GameState): string {
-  return `${barnabyCropsHarvested(state)} / ${barnabyFieldTiles().length} crops harvested today · ${barnabyTokensSpent(state)} tokens spent.`;
+  return `${barnabyCropsHarvested(state)} / ${barnabyFieldTiles(state.maps.neighbours).length} crops harvested today · ${barnabyTokensSpent(state)} tokens spent.`;
 }
