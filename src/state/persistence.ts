@@ -626,8 +626,8 @@ function changedTileV10(tile: Obj, change: TileChangeV10, displace: (object: unk
  * scan order to `freeSpotNear` on that map. A spot once given is taken, and so is every changed
  * tile, every robot or player who stays and, on the Neighbours, the jobs' generator tiles, so
  * nothing lands on anything else, in the run, on Cosmo's door front or where a generator will
- * go. Chunk revisions are kept. A malformed map passes through unchanged for the validator to
- * reject.
+ * go. Chunk revisions are kept. A malformed map passes through unchanged: the same `save` comes
+ * back, which migrateV9toV10 checks for.
  */
 function migrateMapV10(save: Obj, mapId: 'town' | 'neighbours'): Obj {
   const { maps, player, robots } = save;
@@ -717,10 +717,17 @@ function placeWalkersV10(save: Obj): Obj {
  * chicken run, and the walkers (farmclaws part 4d spec §9.2). The booth stands on the old hedge's
  * tiles, so only the props, the exits, the door gap and the run change saved tiles, on the town
  * and the Neighbours map (migrateMapV10). Then every walker is placed on the reshaped maps
- * (placeWalkersV10), and SLOPMART has sold no boxes, today or ever.
+ * (placeWalkersV10), and SLOPMART has sold no boxes, today or ever. When either map can't be
+ * reshaped (malformed, or holding an object kind version 12 no longer has), the save stays at
+ * version 9 for the validator to reject, rather than going on with that map half-migrated.
  */
 function migrateV9toV10(save: Obj): Obj {
-  const placed = placeWalkersV10(migrateMapV10(migrateMapV10({ ...save, version: 10 }, 'town'), 'neighbours'));
+  const v10 = { ...save, version: 10 };
+  const town = migrateMapV10(v10, 'town');
+  if (town === v10) return save;
+  const both = migrateMapV10(town, 'neighbours');
+  if (both === town) return save;
+  const placed = placeWalkersV10(both);
   const sold = placed.shopsSoldToday;
   return {
     ...placed,

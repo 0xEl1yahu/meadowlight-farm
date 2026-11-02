@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { Blocker, CRAFTING_RECIPE_IDS, SAVE_VERSION, type CraftingRecipeId, type GameState, type MapId, type Tile, type TileCoord } from '../src/core/types';
 import { deserializeGame, migrateSave, serializeGame } from '../src/state/persistence';
 import { forEachTile } from '../src/world/tiles';
-import { BASE, TARGET, livelySections, must, savedTileAt, setSavedTile, tileAt, v11Save, withJobsDone, type SaveJson } from './testUtils';
+import { BASE, TARGET, livelySections, must, savedTileAt, setSavedTile, tileAt, v11Save, v9Save, withJobsDone, type SaveJson } from './testUtils';
 
 const load = (save: SaveJson): GameState | null => deserializeGame(JSON.stringify(save));
 
@@ -64,6 +64,34 @@ describe('save version 12', () => {
     expect(tileAt(loaded, farmAt, 'farm').object).toBeNull();
     expect(tileAt(loaded, townAt, 'town').object).toBeNull();
     expect(loaded).toEqual(BASE);
+  });
+
+  // R5: the farm's map doesn't change in v9 → v10, so v12 cleans what stands on it; a town or
+  // Neighbours map with one fails migrateMapV10's guard, so the save stays at v9 and is refused.
+  describe('a version-9 save holding a trophy or a decoration', () => {
+    const DECORATION = { kind: 'decoration', variant: 'paperLantern' };
+    /** BASE at `minute`, so the walkers stand where that hour puts them (or indoors). */
+    const at = (minute: number): GameState => ({ ...BASE, time: { ...BASE.time, minuteOfDay: minute } });
+    const HOURS = [6 * 60, 10 * 60, 20 * 60, 25 * 60] as const;
+
+    it('loads cleaned when it is on the farm, at any hour', () => {
+      for (const minute of HOURS) {
+        const save = v9Save(at(minute));
+        setSavedTile(save, 'farm', TARGET, { ...tileAt(BASE, TARGET, 'farm'), object: DECORATION } as unknown as Tile);
+        expect(tileAt(must(load(save)), TARGET, 'farm').object, `minute ${minute}`).toBeNull();
+      }
+    });
+
+    it('is refused when it is in town or on the Neighbours, at any hour', () => {
+      for (const mapId of ['town', 'neighbours'] as const) {
+        const spot = openTile(mapId);
+        for (const minute of HOURS) {
+          const save = v9Save(at(minute));
+          setSavedTile(save, mapId, spot, { ...tileAt(BASE, spot, mapId), object: DECORATION } as unknown as Tile);
+          expect(load(save), `${mapId} at minute ${minute}`).toBeNull();
+        }
+      }
+    });
   });
 
   it("teaches job 2's recipes to a farm that has done it, in canonical order", () => {
