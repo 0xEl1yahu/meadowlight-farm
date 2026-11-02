@@ -28,7 +28,7 @@ Global rules (unchanged from parts 1–3; see also `CLAUDE.md`):
 
 **Part 4a builds:**
 
-- **The cast:** seven characters on fixed spots. Sol, Cosmo and Barnaby (the job givers of jobs 1–3), plus the shopkeepers Marigold, Bram, Juniper and Tess.
+- **The cast:** seven characters on fixed spots (since part 4d, daily timetables; section 2). Sol, Cosmo and Barnaby (the job givers of jobs 1–3), plus the shopkeepers Marigold, Berlioz, Juniper and Tallulah (Bram and Tess until part 4b renamed them).
 - **Talking:** E on a character opens a chat box with their line for the day and any action buttons. Marigold's **Shop** opens the seed shop.
 - **Line banks:** an introduction, everyday lines and lines that react to the farm, picked deterministically.
 - **The parts exchange building** in the town, replacing the notice board.
@@ -43,7 +43,7 @@ Global rules (unchanged from parts 1–3; see also `CLAUDE.md`):
 | --- | --- |
 | Sol's and Juniper's shop menus, parts as items | 4b |
 | Jobs, the "Job" button, crops and robots on the neighbours' fields, Barnaby's generator, Cosmo's chickens | 4c |
-| Bram's and Tess's shop menus | Not in farmclaws release 1 |
+| Berlioz's and Tallulah's shop menus | Not in farmclaws release 1 |
 | Hollis, Wendell and Ziggy | Their jobs' parts (5 and 7) |
 | Timetables, walking characters | Part 4d |
 | Friendship, gifts, heart events | Cut by the design (§10) |
@@ -53,9 +53,11 @@ Global rules (unchanged from parts 1–3; see also `CLAUDE.md`):
 
 ## 2. The cast
 
+**Since part 4d the cast keep daily timetables, not fixed spots** (part 4d spec §2, §4.1). `MapDefinition.npcs`, `NpcPlacement`, `npcSpot` and the placement checks below are gone, `npcAt` became `walkerAt`, and each saved character has a `place`. Each spot in section 2.1 is now a tradie's work stop (on a dry day 8:30 am to 12:00 pm and 12:50 pm to 5:00 pm) or a farmer's evening stop (6:00 pm to 8:00 pm). The rest of this section is the part 4a build.
+
 ### 2.1 Ids
 
-`NPC_IDS` becomes `['sol', 'cosmo', 'barnaby', 'marigold', 'bram', 'juniper', 'tess']`. Fennick and Pip are removed; the design cut them (§15.3).
+`NPC_IDS` is `['sol', 'cosmo', 'barnaby', 'marigold', 'berlioz', 'juniper', 'tallulah']`. Part 4a built it with `bram` and `tess`, which part 4b renamed `berlioz` and `tallulah` in the same order. Fennick and Pip are removed; the design cut them (§15.3).
 
 `src/people/cast.ts` (pure) holds each character's display data:
 
@@ -63,9 +65,9 @@ Global rules (unchanged from parts 1–3; see also `CLAUDE.md`):
 | --- | --- | --- | --- | --- | --- |
 | `sol` | Sol | Parts exchange | town | (21, 7) | South |
 | `marigold` | Marigold | General store | town | (7, 7) | South |
-| `bram` | Bram | Blacksmith | town | (16, 7) | South |
+| `berlioz` | Berlioz | Blacksmith | town | (16, 7) | South |
 | `juniper` | Juniper | Carpenter | town | (24, 7) | South |
-| `tess` | Tess | Ranch | town | (35, 7) | South |
+| `tallulah` | Tallulah | Ranch | town | (35, 7) | South |
 | `cosmo` | Cosmo | Farmer | neighbours | (7, 13) | South |
 | `barnaby` | Barnaby | Farmer | neighbours | (25, 15) | North |
 
@@ -93,9 +95,9 @@ Each shopkeeper stands beside the tile in front of their shop's door, so the doo
   | `cosmo` | A straw hat with a feather |
   | `barnaby` | A clipboard |
   | `marigold` | A seed pouch |
-  | `bram` | A leather smith's apron |
+  | `berlioz` | A leather smith's apron |
   | `juniper` | A pencil behind the ear (a small block on the head) |
-  | `tess` | A neckerchief |
+  | `tallulah` | A neckerchief |
 
 - They stand facing their direction with a gentle idle sway (`NPC_LOOKS.swaySeconds`, `NPC_LOOKS.swayDegrees` in config). They don't turn to face the player.
 - **Nameplate:** a small text plate (the character's name) floats above the head of the character on the tile ahead of the player, while the game isn't frozen. The plates are prebuilt canvas textures, one per character, made once.
@@ -128,23 +130,25 @@ Each shopkeeper stands beside the tile in front of their shop's door, so the doo
 `src/people/lines.ts` (pure) exports `lineFor(state: GameState, npc: NpcId): string`, which picks:
 
 1. **The introduction**, when the character's `talks` is 0.
-2. Otherwise, **the first reactive line whose condition holds**, in the order listed in section 3.5.
-3. Otherwise, **an everyday line**: `everyday[hash32(seed, absoluteDay, npcIndex) % everyday.length]`, where `npcIndex` is the character's position in `NPC_IDS`.
+2. Otherwise, **the stuck line** while they're stuck (part 4d spec §4.4).
+3. Otherwise, **their job's hook** while their job is offered (part 4c spec §2.2).
+4. Otherwise, **the first reactive line whose condition holds**, in the order listed in section 3.5.
+5. Otherwise, **an everyday line**: `everyday[hash32(seed, absoluteDay, npcIndex) % everyday.length]`, where `npcIndex` is the character's position in `NPC_IDS`.
 
 The same character says the same line all day unless the farm changes a reactive condition. Lines use `{name}` (a robot's name) and `{season}` (the season's name in lower case) where shown.
 
 ### 3.4 What a chat records
 
-- Each chat adds 1 to the character's `talks` and sets `talkedToday: true`. The line is picked **before** the chat is recorded, so the first chat shows the introduction.
-- `talkedToday` resets each morning in `startNextDay`. It has no effect in 4a; 4c uses it.
+- Each chat adds 1 to the character's `talks`. The line is picked **before** the chat is recorded, so the first chat shows the introduction.
+- Part 4a also saved `talkedToday`, reset each morning, for 4c. Nothing ever read it, and save version 12 removed it (release 1 cleanup spec §2.1).
 
 ### 3.5 The line banks
 
 **Sol**, a seeder turned robot-builder: practical, a little wistful.
 - Introduction: "Sol. I used to seed fields by hand; now I build the hands. When your robots need parts, this is the place."
 - Reactive:
-  - Any robot is `ruined` (the lowest id's name): "Water and wires don't mix. Bring what's left of {name} to the bench."
-  - Any robot is `broken` (the lowest id's name): "{name} took a swim? Fish it out today, or there won't be much to fix tomorrow."
+  - Any of your robots is `ruined` (the lowest id's name): "Water and wires don't mix. Bring what's left of {name} to the bench."
+  - Any of your robots is `broken` (the lowest id's name): "{name} took a swim? Fish it out today, or there won't be much to fix tomorrow."
 - Everyday:
   1. "A robot does exactly what you tell it. That's the good news and the bad news."
   2. "I seeded this valley for twenty years. My robots do it in a morning, if I write them well."
@@ -190,8 +194,8 @@ The same character says the same line all day unless the farm changes a reactive
   5. "Strawberries keep giving. Plant them early and you'll be picking all spring."
   6. "If something wilts, it was the season, not you. Mostly."
 
-**Bram**, the blacksmith: gruff, few words.
-- Introduction: "Bram. Blacksmith. I sharpen tools and I don't do small talk."
+**Berlioz** (Bram until part 4b), the blacksmith: gruff, few words.
+- Introduction: "Berlioz. Blacksmith. I sharpen tools and I don't do small talk."
 - Reactive:
   - You carry 5 or more copper ore: "That's a fair bit of copper. Sprinklers don't build themselves."
 - Everyday:
@@ -214,8 +218,8 @@ The same character says the same line all day unless the farm changes a reactive
   5. "Every good fence starts with a straight line."
   6. "If it creaks, it needs a nail. If it wobbles, it needs two."
 
-**Tess**, the ranch: easy-going, loves animals.
-- Introduction: "Hi there, I'm Tess. Chickens, cows and wheat to feed them. Come see the ranch."
+**Tallulah** (Tess until part 4b), the ranch: easy-going, loves animals.
+- Introduction: "Hi there, I'm Tallulah. Chickens, cows and wheat to feed them. Come see the ranch."
 - Reactive:
   - It's raining: "Rain again. The cows don't mind, and neither do I."
 - Everyday:
@@ -226,13 +230,13 @@ The same character says the same line all day unless the farm changes a reactive
   5. "Cosmo's chickens are the best-greeted chickens in the valley."
   6. "Big skies, quiet fields. Best job there is."
 
-**Reactive conditions, exactly:**
+**Reactive conditions, exactly.** Every condition about robots counts only your robots (`owner: 'player'`, part 4c): the neighbours' robots, and a robot that has been scrapped, never count.
 
 | Condition | Rule |
 | --- | --- |
-| Any robot ruined / broken | `robots.list` has a robot with that power; `{name}` is the lowest-id such robot's name. |
-| A robot used Say today | `robots.log` has an entry with `day` = today and `event` = `{ kind: 'did', action: 'say' }`. |
-| No robots / 4 or more | `robots.list.length` is 0 / ≥ 4. Checked in that order. |
+| Any robot ruined / broken | `robots.list` has a robot of yours with that power; `{name}` is the lowest-id such robot's name. |
+| A robot used Say today | `robots.log` has an entry with `day` = today and `event` = `{ kind: 'did', action: 'say' }` from a robot that is in `robots.list` and is yours, so Wave's hellos to the chickens don't count (release 1 cleanup spec §4.3). |
+| No robots / 4 or more | You have 0 / ≥ 4 robots (`playerRobotCount`). Checked in that order. |
 | No seeds | No inventory slot holds a seed item. |
 | 5 or more copper ore | `countItem(inventory, 'copperOre') >= 5`. |
 | A robot on the workbench | `robotOnBench(state)` isn't null; `{name}` is its name. |
@@ -277,7 +281,7 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 - **The fields are bare dirt** (the `'dirt'` surface on `Unplowed` tiles), not soil. The overnight step changes tilled soil on every map, and dirt stays put. Part 4c turns the insides into soil with crops.
 - **Structure kinds:** the houses and the coop are `'cosmoHouse'`, `'barnabyHouse'` and `'chickenCoop'` in `STRUCTURE_KINDS`.
 - **Houses** reuse the farmhouse's geometry builder (`FarmhouseSpec`, which gains an optional roof colour) at the same scale, with each farmer's own roof colour (`NEIGHBOUR_ROOFS` in config). No coop builder exists, so the coop is a plain wooden shed.
-- **The neighbours' fences stay theirs:** on this map the pickaxe and the axe refuse an object on either field's fence ring with "That belongs to the neighbours."; anything the player puts down elsewhere comes back up as usual.
+- **The neighbours' fences stay theirs:** on this map the pickaxe and the axe refuse an object on either field's fence ring, and since part 4d on the chicken run's (part 4d spec §7.3), with "That belongs to the neighbours."; anything the player puts down elsewhere comes back up as usual.
 - **Scenery:** the farm's style (a wooden fence round the grid, the farm's meadow tones) with its own cosmetic offset. The map's name is "The Neighbours".
 
 ### 5.3 Checks
@@ -296,7 +300,7 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 
 ### 6.1 Types
 
-- **The `npcs` section:** `GameSections.npcs` becomes `Readonly<Record<NpcId, NpcTalk>>`, with `interface NpcTalk { readonly talks: number; readonly talkedToday: boolean }`.
+- **The `npcs` section:** `GameSections.npcs` becomes `Readonly<Record<NpcId, NpcTalk>>`, with `interface NpcTalk { readonly talks: number; readonly talkedToday: boolean }`. Version 10 added `place` (part 4d) and version 12 removed `talkedToday`, so today it is `{ talks, place }`.
 - `NpcRelation` and `HeartEventLevel` are removed, along with anything that only they used.
 - `UiPanel` gains `{ kind: 'talk'; npc: NpcId; line: string }`. The loader resets the panel, so this needs no migration.
 
@@ -304,22 +308,20 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 
 - **Maps:** `maps.neighbours` is generated from its fixed definition.
 - **`npcs`:**
-  - Marigold, Bram, Juniper and Tess keep `talks` and `talkedToday`.
+  - Marigold, Bram, Juniper and Tess keep `talks` and `talkedToday` (as `bram` and `tess`, which version 8 renames).
   - Sol, Cosmo and Barnaby start at `{ talks: 0, talkedToday: false }`.
   - Fennick and Pip are dropped, along with every friendship field.
-- **Sections that named a removed character:**
-  - `quests.board` becomes null when its `npc` is `fennick` or `pip`.
-  - `festival.giftTarget` becomes null when it is `fennick` or `pip`.
+  - Version 12 later removes `talkedToday` from every character.
+- **Sections that named a removed character:** none any more. The step once cleared `quests.board` and `festival.giftTarget` when they named Fennick or Pip; version 12 deletes both sections, so the step no longer touches them (release 1 cleanup spec §2.3).
 - **Town:** the saved town tiles are kept; the structures are map data, not saved.
 - **Version:** `SAVE_VERSION = 7`.
 
 ### 6.3 Validation
 
-- `npcs` has exactly the seven ids, each with exact keys: `talks`, a non-negative integer, and `talkedToday`, a boolean.
+- `npcs` has exactly the seven ids, each with exact keys: `talks`, a non-negative integer, and (today) `place`, part 4d's walker place. Part 4a's `talkedToday` is refused since version 12.
 - `maps.neighbours` is valid like the other maps.
 - `player.mapId` may be `'neighbours'`.
 - Robots stay on the farm, as before.
-- `quests.board.npc` and `festival.giftTarget` take only the new ids.
 
 ---
 
@@ -329,10 +331,10 @@ The camera's occlusion rule applies, as in the town: anything tall stands in the
 | --- | --- |
 | `tests/cast.test.ts` | Every character's spot passes the map rules, `npcAt` finds each one, a character's tile blocks movement and placement ("Someone's standing there."), and the action list (Marigold's Shop only). |
 | `tests/lines.test.ts` | Introduction first; each reactive condition picks its line, in order and with `{name}` / `{season}` filled; the everyday pick is stable all day and changes with the day; every bank has an introduction and 6 everyday lines; lines are verbatim. |
-| `tests/talk.test.ts` | The `talkTo` intent and hint, before robots and objects; while carrying; Shift + E; the talk panel opening and freezing; `talks` and `talkedToday` recorded; the morning reset; the panel keys. |
+| `tests/talk.test.ts` | The `talkTo` intent and hint, before robots and objects; while carrying; Shift + E; the talk panel opening and freezing; `talks` recorded; the panel keys. |
 | `tests/neighboursMap.test.ts` | The layout (back band, fences, gaps, dirt fields), both gates and their arrivals, reachability, and that the overnight step leaves the fields unchanged. |
 | `tests/maps.test.ts` (extend) | The town's blocked tiles are unchanged by the parts exchange, and the east gate exists. |
-| `tests/saveV7.test.ts` | v6 → v7 (the v2 fixture migrates through every version), the `npcs` reshape, `quests.board` / `festival.giftTarget` naming a removed character, a round trip standing on the Neighbours map, and one corrupted field per §6.3 rule. |
+| `tests/saveV7.test.ts` | v6 → v7 (the v2 fixture migrates through every version), the `npcs` reshape, a round trip standing on the Neighbours map, and one corrupted field per §6.3 rule. |
 | `tests/sections.test.ts` (extend) | The new `npcs` defaults; `livelySections` updated. |
 
 The chat box, the nameplates and the character models are checked in the browser playbook.
@@ -374,7 +376,7 @@ The chat box, the nameplates and the character models are checked in the browser
 
 ## 10. Changes to the farmclaws design
 
-- **§9.1:** the cast stands on fixed spots: shopkeepers by their shops, Sol by the parts exchange, and Cosmo and Barnaby by their fields on the Neighbours map.
+- **§9.1:** the cast stands on fixed spots: shopkeepers by their shops, Sol by the parts exchange, and Cosmo and Barnaby by their fields on the Neighbours map. (Part 4d replaced the spots with daily routines.)
 - **§9.2:** the parts exchange is a town building where the notice board stood.
 - **§11.2:** part 4 is built as 4a (people), 4b (shops and parts) and 4c (jobs). The neighbours' fields are on a new Neighbours map, east of the town.
 
@@ -392,7 +394,7 @@ Decided by the part 4a implementation plan and its execution. Each one keeps the
 - **R6.** The talk panel carries the line picked before the chat is recorded: `UiPanel { kind: 'talk'; npc: NpcId; line: string }`. The chat box only shows it, so the introduction is what the first chat shows, and the line can't change while the box is open. (§3.1, §3.4)
 - **R7.** Until Task 7 an open talk panel shows nothing, and E, K, Enter or Escape close it; until Task 8 the characters draw nothing, though their tiles already block; until Task 9 the Neighbours houses and coop draw nothing, though their tiles already block. (§8)
 - **R8.** Marigold's **Shop** is one action, `talk/act` (`actions.npcAct(npc, act)`), which checks that the talk panel is open on that character, the game isn't paused and the action is theirs, then swaps the talk panel for the shop in one step. (§3.2)
-- **R9.** The neighbours' fences can't be picked up: on the Neighbours map the pickaxe and the axe refuse an object on either field's fence ring with "That belongs to the neighbours."; anything the player puts down elsewhere on the map comes back up as usual. The spec doesn't say, and without it the player could carry Cosmo's fence home. (§5.2) *(Eli to confirm.)*
+- **R9.** The neighbours' fences can't be picked up: on the Neighbours map the pickaxe and the axe refuse an object on either field's fence ring, and since part 4d on the chicken run's, with "That belongs to the neighbours."; anything the player puts down elsewhere on the map comes back up as usual. The spec doesn't say, and without it the player could carry Cosmo's fence home. (§5.2) *(Eli to confirm.)*
 - **R10.** Config: `PEOPLE.manyRobots` (4), `PEOPLE.copperOreLine` (5) and `PEOPLE.everydayLines` (6) carry the reactive thresholds and the bank size; `NPC_LOOKS` the sway and nameplate numbers; `NEIGHBOUR_ROOFS` the two roof colours; `Salt.MapNeighbours` the map's seed stream. (§2.3, §3.5, §5.2)
 - **R11.** The Neighbours map's `name` is "The Neighbours". The game shows map names nowhere yet. (§5) *(Eli to confirm.)*
 - **R12.** The Neighbours map uses the farm's scenery style (a wooden fence round the grid, the farm's meadow tones) with its own cosmetic offset. (§5.2)

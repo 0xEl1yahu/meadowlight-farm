@@ -61,9 +61,10 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - One job is active at a time. Taking a job sets it up (section 3); it stays active until it's done. There's no way to give a job up.
 - **The check** is a pure function of the state, `jobDone(state, id)`, run after every in-game minute while the job is active (after the robots act) and once more when the player talks to its giver. When it passes:
   - the job becomes `'done'`;
-  - its reward is paid and its unlocks added (section 4);
-  - the toast: "Job done: {title}. {giver} paid you {reward}g." followed, as its own toast, by each unlock's line (section 4.2). `{reward}` is a plain number ("1000g"), as the rest of the game writes gold; this spec's "1,000g" is prose (R24).
-- `src/jobs/` (new, pure): `jobs.ts` (the table: id, title, giver, offer text, goal text, setup, check, reward, unlocks), `setup.ts`, `checks.ts`.
+  - its reward is paid, its unlocks added (section 4) and its `recipesOnDone` learned (R29);
+  - the toast: "Job done: {title}. {giver} paid you {reward}g." followed, as its own toast, by each unlock's line (section 4.2), then by "{giver} taught you the {recipe} recipe." for each recipe newly learned. `{reward}` is a plain number ("1000g"), as the rest of the game writes gold; this spec's "1,000g" is prose (R24).
+- `src/jobs/` (new, pure): `jobs.ts` (the table: id, title, giver, offer text, goal text, setup, check, reward, unlocks, and the recipes taught on taking and on finishing, `recipesOnTake` and `recipesOnDone`), `setup.ts`, `checks.ts`.
+- **One toast rule for recipes** (R29): taking a job and finishing one each toast only the recipes newly learned, in the table's order, so a recipe the farm already knows is never toasted again. Every recipe is taught through `withRecipes` (`src/crafting/known.ts`), which keeps the known list in `CRAFTING_RECIPE_IDS` order.
 
 ### 2.2 The Job button and the job card
 
@@ -73,7 +74,7 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
   - offered: **Take the job** and **Not now**, which closes the chat like **Close** (R11);
   - active: the goal, the progress line (section 3) and **Close**.
 - **Take the job** sets the job up and closes the chat: "{title}: job taken." When the set-up can't be done (job 1's bed, section 3.1), the refusal is the toast and the card stays open (R9).
-- A giver whose job is offered says, as their reactive line, before everything else: their job's hook (section 3). A giver whose job is done goes back to their usual lines.
+- A giver whose job is offered says their job's hook (section 3) after the introduction and the stuck line (part 4d spec §4.4), before every other line (R31). A giver whose job is done goes back to their usual lines.
 
 ---
 
@@ -101,12 +102,12 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - **Goal:** "Harvest every ripe crop in Cosmo's field, with a program that uses a sensor and an If."
 - **Hook (Cosmo):** "My robot could do more, I bet. Want a job?"
 - **Setup:**
-  - Cosmo's field (spec 4a §5.2: x 4–9, z 6–11) becomes tilled soil with parsnips in a checkerboard: ripe where `(tx + tz)` is even, two days from ripe where it's odd. Every morning while the job is active, the field is set up the same way again. A tile under a placed object keeps it, and the set-up sows round it (R15).
-  - Cosmo's Big **Wave** (Claw, Sensor eye, Basket; program `When morning comes → Repeat forever → Say "hello chickens"`; owner Cosmo) stands on the lane at (8, 13), facing North.
+  - Cosmo's field (spec 4a §5.2: x 4–9, z 6–11) becomes tilled soil with parsnips in a checkerboard: ripe where `(tx + tz)` is even, two days from ripe where it's odd. Every morning while the job is active, the field is set up the same way again. A tile under a placed object keeps it, and the set-up sows round it (R15). Only the tiles with no placed object are sown, and only those count (`sowableTiles`, R27).
+  - Cosmo's Big **Wave** (Claw, Sensor eye, Basket; program `When morning comes → Repeat forever → Say "hello chickens"`; owner Cosmo) stands on the lane at (8, 13), facing North. When something stands on that tile, Wave stands on the nearest free walkable tile instead, as Barnaby's Minis do (R17), so job 1's bed is the only set-up that can be refused (R28).
   - Cosmo's generator: a wood burner at (10, 13) that never runs out.
-- **Check:** every crop that was ripe at the morning set-up has been harvested by Wave today, and Wave's program has at least one `If` block and at least one sensor block (`BLOCK_CATEGORY` `sensor`).
-- **Progress:** "{n} / 18 ripe crops harvested today."
-- **Reward:** 1,000g. **Unlocks:** the job 2 blocks and cards stay unlocked (they unlock when the job is taken; section 4.1), and Sol's parts shop.
+- **Check:** every crop that was ripe at the morning set-up has been harvested by Wave today, counting only the sown ripe tiles (R27), and Wave's program has at least one `If` block and at least one sensor block (`BLOCK_CATEGORY` `'sensors'`; R32). A field whose ripe tiles all hold an object can't pass.
+- **Progress:** "{n} / {sown} ripe crops harvested today.", where `{sown}` is the sown ripe tiles: 18 with nothing on the field (R27).
+- **Reward:** 1,000g. **Unlocks:** the job 2 blocks and cards stay unlocked (they unlock when the job is taken; section 4.1), and Sol's parts shop. **Teaches when done:** the Quality Fertiliser and Speed-Gro recipes: "Cosmo taught you the Quality Fertiliser recipe." and "Cosmo taught you the Speed-Gro recipe." (R29, R30).
 
 ### 3.3 Job 3: Know the limits (Barnaby)
 
@@ -114,13 +115,13 @@ Global rules (unchanged; see `CLAUDE.md`): the simulation stays pure and determi
 - **Goal:** "Harvest Barnaby's whole field by 6:00 pm in one day, at 6 tokens a crop or less." (R21)
 - **Hook (Barnaby):** "My team needs a manager. Interested?"
 - **Setup:**
-  - The north 6 rows of Barnaby's field (x 21–28, z 17–22; `JOBS.barnabyRows`, from the gate side down) become tilled soil with ripe parsnips, 48 crops, set up again every morning while the job is active; the field's south two rows stay bare dirt (R21). A tile under a placed object keeps it, as in Cosmo's field (R15).
+  - The north 6 rows of Barnaby's field (x 21–28, z 17–22; `JOBS.barnabyRows`, from the gate side down) become tilled soil with ripe parsnips, 48 crops, set up again every morning while the job is active; the field's south two rows stay bare dirt (R21). A tile under a placed object keeps it, as in Cosmo's field (R15), and isn't sown or counted (R27).
   - Zone H becomes the sown rows of Barnaby's field, on the Neighbours map, whatever it was before: "Barnaby marked his field as Zone H."
   - Barnaby's four Minis **B-1**, **B-2**, **B-3** and **B-4** (Claw each; owner Barnaby), scattered on fixed tiles in and around the field (`JOBS.barnabyRobots`), with Barnaby's .MD on each: "DO return to the generator at 6:00 pm". A Mini whose tile is taken by a robot or an object when the job is taken stands on the nearest free walkable tile instead (R17). B-1 runs `Every 10 minutes → For each tile in H → Harvest`; B-2 to B-4 have empty programs: a `When morning comes` stack with nothing in it, since a program has at least one stack (R18).
   - Barnaby's generator: a wood burner that never runs out, on the lane at (26, 15), two tiles east of his field's gate: in reach of the gate and the field's north row, but not of his Minis' starting tiles (R20).
-- **Check:** before 18:00 on one day, every sown crop in Barnaby's field has been harvested by Barnaby's robots, and the tokens they spent that day are at most `JOBS.tokensPerCrop` (6) × 48, a budget of 288 (R21).
-- **Progress:** "{n} / 48 crops harvested today · {t} tokens spent."
-- **Reward:** 2,000g. **Unlocks:** Standard and Big robots at Juniper's.
+- **Check:** before 18:00 on one day, every sown crop in Barnaby's field has been harvested by Barnaby's robots, and the tokens they spent that day are at most `JOBS.tokensPerCrop` (6) × the sown tiles (`barnabyBudget`), a budget of 288 with nothing on the field (R21, R27). A field whose every tile holds an object can't pass.
+- **Progress:** "{n} / {sown} crops harvested today · {t} tokens spent.", where `{sown}` is 48 with nothing on the field (R27).
+- **Reward:** 2,000g. **Unlocks:** Standard and Big robots at Juniper's. **Teaches when done:** the Quality Sprinkler recipe: "Barnaby taught you the Quality Sprinkler recipe." (R29, R30). It needs copper ore, which comes only from broken rocks, so it is slow to make in release 1.
 
 ---
 
@@ -183,7 +184,7 @@ A migrated save (section 7) keeps every robot, part and delivery it has. If it h
 
 ### 5.4 The neighbours' farms
 
-- The two generators are wood burner objects on the Neighbours map that never run out (`fuel` stays full; they don't need the player's wood), placed when their owner's job is taken and kept: Cosmo's at (10, 13), Barnaby's at (26, 15) (R20). They can't be picked up (spec 4b's "That belongs to the neighbours." covers them), and E at one says "That belongs to the neighbours." instead of offering to load wood (R12).
+- The two generators are wood burner objects on the Neighbours map that never run out (`fuel` stays full; they don't need the player's wood), placed when their owner's job is taken and kept: Cosmo's at (10, 13), Barnaby's at (26, 15) (R20). They can't be picked up (spec 4a's rule R9, "That belongs to the neighbours.", covers them; R33), and E at one says "That belongs to the neighbours." instead of offering to load wood (R12).
 - The player can't place anything on a generator's tile, before or after the generator arrives: "Keep this spot clear." A robot standing on the tile when the generator arrives steps to the nearest free walkable tile (R12, R16).
 - Outside a job, the fields stay bare dirt, as in 4a. A job's set-up turns its field into soil with crops; when the job is done, the field keeps its last state and isn't set up again.
 - The neighbours' robots stay after their job is done and keep running whatever program they have.
@@ -214,6 +215,7 @@ If a reference solution doesn't pass with its margin, the numbers that change ar
 - **Validation:** a player robot is on the farm and a neighbour's robot on the Neighbours map, each on a walkable tile of its map; the player's robots plus deliveries are at most 12; `jobs.status` has every id once, with at most one active job and the order rule, read both ways: after the jobs that are done, the next one is offered or active (job 1 included) and the rest are locked, so a save with every job locked, or a locked job straight after a done one, is rejected (R1); `jobs.bed` is null or a 3 × 3 block on the farm; a zone's rect lies on its map.
 - `v8Save` in `tests/testUtils.ts` turns a v9 state back into v8 JSON, and `v7Save` starts from it.
 - **Version 11 (R26):** no new field. `migrateV10toV11` teaches the Wood Burner recipe to a save whose job 1 is active or done, and `v10Save` in `tests/testUtils.ts` turns a v11 state back into v10 JSON, with `v9Save` starting from it.
+- **Version 12 (R29):** among the release 1 cleanup's removals, `migrateV11toV12` teaches a save whose job 2 or 3 is already done that job's `recipesOnDone`, in canonical order and never twice (release 1 cleanup spec §2.3).
 
 ---
 
@@ -310,3 +312,10 @@ Decided by the part 4c implementation plan and its execution, each with the comm
 - **R24** (`4833d91`). Gold in toasts stays a plain number ("1000g"), as the rest of the game writes it (this spec writes 1,000g). (§2.1)
 - **R25** (`05286cf`). B-1's polling program can run it flat away from Barnaby's generator, and the player can't carry a neighbour's robot, so job 3 could become unwinnable. A neighbour's robot that ends the day flat out of its generator's reach is dragged back beside it overnight, with the toast "{owner} dragged {name} back to the generator." This rewords §5.1's "Barnaby's team drifting away from his generator is the job's lesson". (§5.1)
 - **R26** (Wood Burner fix, on `codebase-audit`). The part 1 spec gave job 1 the Wood Burner recipe, but this spec left it out, so a player could never learn it and their robots never recharged; Sprinkle, spinning flat on day 1, could leave job 1 unwinnable. Taking job 1 now teaches it, with the toast "Sol taught you the Wood Burner recipe.", and save version 11 teaches it to farms that took job 1 under version 10. (§3.1, §7)
+- **R27** (`eb1e5fc`, release 1 cleanup). The set-up already sowed round a placed object (R15), but the checks counted the whole field, so a chest on a field tile left jobs 2 and 3 unwinnable. One helper, `sowableTiles(world, rect)` in `checks.ts`, now gives the tiles with no placed object: the set-up sows exactly those, and `cosmoRipeTiles` and `barnabyFieldTiles` count only them. The progress lines read "{n} / {sown} ripe crops harvested today." and "{n} / {sown} crops harvested today · {t} tokens spent.", and job 3's budget is `JOBS.tokensPerCrop` (6) for each sown tile, so 18, 48 and 288 with nothing on the fields. The rule is stateless: a tile counts while it's free, so moving a chest off a field tile mid-day leaves that tile without a crop until the next morning, and an empty field can't pass. (§3.2, §3.3)
+- **R28** (`febdeb1`, release 1 cleanup). Job 2's set-up no longer refuses when something stands on Wave's tile (8, 13): Wave stands on the nearest free walkable tile instead, keeping its facing, as Barnaby's Minis do (R17). Job 1's bed is the only set-up that can be refused. (§3.2)
+- **R29** (`ed87723`, `a768662` and `20b1ef4`, release 1 cleanup). `JobDef` gains `recipesOnDone` beside `recipesOnTake`: job 2 teaches Quality Fertiliser and Speed-Gro, job 3 Quality Sprinkler, and job 1 nothing. `finishJob` teaches them through `withRecipes` (`src/crafting/known.ts`, the one way to teach a recipe, which keeps the list in `CRAFTING_RECIPE_IDS` order), and the reducer only adds the toasts. One toast rule covers taking and finishing a job: only the recipes newly learned are toasted, in the table's order, after "job taken" or after the done toast and its unlock lines. Save version 12 teaches them to a save whose job is already done. (§2.1, §3.2, §3.3, §7)
+- **R30** (`20b1ef4`, release 1 cleanup). The recipe toasts are "Cosmo taught you the Quality Fertiliser recipe.", "Cosmo taught you the Speed-Gro recipe." and "Barnaby taught you the Quality Sprinkler recipe.", with the names from `getItem(recipe).name`, as for the Wood Burner. (§3.2, §3.3)
+- **R31** (`11ff6d4`, part 4d). A giver's hook comes after the introduction and part 4d's stuck line, then the other lines; it was "before everything else". (§2.2)
+- **R32** (spec text, release 1 cleanup). Job 2's sensor rule reads `BLOCK_CATEGORY` `'sensors'`, the category's name in the code since `30a1870`; the spec wrote `sensor`. (§3.2)
+- **R33** (spec text, release 1 cleanup). "That belongs to the neighbours." is the part 4a spec's rule R9, not part 4b's; it covers the generators as it covers the fences. (§5.4)

@@ -6,13 +6,16 @@ navigation (see SKILL.md). Each check starts from `?new`. Each fenced `js` block
 calls. The reference programs are the tests' own (`tests/jobSolutions.ts`); writing them by hand
 on the robot screen is Eli's play. Talking spots: Sol from (21,8) facing north in town; Cosmo
 (7,13) from (7,14) facing north and Barnaby (25,15) from (25,14) facing south on the Neighbours
-map.
+map. Since part 4d the givers walk their timetables (`TIMETABLES` in `src/config.ts`), and a new
+game starts at 6:00 am, so the setups stand them there: Sol by the clock at 10:00 am
+(`F.withMigratedPlaces(F.atMinute(s, 600))`), and Cosmo and Barnaby with `F.withWalkerAt`, pressing E
+in the same call before they walk off. Jobs ignore the shop hours.
 
 ## 1. Job 1: take it from Sol, finish it with the reference program
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(__qa.state(), { tx: 21, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)), { tx: 21, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE'); __qa.state().ui.panel
 ```
@@ -39,8 +42,7 @@ done: The spinning robot. Sol paid you 500g." then "Juniper's workshop is open."
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withJobsDone(__qa.state(), 'spinningRobot'), { tx: 7, tz: 14 }, 0, 'neighbours'));
-await new Promise((r) => setTimeout(r, 100));
+__qa.load(F.withPlayer(F.withWalkerAt(F.withJobsDone(__qa.state(), 'spinningRobot'), 'cosmo', 'neighbours', 7, 13, F.T.Direction.South), { tx: 7, tz: 14 }, 0, 'neighbours'));
 await __qa.key('KeyE');
 ```
 `find "Job"` → click → **Take the job**. Wave stands at (8,13) facing north, Cosmo's generator
@@ -57,15 +59,15 @@ const J = await __qa.mod('/tests/jobSolutions.ts');
 __meadowlight.setProgram('Wave', J.SHOW_HIM_REFERENCE); __qa.sleep(); __qa.tick(360);
 ({ status: __qa.state().jobs.status, toasts: __qa.snap(4).toasts })
 ```
-Expect `showHim: 'done'`, "Job done: Show him what it can do. Cosmo paid you 1000g." and "Sol's
-parts shop is open." Facing Wave again now, E toasts "That's Cosmo's robot."
+Expect `showHim: 'done'` and the four toasts in order: "Job done: Show him what it can do. Cosmo
+paid you 1000g.", "Sol's parts shop is open.", "Cosmo taught you the Quality Fertiliser recipe."
+and "Cosmo taught you the Speed-Gro recipe." Facing Wave again now, E toasts "That's Cosmo's robot."
 
 ## 3. Job 3: watch Barnaby's team fail, then manage it
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withJobsDone(__qa.state(), 'showHim'), { tx: 25, tz: 14 }, 2, 'neighbours'));
-await new Promise((r) => setTimeout(r, 100));
+__qa.load(F.withPlayer(F.withWalkerAt(F.withJobsDone(__qa.state(), 'showHim'), 'barnaby', 'neighbours', 25, 15, F.T.Direction.North), { tx: 25, tz: 14 }, 2, 'neighbours'));
 await __qa.key('KeyE');
 ```
 `find "Job"` → click → **Take the job**: the toasts "Know the limits: job taken." and "Barnaby
@@ -84,17 +86,19 @@ for (const [name, zone] of Object.entries(J.BARNABY_ASSIGNMENT)) { __meadowlight
 __qa.sleep(); __qa.tick(360);
 ({ status: __qa.state().jobs.status, toasts: __qa.snap(4).toasts })
 ```
-Expect `knowTheLimits: 'done'` and "Job done: Know the limits. Barnaby paid you 2000g." then
-"Juniper now builds Standard and Big robots." Any "Barnaby dragged B-… back to the generator."
+Expect `knowTheLimits: 'done'` and, in order, "Job done: Know the limits. Barnaby paid you 2000g.",
+"Juniper now builds Standard and Big robots." and "Barnaby taught you the Quality Sprinkler
+recipe." Any "Barnaby dragged B-… back to the generator."
 toast after the sleep is the night's rescue for a flat Mini.
 
 ## 4. The shop gates
 
-From `?new`, talk to Juniper from (24,8) and Sol from (21,8) in town: Juniper's chat has no
+From `?new` at 10:00 am (`F.withMigratedPlaces(F.atMinute(__qa.state(), 600))`), talk to Juniper
+from (24,8) and Sol from (21,8) in town: Juniper's chat has no
 **Workshop** button and Sol's has **Job** but no **Shop**. Then:
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withGold(F.withJobsDone(__qa.state(), 'spinningRobot'), 20000), { tx: 24, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(F.withGold(F.withJobsDone(__qa.state(), 'spinningRobot'), 20000), 600)), { tx: 24, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 ```

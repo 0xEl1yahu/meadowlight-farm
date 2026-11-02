@@ -75,7 +75,7 @@ It runs after `migrateV10toV11` in `migrateSave`. It:
 
 1. Deletes the `cooking`, `quests` and `festival` keys, whatever they hold.
 2. Deletes `talkedToday` from every saved character.
-3. Removes every placed object of kind `trophy` or `decoration`, on every map. No game build ever placed one, so this only matters for a hand-edited save.
+3. Removes every placed object of kind `trophy` or `decoration`, on every map. No game build ever placed one, so this only matters for a hand-edited save, and only one from version 10 or 11: an older one is refused (R5).
 4. Teaches the §5.2 recipes to a save whose job is already done: `qualityFertilizer` and `speedGro` when `jobs.status.showHim` is `'done'`, and `qualitySprinkler` when `jobs.status.knowTheLimits` is `'done'`. It uses the same canonical insert as `withRecipes` (§5.2), so the list stays in `CRAFTING_RECIPE_IDS` order and nothing is added twice.
 
 The v7 and v8 steps stop touching `quests.board` and `festival.giftTarget`, because v12 deletes both. The v7 step still writes the `{ talks, talkedToday }` shape it always did, and v12 then removes `talkedToday`.
@@ -136,7 +136,7 @@ The v7 and v8 steps stop touching `quests.board` and `festival.giftTarget`, beca
 
 The 4c spec already says this: its checks count "every sown crop", and a tile under a placed object keeps its object (R15). The code doesn't match. `sowField` skips a tile holding an object (`setup.ts`, about line 129), but `cosmoRipeTiles` and `barnabyFieldTiles` return the whole rectangle.
 
-**The fix is one helper.** A new `sowableTiles(world, rect)` in `src/jobs/setup.ts` returns the rectangle's tiles with no placed object.
+**The fix is one helper.** A new `sowableTiles(world, rect)` in `src/jobs/checks.ts` (R1) returns the rectangle's tiles with no placed object.
 - `sowField` sows exactly those tiles.
 - `cosmoRipeTiles` and `barnabyFieldTiles` take the Neighbours world and return `sowableTiles` of their rectangles.
 
@@ -163,7 +163,7 @@ The `robotSaidToday` case of `reactiveFill` (`src/people/lines.ts`) counts a log
 
 `toolboxFor` already builds the toolbox from the parts. The bug is in `ProgramTab.sync`, which rebuilds only when `state.robots.unlocks` changes (about line 182).
 
-A pure `toolboxStale(prev, next)` in the program tab's view model returns true when either the unlocks or `robot.parts` changed, and `sync` rebuilds when it does. Fitting a sensor eye in the Looks tab turns the sensor-eye blocks on at once, and removing it turns them off. The program on the canvas is not touched.
+A pure `toolboxStale(prev, next)` in `blockly/toolbox.ts`, beside `toolboxFor` (R2), returns true when either the unlocks or `robot.parts` changed, and `sync` rebuilds when it does. Fitting a sensor eye in the Looks tab turns the sensor-eye blocks on at once, and removing it turns them off. The program on the canvas is not touched.
 
 ---
 
@@ -234,7 +234,7 @@ The HUD (`Hud.ts`) and the music (`audio/music.ts`) keep their own `localStorage
 
 Today the code decides "standby when nothing is running" in two places: `programmedRobot` (`edits.ts`, about line 51) and the morning reset (`overnight.ts`, about line 315). `newRobot` doesn't decide it at all and always says `working`.
 
-One helper, `idlePower(power, exec)` in `src/robots/`, now owns the rule, and all three call it. A new block robot with no running stack starts on standby.
+One helper, `idlePower(power, exec)` in `src/robots/`, now owns the rule, and all three call it. A new block robot with no running stack starts on standby, and since `newRobot` never starts a stack, that is every new block robot (R6).
 
 This includes `catalogueRobot`, Juniper's preview robot, so the preview shows standby. `workshop.test.ts` (about line 85) changes to match.
 
@@ -354,3 +354,16 @@ This includes `catalogueRobot`, Juniper's preview robot, so the preview shows st
 - Buy the backpack at Marigold's.
 - Finish job 2 and see the recipe toasts.
 - Fit a sensor eye with the program tab open.
+
+---
+
+## 9. Plan refinements
+
+Decided by the release 1 cleanup plan (`docs/superpowers/plans/2026-11-02-release1-cleanup.md`) and its execution, each with the commit that made it. Each one keeps the intent of the rule it refines, and the sections above already say what it decided.
+
+- **R1** (`eb1e5fc`). `sowableTiles` lives in `src/jobs/checks.ts`, not in `setup.ts` as §4.1 says. `setup.ts` already imports `checks.ts`, so the reverse import would make a cycle. `sowField` imports it from `checks.ts`. (§4.1)
+- **R2** (`4de7c96`). `toolboxStale` lives in `blockly/toolbox.ts` beside `toolboxFor`, because the program tab has no view-model file of its own. (§4.4)
+- **R3** (`aee06d4`). All five unused salts (`TownGen`, `Weeds`, `Festival`, `Gift` and `NoticeBoard`) go in Task 1. Nothing reads any of them, so the three v2 ones don't need to wait for save v12. (§2.1, §3.1)
+- **R4** (`a768662`). The v12 step's recipe insert runs only when the saved `crafting.known` is already a canonical subset. A list that isn't passes through untouched, so the validator refuses it, as `migrateSave` promises for every unexpected shape. The step names its recipes literally rather than reading `JOBS_TABLE`, so a later change to the table can't change what the migration did. (§2.3)
+- **R5** (`a768662`). A hand-edited save from version 9 or older that holds a trophy or decoration is now refused, not cleaned. The v6, v9 and v10 steps guard on `isValidWorld`, which no longer accepts those kinds, so the save passes through un-migrated and fails validation. No game build ever placed one (§2.3). (§2.3, §2.4)
+- **R6** (`8a71a3b`). Every new block robot starts on standby, because `newRobot` builds its exec with `execAt`, which never starts a stack. That covers bought robots, Sprinkle, Wave and Barnaby's Minis. They show dim eyes until their first trigger or the next morning, and behave as before. (§6.2)

@@ -58,7 +58,7 @@ export const ROBOT_PART_IDS = [
 ] as const;
 export type RobotPartId = (typeof ROBOT_PART_IDS)[number];
 
-export const ROBOT_POWERS = ['working', 'standby', 'flat', 'broken', 'repairing'] as const;
+export const ROBOT_POWERS = ['working', 'standby', 'flat', 'broken', 'repairing', 'ruined'] as const;
 export type RobotPower = (typeof ROBOT_POWERS)[number];
 ```
 
@@ -70,6 +70,7 @@ export type RobotPower = (typeof ROBOT_POWERS)[number];
 - **`flat`**: its battery couldn't pay for its next action.
 - **`broken`**: it shorted out in water and sits on that water tile.
 - **`repairing`**: it's away being repaired and isn't on the map.
+- **`ruined`** (part 3): it spent the night broken in water, and can only be scrapped at the workbench.
 
 Being **carried** is separate from power: `carried: true` means the player is holding it (section 5.8). A carried robot never acts, and it keeps its power, so a broken robot stays broken in your arms. There's no on/off switch in part 1: picking a robot up is how you stop it. Part 3's robot screen adds the switch.
 
@@ -142,8 +143,8 @@ export interface Robot {
   readonly nextActMinute: number;
   /** Absolute day it comes back from repair; null unless power is 'repairing'. */
   readonly repairReadyDay: number | null;
-  /** Tokens spent today (farm log and job checks read it; reset each morning). */
-  readonly tokensToday: number;
+  /** Tokens, actions and crops, today and this week (part 3 spec §6.1, which replaced part 1's `tokensToday`); the job checks read today's tokens. */
+  readonly stats: { readonly today: RobotStatCounts; readonly week: RobotStatCounts };
   /** Render counters, like PlayerState's. */
   readonly moveSeq: number;
   readonly teleportSeq: number;
@@ -306,7 +307,7 @@ export interface RobotSpec {
   readonly place: RobotPlace;
   readonly program: RobotProgram;
 }
-/** Adds a robot at `place`, fully charged (not from the pool), working, not carried. */
+/** Adds a robot at `place`, fully charged (not from the pool), not carried; working, or on standby for a block program (below). */
 export function addRobot(state: GameState, spec: RobotSpec): { readonly state: GameState; readonly id: number } | { readonly error: string };
 ```
 
@@ -317,11 +318,11 @@ export function addRobot(state: GameState, spec: RobotSpec): { readonly state: G
 - the script is empty, too long or has an invalid action
 - the place isn't a walkable, in-bounds farm tile, or is a reserved tile
 
-A robot added mid-day acts first at `minuteOfDay + periodFor(robot)`. A new robot starts with:
+A robot added mid-day acts first at `minuteOfDay + periodFor(robot)`. **A new block robot with no stack running starts on standby** (release 1 cleanup spec §6.2): `idlePower(power, exec)` in `src/robots/exec.ts` turns `working` into `standby` when the robot has a block program and no stack is running, and `newRobot`, `programmedRobot` and the morning reset all call it. A new block robot's exec never has a stack running (`execAt`), so every new block robot (bought, delivered or set up by a job) starts on standby until its first trigger or the next morning; a script robot starts working. A new robot also starts with:
 - an empty bag
 - `tank` full if it has a watering head, else 0
 - `pc = 0`
-- `tokensToday = 0`
+- `stats` at 0, today and this week
 - counters at 0
 - `lastAction = null`
 
@@ -356,7 +357,7 @@ export function planRobotAction(state: GameState, robot: Robot, action: RobotAct
 
 A blocked plan carries `target` too: the tile the action would have worked.
 
-`planRobotAction` is pure, and it reads only `state.maps.farm`, `state.time`, `state.shipping` and the robot. `cost` is `actionCost(robot, action.kind)` whether or not the action succeeds, except for `noPart`, which costs 0.
+`planRobotAction` is pure, and it reads only the robot's own map (`state.maps[robot.mapId]`, the farm or, since part 4c, the Neighbours map), `state.time`, `state.shipping` and the robot. `cost` is `actionCost(robot, action.kind)` whether or not the action succeeds, except for `noPart`, which costs 0.
 
 **The tile rules match the player's.** Each rule below is the same condition the player's planner (`src/state/intents.ts`) uses for the matching tool. A parity test (section 9.2) holds them together.
 
@@ -374,7 +375,7 @@ A blocked plan carries `target` too: the tile the action would have worked.
 | `take` | ahead | ahead is a chest holding `itemId`, `itemId` isn't a tool, and at least one unit fits the bag | not a chest: `nothingAhead`; a tool (part 3) or none held: `itemNotFound`; no room: `bagFull` |
 | `say`, `wait`, `powerDown` | own | always | — |
 
-**Harvest size and quality** use the player's functions, called on the farm. `harvestQuantity` and `harvestQuality` in `src/state/intents.ts` gain a trailing `mapId: MapId = state.player.mapId` parameter, and robots pass `'farm'`. Both read the tile from `state.maps[mapId]`. The player's results don't change. A robot and the player harvesting the same crop on the same day get the same size and quality.
+**Harvest size and quality** use the player's functions, called on the farm. `harvestQuantity` and `harvestQuality` in `src/state/intents.ts` gain a trailing `mapId: MapId = state.player.mapId` parameter, and robots pass their own map (`robot.mapId`, part 4c). Both read the tile from `state.maps[mapId]`. The player's results don't change. A robot and the player harvesting the same crop on the same day get the same size and quality.
 
 ### 4.2 Applying an action
 
@@ -382,7 +383,7 @@ A blocked plan carries `target` too: the tile the action would have worked.
 export function applyRobotPlan(state: GameState, robotId: number, plan: RobotPlan): GameState;
 ```
 
-Every plan subtracts `cost` from the robot's tokens and adds it to `tokensToday` (section 5.3 guarantees tokens ≥ cost). The action then advances `pc` (section 5.2) and sets `nextActMinute` (section 5.1). What each successful action does:
+Every plan subtracts `cost` from the robot's tokens and adds it to `stats.today.tokens` and `stats.week.tokens` (part 3 spec §6.1; section 5.3 guarantees tokens ≥ cost). The action then advances `pc` (section 5.2) and sets `nextActMinute` (section 5.1). What each successful action does:
 
 | Action | Effect |
 | --- | --- |
@@ -467,7 +468,7 @@ Robots run only inside `time/tick`. Sleeping (`day/sleep`, or the bed's sleep in
 After the existing map pipeline, and before the morning messages. The toasts these steps raise are pushed in step order after the existing morning messages ("Good morning", then pass-out, shipment, crows, season and weather):
 
 1. **Generators:** every wood burner on the farm, in tile order, burns all its fuel. The pool gains `fuel × tokensPerWood` and fuel becomes 0. `lastNightFuel` records the totals, and if any wood burned, the morning brings the toast "Your wood burners turned {w} wood into {t} tokens." (info).
-2. **Set down:** a robot the player was still carrying is set down on the player's spawn tile (`PLAYER.spawn`), or, when a standing robot is there, on the nearest walkable tile to it with no standing robot (part 3), exactly as a put-down (5.8), and `player.carrying` becomes null.
+2. **Set down:** a robot the player was still carrying is set down on the player's spawn tile (`PLAYER.spawn`), or, when a standing robot is there, on the nearest walkable tile to it with no standing robot (part 3), as a put-down (5.8) except that it faces the spawn facing (`PLAYER.spawnFacing`), not the player's, and `player.carrying` becomes null. The fixed facing is kept on purpose (release 1 cleanup spec §6.1).
 3. **Repairs:** every `repairing` robot whose `repairReadyDay <= absoluteDay` comes back fully charged. It stands on the nearest walkable tile with no standing robot to `ROBOTS.repairDropOff` (the tile in front of the shipping bin), facing South. It becomes `working`, logs `repaired`, and gets the toast "{name} is back from repairs." (success).
 4. **Ruin (part 3):** every `broken` robot standing on a water tile (not carried, not on the bench) becomes `ruined`. It logs `ruined` and pushes the warn toast "{name} spent the night in the water and is ruined. Scrap it at the workbench." A robot fished out the same day, or still carried at day end (step 2), is safe.
 5. **Recharge:** robots only recharge **near a generator**. In id order, every robot that isn't `broken`, `ruined` or `repairing`, and stands within `ROBOTS.chargeRadius` tiles (Chebyshev distance) of a wood burner, takes `min(battery − tokens, pool)` from the pool.
@@ -521,6 +522,8 @@ Mistakes cost the player real work. **Carrying** a robot costs energy, and **rep
 
 `migrateV3toV4` adds these and sets `version: 4`. Nothing else changes.
 
+The step writes the robots section a new game starts with today (`createDefaultSections().robots`), not the part 1 shape below, so a migrated save gets the empty fields later parts added to it (zones, unlocks, deliveries) at once. The later steps then write their own fields over it as before.
+
 ```
 robots: { nextId: 1, list: [], pool: 0, log: { nextId: 0, entries: [] }, lastNightFuel: { wood: 0, tokens: 0 } }
 player.carrying: null
@@ -540,7 +543,7 @@ player.carrying: null
 - **Player:** `player.carrying` is null or the id of a robot with `carried: true`.
 - **Bag:** at most `bagStacks(robot)` stacks, each `isValidStack(stack, true)`.
 - **Tank:** 0 … `tankCapacity`, and 0 without a watering head.
-- **Tokens:** 0 … battery. `tokensToday` is a count.
+- **Tokens:** 0 … battery. The `stats` counts are counts (part 3 spec §9.2).
 - **Power and carrying:** power is in `ROBOT_POWERS`, and `carried` is a boolean.
 - **Program:** a valid script (section 2.2 rules; every `plant.cropId` a crop and every `take.itemId` an item). `pc` is in range.
 - **Clock:** `nextActMinute` is in `dayStartMinute … passOutMinute + ROBOTS.maxWaitMinutes` (240).

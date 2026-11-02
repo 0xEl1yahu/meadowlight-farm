@@ -54,9 +54,11 @@ Robots are still added only through `addRobot` (tests and dev hooks). Part 1's *
 export const ZONE_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
 export type ZoneId = (typeof ZONE_IDS)[number];
 
-/** A rectangle of farm tiles: x0 … x0+w-1, z0 … z0+d-1. w, d ≥ 1; wholly inside the farm. */
-export interface ZoneRect { readonly x0: number; readonly z0: number; readonly w: number; readonly d: number }
+/** A rectangle of tiles on `mapId`: x0 … x0+w-1, z0 … z0+d-1. w, d ≥ 1; wholly inside that map. */
+export interface ZoneRect { readonly mapId: RobotMapId; readonly x0: number; readonly z0: number; readonly w: number; readonly d: number }
 ```
+
+Zones carry `mapId` since part 4c (its spec §5.3): `'farm'` or `'neighbours'`. Part 2 built them on the farm only, and save version 9 gave every saved zone `mapId: 'farm'`.
 
 `RobotsState` gains `readonly zones: Readonly<Record<ZoneId, ZoneRect | null>>`. Zones may overlap and may contain tiles a robot can't stand on. A zone that is `null` is **empty**: `For each tile` in it does nothing, `at edge of` it is No, and `DON'T leave` it forbids nothing.
 
@@ -324,7 +326,7 @@ export function startStack(exec: RobotExec, index: number): RobotExec;
 - Facing the next path tile: emit `move`. Otherwise emit `turn`, choosing `left` or `right` by the shorter turn (`right` when both are equal).
 - No route: pop and record a `gaveUp` event for the caller. `goTo` moves on to the next statement; `forEachTile` skips that tile.
 
-**Expressions** are evaluated against `state` and the robot as they are at the start of the minute (part 1 §5.3 choose phase). Sensors read the robot's own tile unless they say "ahead". `bagIsFull` means the bag holds `bagStacks(robot)` stacks. `soilIsDry` means the tile is Plowed (not Watered). `tileIsTilled` means Plowed or Watered. `cropIsReady` means a living, mature crop. `atEdgeOf` means the robot's tile is in the zone and a 4-neighbour isn't. `tileAheadIs`: `water` is a water blocker, `clear` is a walkable farm tile with no standing robot on it, and `blocked` is anything else, including a tile with a standing robot (part 3 spec §3.1). A robot on the farm edge facing out reads its own tile as `tile ahead`, so a Tile value is always a farm tile.
+**Expressions** are evaluated against `state` and the robot as they are at the start of the minute (part 1 §5.3 choose phase). Sensors read the robot's own tile unless they say "ahead". `bagIsFull` means the bag holds `bagStacks(robot)` stacks. `soilIsDry` means the tile is Plowed (not Watered). `tileIsTilled` means Plowed or Watered. `cropIsReady` means a living, mature crop. `atEdgeOf` means the robot's tile is in the zone and a 4-neighbour isn't. `tileAheadIs` reads the tile ahead on the robot's own map (`src/robots/eval.ts`): `water` is Yes when it's a water blocker; `clear` when it's walkable and no robot stands on it; `blocked` when a robot stands on it (part 3 spec §3.1), or when it's neither water nor walkable, the edge of the map included. So a water tile with a broken robot in it is both `water` and `blocked`. A robot on the farm edge facing out reads its own tile as `tile ahead`, so a Tile value is always a farm tile.
 
 ### 5.2 Committing
 
@@ -461,7 +463,9 @@ Every new event has both lines. "Robot says" always ends in " ✓".
 | `doPowerDown` | "Powering down ✓" | "Powered down for the day: my .MD says {card text}." |
 | `conflict` | "Following my rules ✓" | "My .MD says {do text}, but it also says don't {dont text}. Don't wins." |
 
-`mdCardText(card)` gives each card's dropdown sentence, e.g. "leave Zone A", "go into water", "return to the nearest generator at 6:00 pm". `triggerText(trigger)` does the same for triggers. Both are exported for part 3.
+`mdCardText(card)` gives each card's dropdown sentence, e.g. "leave Zone A", "go into water", "return to the nearest generator at 6:00 pm". `triggerText(trigger)` does the same for triggers, in log wording rather than editor labels: the words after "Woke up:", which are "morning came", "it's {time}" (e.g. "it's 2:05 pm"), "my bag is full", "it started raining" and "every {n} minutes". Both are exported for part 3.
+
+The `doReturn failed` event carries no reason (section 2.7), so `{reason}` comes from the card: "no generator I could reach" for a return to the nearest generator, and "no way through" for a return to a tile. A `conflict` line logged just before it explains a DON'T card that blocked the way.
 
 ---
 

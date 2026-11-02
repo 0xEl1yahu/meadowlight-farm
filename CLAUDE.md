@@ -12,7 +12,7 @@ A 3D low-poly farming sim in the browser (TypeScript, Three.js, Vite, Vitest). F
 
 ## Code rules
 
-- The simulation is pure and deterministic. No `Math.random`, clock reads or I/O in `src/core`, `src/state`, `src/world`, `src/farming`, `src/time` or `src/robots`. Randomness goes through `hash32` / `hashFloat`.
+- The simulation is pure and deterministic. No `Math.random`, clock reads or I/O in `src/core`, `src/state`, `src/world`, `src/farming`, `src/time`, `src/robots`, `src/jobs` or `src/people`. Randomness goes through `hash32` / `hashFloat`.
 - TypeScript is strict with `erasableSyntaxOnly`: no enums, no namespaces, no parameter properties. Use `as const` objects with union types, and `import type` for types.
 - State is immutable with structural sharing: an unchanged robot, chunk or tile keeps its reference. `withRobot` returns the same state when nothing changed.
 - Numbers come from `src/config.ts`, never inline.

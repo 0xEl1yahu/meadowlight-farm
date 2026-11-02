@@ -58,7 +58,8 @@ Robot state (stored in the save):
 - `owner`: the player, Cosmo or Barnaby (part 4c)
 - `bag`: item stacks, capacity set by size and parts
 - `tokens`: current battery charge
-- `power`: `working | standby | off | flat | broken`
+- `power`: `working | standby | flat | broken | repairing | ruined` (`ROBOT_POWERS`)
+- `off`: null, or why the robot is switched off (section 5.4)
 - `md`: the Managing Directive, section 3.3
 - `mailbox`: section 5.3
 - `stats`: tokens used, actions taken, crops handled, today and this week
@@ -226,10 +227,10 @@ Every one of these comes from reasonable-looking instructions carried out perfec
 
 | Instructions that sound fine | What the robot faithfully does |
 | --- | --- |
-| DON'T go into water. DO keep the watering head full. | It can never refill, so it waters until the tank is empty, then trundles over every dry tile doing nothing. |
+| DON'T go into water. DO keep the watering head full. | Its refill trip heads for the pond tile itself. A route never ends in water, so it gives up, the tank runs dry, and the robot trundles over every dry tile doing nothing. (`Refill` works from the shore, so the DON'T alone never stops a refill.) |
 | DON'T leave Zone A. The program deposits into a chest just outside the zone. | It can't reach the chest. Its bag fills, and every harvest after that fails. |
 | DON'T spend more than 60 tokens a day, on a 12×12 field | It stops two-thirds of the way through every day, and the last third never gets watered. |
-| DO power down when the bag is full, on a Mini with one bag stack | It powers down after the first harvest of a second crop type. |
+| DO power down when the bag is full, on a Mini with one bag stack | Full means every bag stack is in use, so it powers down after its very first harvest, and again every morning until someone empties its bag. |
 | DO return to the wood burner at 6:00 pm | It leaves at 6:00 on the dot with a full bag and half a row unharvested. |
 | "Harvest everything that's ready" | It harvests the pumpkin you were growing for the Claw Fair. |
 | "Water every dry tile in Zone A" on a rainy morning | Nothing is dry. It finishes instantly and reports ✓. You forget to check, and the next dry day it's still switched to a rain-day program. |
@@ -280,7 +281,7 @@ The farm log records fuel burned each night. Job 8 is measured on it.
 
 ### 5.1 How it looks
 
-Programs are built from blocks in the editor, Blockly on its Zelos (rounded) renderer: blocks snap together, and the fields inside them are dropdowns. Labels are plain English in sentence case. The editor's toolbox shows only unlocked blocks, and a counter shows blocks used against the robot's limit (for example, 7 / 12). Unlocks gate the editor only: a saved program may use any block. The editor is loaded lazily, with a budget of ≤ 250 KB gzipped for its chunk, ≤ 40 KB for the robot screen chunk, and ≤ 16 KB growth of the main bundle.
+Programs are built from blocks in the editor, Blockly on its Zelos (rounded) renderer: blocks snap together, and the fields inside them are dropdowns. Labels are plain English in sentence case. The editor's toolbox shows only unlocked blocks, and a counter shows blocks used against the robot's limit (for example, 7 / 12). Unlocks gate the editor only: a saved program may use any block. The editor is loaded lazily, with a budget of ≤ 250 KB gzipped for its chunk, ≤ 40 KB for the robot screen chunk, and ≤ 53 KiB growth of the main bundle over the part 2 baseline (16 KB at first, raised as parts 3 to 4d added to the main chunk; part 3 spec §10.1).
 
 ### 5.2 Blocks
 
@@ -289,7 +290,7 @@ Programs are built from blocks in the editor, Blockly on its Zelos (rounded) ren
 | Block | Wakes the robot | Unlocked by |
 | --- | --- | --- |
 | `When [morning ▾ / time ▾]` | At 6:00, or at a chosen time | Job 1 |
-| `When bag is full` | The moment its bag fills | Job 3 |
+| `When bag is full` | The moment its bag fills | Job 2 |
 | `When it starts raining` | When the weather turns | Job 3 |
 | `When I receive [type ▾] from [robot ▾ / anyone]` | A message arrives | Job 5 |
 | `Every [n ▾] minutes` | A repeating check that costs 1 token each time | Job 3 |
@@ -300,8 +301,8 @@ Programs are built from blocks in the editor, Blockly on its Zelos (rounded) ren
 | --- | --- |
 | `Repeat [n] times`, `Repeat until [condition]`, `Repeat forever` | Job 1 |
 | `If [condition] … else …` | Job 2 |
-| `For each tile in [zone ▾]`: goes to each tile of the zone in a fixed snake order, one `Move` action per step, and runs its inner blocks there | Job 2 |
-| `Set [variable] to`, `Change [variable] by` | Job 4 |
+| `For each tile in [zone ▾]`: goes to each tile of the zone in a fixed snake order, one `Move` action per step, and runs its inner blocks there | Job 3 |
+| `Set [variable] to`, `Change [variable] by` | Release 2 |
 | `Define helper [name]`, `Run helper [name]` | Job 4 |
 | `Claim [tile]`: Yes if nobody else has claimed it today | Job 5 |
 
@@ -313,8 +314,8 @@ Programs are built from blocks in the editor, Blockly on its Zelos (rounded) ren
 | `Water`, `Refill` | Watering head | Job 1 |
 | `Power down`, `Wait [n] minutes`, `Say [text]` | built in | Job 1 |
 | `Harvest` | Claw | Job 2 |
-| `Deposit into [chest ▾ / shipping bin]`, `Take [item ▾] from [chest ▾]` | Claw | Job 2 |
-| `Till`, `Plant [seed ▾]` | Tiller / Seeder | Job 2 |
+| `Deposit` into the chest or shipping bin ahead, `Take [item ▾]` from the chest ahead (a program reaches one with `Go to` and `Turn`) | Claw | Job 2 |
+| `Till`, `Plant [seed ▾]` | Tiller / Seeder | Job 3 |
 | `Send [value] to [robot ▾]` | Antenna | Job 5 |
 
 **Sensors** (all Yes/No, and all free):
@@ -328,12 +329,16 @@ Programs are built from blocks in the editor, Blockly on its Zelos (rounded) ren
 
 **Values:** number and text literals, `my tile`, `tile ahead`, `tokens left`, `count of [item ▾] in bag`, `message`, variables, `+ − ×` and comparisons. Job 1 also unlocks `tokens left` and comparisons, so `Repeat until` has a condition ("Repeat until tokens left < 10"). `tile ahead is blocked` is Yes when a robot stands on the tile ahead (part 3).
 
+A program that uses a sensor-eye sensor is refused on a robot without a sensor eye, and the workbench won't take off a sensor eye the program's sensors need (part 2).
+
+**Locked blocks still run.** The unlock column gates the editor's toolbox, not the simulation. A locked block already in a program keeps working and stays on the canvas, but can't be added from the toolbox. Juniper's ready-made robots, for example, arrive with a program that uses `For each tile` before job 3 unlocks it.
+
 ### 5.3 Types and messages
 
 There are five types: **Number**, **Text**, **Yes/No**, **Item** and **Tile**.
 
 - Each type has its own socket shape and colour, and a block only fits a socket of its own type. Type errors show up as a block that won't snap in, so there are no type errors at runtime.
-- Every variable has a type, fixed when it's created.
+- Every variable has a type, fixed when it's created, and a starting value, restored each morning.
 - A message carries one typed value. `When I receive [Item] from [anyone]` accepts only Item messages and puts the value in `message`.
 - Each robot has a mailbox of 8 messages. A message arrives the minute after it's sent. If the mailbox is full, the oldest message is dropped and the farm log says so. That's a queue overflow, taught by accident.
 
@@ -342,20 +347,23 @@ There are five types: **Number**, **Text**, **Yes/No**, **Item** and **Tile**.
 - Each robot acts every 4 in-game minutes, or every 3 with a Quick core. On a due minute, the interpreter runs the robot's program until it reaches one action block, then stops.
 - **Step budget:** non-action blocks (conditions, maths, variables, loops) are free but capped at 50 per due minute. If a robot hits the cap without reaching an action, it gets dizzy: a spin animation, and it switches to `off` for the rest of the day. The farm log records "Looped without doing anything." This is the engine rule that keeps the game from freezing.
 - **Resolution:** all robots due in the same minute choose their action first, in robot-id order. Then the actions are applied together. Two or more robots doing `Harvest`, `Water`, `Till` or `Plant` on the same tile in the same minute is a bicker (section 3.4).
-- **Power:**
+- **Power** (`ROBOT_POWERS`):
   - `working` runs the program.
   - `standby` waits for a trigger at no cost, and waking costs 1.
-  - `off` ignores triggers. It's a field of its own, not a power state. The player's on/off switch at the workbench sets `off: 'player'`, which lasts through every morning until the player switches the robot on; a robot that got dizzy or carried out a DO power-down card is off only until morning.
-  - `flat` means 0 tokens.
-  - `broken` means shorted out.
-- When a program reaches its end, the robot goes to `standby`.
+  - `flat`: it couldn't pay for its next action.
+  - `broken`: shorted out in water.
+  - `repairing`: away for a new core, off the map.
+  - `ruined`: left in water overnight; it can only be scrapped.
+- **Off** isn't a power state but a field of its own, and an off robot ignores triggers. The player's on/off switch at the workbench sets `off: 'player'`, which lasts through every morning until the player switches the robot on; a robot that got dizzy or carried out a DO power-down card is off only until morning.
+- **Triggers fire only while the robot is idle:** a running stack is never interrupted, and only DO cards take over a working robot.
+- When a program reaches its end, the robot goes to `standby`. A program's own `Power down` block only goes to standby too, and a trigger can wake it; a DO power-down card ends the robot's day.
 - A robot's action can't cost more tokens than it has. If it can't afford an action, it goes `flat` without acting.
 
 ---
 
 ## 6. The robot screen
 
-Robots are modded at a **workbench**, a placed object on the farm. The player carries a robot to a workbench and sets it down on it to open its screen; that is the only way to change a robot's program, .MD, parts or looks. Pressing E on a robot in the field only picks it up or puts it down; Shift + E peeks at its Stats and Log anywhere, read-only. A robot on the bench is out of work until it's carried off, so reprogramming is a deliberate trip, like taking a machine into the workshop. The first workbench is built into every farm beside the farmhouse; crafting more arrives in release 5. The bench also scraps robots for a quarter of their size's price and paints them. (Decided 2026-10-02 and settled in part 3.)
+Robots are modded at a **workbench**, a placed object on the farm. The player carries a robot to a workbench and sets it down on it to open its screen; that is the only way to change a robot's program, .MD, parts or looks. The one exception is job mode (part 4c): while a neighbour's job is active, facing one of their robots and pressing E opens its screen where it stands, to edit its program and .MD. Pressing E on a robot in the field only picks it up or puts it down; Shift + E peeks at its Stats and Log anywhere, read-only. A robot on the bench is out of work until it's carried off, so reprogramming is a deliberate trip, like taking a machine into the workshop. The first workbench is built into every farm beside the farmhouse; crafting more arrives in release 5. The bench also scraps robots for a quarter of their size's price and paints them. (Decided 2026-10-02 and settled in part 3.)
 
 The screen has five tabs:
 
@@ -568,7 +576,7 @@ They keep daily routines (part 4d). The tradies keep shop hours with a morning r
 | --- | --- | --- |
 | General store | Marigold | Seeds, fertiliser, backpack upgrade (unchanged from v2) |
 | Blacksmith | Berlioz | Tool upgrades, copper ore, steam engine, sun panel |
-| Ranch | Tallulah | Chickens, cows, wheat (unchanged from v2) |
+| Ranch | Tallulah | Chickens, cows, wheat (unchanged from v2). No menu in release 1: Tallulah only chats until the animals arrive in release 5. |
 | Parts exchange | Sol | Parts, paint, voices, common personality cores. Release 1 opens it with basic parts; the Antenna comes in release 2, and cores, paint, voices and personality cores in release 3. |
 | Robot workshop | Juniper (also still the carpenter) | Ready-made robots, custom robots and limited editions. Plus coop, barn, wood and stone from v2. Release 1 opens it with ready-made robots; custom robots and limited editions come in release 3. |
 
@@ -611,10 +619,10 @@ This replaces the four v2 festivals. It runs on day 14 of spring, summer and fal
 | D Crafting and materials | Done. Kept. Adds the wood burner and rain barrel recipes. |
 | E Animals | Kept as written |
 | F Forest and foraging | Kept. Old Fennick is removed from it. |
-| G Cooking | Cut |
+| G Cooking | Cut. Its save section is removed in version 12 (section 12). |
 | H Town and people | The map and shops are kept. Friendship hearts, gifts and heart events are cut. Old Fennick and Pip are cut. Marigold, Berlioz (was Bram), Juniper and Tallulah (was Tess) keep their shops and chat only. The farmclaw cast (section 9.1) is added. |
-| I Quests | Replaced by jobs (section 8) |
-| J Festivals | Replaced by the Claw Fair (section 9.3) |
+| I Quests | Replaced by jobs (section 8). The quests and notice-board save section is removed in version 12. |
+| J Festivals | Replaced by the Claw Fair (section 9.3). The v2 festival section, with its gifts, egg hunt and trophy display, and the trophy and decoration objects are removed in version 12. |
 
 ---
 
@@ -669,7 +677,9 @@ Release 1 also includes the balance pass for the "Do it well and it works well" 
 
 ## 12. Save versions
 
-Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. A release can therefore carry several version steps, and the loader runs them in order, so a live save from any earlier release loads. Part 4a's migration (version 7) drops the friendship fields and the cut characters, Old Fennick and Pip; part 8's drops the rest of the cut v2 fields (gifts, cooking recipes).
+Each part that adds saved fields bumps the save version by one and adds one migration step that fills in empty defaults. Part 1 is version 4: robots, the token pool, the farm log and the wood burner. A release can therefore carry several version steps, and the loader runs them in order, so a live save from any earlier release loads. Part 4a's migration (version 7) drops the friendship fields and the cut characters, Old Fennick and Pip. The release 1 cleanup's (version 12) drops the rest of the cut v2 fields: the `cooking`, `quests` and `festival` sections (gifts included), the characters' `talkedToday`, and the trophy and decoration objects.
+
+The release 5 sections stay in the save for part 8: `profile`, `tools` (tool levels and the upgrade order), `buildings` and `nextEntityId` with the animals, and `stats`.
 
 ---
 

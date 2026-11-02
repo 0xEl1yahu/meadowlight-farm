@@ -241,7 +241,7 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
 
 - **Panel:** `UiPanel` gains `{ kind: 'robot'; robotId: number; mode: 'bench' | 'peek' }`. While it's open the game is frozen (`selectIsFrozen`), as with the inventory.
 - **Loading:** `src/ui/robotScreen/` is loaded with one dynamic `import()` the first time a robot screen opens. Blockly is a second dynamic import inside it (section 4.2).
-  - While the screen loads, the panel shows "Opening…".
+  - While the screen loads, the panel shows "Opening…", and Escape closes the panel, so a stalled import can't trap the player (R38).
   - If it fails to load, the panel closes with the toast "The robot screen couldn't load. Try again." and the robot is untouched.
 - **Keys:** while a robot panel is open, the robot screen owns the keyboard.
   - `InputController` neither dispatches nor calls `preventDefault` for any key, so Blockly and the screen's fields get every key.
@@ -285,6 +285,7 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
   - "{used} / {limit} blocks" from `countWorkspaceBlocks(json)` (section 5) and `ROBOTS.sizes[size].blocks`. It counts mid-edit, before the workspace translates.
   - It turns red over the limit, and so does a "{n} / {limit} variables" line.
 - **Save:**
+  - Save is for edits: it's disabled while the program on the canvas is unchanged from the saved one (R37).
   - Translate the workspace (section 5).
   - A block left loose (not in a trigger stack, helper or variable declaration) is an error: "Every block must be inside a When … stack or a helper." The block is highlighted.
   - Then `isProgramShape` and `checkProgram`. The checker's sentence is shown under the toolbar and nothing is saved.
@@ -302,7 +303,7 @@ Robots no longer pass through each other: part 1's "moves never bicker; robots c
   - times as a dropdown in `ROBOT_SCREEN.timeStep` steps from 6:00 am to 1:50 am, plus the card's current value.
 - **Editing:**
   - **Add a card** lists the unlocked card kinds. Cards can be removed and reordered within their section.
-  - A new card starts at its kind's defaults: the first zone, crop or item; a DO return to the nearest generator at `ROBOT_SCREEN.cardDefaults.returnMinute` (6:00 pm); a DO power-down when the bag is full, whose tokens-below option starts at `cardDefaults.tokensBelow` (10). A number field that isn't a whole number leaves the card as it was (R34).
+  - A new card starts at its kind's defaults: the first zone or crop, and for DON'T deposit the first crop (`CROP_IDS[0]`); a DO return to the nearest generator at `ROBOT_SCREEN.cardDefaults.returnMinute` (6:00 pm); a DO power-down when the bag is full, whose tokens-below option starts at `cardDefaults.tokensBelow` (10). A number field that isn't a whole number leaves the card as it was (R34).
   - A counter shows "{n} / {limit} cards".
   - **Save** runs `isMdShape` and `checkMd`, then dispatches `setRobotMd { robotId, md }`. The reducer applies `withMd` (section 4.7): it runs the same checks, clears `exec.doneCards` and stops a DO return under way.
 - **Scripts:** a script robot shows ".MD cards only apply to block programs." and no editor.
@@ -427,7 +428,7 @@ export interface RobotUnlocks {
 - **Locked kinds:**
   - The screen hides locked blocks and cards.
   - A saved program or .MD using a locked kind is still valid. Unlocks gate the editor, not the simulation, so part 4's preloaded job programs can use anything.
-  - A locked block already in a loaded program shows normally and can be kept or deleted, but not added again.
+  - A locked block already in a loaded program shows normally and can be kept or deleted, but not added again. It keeps working: Juniper's ready-made harvester uses `For each tile` before job 3 unlocks it, and runs (release 1 cleanup spec §6.1).
 - **Dev hook:** `__meadowlight.unlockAll()` sets every block, card and tab. Part 4's jobs add to the set through a pure `withUnlocks(state, partial)`.
 
 ---
@@ -504,7 +505,7 @@ Any state the game can produce must load; a corrupted field is rejected.
 
 - **The editor chunk** (every lazy chunk containing Blockly, found through its source map's `sources`, added up: `blockly/core` and `blockly/msg/en` load as two chunks) must be ≤ **250 KB gzipped**.
 - **The robot screen chunk** must be ≤ **40 KB gzipped**.
-- **The main entry chunk** must be ≤ the part 2 baseline + **40 KB gzipped** (R35; raised from 16 KB by the part 4a spec's refinement R20, to 30 KB for part 4b, and to 40 KB for part 4c). The baseline is recorded in `scripts/bundle-baseline.json` as 275,539 bytes (part 2's `index-CUmkGRNG.js` at commit `2a92771` through `zlib.gzipSync` at level 6; the `gzip -6` command line gives 274,312 for the same file).
+- **The main entry chunk** must be ≤ the part 2 baseline + **53 KiB gzipped** (`MAIN_GROWTH_MAX_GZIP`; R35; raised from 16 KB by the part 4a spec's refinement R20, to 30 KB for part 4b, to 40 KB for part 4c, and to 48 KiB and then 53 KiB for part 4d, the part 4d spec's R8 and R10). The baseline is recorded in `scripts/bundle-baseline.json` as 275,539 bytes (part 2's `index-CUmkGRNG.js` at commit `2a92771` through `zlib.gzipSync` at level 6; the `gzip -6` command line gives 274,312 for the same file).
 - **Blockly placement:** no Blockly module may appear in the main chunk or the screen chunk (checked by name in each source map's `sources`).
 - **Chunks without a source map:** one of at most 1 KB gzipped (a bundler runtime helper, such as Rolldown's runtime chunk) counts as other, with no budget, and is still scanned by the dist check (section 10.3); a larger one fails the check (R36).
 
@@ -550,7 +551,7 @@ The Blockly glue and Three.js rendering are checked in the browser playbook, not
 1. Carry a robot to the bench. The screen opens.
 2. Build job 1's program by dragging blocks (`When morning → Repeat until tokens left < 10 → Water, Move forward` …).
 3. Save, see the toast, lift it off, and watch it run.
-4. Load each design §5.2 fixture into the editor with `setProgram`, open the bench, Save without changes, and confirm the saved program is unchanged.
+4. Load each design §5.2 fixture into the editor with `setProgram`, open the bench, see Save disabled with no changes (R37), and confirm the program is unchanged.
 5. Add a DON'T go into water card and see it obeyed.
 6. Paint Zone A with the marker and use `For each tile in A` after `unlockAll`.
 7. Drive two robots into each other: both dizzy, the toast, the emptied stack on the bench.
@@ -676,3 +677,5 @@ Decided by the part 3 implementation plan and its execution. Each one keeps the 
 - **R34.** **Add a card** takes only the kind: a DO return starts at the nearest generator at `ROBOT_SCREEN.cardDefaults.returnMinute`, and tokens below starts at `cardDefaults.tokensBelow`. A number that isn't whole leaves the card as it was. Cards reorder within their section (section 4.3). `4ca10ab`.
 - **R35.** The main-chunk allowance is the baseline + 16 KB, not + 10 KB: part 3's simulation, rendering and HUD code grew main by 12.8 KB, and no screen or Blockly module is in main, so the screen and editor stay lazy (sections 10.1 and 14). `012e815`.
 - **R36.** A chunk with no source map counts as other, with no budget, when it is at most 1 KB gzipped, as bundler runtime helpers are (Rolldown's runtime chunk); it is still scanned by the dist check, and a larger chunk without a map stays a problem (section 10.1). `012e815`.
+- **R37.** Save on the Program tab is for edits: it's disabled while the canvas holds the saved program unchanged, so saving an unchanged program does nothing and toasts nothing. Eli kept this in the release 1 cleanup (its spec §6.1) (section 4.2). `c9a89f3`.
+- **R38.** While the "Opening…" card shows, Escape closes the robot panel, so a stalled import can't trap the player: the input controller leaves every key alone while a robot panel is open (section 4.1). `6af0d96`.

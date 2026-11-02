@@ -15,6 +15,13 @@ z 13–15 · Cosmo (7,13) faces south → stand (7,14) facing north · Barnaby (
 stand (25,14) facing south. Cosmo's field is fenced x 3–10, z 5–12 (gate (6,12)); Barnaby's
 x 20–29, z 16–25 (gate (24,16)).
 
+**Timetables.** Since part 4d the cast walk their day (`TIMETABLES` in `src/config.ts`), and a new
+game starts at 6:00 am, when only Sol is out. So the setups set the clock to 10:00 am, inside the
+shop hours (`SHOP_HOURS`: 9:00 am to 12:00 pm and 1:00 pm to 5:00 pm), and stand every walker
+where their timetable has them then: `F.withMigratedPlaces(F.atMinute(s, 600))`. The tradies are
+on their work spots, the spots above. Cosmo and Barnaby are on their lane spots only from 6:00 pm
+to 8:00 pm, so check 4 uses `F.atMinute(s, 1110)` (6:30 pm).
+
 **Talking.** E on a character opens the chat box and freezes the game; E, K, Enter, Escape or
 **Close** close it. A chat adds 1 to `npcs[id].talks`, so the first chat shows the
 introduction and later ones an everyday or reactive line. The everyday pick depends on the
@@ -34,7 +41,7 @@ const chat = () => { const box = document.querySelector('.chat-box'); return box
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(__qa.state(), { tx: 7, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)), { tx: 7, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 const L = await __qa.mod('/src/people/lines.ts');
 const chat = () => { const box = document.querySelector('.chat-box'); return box === null || box.hidden ? null : box.innerText; };
@@ -51,14 +58,14 @@ for (const [id, tx] of [['marigold', 7], ['berlioz', 16], ['sol', 21], ['juniper
   await __qa.key('KeyE');
   const second = __qa.state().ui.panel;
   await __qa.key('Escape');
-  out[id] = { hint, first, closed, second: second.line, secondIsEveryday: L.LINE_BANKS[id].everyday.includes(second.line), secondIsExpected: second.line === expected, npcs: __qa.state().npcs[id] };
+  out[id] = { hint, first, closed, second: second.line, secondIsEveryday: L.LINE_BANKS[id].everyday.includes(second.line), secondIsExpected: second.line === expected, talks: __qa.state().npcs[id].talks };
 }
 out
 ```
 For each of the five, expect `hint: true`; `first.panel` `{ kind: 'talk', npc: id, line: <its
 introduction> }` and `first.box` containing the name, the role line and that introduction;
 `closed` `{ panel: 'none', box: null }`; `secondIsEveryday: true`, `secondIsExpected: true`;
-`npcs` `{ talks: 2, talkedToday: true }`. The introductions, verbatim:
+`talks: 2`. The introductions, verbatim:
 - Marigold (General store): "Welcome! I'm Marigold. Seeds, fertiliser, a bigger backpack one day. Shop with me any time."
 - Berlioz (Blacksmith): "Berlioz. Blacksmith. I sharpen tools and I don't do small talk."
 - Sol (Parts exchange): "Sol. I used to seed fields by hand; now I build the hands. When your robots need parts, this is the place."
@@ -117,8 +124,8 @@ Expect `added: "Added Dunk."`, `broken: 'broken'`, `ruined: 'ruined'`. Now talk 
 first chat is still his introduction, so record one chat first (setup):
 ```js
 const F = await __qa.fixtures(); let s = __qa.state();
-s = { ...s, npcs: { ...s.npcs, sol: { talks: 1, talkedToday: false } } };
-__qa.load(F.withPlayer(s, { tx: 21, tz: 8 }, 0, 'town'));
+s = { ...s, npcs: { ...s.npcs, sol: { ...s.npcs.sol, talks: 1 } } };
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(s, 600)), { tx: 21, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 const box = document.querySelector('.chat-box');
@@ -131,7 +138,7 @@ Expect `line: "Water and wires don't mix. Bring what's left of Dunk to the bench
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(__qa.state(), { tx: 37, tz: 16 }, 1, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 1110)), { tx: 37, tz: 16 }, 1, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyD', 120); await __qa.key('KeyD', 120);   // (38,16), then the gate tile (39,16)
 const atGate = [__qa.state().player.tx, __qa.state().player.tz];
@@ -164,7 +171,7 @@ friend."` (a fresh farm has no robots). Then walk back west along the lane and o
 
 ```js
 const F = await __qa.fixtures();
-let s = F.withPlayer(__qa.state(), { tx: 7, tz: 8 }, 0, 'town');
+let s = F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)), { tx: 7, tz: 8 }, 0, 'town');
 s = { ...s, inventory: { ...s.inventory, selected: 8, slots: s.inventory.slots.map((x, i) => (i === 8 ? F.stack('chest', 1) : x)) } };   // setup: a chest in hand
 __qa.load(s);
 await new Promise((r) => setTimeout(r, 100));
@@ -190,7 +197,7 @@ of parts by the door), and each character swaying gently, out of step with the o
 `resize_window {preset: 'mobile'}`, reload `http://localhost:5173/?new`, load the probe, then:
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(__qa.state(), { tx: 7, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)), { tx: 7, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 const box = document.querySelector('.chat-box'); const r = box.getBoundingClientRect();
@@ -220,16 +227,15 @@ Expect `day: 1` (the morning after day 0), `same: true`, `fence: { kind: 'woodFe
 ```js
 const F = await __qa.fixtures();
 let s = F.withPlayer(__qa.state(), { tx: 10, tz: 14 }, 1, 'neighbours');
-s = { ...s, npcs: { ...s.npcs, cosmo: { talks: 3, talkedToday: true } } };
+s = { ...s, npcs: { ...s.npcs, cosmo: { ...s.npcs.cosmo, talks: 3 } } };
 __qa.load(s);
 ({ at: [__qa.state().player.mapId, __qa.state().player.tx, __qa.state().player.tz] })
 ```
 Expect `at: ['neighbours', 10, 14]`. Reload `http://localhost:5173/` **without** `?new` (the
 page saves as it unloads), load the probe again:
 ```js
-const s = __qa.state(); ({ version: s.version, at: [s.player.mapId, s.player.tx, s.player.tz], cosmo: s.npcs.cosmo, panel: s.ui.panel.kind })
+const s = __qa.state(); ({ version: s.version, at: [s.player.mapId, s.player.tx, s.player.tz], cosmoTalks: s.npcs.cosmo.talks, panel: s.ui.panel.kind })
 ```
-Expect `version: 7`, `at: ['neighbours', 10, 14]`, `cosmo: { talks: 3, talkedToday: true }`,
-`panel: 'none'`. Screenshot: the Neighbours map around the player. `read_console_messages
+Expect `version: 12`, `at: ['neighbours', 10, 14]`, `cosmoTalks: 3`, `panel: 'none'`. Screenshot: the Neighbours map around the player. `read_console_messages
 {onlyErrors: true}` shows nothing from any check. Then, in a terminal, `npm run build:check`:
 it ends with "check-bundle: OK" and finds none of the dev-hook names in `dist/`.

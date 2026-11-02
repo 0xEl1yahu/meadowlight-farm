@@ -1,5 +1,7 @@
 # Phase 0 spec — foundations (plan section 2)
 
+> **Note (release 1 cleanup, November 2026).** Cooking, quests, the notice board, festivals and gifts are cut from the game (farmclaws design §10). Save version 12 removed their sections, and the trophy and decoration objects with them. The rest of this spec is a source for later specs, not a contract: the code and the specs under `docs/superpowers/specs/` say what the game does now.
+
 This is the build spec for plan section 2: multiple maps, placed objects, item quality, inventory and storage, entities, and save version 3. Every decision here is final. Implementation agents follow it and don't redesign it. If something in the code makes a rule impossible, pick the smallest change that keeps the rule's intent and write it down in the step's commit message.
 
 Global rules (from `docs/PLAN-v2.md` §1):

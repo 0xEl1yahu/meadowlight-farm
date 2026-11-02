@@ -178,12 +178,13 @@ Expect `said: "Programmed Atlas."` and `panel: { kind: 'robot', robotId: 1, mode
 `find "Program"` → click; once the editor shows, `get_page_text` has "{count} / 80 blocks" with
 that fixture's count and no error sentence. Screenshot: stacks laid out top to bottom
 (declarations, then trigger stacks, then helpers); for `triggers`, the time dropdown reads
-9:43 am. Click **Save**, then:
+9:43 am. `find "Save"`: the button is disabled, because the program is unchanged (part 3 spec
+R37), so there is no "Programmed Atlas." toast. Then:
 ```js
-({ same: __qa.same(__qa.robot('Atlas').program, FIX[name]), toast: __qa.snap(1).toasts })
+({ same: __qa.same(__qa.robot('Atlas').program, FIX[name]) })
 ```
-Expect `same: true` and `toast: ["[success] Programmed Atlas."]`. `computer key "Escape"`
-closes the screen with no prompt (nothing unsaved); go on with the next name.
+Expect `same: true`. `computer key "Escape"` closes the screen with no prompt (nothing unsaved);
+go on with the next name.
 
 ## 5. A DON'T go into water card, written in the .MD tab, is obeyed
 

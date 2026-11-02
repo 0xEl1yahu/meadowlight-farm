@@ -1,28 +1,29 @@
 # Meadowlight Farm
 
-**Welcome to the farm.** You've inherited a little cottage at the edge of the woods, a watering can, a bag of parsnip seeds and a wide meadow that nobody has tilled in years. The rest is up to you.
+**A cosy farming game with robots you teach yourself.** You've inherited a little cottage at the edge of the woods, a watering can, a bag of parsnip seeds and a wide meadow nobody has tilled in years. Down the road is a small town, two neighbouring farmers, and Sol, a seeder who now builds farm robots called farmclaws.
+
+You program the farmclaws with snap-together blocks and give each one standing rules. They do exactly what you tell them, which is the good news and the bad news. Along the way the game shows how automation really behaves: loops, conditions, cost, limits, and why a robot that says ✓ might still have done the wrong thing.
 
 ### [Play it in your browser →](https://meadowlight-farm-3d.vercel.app)
 
-No download and no account. It runs on any laptop or desktop with a keyboard, and your farm saves itself every morning.
+No download and no account. It runs on a laptop or desktop with a keyboard, and your farm saves itself every morning and whenever you close the tab.
 
 ---
 
-## Your first day
+## How to play
 
-1. **Step outside.** You wake up at 6:00 am on the doorstep. The white box on the ground shows the tile you're facing.
+### The farm
+
+1. **Step outside.** You wake at 6:00 am on the doorstep. The white box on the ground shows the tile you're facing.
 2. **Till some soil.** With the hoe selected (slot 1), press **Space** on a patch of grass.
-3. **Scatter your seeds.** Pick the parsnip seeds (slot 6) and press **Space**. One handful covers the 3 × 3 patch in front of you and plants every tilled tile it lands on.
-4. **Water them.** Grab the watering can (slot 2). Thirsty seedlings show a little blue droplet. When the can runs dry, refill it at the pond.
-5. **Go to bed.** Walk up to your front door and press **E**. Watered crops grow a little every night.
-6. **Harvest and sell.** Four mornings later your parsnips are ready. Pick them with **E**, drop them in the shipping bin beside the house, and wake up to gold in your pocket.
-7. **Grow your farm.** Press **B** for the seed shop and plant something new.
+3. **Scatter your seeds.** Pick the parsnip seeds and press **Space**. One handful covers the 3 × 3 patch in front of you and plants every tilled tile in it.
+4. **Water them.** Grab the watering can (slot 2). Thirsty seedlings show a blue droplet. Refill the can at the pond.
+5. **Go to bed.** Press **E** at your front door, or **N** anywhere. Watered crops grow a little every night.
+6. **Harvest and sell.** Parsnips are ready after four nights. Pick them with **E**, drop them in the shipping bin beside the house, and wake up to gold.
 
-## Treasures in the shade
+Every tool swing costs a little energy, and sleep gives it all back. Stay up past 2:00 am and you pass out, waking with half your energy. Rocks need the pickaxe and stumps the axe, which gives you stone and wood. Press **I** for your backpack and its Crafting tab: chests, fences, paths, sprinklers, fertiliser and more. Mushrooms and snozberries grow wild in the shade along the woods; forage them with **E**.
 
-Keep an eye on the darker grass along the woods and around the cottage. **Mushrooms** and **snozberries** sprout there all by themselves overnight, no tilling or watering needed. They spread to their shaded neighbours once they're fully grown, and fade away when their season ends. Wander over now and then and forage them with **E**.
-
-## What you can grow
+Each season lasts 28 days, crops wither when their season ends, and rain waters everything for you.
 
 | Crop | Seasons | Days to grow | Good to know |
 | --- | --- | --- | --- |
@@ -32,16 +33,57 @@ Keep an eye on the darker grass along the woods and around the cottage. **Mushro
 | Cauliflower | Spring | 12 | Worth the wait |
 | Strawberry | Spring | 8 | Keeps fruiting every 4 days |
 | Spectraherb | Spring to Fall | 10 | Slow, rare and very valuable |
-| Wheat | Summer, Fall | 4 | Cheap and quick; scatter whole fields of it |
+| Wheat | Summer, Fall | 4 | Cheap and quick |
 | Blueberry | Summer | 13 | Keeps fruiting every 4 days |
 | Blackberry | Summer, Fall | 10 | Keeps fruiting every 3 days |
 | Melon | Summer | 12 | |
 | Corn | Summer, Fall | 14 | Keeps fruiting every 4 days |
 | Pumpkin | Fall | 13 | The prize of autumn |
-| Mushroom | Spring to Fall | 2 | Wild, grows in the shade |
-| Snozberry | Summer, Fall | 5 | Wild, grows in the shade |
 
-Each season lasts 28 days, and crops wither when their season ends. Rainy days water everything for you. Winter is for resting.
+### The town and its hours
+
+Walk off the farm's south-east corner to reach the town, and through the town's east gate to the Neighbours, where Cosmo and Barnaby farm. The forest lies off the farm's west edge.
+
+Everyone keeps a daily routine. The shopkeepers are at their shops from 8:30 am, eat lunch together in the square at noon on a dry day, and head home in the evening; Cosmo and Barnaby walk into town for that lunch. **Shops open 9:00 am to 12:00 pm and 1:00 pm to 5:00 pm.** Outside those hours the door says when it opens again. SLOPMART 24/7, a booth in town run by a robot called DEALZ, never closes. It sells mystery boxes, 3 a day: mostly slop, now and then a gem.
+
+### The people
+
+Walk up to anyone and press **E** to chat. What they say changes with the day and with what's happening on your farm.
+
+| Who | Where | What they do |
+| --- | --- | --- |
+| Marigold | General store | Seeds, and the backpack upgrade: 36 slots for 2000g. **B** opens her shop from anywhere during shop hours. |
+| Sol | Parts exchange | Gives job 1. Sells robot parts and buys them back at half price, once job 2 is done. |
+| Juniper | Carpenter | Builds robots once job 1 is done: Minis first, Standard and Big robots after job 3. |
+| Cosmo | The Neighbours | Gives job 2. His Big robot says hello to the chickens. |
+| Barnaby | The Neighbours | Gives job 3. Four robots, one field, never finished. |
+| Berlioz | Blacksmith | Chats. |
+| Tallulah | Ranch | Chats. |
+
+Six townsfolk walk their own short loops around town and have a line each day.
+
+### The jobs
+
+Talk to a job's giver, press **Job**, then **Take the job**. The jobs come in order, and each one opens more of the game.
+
+| Job | Giver | The goal | When it's done |
+| --- | --- | --- | --- |
+| 1. The spinning robot | Sol | Rewrite Sprinkle's spinning program to water the bed by your workbench, then power down with tokens left. Taking it teaches the Wood Burner recipe. | 500g, and Juniper's workshop opens |
+| 2. Show him what it can do | Cosmo | Harvest every ripe crop in Cosmo's field, with a program that uses a sensor and an If. | 1000g, Sol's parts shop opens, and Cosmo teaches the Quality Fertiliser and Speed-Gro recipes |
+| 3. Know the limits | Barnaby | Harvest Barnaby's whole field by 6:00 pm in one day, at 6 tokens a crop or less. | 2000g, Juniper builds Standard and Big robots, and Barnaby teaches the Quality Sprinkler recipe |
+
+Each job also unlocks the blocks and cards it needs when you take it. For jobs 2 and 3 you work on the neighbour's own robots: face one and press **E** to open its screen where it stands.
+
+### Robots and their programs
+
+- **The workbench** stands by the farmhouse. Pick a robot up with **E** (it costs energy), then press **E** at the bench to set it there and open its screen. **Shift + E** peeks at any robot's Stats and Log.
+- **Program:** snap blocks together under a trigger such as "When morning comes". The toolbox shows only the blocks you've unlocked, and each robot size holds a limited number of blocks.
+- **.MD:** the robot's standing rules, DO and DON'T cards such as "DON'T go into water" or "DO return to the nearest generator at 6:00 pm". DON'T beats DO, and DO beats the program.
+- **Looks:** paint, and the parts it has fitted. Parts give a robot its actions: a claw harvests, a watering head waters, a sensor eye adds sensors.
+- **Stats and Log:** what it spent, and what it did. The "Robot says" column is always cheerful and always ✓; the "What happened" column tells the truth.
+- **Zones:** the zone marker in your backpack paints zones A to H for "For each tile" and the .MD's zone cards. **Space** marks two corners, **Shift + Space** picks the next letter, and **Shift + E** clears it.
+- **Tokens:** every action costs tokens. Craft a wood burner and load it with wood: overnight it fills the farm's token pool, and robots within 2 tiles of it recharge.
+- **Mistakes are yours to fix.** Robots stay where they finish and start again from there each morning. A robot that walks into water shorts out: fish it out and carry it to the shipping bin for a new core. Left in the water overnight, it's ruined and can only be scrapped at the bench.
 
 ## Controls
 
@@ -49,73 +91,58 @@ Each season lasts 28 days, and crops wither when their season ends. Rainy days w
 | --- | --- |
 | Walk | W A S D or the arrow keys (W walks up and to the right) |
 | Turn without moving | Shift + a direction |
-| Use your tool, or scatter seeds | Space (or left click) |
-| Harvest, forage, ship, sleep, refill | E (or right click) |
+| Use your tool, scatter seeds, mark a zone corner | Space, J or left click |
+| Harvest, talk, ship, pick up or put down a robot, sleep at your door | E, K, Enter or right click (Ctrl + click on a Mac) |
+| Peek at a robot | Shift + E |
 | Pick a hotbar slot | 1–9, 0, -, =, Tab or the mouse wheel |
-| Seed shop | B |
-| Zoom in / out | Z / X |
+| Backpack and crafting | I |
+| Marigold's seed shop | B |
+| Zoom in / out | Z / X, or Ctrl + mouse wheel |
 | Speed up time | T |
 | Skip to tomorrow | N |
-| Pause and see all controls | P or Esc |
+| Pause | P or Esc (Esc closes an open panel first) |
 
-**A few tips**
-
-- Every swing of a tool costs a little energy. Sleep to get it all back.
-- Stay up past 2:00 am and you'll pass out, waking with only half your energy.
-- Rocks need the pickaxe and stumps need the axe. Clearing them gives you stone and wood.
-- Tilling is how you choose where seeds go: scattering only plants the tilled tiles in the patch.
-- Want a fresh start? Pause and choose **New Farm**.
+Want a fresh start? Pause and choose **New Farm**.
 
 ---
 
-## For builders
+## Run it yourself
 
-Meadowlight Farm is an open-source prototype built with [Three.js](https://threejs.org) (WebGL2) and strict TypeScript. The whole game is a deterministic state machine rendered in flat-shaded, low-poly 3D through an isometric orthographic camera.
+Meadowlight Farm is built with [Three.js](https://threejs.org), strict TypeScript, Vite and Vitest. It needs Node 22 or newer.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173  (add ?new to start a fresh farm)
-npm test             # 534 Vitest tests
-npm run build        # typecheck + production bundle in dist/
-npm run build:check  # the production build, then its size budgets and the dev-hook check
-npm run build:single # the whole game as one HTML page in dist-single/, with Blockly's icon folder blockly-media/ beside it
+npm run dev          # http://localhost:5173 (add ?new to start a fresh farm)
+npm test             # the Vitest suite
+npm run typecheck    # TypeScript only
+npm run build        # typecheck and the production bundle in dist/
+npm run build:check  # the build, then its size budgets and the dev-hook check
+npm run build:single # the whole game as one HTML page in dist-single/
 ```
 
-### How it works
-
-**One deterministic state machine.** All game state lives in one immutable `GameState` (`src/core/types.ts`). It changes only through `gameReducer(state, action)` (`src/state/reducer.ts`), a pure function. The reducer never calls `Math.random` or reads the clock: every random outcome (debris, weather, harvest yield, wild sprouting) is a hash of the world seed and the coordinates of the decision (`src/core/hash.ts`). So replaying an action log reproduces a game exactly. The frame loop only turns real time into `time/tick` actions through a fixed-step clock (`src/core/loop.ts`).
-
-**Grid and chunks.** `src/world/grid.ts` holds the grid math: tile, chunk and world coordinates with half-open bounds, and partial edge chunks (the 48 × 40 farm uses 16-tile chunks, so the last row is 8 tiles deep). It also has an Amanatides–Woo DDA raycast; the tile you're facing is found by casting a ray from the centre of your tile along your facing direction. Tiles are stored per chunk with structural sharing, so editing one tile copies one chunk and leaves every other chunk untouched.
-
-**Planning before acting.** `src/state/intents.ts` works out what the selected tool would do, without changing anything. The reducer carries out that same plan, and the highlight box and hints preview it, so what the game shows and what it does always agree.
-
-**Rendering reacts to diffs.** Each render system implements `sync(state, prev)` and `update(frame)` (`src/render/types.ts`). Unchanged chunks keep their object identity, so a system finds dirty chunks with `!==`, then dirty tiles within them, and only those instances get new matrices or colours. Ground tiles use one `InstancedMesh` per chunk. Crops, grass, rocks, stumps, trees, particles and weather all use instanced meshes too, kept packed by `InstanceSlotMap`.
-
-**Shade and wild crops.** `src/world/shade.ts` defines the shaded tiles as a pure function of the farm layout. `src/farming/wild.ts` sprouts and spreads wild crops overnight inside the same deterministic pipeline as everything else.
-
-**Time, light and weather.** `LightingManager` blends keyframes from dawn through noon and dusk to night for the sun (or moon), the ambient light, the sky and the fog. Rain and storms dim and grey the scene, and storms add lightning.
+The game is one deterministic state machine. All state lives in one immutable `GameState`, and it changes only through a pure reducer. Randomness comes from a hash of the world seed, never `Math.random`, so the same farm and the same programs always give the same result. The robot screen and its Blockly editor load lazily, the first time you open them.
 
 ### Project map
 
 ```
 src/
-  config.ts   tuning: world size, layout, shade, time, energy, tools
+  config.ts   every tuning number: world, time, tools, robots, jobs, shops
   core/       types, store, deterministic hash, fixed-step clock
-  world/      grid math + raycast, chunked tiles, shade map, world generation
-  time/       calendar & clock, weather rolls
-  farming/    crop registry, overnight growth, wild shade crops
-  items/      item registry (tools, seeds, produce, materials)
-  state/      actions, intents (planning), reducer, selectors, inventory, save/load
-  render/     camera, lighting, weather, terrain, structures, crops, player,
-              tile highlighter, effects, instancing helpers, materials
-  input/      keyboard & mouse → actions
-  ui/         HUD: clock, hotbar, energy, messages, shop, pause menu
-tests/        Vitest suites: grid math, reducer, growth, wild crops, saves, determinism…
+  world/      grid math, chunked tiles, the farm, town, forest and Neighbours maps
+  time/       calendar, clock and weather
+  farming/    crops, overnight growth, wild shade crops
+  items/      the item registry
+  crafting/   recipes, and the one way to teach them
+  state/      actions, intents, the reducer, selectors, inventory, save migration and validation
+  robots/     robot state, the block language and its interpreter, the .MD, tokens, the workshop
+  jobs/       jobs 1 to 3: set-ups, success checks and progress lines
+  people/     the cast, their lines, timetables and walking
+  io/         save storage in the browser
+  render/     camera, lighting, terrain, structures, crops, robots, people, effects
+  audio/      generated music and sound
+  input/      keyboard and mouse to actions
+  ui/         the HUD, chat box, backpack, shops and robot screen
+  dev/        development hooks (never in the production build)
+tests/        the Vitest suites
+docs/         the design, and a spec and plan for each build part
 ```
-
-### Adding a crop
-
-1. Add its id to `CROP_IDS` in `src/core/types.ts`.
-2. Add a `CropDefinition` to `CROPS` in `src/farming/crops.ts`: its seasons, days per stage, regrowth, prices and look (colours, foliage shape, produce shape, height).
-
-The seeds, produce, shop listing, growth-stage models and HUD icons all come from that one entry. Set `habitat: 'shade'` to make a crop grow wild in the shade instead of being sold.

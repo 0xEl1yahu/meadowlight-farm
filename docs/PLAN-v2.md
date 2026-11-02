@@ -1,5 +1,7 @@
 # Meadowlight Farm v2 — build plan
 
+> **Note (release 1 cleanup, November 2026).** Cooking, quests, the notice board, festivals and gifts are cut from the game (farmclaws design §10), and save version 12 removed their sections. The rest of this plan is a source for later specs, not a contract: its tool upgrades feed spec 2, and its giant crops and forage feed spec 3. The code and the specs under `docs/superpowers/specs/` say what the game does now.
+
 This plan covers everything on the v2 list in one build: the v1 loose ends, feel and feedback, deeper farming, crafting, animals, foraging, cooking, a town with people, quests, festivals and quality-of-life features. It is written so parallel agents can build against one spec without guessing. Every design choice below is decided; agents implement it, they don't redesign it.
 
 The build runs on a `v2` branch. Vercel gives every push to that branch a preview link, which is how the build gets checked in a browser. `main` (the live game) only changes when v2 is merged.

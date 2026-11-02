@@ -12,11 +12,16 @@ Town spots, talked to from the tile below facing north: Berlioz (16,7) → (16,8
 (21,8) · Juniper (24,7) → (24,8) · Tallulah (35,7) → (35,8). The parts exchange is x 18–21 and
 Juniper's workshop (the carpenter) x 22–27, both along z 0–6. The workbench is (6,4).
 
+**Shop hours.** Since part 4d the keepers walk their timetables (`TIMETABLES` in `src/config.ts`) and
+the shops open 9:00 am to 12:00 pm and 1:00 pm to 5:00 pm (`SHOP_HOURS`), but a new game and every
+morning start at 6:00 am. So each town setup sets the clock to 10:00 am and stands every keeper on
+their work spot, the spots above: `F.withMigratedPlaces(F.atMinute(s, 600))`.
+
 ## 1. Sol's shop: buy a watering head, sell a part back
 
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withGold(F.withJobsDone(__qa.state(), 'knowTheLimits'), 20000), { tx: 21, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(F.withGold(F.withJobsDone(__qa.state(), 'knowTheLimits'), 20000), 600)), { tx: 21, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 ```
@@ -78,8 +83,11 @@ the claw off Pip." and "Fitted a watering head to Pip." `computer key "Escape"`.
 
 ## 4. Order a Standard; the counter and the 12-robot cap
 
+Check 2's sleep left the clock at 6:05 am, so set it to 10:00 am again:
 ```js
-__qa.patch((s) => { Object.assign(s.player, { mapId: 'town', tx: 24, tz: 8, facing: 0 }); });
+const F = await __qa.fixtures();
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)), { tx: 24, tz: 8 }, 0, 'town'));
+await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 ```
 **Workshop**, then the Standard's **Buy**, keep the suggested name, **Buy for 4,000g**: the toast
@@ -97,7 +105,7 @@ entries. Done with this farm.
 From `?new`:
 ```js
 const F = await __qa.fixtures();
-__qa.load(F.withPlayer(F.withGold(F.withJobsDone(__qa.state(), 'knowTheLimits'), 5000), { tx: 21, tz: 8 }, 0, 'town'));
+__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(F.withGold(F.withJobsDone(__qa.state(), 'knowTheLimits'), 5000), 600)), { tx: 21, tz: 8 }, 0, 'town'));
 await new Promise((r) => setTimeout(r, 100));
 await __qa.key('KeyE');
 ```
@@ -110,14 +118,14 @@ __meadowlight.store.dispatch(__meadowlight.actions.buyPart('tiller'));
 Expect "Out of stock. Sol restocks tomorrow.", `gold: 4000`, `sold: 2`. Sell a tiller back:
 the row still says "Out of stock". Escape, reload `http://localhost:5173/` **without** `?new`,
 load the probe: `__qa.state().shopsSoldToday.parts.tiller` is still 2. Then `__qa.sleep()`:
-it's 0. Back at Sol's (`__qa.patch` the player to town (21,8) facing north, E, **Shop**) the
-Tiller row says "2 left"; Marigold's seed shop (from (7,8)) shows "30 left" on every row.
+it's 0. Back at Sol's at 10:00 am (`__qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)),
+{ tx: 21, tz: 8 }, 0, 'town'))`, E, **Shop**) the Tiller row says "2 left"; Marigold's seed shop (from (7,8)) shows "30 left" on every row.
 
 ## 6. The shopfronts, Berlioz and Tallulah
 
 From `?new`:
 ```js
-const F = await __qa.fixtures(); __qa.load(F.withPlayer(__qa.state(), { tx: 22, tz: 11 }, 0, 'town'));
+const F = await __qa.fixtures(); __qa.load(F.withPlayer(F.withMigratedPlaces(F.atMinute(__qa.state(), 600)), { tx: 22, tz: 11 }, 0, 'town'));
 ```
 Zoom in (`KeyZ` ×3) and screenshot. The parts exchange: a stand by the door with a claw, a
 watering head and a sensor eye, and a FarmClaw poster each side of the door ("Your farm. Our

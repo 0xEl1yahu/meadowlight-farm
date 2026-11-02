@@ -146,7 +146,7 @@ With Zone A unset the loop does nothing and the robot powers down at once. The p
 
 - `UiPanel { kind: 'robot'; mode: 'preview'; size: RobotSize }` opens the robot screen (its lazy chunk) on the catalogue robot, which isn't in the state.
 - The header shows the size and "From Juniper's workshop", and no On/Off switch, **Lift off** or **Scrap**.
-- The tabs are Program (read-only, as when peeking) and Looks (without the Parts section's buttons).
+- The tabs are Program (read-only) and Looks (without the Parts section's buttons).
 - Closing the preview returns to the workshop panel: `ui/closePanel` on a preview opens `{ kind: 'workshop' }` instead of closing, so Escape, the close button and a failed screen load all come back there. (R11)
 
 ### 4.5 Ordering
@@ -176,7 +176,7 @@ The robot screen's **Looks** tab gains a **Parts** section, for a robot on the b
 
 - **Fitted:** one row per slot (`ROBOTS.sizes[size].partSlots`): a fitted part's icon and name with a **Take off** button, or "Empty slot".
 - **From your backpack:** one row per part the backpack holds that the robot can take (not already fitted), its stacks together as in the parts shop's Sell list, with **Fit**, since `robot/fit` names a part, not a stack (R13). With none: "No parts in your backpack to fit."
-- When peeking, the section shows the fitted parts only, with no buttons. A ruined robot shows "{name} is ruined. It can only be scrapped." as the other tabs do.
+- Peek mode shows only the Stats and Log tabs (part 3 spec §2.3), so it never reaches this section. In the preview and in job mode (part 4c) the section shows the fitted parts only, with no buttons. A ruined robot shows "{name} is ruined. It can only be scrapped." as the other tabs do.
 
 ### 5.2 The rules
 
@@ -251,7 +251,7 @@ Decorations on the front of the parts exchange and Juniper's workshop (the carpe
 - **`npcs`:** the keys `bram` and `tess` become `berlioz` and `tallulah`.
 - **Part items** need no new field: they are `ItemId`s, so the existing stack validation accepts them once `isItemId` knows them.
 - **`UiPanel`** gains `partsShop`, `workshop` and the robot screen's `preview` mode; the loader resets the panel, so they need no migration.
-- **Migration (`migrateV7toV8`):** `robots.deliveries = []`; `shopsSoldToday` at all zeros; the `npcs` entries for `bram` and `tess` move to `berlioz` and `tallulah` unchanged, and `quests.board.npc` and `festival.giftTarget` follow the rename; `SAVE_VERSION = 8`.
+- **Migration (`migrateV7toV8`):** `robots.deliveries = []`; `shopsSoldToday` at all zeros; the `npcs` entries for `bram` and `tess` move to `berlioz` and `tallulah` unchanged; `SAVE_VERSION = 8`. The step once also renamed `quests.board.npc` and `festival.giftTarget`; version 12 deletes both sections, so it no longer touches them (release 1 cleanup spec §2.3).
 - **Validation:** `deliveries` is an array of objects with exactly `size` (one of `ROBOT_SIZES`) and `name` (the robot name rule), and robots plus deliveries are at most `ROBOTS.maxRobots`. `shopsSoldToday` has exactly its three keys, each with exactly its ids, every count an integer from 0 to that shop's daily stock. `npcs` has the new ids.
 - `v7Save` in `tests/testUtils.ts` turns a v8 state back into v7 JSON, and `v6Save` starts from it.
 
@@ -274,7 +274,7 @@ Decorations on the front of the parts exchange and Juniper's workshop (the carpe
 | `tests/workshop.test.ts` | Juniper's Workshop action; the range and the harvester program pass the checkers; the suggested name skips used names and wraps; ordering (name rule, gold, the 12-robot cap counting deliveries); the guards; delivery overnight beside the workbench, in order, with the toast; the morning stack runs. |
 | `tests/fitParts.test.ts` | Fit and take off: slots, duplicates, catalogue order, the tank, a full backpack, the sensor-eye and basket refusals, bench-only, ruined, paused; scrapping returns parts or refuses. |
 | `tests/shopStock.test.ts` | Each shop's daily stock: the counts, the out-of-stock toasts, "Only {n} left today.", selling back doesn't restock, the morning reset. |
-| `tests/saveV8.test.ts` | v7 → v8 (and the v2 fixture through every version): deliveries, the stock counts, the npcs rename with the board and gift target following it; a round trip with deliveries due, stock sold and parts in the backpack and a chest; one corrupted field per rule. |
+| `tests/saveV8.test.ts` | v7 → v8 (and the v2 fixture through every version): deliveries, the stock counts, the npcs rename; a round trip with deliveries due, stock sold and parts in the backpack and a chest; one corrupted field per rule. |
 | `tests/cast.test.ts`, `tests/lines.test.ts` (update) | Berlioz and Tallulah: names, ids, spots and the two new introductions. |
 | `tests/scenery.test.ts` (extend) | The shopfront props stay inside their buildings' rects and keep the occlusion rule. |
 | `tests/posters.test.ts` | The poster atlas layout: every 4b poster has a cell, the cells don't overlap, and each poster's brand and slogan are the spec's (drawing itself is checked by playing). |
