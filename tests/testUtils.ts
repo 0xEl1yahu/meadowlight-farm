@@ -47,6 +47,7 @@ import {
   type ZoneRect,
 } from '../src/core/types';
 import { withRecipes } from '../src/crafting/known';
+import { JOBS_TABLE } from '../src/jobs/jobs';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
 import { SHOP_DOORS, type ShopId } from '../src/people/shops';
 import { placeAt } from '../src/people/timetable';
@@ -581,8 +582,7 @@ export function withBurnerLearned(state: GameState): GameState {
  */
 export function withDoneJobRecipes(state: GameState): GameState {
   let next = state;
-  if (state.jobs.status.showHim === 'done') next = withRecipes(next, ['qualityFertilizer', 'speedGro']);
-  if (state.jobs.status.knowTheLimits === 'done') next = withRecipes(next, ['qualitySprinkler']);
+  for (const id of JOB_IDS) if (state.jobs.status[id] === 'done') next = withRecipes(next, JOBS_TABLE[id].recipesOnDone);
   return next;
 }
 

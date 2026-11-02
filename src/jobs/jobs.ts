@@ -27,6 +27,8 @@ export interface JobDef {
   readonly unlocksOnTake: Partial<RobotUnlocks>;
   /** Learned when the job is taken, each toasted after "job taken" (spec §3.1, R26: job 1 teaches the Wood Burner). */
   readonly recipesOnTake: readonly CraftingRecipeId[];
+  /** Learned when the job is done, each toasted after the done lines (release 1 cleanup spec §5.2). */
+  readonly recipesOnDone: readonly CraftingRecipeId[];
   /** Toasted, one each, after "Job done" (spec §4.2's unlock lines). */
   readonly doneLines: readonly string[];
 }
@@ -54,6 +56,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     reward: JOBS.rewards.spinningRobot,
     unlocksOnTake: UNLOCKS.job1,
     recipesOnTake: ['woodBurner'],
+    recipesOnDone: [],
     doneLines: ["Juniper's workshop is open."],
   },
   showHim: {
@@ -65,6 +68,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     reward: JOBS.rewards.showHim,
     unlocksOnTake: UNLOCKS.job2,
     recipesOnTake: [],
+    recipesOnDone: ['qualityFertilizer', 'speedGro'],
     doneLines: ["Sol's parts shop is open."],
   },
   knowTheLimits: {
@@ -76,6 +80,7 @@ export const JOBS_TABLE: Readonly<Record<JobId, JobDef>> = {
     reward: JOBS.rewards.knowTheLimits,
     unlocksOnTake: UNLOCKS.job3,
     recipesOnTake: [],
+    recipesOnDone: ['qualitySprinkler'],
     doneLines: ['Juniper now builds Standard and Big robots.'],
   },
 };
@@ -143,8 +148,8 @@ export function jobProgress(state: GameState, id: JobId): string | null {
 }
 
 /**
- * Takes the offered job `id` (spec §2.1): its unlocks and recipes are added, its set-up runs and it
- * becomes active, with today as its field day. Returns the set-up's refusal, with nothing changed;
+ * Takes the offered job `id` (spec §2.1): its unlocks and `recipesOnTake` are added (a recipe
+ * already known stays as it is), its set-up runs and it becomes active, with today as its field day. Returns the set-up's refusal, with nothing changed;
  * a job that isn't offered leaves the state as it is.
  */
 export function takeJob(state: GameState, id: JobId): GameState | string {
@@ -155,16 +160,16 @@ export function takeJob(state: GameState, id: JobId): GameState | string {
   return { ...set, jobs: { ...set.jobs, status: withStatus(set.jobs.status, id, 'active'), fieldDay: set.time.absoluteDay } };
 }
 
-/** Finishes job `id`: done, the next job offered, the reward paid, no field day. Toasts are the caller's. */
+/** Finishes job `id`: done, the next job offered, the reward paid, its `recipesOnDone` learned, no field day. Toasts are the caller's. */
 export function finishJob(state: GameState, id: JobId): GameState {
   const nextId = JOB_IDS[JOB_IDS.indexOf(id) + 1];
   const done = withStatus(state.jobs.status, id, 'done');
   const status = nextId === undefined ? done : withStatus(done, nextId, 'offered');
-  return {
+  return withRecipes({
     ...state,
     player: { ...state.player, gold: state.player.gold + JOBS_TABLE[id].reward },
     jobs: { ...state.jobs, status, fieldDay: -1 },
-  };
+  }, JOBS_TABLE[id].recipesOnDone);
 }
 
 function withStatus(status: JobsState['status'], id: JobId, to: JobStatus): JobsState['status'] {

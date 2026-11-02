@@ -47,6 +47,7 @@ import {
 } from '../core/types';
 import { CROPS, createCropInstance } from '../farming/crops';
 import { harvestedTile } from '../farming/harvest';
+import { unknownRecipes } from '../crafting/known';
 import { RECIPES, consumeIngredients, craftCheck } from '../crafting/recipes';
 import { runCrows } from '../farming/crows';
 import { debrisDrops, type Drop, type DroppingBlocker } from '../farming/drops';
@@ -1208,32 +1209,38 @@ function talkAct(state: GameState, npc: NpcId, act: NpcActionKind): GameState {
  * `job/take`: Take the job on the job card. It acts only while the card is open on the job's
  * giver, the game isn't paused and the job is offered: the job is taken (takeJob), the chat closes
  * and "{title}: job taken." is toasted, then "{giver} taught you the {recipe} recipe." for each
- * recipe it teaches. A set-up that can't run is toasted as a warning instead, with the card left open.
+ * recipe it teaches that the farm didn't know already (the one toast rule: only newly learned
+ * recipes get a toast, here and when a job is done). A set-up that can't run is toasted as a warning instead, with the card left open.
  */
 function takeJobAct(state: GameState, job: JobId): GameState {
   const panel = state.ui.panel;
   const def = Object.hasOwn(JOBS_TABLE, job) ? JOBS_TABLE[job] : null;
   if (def === null || panel.kind !== 'talk' || panel.card !== 'job' || panel.npc !== def.giver || state.ui.paused) return state;
   if (state.jobs.status[job] !== 'offered') return state;
+  const newRecipes = unknownRecipes(state, def.recipesOnTake);
   const taken = takeJob(state, job);
   if (typeof taken === 'string') return pushMessage(state, taken, 'warn');
   if (taken === state) return state;
   let next = pushMessage({ ...taken, ui: { ...taken.ui, panel: { kind: 'none' } } }, `${def.title}: job taken.`, 'success');
-  for (const recipe of def.recipesOnTake) next = pushMessage(next, `${CAST[def.giver].name} taught you the ${getItem(recipe).name} recipe.`, 'success');
+  for (const recipe of newRecipes) next = pushMessage(next, `${CAST[def.giver].name} taught you the ${getItem(recipe).name} recipe.`, 'success');
   return next;
 }
 
 /**
  * Finishes the active job when its check passes (part 4c spec §2.1): done, the next job offered,
- * the reward paid, then the toast "Job done: {title}. {giver} paid you {reward}g." and each of the
- * job's unlock lines as its own toast. The same state otherwise.
+ * the reward paid and its `recipesOnDone` learned, then the toast "Job done: {title}. {giver} paid
+ * you {reward}g.", each of the job's unlock lines and a "{giver} taught you the {recipe} recipe."
+ * for each recipe newly learned (the one toast rule: a recipe the farm knew already gets none).
+ * The same state otherwise.
  */
 function applyJobCheck(state: GameState): GameState {
   const job = passedJob(state);
   if (job === null) return state;
   const def = JOBS_TABLE[job];
+  const newRecipes = unknownRecipes(state, def.recipesOnDone);
   let next = pushMessage(finishJob(state, job), `Job done: ${def.title}. ${CAST[def.giver].name} paid you ${def.reward}g.`, 'success');
   for (const line of def.doneLines) next = pushMessage(next, line, 'success');
+  for (const recipe of newRecipes) next = pushMessage(next, `${CAST[def.giver].name} taught you the ${getItem(recipe).name} recipe.`, 'success');
   return next;
 }
 

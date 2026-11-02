@@ -116,6 +116,8 @@ describe('the Wood Burner recipe', () => {
   it('is learned once, by a farm that knows it already too', () => {
     const knows: GameState = { ...BASE, crafting: { known: [...BASE.crafting.known, 'woodBurner'] } };
     expect(take(knows).crafting).toBe(knows.crafting);
+    expect(texts(take(knows)).filter((t) => t.includes('recipe'))).toEqual([]);
+    expect(texts(take(BASE)).filter((t) => t.includes('recipe'))).toEqual(['Sol taught you the Wood Burner recipe.']);
   });
 });
 

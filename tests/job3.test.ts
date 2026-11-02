@@ -292,7 +292,8 @@ describe('the check', () => {
     const done = act(ready, actions.tick(1));
     expect(done.jobs.status).toEqual({ spinningRobot: 'done', showHim: 'done', knowTheLimits: 'done' });
     expect(done.player.gold).toBe(ready.player.gold + JOBS_TABLE.knowTheLimits.reward);
-    expect(texts(done).slice(-2)).toEqual(['Job done: Know the limits. Barnaby paid you 2000g.', 'Juniper now builds Standard and Big robots.']);
+    expect(texts(done).slice(-3)).toEqual(['Job done: Know the limits. Barnaby paid you 2000g.', 'Juniper now builds Standard and Big robots.', 'Barnaby taught you the Quality Sprinkler recipe.']);
+    expect(done.crafting.known).toContain('qualitySprinkler');
     expect(npcActions(done, 'barnaby')).not.toContainEqual({ kind: 'job', label: 'Job' });
     expect(isValidGameState(done)).toBe(true);
   });

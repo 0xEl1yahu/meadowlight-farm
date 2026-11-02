@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { GENERATORS, INVENTORY, JOBS, ROBOTS, UNLOCKS } from '../src/config';
 import { deepFreeze } from '../src/core/store';
-import { Direction, TileState, type BlockProgram, type GameState, type RobotLogEntry, type RobotLogEvent, type TileCoord } from '../src/core/types';
+import { CRAFTING_RECIPE_IDS, Direction, TileState, type BlockProgram, type GameState, type RobotLogEntry, type RobotLogEvent, type TileCoord } from '../src/core/types';
 import { isMature } from '../src/farming/crops';
 import { growCrop } from '../src/farming/growth';
 import { WAVE, cosmoRipeTiles, looksBeforePicking, ripeCropsHarvested, showHimDone, showHimProgress, waveOf } from '../src/jobs/checks';
@@ -268,9 +268,24 @@ describe('the check', () => {
     expect(isDone(done)).toBe(true);
     expect(done.time.absoluteDay).toBe(ready.time.absoluteDay);
     expect(done.player.gold).toBe(ready.player.gold + JOBS_TABLE.showHim.reward);
-    expect(texts(done).slice(-2)).toEqual(['Job done: Show him what it can do. Cosmo paid you 1000g.', "Sol's parts shop is open."]);
+    expect(texts(done).slice(-4)).toEqual([
+      'Job done: Show him what it can do. Cosmo paid you 1000g.',
+      "Sol's parts shop is open.",
+      'Cosmo taught you the Quality Fertiliser recipe.',
+      'Cosmo taught you the Speed-Gro recipe.',
+    ]);
+    expect(done.crafting.known).toEqual(CRAFTING_RECIPE_IDS.filter((id) => ready.crafting.known.includes(id) || id === 'qualityFertilizer' || id === 'speedGro'));
     expect(done.jobs.status).toEqual({ spinningRobot: 'done', showHim: 'done', knowTheLimits: 'offered' });
     expect(isValidGameState(done)).toBe(true);
+  });
+
+  it('toasts only the recipes it newly teaches', () => {
+    const ready = act(programmed(TAKEN, REFERENCE), actions.sleep());
+    const knows = runDay({ ...ready, crafting: { known: CRAFTING_RECIPE_IDS.filter((id) => ready.crafting.known.includes(id) || id === 'speedGro') } }, isDone);
+    expect(isDone(knows)).toBe(true);
+    expect(texts(knows).slice(-3)).toEqual(['Job done: Show him what it can do. Cosmo paid you 1000g.', "Sol's parts shop is open.", 'Cosmo taught you the Quality Fertiliser recipe.']);
+    expect(texts(knows).filter((t) => t.includes('Speed-Gro'))).toEqual([]);
+    expect(knows.crafting.known).toContain('speedGro');
   });
 
   it("isn't passed by the hello-chickens program", () => {
