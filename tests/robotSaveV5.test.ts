@@ -211,7 +211,7 @@ describe('addRobot with block programs', () => {
     const result = addRobot(BASE, { name: 'Drizzle', size: 'standard', parts: ['claw', 'wateringHead'], place, program: PROGRAM, md: MD });
     if ('error' in result) throw new Error(result.error);
     const added = requireRobot(result.state, result.id);
-    expect([added.exec, added.md, added.off, added.pc, added.power]).toEqual([freshExec(PROGRAM), MD, null, 0, 'working']);
+    expect([added.exec, added.md, added.off, added.pc, added.power]).toEqual([freshExec(PROGRAM), MD, null, 0, 'standby']);
     expect(deserializeGame(serializeGame(result.state))).toEqual(loadedFrom(result.state));
   });
 

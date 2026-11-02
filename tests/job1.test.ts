@@ -85,7 +85,7 @@ describe('Sprinkle', () => {
       facing: Direction.South,
       tokens: ROBOTS.sizes.mini.battery,
       tank: ROBOTS.tankCapacity,
-      power: 'working',
+      power: 'standby',
       program: b.program({ stacks: [b.when(b.morning(), b.forever(b.turn('right')))] }),
     });
     expect(isValidGameState(TAKEN)).toBe(true);

@@ -27,7 +27,7 @@ import { withZoneMarker } from '../state/zoneMarker';
 import { chebyshevDistance } from '../world/grid';
 import { forEachTile, getTile, isWalkable, setTiles, type TileEdit } from '../world/tiles';
 import { newRobot } from './create';
-import { morningExec } from './exec';
+import { idlePower, morningExec } from './exec';
 import { logRobotEvent, pruneRobotLog } from './log';
 import { ZERO_ROBOT_STATS, batteryFor, isWeekStart, periodFor, resumedPower } from './stats';
 import { freeSpotNear } from './workbench';
@@ -312,7 +312,7 @@ function resetForMorning(state: GameState): GameState {
       pc: 0,
       stats: morningStats(robot.stats, weekStart),
       nextActMinute: TIME.dayStartMinute + periodFor(robot),
-      power: resumed === 'working' && exec !== null && exec.running === null ? 'standby' : resumed,
+      power: idlePower(resumed, exec),
       exec,
       // 'dizzy' and 'done' last until morning; the bench's switch lasts until it is switched on.
       off: robot.off === 'player' ? 'player' : null,

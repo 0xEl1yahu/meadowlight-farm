@@ -26,7 +26,7 @@ import { MAPS, isReservedTile } from '../world/maps';
 import { getTile, isWalkable } from '../world/tiles';
 import { checkMd, checkProgram } from './check';
 import { MD_SHAPE, PROGRAM_SHAPE } from './edits';
-import { execAt } from './exec';
+import { execAt, idlePower } from './exec';
 import { ZERO_ROBOT_STATS, batteryFor, hasPart, periodFor } from './stats';
 
 export interface RobotSpec {
@@ -87,11 +87,13 @@ function specProblem(state: GameState, spec: RobotSpec): string | null {
 }
 
 /**
- * A new robot from `spec`, numbered `id`, at `spec.place` on its map: fully charged, working, not
- * carried, with an empty bag. A block program starts idle at `minuteOfDay` (execAt: atTime
- * triggers already past are spent). It doesn't check the spec; addRobot does.
+ * A new robot from `spec`, numbered `id`, at `spec.place` on its map: fully charged, not carried,
+ * with an empty bag. A block program starts idle at `minuteOfDay` (execAt: atTime triggers already
+ * past are spent) and so on standby (idlePower); a script robot is working. It doesn't check the
+ * spec; addRobot does.
  */
 export function newRobot(spec: RobotSpec, id: number, minuteOfDay: number): Robot {
+  const exec = spec.program.kind === 'blocks' ? execAt(spec.program, minuteOfDay) : null;
   return {
     id,
     name: spec.name,
@@ -105,12 +107,12 @@ export function newRobot(spec: RobotSpec, id: number, minuteOfDay: number): Robo
     bag: [],
     tank: hasPart(spec, 'wateringHead') ? ROBOTS.tankCapacity : 0,
     tokens: batteryFor(spec.size),
-    power: 'working',
+    power: idlePower('working', exec),
     carried: false,
     onBench: false,
     program: spec.program,
     pc: 0,
-    exec: spec.program.kind === 'blocks' ? execAt(spec.program, minuteOfDay) : null,
+    exec,
     md: spec.md ?? [],
     off: null,
     nextActMinute: minuteOfDay + periodFor(spec),

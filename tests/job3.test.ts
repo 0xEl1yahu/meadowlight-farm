@@ -221,7 +221,7 @@ describe("Barnaby's team", () => {
         tz: place.tz,
         facing: place.facing,
         tokens: ROBOTS.sizes.mini.battery,
-        power: 'working',
+        power: 'standby',
         md: [{ kind: 'doReturn', to: { kind: 'generator' }, minute: 18 * 60 }],
       });
     });

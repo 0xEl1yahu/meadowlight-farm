@@ -7,9 +7,9 @@ import { ROBOTS, TIME } from '../src/config';
 import { Direction, type GameState, type MdCard, type RobotAction, type RobotPlace, type RobotProgram, type ZoneRect } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { checkMd, checkProgram } from '../src/robots/check';
-import { addRobot } from '../src/robots/create';
+import { addRobot, newRobot } from '../src/robots/create';
 import { MD_SCRIPT, MD_SHAPE, PROGRAM_SHAPE, ZONE_OFF_MAP, ZONE_SHAPE, programmedRobot, withMd, withZone } from '../src/robots/edits';
-import { freshExec, morningExec } from '../src/robots/exec';
+import { freshExec, idlePower, morningExec } from '../src/robots/exec';
 import { requireRobot } from '../src/robots/world';
 import { actions } from '../src/state/actions';
 import { gameReducer } from '../src/state/reducer';
@@ -86,6 +86,25 @@ describe('programmedRobot', () => {
     for (const junk of [42, null, 'move', { kind: 'blocks' }]) {
       expect(programmedRobot(robotOf(), junk as never, TIME.dayStartMinute)).toBe(PROGRAM_SHAPE);
     }
+  });
+});
+
+describe('a robot with nothing to run', () => {
+  const spec = (program: RobotProgram) => ({ name: 'Bolt', size: 'mini' as const, parts: [], program, place: AT });
+
+  it('is on standby for a new block robot (execAt never starts a stack), working for a script', () => {
+    expect(newRobot(spec(WALK), 1, FIRST_ACT + 1).power).toBe('standby');
+    expect(newRobot(spec(WALK), 1, TIME.dayStartMinute).power).toBe('standby');
+    const script: RobotProgram = { kind: 'script', steps: STEPS, loop: false };
+    expect(newRobot(spec(script), 1, 900).power).toBe('working');
+  });
+
+  it('is decided by idlePower alone', () => {
+    expect(idlePower('working', null)).toBe('working');
+    expect(idlePower('working', freshExec(WALK))).toBe('standby');
+    expect(idlePower('working', morningExec(WALK))).toBe('working');
+    expect(idlePower('flat', freshExec(WALK))).toBe('flat');
+    expect(idlePower('standby', morningExec(WALK))).toBe('standby');
   });
 });
 

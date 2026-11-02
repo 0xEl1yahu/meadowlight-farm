@@ -2,7 +2,7 @@
  * Building a block program's interpreter state (farmclaws part 2 spec §2.4, §7). Pure.
  */
 import { TIME } from '../config';
-import type { BlockProgram, RobotExec, Trigger } from '../core/types';
+import type { BlockProgram, RobotExec, RobotPower, Trigger } from '../core/types';
 import { startStack } from './interpret';
 import { literalValue } from './program';
 
@@ -49,4 +49,12 @@ export function morningExec(program: BlockProgram): RobotExec {
   const exec = freshExec(program);
   const index = program.stacks.findIndex((stack) => stack.trigger.kind === 'morning');
   return index === -1 ? exec : startStack(exec, index);
+}
+
+/**
+ * The power a robot has once its program is set: a working block robot with no running stack
+ * waits on standby for a trigger; every other power, and a script robot (no exec), is as given.
+ */
+export function idlePower(power: RobotPower, exec: RobotExec | null): RobotPower {
+  return power === 'working' && exec !== null && exec.running === null ? 'standby' : power;
 }

@@ -82,7 +82,7 @@ describe('the range', () => {
 
   it('makes a catalogue robot for the preview without touching the state', () => {
     const mini = catalogueRobot('mini');
-    expect(mini).toMatchObject({ size: 'mini', parts: ['claw'], program: HARVESTER, tokens: ROBOTS.sizes.mini.battery, bag: [], md: [], power: 'working' });
+    expect(mini).toMatchObject({ size: 'mini', parts: ['claw'], program: HARVESTER, tokens: ROBOTS.sizes.mini.battery, bag: [], md: [], power: 'standby' });
     expect(mini.name).toBe('Mini');
     expect(catalogueRobot('big', 'Bolt')).toMatchObject({ name: 'Bolt', size: 'big', tokens: ROBOTS.sizes.big.battery });
   });

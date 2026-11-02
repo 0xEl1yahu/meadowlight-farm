@@ -13,7 +13,7 @@ import { partNoun } from '../items/items';
 import { isMdShape, isProgramShape } from '../state/robotValidation';
 import { isInt, isObj, isOneOf } from '../state/validation';
 import { checkMd, checkProgram, isValidZoneRect } from './check';
-import { execAt, morningExec } from './exec';
+import { execAt, idlePower, morningExec } from './exec';
 import { bagStacks, hasPart, periodFor } from './stats';
 
 export const PROGRAM_SHAPE = 'That program is not a script or a block program.';
@@ -40,7 +40,6 @@ export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay
   if (problem !== null) return problem;
   const early = minuteOfDay <= TIME.dayStartMinute + periodFor(robot);
   const exec = program.kind === 'blocks' ? (early ? morningExec(program) : execAt(program, minuteOfDay)) : null;
-  const runs = exec === null || exec.running !== null;
   return {
     ...robot,
     program,
@@ -48,7 +47,7 @@ export function programmedRobot(robot: Robot, program: RobotProgram, minuteOfDay
     exec,
     // A new program clears 'dizzy' and 'done'; only the bench's switch turns a 'player' robot on.
     off: robot.off === 'player' ? 'player' : null,
-    power: KEPT_POWERS.has(robot.power) ? robot.power : runs ? 'working' : 'standby',
+    power: KEPT_POWERS.has(robot.power) ? robot.power : idlePower('working', exec),
     nextActMinute: minuteOfDay + periodFor(robot),
   };
 }

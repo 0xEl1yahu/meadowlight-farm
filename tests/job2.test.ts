@@ -113,7 +113,7 @@ describe('taking job 2', () => {
       ...JOBS.waveAt,
       facing: Direction.North,
       tokens: ROBOTS.sizes.big.battery,
-      power: 'working',
+      power: 'standby',
       program: b.program({ stacks: [b.when(b.morning(), b.forever(b.say('hello chickens')))] }),
     });
   });
