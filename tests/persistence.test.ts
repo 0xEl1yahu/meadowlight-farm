@@ -28,17 +28,14 @@ import {
   type Tile,
   type TileCoord,
 } from '../src/core/types';
+import { SAVE_KEY, clearSave, loadGame, saveGame } from '../src/io/saveStore';
 import { actions, type GameAction } from '../src/state/actions';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import {
   ACTION_KINDS,
-  SAVE_KEY,
-  clearSave,
   deserializeGame,
   isValidGameState,
-  loadGame,
   migrateSave,
-  saveGame,
   serializeGame,
 } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';

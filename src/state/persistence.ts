@@ -1,6 +1,7 @@
 /**
- * Save / load. GameState is plain JSON-compatible data, so persistence is serialisation plus a
- * strict structural validator — a corrupted or outdated save is rejected, never half-loaded.
+ * The pure half of saving. GameState is plain JSON-compatible data, so persistence is serialisation,
+ * migration and a strict structural validator — a corrupted or outdated save is rejected, never
+ * half-loaded. Reading and writing the browser's storage lives in io/saveStore.ts.
  */
 import { INVENTORY, JOBS, PLAYER, TIME, UNLOCKS, WORKBENCH } from '../config';
 import {
@@ -52,8 +53,6 @@ import {
   isValidTile,
   type Obj,
 } from './validation';
-
-export const SAVE_KEY = 'meadowlight-farm.save.v1';
 
 const WEATHERS: readonly string[] = Object.values(Weather);
 
@@ -817,41 +816,5 @@ export function deserializeGame(json: string): GameState | null {
     return { ...parsed, ui: { ...parsed.ui, panel: { kind: 'none' }, paused: false, zoneDraft: null, zoneLetter: 'A' } };
   } catch {
     return null;
-  }
-}
-
-function storage(): Storage | null {
-  try {
-    return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-export function saveGame(state: GameState): boolean {
-  try {
-    const store = storage();
-    if (store === null) return false;
-    store.setItem(SAVE_KEY, serializeGame(state));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function loadGame(): GameState | null {
-  try {
-    const raw = storage()?.getItem(SAVE_KEY);
-    return raw === null || raw === undefined ? null : deserializeGame(raw);
-  } catch {
-    return null;
-  }
-}
-
-export function clearSave(): void {
-  try {
-    storage()?.removeItem(SAVE_KEY);
-  } catch {
-    // Storage unavailable (private mode, sandboxed iframe): nothing to clear.
   }
 }
