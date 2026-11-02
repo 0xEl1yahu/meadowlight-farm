@@ -20,7 +20,7 @@ import { isGateOpen } from '../../jobs/jobs';
 import { playerRobotCount } from '../../robots/create';
 import { suggestedName } from '../../robots/workshop';
 import { actions, type GameAction } from '../../state/actions';
-import { countItem } from '../../state/inventory';
+import { backpackUpgradeOffered, countItem } from '../../state/inventory';
 import { partsLeft, robotsLeft, seedsLeft } from '../../state/selectors';
 
 /** What a row shows of today's stock (spec §6): "{n} left", and its sold-out label in place of its buttons. */
@@ -55,7 +55,7 @@ export interface BackpackRow {
 
 /** The backpack row, or null once the upgrade is bought. */
 export function backpackRow(state: GameState): BackpackRow | null {
-  if (state.inventory.unlockedSlots !== INVENTORY.startingUnlockedSlots) return null;
+  if (!backpackUpgradeOffered(state.inventory)) return null;
   return { price: INVENTORY.backpackUpgradePrice, affordable: state.player.gold >= INVENTORY.backpackUpgradePrice };
 }
 

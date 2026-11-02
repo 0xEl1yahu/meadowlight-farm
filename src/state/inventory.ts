@@ -22,6 +22,11 @@ export function createInventory(stacks: readonly ItemStack[], waterCapacity: num
   return { slots, unlockedSlots, selected: 0, water: waterCapacity, waterCapacity };
 }
 
+/** Whether Marigold still offers the backpack upgrade: only while the starting slots are all that's unlocked. */
+export function backpackUpgradeOffered(inventory: InventoryState): boolean {
+  return inventory.unlockedSlots === INVENTORY.startingUnlockedSlots;
+}
+
 /** Quantity 1 … maxStack, and a nonzero quality only on items that have one. */
 export function assertValidStack(stack: ItemStack): void {
   const item = getItem(stack.itemId);

@@ -76,6 +76,7 @@ import type { GameAction } from './actions';
 import { othersRobot, planInteraction, planPrimaryAction, planShiftInteraction, type ActionPlan, type Intent } from './intents';
 import {
   addItem,
+  backpackUpgradeOffered,
   capacityFor,
   countItem,
   mergeStacks,
@@ -840,7 +841,7 @@ function seedShopOpen(state: GameState): boolean {
 
 /** `shop/backpack`: unlocks every inventory slot for the upgrade price, once, or a toast saying it's too dear. */
 function buyBackpack(state: GameState): GameState {
-  if (!seedShopOpen(state) || state.inventory.unlockedSlots !== INVENTORY.startingUnlockedSlots) return state;
+  if (!seedShopOpen(state) || !backpackUpgradeOffered(state.inventory)) return state;
   if (state.player.gold < INVENTORY.backpackUpgradePrice) return pushMessage(state, "You can't afford that.", 'warn');
   const next: GameState = {
     ...state,

@@ -8,6 +8,7 @@ import { INVENTORY } from '../src/config';
 import { deepFreeze } from '../src/core/store';
 import type { GameState } from '../src/core/types';
 import { actions } from '../src/state/actions';
+import { backpackUpgradeOffered } from '../src/state/inventory';
 import { gameReducer } from '../src/state/reducer';
 import { BASE, withGold } from './testUtils';
 
@@ -51,5 +52,16 @@ describe('shop/backpack', () => {
   it('leaves shop/buy ignored while paused', () => {
     const paused = open(withGold(BASE, 5000), true);
     expect(gameReducer(paused, actions.buy('parsnip_seeds', 1))).toBe(paused);
+  });
+});
+
+describe('backpackUpgradeOffered', () => {
+  it('offers the upgrade on the starting backpack only', () => {
+    expect(backpackUpgradeOffered(BASE.inventory)).toBe(true);
+    expect(backpackUpgradeOffered({ ...BASE.inventory, unlockedSlots: INVENTORY.slotCount })).toBe(false);
+  });
+
+  it('stops offering it once bought', () => {
+    expect(backpackUpgradeOffered(buy(atMarigold(5000)).inventory)).toBe(false);
   });
 });
