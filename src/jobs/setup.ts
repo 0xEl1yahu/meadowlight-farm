@@ -144,19 +144,23 @@ export function setUpCosmoField(state: GameState): GameState {
 /**
  * Job 2's set-up (spec §3.2): Cosmo's generator, his field, and his Big Wave (Claw, Sensor eye,
  * Basket; the hello-chickens program; Cosmo's) on the lane at JOBS.waveAt, facing North, fully
- * charged. Refused with addRobot's sentence when something of the player's stands on Wave's tile.
+ * charged. Something on Wave's tile doesn't refuse the job: Wave is set down on the nearest free
+ * walkable tile instead, as Barnaby's Minis are (part 4c spec R17).
  */
-export function setUpShowHim(state: GameState): GameState | string {
-  const added = addRobot(setUpCosmoField(withGenerator(state, 'cosmo')), {
+export function setUpShowHim(state: GameState): GameState {
+  const fielded = setUpCosmoField(withGenerator(state, 'cosmo'));
+  const at = nearestFreeWalkable(fielded, 'neighbours', JOBS.waveAt, fielded.robots.nextId);
+  const added = addRobot(fielded, {
     name: WAVE,
     size: 'big',
     parts: ['claw', 'basket', 'sensorEye'],
     program: HELLO_CHICKENS,
-    place: { ...JOBS.waveAt, facing: Direction.North },
+    place: { ...at, facing: Direction.North },
     mapId: 'neighbours',
     owner: 'cosmo',
   });
-  return 'error' in added ? added.error : added.state;
+  invariant(!('error' in added), `${WAVE} stands on open ground`);
+  return added.state;
 }
 
 /**

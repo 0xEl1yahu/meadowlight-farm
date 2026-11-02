@@ -127,6 +127,22 @@ describe('reactive lines', () => {
     );
   });
 
+  it("Cosmo ignores a neighbour's Say: Wave's hellos to the chickens don't count", () => {
+    const wave = robotOf({ id: 2, name: 'Wave', owner: 'cosmo', mapId: 'neighbours' });
+    const state = withRobots(quiet(), [robotOf(), wave]);
+    const said = withLog(state, [[DAY, SAY]]);
+    const byWave = { ...said, robots: { ...said.robots, log: { ...said.robots.log, entries: said.robots.log.entries.map((e) => ({ ...e, robotId: 2 })) } } };
+    expect(reactiveFill(byWave, 'robotSaidToday')).toBeNull();
+    expect(lineFor(byWave, 'cosmo')).toBe(everydayPick(byWave, 'cosmo'));
+  });
+
+  it("Cosmo ignores a scrapped robot's Say, and hears a player robot's", () => {
+    const base = quiet();
+    const scrapped = withLog({ ...base, robots: { ...base.robots, list: [] } }, [[DAY, SAY]]);
+    expect(reactiveFill(scrapped, 'robotSaidToday')).toBeNull();
+    expect(reactiveFill(withLog(base, [[DAY, SAY]]), 'robotSaidToday')).not.toBeNull();
+  });
+
   it("Cosmo ignores yesterday's Say and today's other actions", () => {
     const state = withLog(quiet(), [
       [DAY - 1, SAY],

@@ -16,7 +16,7 @@ import { npcActions } from '../src/people/cast';
 import { lineFor } from '../src/people/lines';
 import { b } from '../src/robots/blocks';
 import { programmedRobot } from '../src/robots/edits';
-import { withRobot } from '../src/robots/world';
+import { nearestFreeWalkable, withRobot } from '../src/robots/world';
 import { actions, type GameAction } from '../src/state/actions';
 import { isValidGameState } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
@@ -116,6 +116,27 @@ describe('taking job 2', () => {
       power: 'working',
       program: b.program({ stacks: [b.when(b.morning(), b.forever(b.say('hello chickens')))] }),
     });
+  });
+
+  it("puts Wave on the nearest free tile when a chest stands on Wave's tile, facing North", () => {
+    const chest = { ...tileAt(OFFERED, JOBS.waveAt, 'neighbours'), object: { kind: 'chest' as const, slots: new Array<null>(INVENTORY.chestSlots).fill(null) } };
+    const taken = take(withTile(OFFERED, JOBS.waveAt, chest, 'neighbours'));
+    expect(taken.jobs.status.showHim).toBe('active');
+    expect(tileAt(taken, JOBS.waveAt, 'neighbours')).toEqual(chest);
+    const wave = must(waveOf(taken));
+    expect(wave).toMatchObject({ mapId: 'neighbours', facing: Direction.North });
+    expect({ tx: wave.tx, tz: wave.tz }).toEqual(nearestFreeWalkable(taken, 'neighbours', JOBS.waveAt, wave.id));
+    expect({ tx: wave.tx, tz: wave.tz }).not.toEqual(JOBS.waveAt);
+    expect(isValidGameState(taken)).toBe(true);
+  });
+
+  it('takes job 2 with the player on the lane at the wave tile, and the state stays valid', () => {
+    const onWave = withPlayer(withWalkerAt(OFFERED, 'cosmo', 'neighbours', 7, 13, Direction.East), JOBS.waveAt, Direction.West, 'neighbours');
+    const chat = act(onWave, actions.interact());
+    const taken = act(act(chat, actions.npcAct('cosmo', 'job')), actions.takeJob('showHim'));
+    expect(taken.jobs.status.showHim).toBe('active');
+    expect(waveOf(taken)).not.toBeNull();
+    expect(isValidGameState(taken)).toBe(true);
   });
 
   it("doesn't count Wave towards the player's 12 robots", () => {

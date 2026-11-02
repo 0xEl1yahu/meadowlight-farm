@@ -168,7 +168,11 @@ export function reactiveFill(state: GameState, when: ReactiveKind): LineFill | n
       return nameOf(lowestIdWith(state, 'broken'));
     case 'robotSaidToday':
       return state.robots.log.entries.some(
-        (entry) => entry.day === state.time.absoluteDay && entry.event.kind === 'did' && entry.event.action === 'say',
+        (entry) =>
+          entry.day === state.time.absoluteDay &&
+          entry.event.kind === 'did' &&
+          entry.event.action === 'say' &&
+          state.robots.list.some((robot) => robot.id === entry.robotId && robot.owner === 'player'),
       )
         ? HOLDS
         : null;
