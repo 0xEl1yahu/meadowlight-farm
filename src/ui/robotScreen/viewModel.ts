@@ -180,7 +180,8 @@ export interface SwitchView {
 /**
  * The bench's on/off switch (spec §2.4): "On" when the player switched the robot off, otherwise
  * "Off" whatever `off` is, but only for a power the reducer can switch off (working, standby or
- * flat). Hidden in peek mode, so a ruined robot never shows it (spec §3.2).
+ * flat). Only on the bench: a peek, a preview and job mode have no switch, so a ruined robot
+ * never shows it (spec §3.2).
  */
 export function switchView(robot: Robot, mode: RobotScreenMode): SwitchView | null {
   if (mode !== 'bench') return null;
@@ -256,8 +257,6 @@ export function formatClockMinute(minute: number): string {
 }
 
 export interface LogRow {
-  /** The log entry's id (a stable key). */
-  readonly id: number;
   readonly time: string;
   readonly says: string;
   readonly happened: string;
@@ -277,7 +276,6 @@ export function logRows(state: GameState, robotId: number): readonly LogRow[] {
     if (entry === undefined || entry.robotId !== robotId) continue;
     if (entry.day !== today && entry.day !== today - 1) continue;
     rows.push({
-      id: entry.id,
       time: formatClockMinute(entry.minute),
       says: robotSays(entry),
       happened: whatHappened(entry, names),
@@ -336,7 +334,7 @@ export interface PartsSectionView {
 /**
  * The Parts section (part 4b spec §5.1): every slot, and on the bench the backpack's parts that
  * aren't fitted yet, one row per part (its stacks together, as the parts shop's Sell list). A
- * preview, a peek, job mode or a ruined robot shows the fitted parts only, with no buttons.
+ * preview, job mode or a ruined robot shows the fitted parts only, with no buttons.
  */
 export function partsSectionView(robot: Robot, mode: RobotScreenMode, inventory: InventoryState): PartsSectionView {
   const editable = looksEditable(robot, mode);

@@ -352,9 +352,9 @@ describe('logRows', () => {
 
   it("lists today's and yesterday's entries for one robot, newest first", () => {
     expect(logRows(state, 1)).toEqual([
-      { id: 5, time: '9:40 am', says: 'Moved forward ✓', happened: 'Moved one tile.', count: 3, yesterday: false },
-      { id: 4, time: '6:40 am', says: 'Waiting my turn ✓', happened: 'Fought Dee over the same tile. Nobody got it.', count: 1, yesterday: false },
-      { id: 2, time: '9:40 am', says: 'Moved forward ✓', happened: 'Moved one tile.', count: 1, yesterday: true },
+      { time: '9:40 am', says: 'Moved forward ✓', happened: 'Moved one tile.', count: 3, yesterday: false },
+      { time: '6:40 am', says: 'Waiting my turn ✓', happened: 'Fought Dee over the same tile. Nobody got it.', count: 1, yesterday: false },
+      { time: '9:40 am', says: 'Moved forward ✓', happened: 'Moved one tile.', count: 1, yesterday: true },
     ]);
   });
 

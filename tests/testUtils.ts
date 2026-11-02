@@ -10,12 +10,13 @@
  * TypeError the moment a test touches it.
  */
 import { INVENTORY, TIME, UNLOCKS, WORKBENCH } from '../src/config';
-import { deepFreeze } from '../src/core/store';
+import { deepFreeze, type Action, type Middleware } from '../src/core/store';
 import {
   Blocker,
   CRAFTING_RECIPE_IDS,
   Direction,
   JOB_IDS,
+  MAP_IDS,
   NPC_IDS,
   SLOP_IDS,
   TOWNSFOLK_IDS,
@@ -46,8 +47,11 @@ import {
   type ZoneRect,
 } from '../src/core/types';
 import { createCropInstance, CROPS, stageCount } from '../src/farming/crops';
+import { SHOP_DOORS, type ShopId } from '../src/people/shops';
 import { placeAt } from '../src/people/timetable';
 import { ZERO_ROBOT_STATS } from '../src/robots/stats';
+import { actions } from '../src/state/actions';
+import { gameReducer } from '../src/state/reducer';
 import { createDefaultSections, createInitialState } from '../src/state/initialState';
 import { countItem } from '../src/state/inventory';
 import { serializeGame } from '../src/state/persistence';
@@ -58,7 +62,8 @@ import { TOWN_PROP_KINDS } from '../src/world/maps/town';
 import { calendarTime } from '../src/time/clock';
 import { weatherWaters } from '../src/time/weather';
 import { locateTile } from '../src/world/grid';
-import { EMPTY_TILE, blockedTile, isWalkable, requireTile, setTile } from '../src/world/tiles';
+import type { MapDefinition } from '../src/world/maps/types';
+import { EMPTY_TILE, blockedTile, forEachTile, isWalkable, requireTile, setTile } from '../src/world/tiles';
 
 /** Tile the canonical scenario stands on (clear zone, always walkable). */
 export const STAND: TileCoord = { tx: 5, tz: 9 };
@@ -134,6 +139,59 @@ export function withPlayer(state: GameState, coord: TileCoord, facing: Direction
     throw new Error(`withPlayer: (${coord.tx}, ${coord.tz}) on ${mapId} is not walkable`);
   }
   return { ...state, player: { ...state.player, mapId, tx: coord.tx, tz: coord.tz, facing } };
+}
+
+/**
+ * Opens `shop` the way the player does: stands on the tile in front of its door (the booth's
+ * door for 'slopShop'), facing it, and presses E. Returns the state the reducer gives back.
+ */
+export function atShop(state: GameState, shop: ShopId | 'slopShop'): GameState {
+  const door =
+    shop === 'slopShop'
+      ? MAPS.town.structures.find((s) => s.kind === 'slopShop')?.door
+      : SHOP_DOORS.find((d) => d.shop === shop)?.door;
+  if (door === undefined || door === null) throw new Error(`atShop: no door for ${shop}`);
+  const at = withPlayer(state, { tx: door.tx, tz: door.tz + 1 }, Direction.North, 'town');
+  return gameReducer(at, actions.interact());
+}
+
+/** Records every action that reaches the reducer; used for deterministic replay tests. */
+export function createActionRecorder<S, A extends Action>(): {
+  readonly middleware: Middleware<S, A>;
+  readonly actions: readonly A[];
+  clear(): void;
+} {
+  const recorded: A[] = [];
+  return {
+    middleware: () => (next) => (action) => {
+      recorded.push(action);
+      return next(action);
+    },
+    actions: recorded,
+    clear() {
+      recorded.length = 0;
+    },
+  };
+}
+
+/** The farm's workbench tile, or null when there is none. */
+export function workbenchTile(farm: WorldState): TileCoord | null {
+  let found: TileCoord | null = null;
+  forEachTile(farm, (tile, tx, tz) => {
+    if (found === null && tile.object?.kind === 'workbench') found = { tx, tz };
+  });
+  return found;
+}
+
+/** Where the warps into map `id` land: every map's warps in MAP_IDS order, each map's in its own order. */
+export function arrivalTiles(defs: Readonly<Record<MapId, MapDefinition>>, id: MapId): readonly TileCoord[] {
+  const tiles: TileCoord[] = [];
+  for (const from of MAP_IDS) {
+    for (const warp of defs[from].warps) {
+      if (warp.to.mapId === id) tiles.push({ tx: warp.to.tx, tz: warp.to.tz });
+    }
+  }
+  return tiles;
 }
 
 /** A stack of `quantity` × `itemId` at `quality` (normal by default). */

@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { INVENTORY, SLOP, TIME } from '../src/config';
 import { hash32, hashFloat, hashRange, mulberry32, Salt } from '../src/core/hash';
-import { createActionRecorder, createStore } from '../src/core/store';
+import { createStore } from '../src/core/store';
 import {
   CROP_IDS,
   DIRECTIONS,
@@ -36,7 +36,7 @@ import { selectActiveWorld } from '../src/state/selectors';
 import { stepTile } from '../src/world/grid';
 import { MAPS, type Warp } from '../src/world/maps';
 import { countTiles, getTile, isWalkable } from '../src/world/tiles';
-import { HEAVY_TEST_TIMEOUT_MS, must, withGold } from './testUtils';
+import { HEAVY_TEST_TIMEOUT_MS, atShop, createActionRecorder, must, withGold } from './testUtils';
 
 function pick<T>(rng: () => number, values: readonly T[]): T {
   return must(values[Math.floor(rng() * values.length)]);
@@ -358,7 +358,7 @@ describe('deterministic town life', () => {
         state = gameReducer(state, actions.tick(120));
         if (Object.values(state.npcs).some((npc) => npc.place.kind === 'out')) walked++;
         if (block === 4) {
-          state = gameReducer(state, actions.openSlopShop());
+          state = atShop(state, 'slopShop');
           for (let box = 0; box < SLOP.boxesPerDay; box++) state = gameReducer(state, actions.buySlopBox());
           state = gameReducer(state, actions.closePanel());
         }

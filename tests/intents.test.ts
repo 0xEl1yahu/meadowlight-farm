@@ -8,7 +8,7 @@
  * executing `player/useTool` / `player/interact` does exactly what the plan announced.
  */
 import { describe, expect, it } from 'vitest';
-import { INVENTORY, PLAYER, TIME, TOOLS } from '../src/config';
+import { INVENTORY, PLAYER, TOOLS } from '../src/config';
 import { mulberry32 } from '../src/core/hash';
 import {
   FERTILIZER_ITEM_IDS,
@@ -47,16 +47,12 @@ import {
 import { capacityFor } from '../src/state/inventory';
 import { gameReducer } from '../src/state/reducer';
 import {
-  selectClockLabel,
-  selectDateLabel,
   selectForecast,
   selectIsFrozen,
-  selectMinutesUntilPassOut,
   selectPendingShipmentValue,
   selectSelectedItem,
   selectShopStock,
   selectTargetTile,
-  selectTargetTileData,
 } from '../src/state/selectors';
 import { rollWeather } from '../src/time/weather';
 import { forwardTile } from '../src/world/grid';
@@ -418,11 +414,9 @@ describe('selectors', () => {
     expect(selectTargetTile(withPlayer(BASE, PLAYER.spawn, Direction.North))).toEqual({ tx: PLAYER.spawn.tx, tz: PLAYER.spawn.tz - 1 });
     expect(selectTargetTile(withPlayer(BASE, STAND, Direction.East))).toEqual({ tx: 6, tz: 9 });
     expect(selectTargetTile(withPlayer(BASE, { tx: 5, tz: 0 }, Direction.North))).toBeNull();
-    expect(selectTargetTileData(withPlayer(BASE, PLAYER.spawn, Direction.North))?.blocker).toBe(Blocker.House);
-    expect(selectTargetTileData(withPlayer(BASE, { tx: 5, tz: 0 }, Direction.North))).toBeNull();
   });
 
-  it('reads the selected item, frozen flag, labels and forecast', () => {
+  it('reads the selected item, frozen flag and forecast', () => {
     expect(selectSelectedItem(BASE)?.id).toBe('hoe');
     expect(selectSelectedItem(emptyHanded(BASE))).toBeNull();
     expect(selectIsFrozen(BASE)).toBe(false);
@@ -430,14 +424,9 @@ describe('selectors', () => {
     expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, panel: { kind: 'shop' } } })).toBe(true);
     expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, panel: { kind: 'inventory' } } })).toBe(true);
     expect(selectIsFrozen({ ...BASE, ui: { ...BASE.ui, panel: { kind: 'chest', mapId: 'farm', tx: 5, tz: 10 } } })).toBe(true);
-    expect(selectClockLabel(BASE)).toBe('6:00 am');
-    expect(selectDateLabel(BASE)).toBe('Mon. 1 · Spring · Year 1');
     for (let day = 0; day < 50; day++) {
       expect(selectForecast(atDay(BASE, day))).toBe(rollWeather(BASE.seed, day + 1));
     }
-    expect(selectMinutesUntilPassOut(BASE)).toBe(TIME.passOutMinute - TIME.dayStartMinute);
-    expect(selectMinutesUntilPassOut(atDay(BASE, 0, 1500))).toBe(60);
-    expect(selectMinutesUntilPassOut(atDay(BASE, 0, 1600))).toBe(0);
   });
 
   it('values pending shipments at their sell prices', () => {

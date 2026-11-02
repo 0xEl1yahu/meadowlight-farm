@@ -17,7 +17,6 @@ import {
   createCropInstance,
   cropsInSeason,
   daysRequiredForStage,
-  getCrop,
   growthProgress,
   isInSeason,
   isMature,
@@ -56,8 +55,7 @@ function waterNights(crop: CropInstance, nights: number): CropInstance {
 describe('crop registry', () => {
   it('has a valid definition keyed by its own id for every crop', () => {
     for (const id of CROP_IDS) {
-      const def = getCrop(id);
-      expect(def).toBe(CROPS[id]);
+      const def = CROPS[id];
       expect(def.id).toBe(id);
       expect(() => validateCropDefinition(def)).not.toThrow();
       expect(stageCount(def)).toBe(def.stageDays.length);

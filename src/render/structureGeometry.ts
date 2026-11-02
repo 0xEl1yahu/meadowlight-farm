@@ -104,10 +104,8 @@ export interface CosmeticOffset {
   readonly z: number;
 }
 
-export const NO_OFFSET: CosmeticOffset = { x: 0, z: 0 };
-
 /** Uniform [0, 1) cosmetic hash for one feature at integer coordinates (a, b) shifted by `offset`, channel k. */
-function cosmetic(offset: CosmeticOffset, feature: number, a: number, b: number, k: number): number {
+export function cosmetic(offset: CosmeticOffset, feature: number, a: number, b: number, k: number): number {
   return hashFloat(Salt.Cosmetic, feature, a + offset.x, b + offset.z, k);
 }
 

@@ -52,7 +52,6 @@ import {
   LAMP_POST_SHAPE,
   PARTS_EXCHANGE_SHAPE,
   PARTS_EXCHANGE_STYLE,
-  PROP_MAX_HEIGHT,
   SHOP_INSET,
   SHOP_KINDS,
   SHOP_SHAPE,
@@ -509,7 +508,6 @@ describe("SLOPMART's booth and the town's props", () => {
   const structures = MAPS.town.structures;
 
   it('keeps every prop low, no taller than the well, inside its rect and on the ground', () => {
-    expect(PROP_MAX_HEIGHT).toBe(WELL_MAX_HEIGHT);
     const props = structures.filter((s) => TOWN_PROP_KINDS.includes(s.kind));
     expect(new Set(props.map((s) => s.kind))).toEqual(new Set(TOWN_PROP_KINDS));
     for (const s of props) {
@@ -517,7 +515,7 @@ describe("SLOPMART's booth and the town's props", () => {
       expect(parts.body.length, s.kind).toBeGreaterThan(3);
       expect(glass.isEmpty(), s.kind).toBe(true);
       expect(parts.posters, s.kind).toHaveLength(0);
-      expect(body.max.y, s.kind).toBeLessThanOrEqual(PROP_MAX_HEIGHT + EPS);
+      expect(body.max.y, s.kind).toBeLessThanOrEqual(WELL_MAX_HEIGHT + EPS);
       expect(body.min.y, s.kind).toBeGreaterThanOrEqual(-EPS);
       expect(body.min.x, s.kind).toBeGreaterThanOrEqual(tileMinX(grid, s.rect.x0) - EPS);
       expect(body.max.x, s.kind).toBeLessThanOrEqual(tileMinX(grid, s.rect.x0 + s.rect.width) + EPS);

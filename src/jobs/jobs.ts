@@ -18,7 +18,7 @@ export interface JobDef {
   readonly offer: string;
   /** The job card's goal text. */
   readonly goal: string;
-  /** The giver's reactive line, before every other, while the job is offered (spec §2.2). */
+  /** The giver's reactive line while the job is offered: after the introduction and the stuck line, before every other (spec §2.2). */
   readonly hook: string;
   /** Gold paid when it's done. */
   readonly reward: number;

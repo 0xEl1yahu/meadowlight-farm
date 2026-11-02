@@ -35,7 +35,6 @@ import {
   mapTiles,
   requireTile,
   setTile,
-  updateTile,
 } from '../src/world/tiles';
 import { cropOf, must, soilTile, worldChangesOutside } from './testUtils';
 
@@ -142,7 +141,6 @@ describe('setTile structural sharing', () => {
     const { world, byCoord } = distinctWorld(grid);
     const same = must(byCoord.get(key(7, 7)));
     expect(setTile(world, 7, 7, same)).toBe(world);
-    expect(updateTile(world, 7, 7, (tile) => tile)).toBe(world);
   });
 
   it('compares by reference: an equal but new tile object is a change', () => {
@@ -157,18 +155,6 @@ describe('setTile structural sharing', () => {
     expect(() => setTile(world, 0, 0, { ...EMPTY_TILE, state: TileState.Blocked })).toThrow(InvariantError);
     expect(() => setTile(world, -1, 0, EMPTY_TILE)).toThrow(RangeError);
     expect(() => setTile(world, 48, 0, EMPTY_TILE)).toThrow(RangeError);
-    expect(() => updateTile(world, 0, 40, (tile) => tile)).toThrow(RangeError);
-  });
-
-  it('updateTile passes the current tile to the updater', () => {
-    const { world, byCoord } = distinctWorld(grid);
-    let received: Tile | null = null;
-    const next = updateTile(world, 9, 30, (tile) => {
-      received = tile;
-      return { ...tile, state: TileState.Plowed };
-    });
-    expect(received).toBe(byCoord.get(key(9, 30)));
-    expect(requireTile(next, 9, 30).state).toBe(TileState.Plowed);
   });
 });
 

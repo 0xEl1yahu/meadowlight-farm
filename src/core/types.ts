@@ -472,7 +472,7 @@ export interface ItemStack {
 export interface InventoryState {
   /** Always INVENTORY.slotCount (36). 0–11 = hotbar, 12–35 = backpack. */
   readonly slots: readonly (ItemStack | null)[];
-  /** 24 at the start (12 hotbar + 12 backpack); the general-store upgrade (later) makes it 36. Slots ≥ unlockedSlots are always null. */
+  /** 24 at the start (12 hotbar + 12 backpack); Marigold's backpack upgrade at the general store makes it 36. Slots ≥ unlockedSlots are always null. */
   readonly unlockedSlots: 24 | 36;
   /** Always < INVENTORY.hotbarSize. */
   readonly selected: number;

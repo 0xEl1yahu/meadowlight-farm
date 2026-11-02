@@ -33,7 +33,7 @@ import { describeIntent, planInteraction, planPrimaryAction } from '../src/state
 import { deserializeGame, serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { EMPTY_TILE } from '../src/world/tiles';
-import { BASE, TARGET, atMinute, holding, must, scenario, soilTile, stack, tileAt, withGold, withPlayer, withSlots } from './testUtils';
+import { BASE, TARGET, atMinute, atShop, holding, must, scenario, soilTile, stack, tileAt, withGold, withPlayer, withSlots } from './testUtils';
 
 /** Spec §6.4's greetings, in order. */
 const GREETINGS = [
@@ -78,7 +78,7 @@ const lastToast = (state: GameState): string | undefined => state.messages.entri
 /** `state` with DEALZ's chat open, after `boxesOpened` lifetime boxes and `today` boxes today. */
 function chatting(state: GameState = AT_BOOTH, boxesOpened = 0, today = 0): GameState {
   const counted: GameState = { ...state, slopShop: { boxesOpened }, shopsSoldToday: { ...state.shopsSoldToday, slopBoxes: today } };
-  return gameReducer(counted, actions.openSlopShop());
+  return atShop(counted, 'slopShop');
 }
 
 /** The first lifetime count from `from` whose box `matches`, for BASE's seed in BASE's season. */
@@ -137,11 +137,11 @@ describe('the booth door', () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 
-  it('slop/open does nothing while paused or with another panel open', () => {
+  it('E at the booth does nothing while paused or with another panel open', () => {
     const paused: GameState = { ...AT_BOOTH, ui: { ...AT_BOOTH.ui, paused: true } };
-    expect(gameReducer(paused, actions.openSlopShop())).toBe(paused);
+    expect(gameReducer(paused, actions.interact())).toBe(paused);
     const inventory: GameState = { ...AT_BOOTH, ui: { ...AT_BOOTH.ui, panel: { kind: 'inventory' } } };
-    expect(gameReducer(inventory, actions.openSlopShop())).toBe(inventory);
+    expect(gameReducer(inventory, actions.interact())).toBe(inventory);
   });
 
   it('E, K, Enter and Escape close the chat', () => {
@@ -211,7 +211,7 @@ describe('buying a box', () => {
 describe('refusals', () => {
   /** Buys with DEALZ's chat open on `state`; returns the state before and after. */
   function refused(state: GameState): { readonly before: GameState; readonly after: GameState } {
-    const before = gameReducer(state, actions.openSlopShop());
+    const before = atShop(state, 'slopShop');
     return { before, after: gameReducer(before, actions.buySlopBox()) };
   }
 
@@ -301,7 +301,7 @@ describe('the box sequence', () => {
     for (let n = 0; n < 50; n++) expect(boxAt(BASE.seed, n, Season.Fall)).toEqual(boxAt(BASE.seed, n, Season.Fall));
     const state: GameState = { ...AT_BOOTH, slopShop: { boxesOpened: 17 } };
     const reloaded = must(deserializeGame(serializeGame(state)));
-    const buy = (s: GameState): GameState => gameReducer(gameReducer(s, actions.openSlopShop()), actions.buySlopBox());
+    const buy = (s: GameState): GameState => gameReducer(atShop(s, 'slopShop'), actions.buySlopBox());
     expect(buy(reloaded).inventory).toEqual(buy(state).inventory);
   });
 

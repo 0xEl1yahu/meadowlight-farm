@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { TIME } from '../src/config';
 import { mulberry32 } from '../src/core/hash';
-import { createActionRecorder, createStore } from '../src/core/store';
+import { createStore } from '../src/core/store';
 import { DIRECTIONS, Direction, TileState, type GameState } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { addRobot } from '../src/robots/create';
@@ -16,7 +16,7 @@ import { serializeGame } from '../src/state/persistence';
 import { gameReducer } from '../src/state/reducer';
 import { EMPTY_TILE } from '../src/world/tiles';
 import { addBlockRobot } from './programGen';
-import { atDay, BASE, HEAVY_TEST_TIMEOUT_MS, matureCrop, must, soilTile, withTile, withZones } from './testUtils';
+import { atDay, BASE, createActionRecorder, HEAVY_TEST_TIMEOUT_MS, matureCrop, must, soilTile, withTile, withZones } from './testUtils';
 
 function withPresetRobots(): GameState {
   let state = BASE;

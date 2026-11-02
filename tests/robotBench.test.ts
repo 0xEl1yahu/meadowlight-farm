@@ -9,7 +9,7 @@ import { INVENTORY, PLAYER, ROBOTS, WORKBENCH, WORLD } from '../src/config';
 import { Direction, MAP_IDS, TileState, type GameState, type Robot, type TileCoord } from '../src/core/types';
 import { b } from '../src/robots/blocks';
 import { morningExec } from '../src/robots/exec';
-import { freeSpotNear, robotOnBench, withWorkbenchAt, workbenchTile } from '../src/robots/workbench';
+import { freeSpotNear, robotOnBench, withWorkbenchAt } from '../src/robots/workbench';
 import { requireRobot, robotsOnTile } from '../src/robots/world';
 import { benchLift } from '../src/render/robotLayout';
 import { actions } from '../src/state/actions';
@@ -30,6 +30,7 @@ import {
   withPlayer,
   withRobots,
   withTile,
+  workbenchTile,
 } from './testUtils';
 
 const HOME: TileCoord = WORKBENCH.home;

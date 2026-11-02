@@ -35,31 +35,7 @@ import { CAMERA, SHADOWS } from './constants';
 import type { SceneContext } from './SceneContext';
 import type { FrameContext, RenderSystem } from './types';
 
-// ---------------------------------------------------------------------------
-// Phases
-// ---------------------------------------------------------------------------
-
-export type LightingPhase = 'dawn' | 'day' | 'dusk' | 'night';
-
-/** Minute boundaries of the lighting phases (minutes since midnight, continuous clock). */
-export const LIGHTING_PHASES = {
-  dawnStart: 360,
-  dayStart: 450,
-  duskStart: 1080,
-  nightStart: 1200,
-} as const;
-
 const NOON_MINUTE = 720;
-
-/** Coarse classification of a clock minute; anything before 06:00 or from 20:00 on is night. */
-export function lightingPhase(minute: number): LightingPhase {
-  const m = Number.isFinite(minute) ? minute : NOON_MINUTE;
-  if (m < LIGHTING_PHASES.dawnStart) return 'night';
-  if (m < LIGHTING_PHASES.dayStart) return 'dawn';
-  if (m < LIGHTING_PHASES.duskStart) return 'day';
-  if (m < LIGHTING_PHASES.nightStart) return 'dusk';
-  return 'night';
-}
 
 // ---------------------------------------------------------------------------
 // Keyframes

@@ -7,16 +7,7 @@ import { invariant } from '../core/invariant';
 import { Blocker, DIRECTIONS, TileState, type GameState, type MapId, type Robot, type Tile, type TileCoord, type WorldState } from '../core/types';
 import { inBounds, stepTile } from '../world/grid';
 import { MAPS, isReservedTile } from '../world/maps';
-import { EMPTY_TILE, forEachTile, getTile, isWalkable, setTile } from '../world/tiles';
-
-/** The farm's workbench tile, or null when there is none (only while a save is being migrated). */
-export function workbenchTile(farm: WorldState): TileCoord | null {
-  let found: TileCoord | null = null;
-  forEachTile(farm, (tile, tx, tz) => {
-    if (found === null && tile.object?.kind === 'workbench') found = { tx, tz };
-  });
-  return found;
-}
+import { EMPTY_TILE, getTile, isWalkable, setTile } from '../world/tiles';
 
 /**
  * Ground a workbench can go on: walkable, with no object, crop or fertiliser (an object never

@@ -26,7 +26,6 @@
  */
 import * as THREE from 'three';
 import { NEIGHBOUR_ROOFS, ROBOT_PAINTS } from '../config';
-import { Salt, hashFloat } from '../core/hash';
 import { assertNever } from '../core/invariant';
 import type { GridSpec, StructureKind, TileCoord, TileRect } from '../core/types';
 import { SHOP_DOORS, type ShopId } from '../people/shops';
@@ -60,20 +59,10 @@ import { PALETTE } from './palette';
 import { neonPaint, neonSignQuads, posterAspect, posterQuad, type PosterId } from './posters';
 import { SHELL_MESHES, createRobotMeshGeometry } from './robotGeometry';
 import { EYE_COLORS, SIZE_SCALE, robotMeshes, type RobotMeshId } from './robotLayout';
-import { createFarmhouseGeometry, farmhousePlacement } from './structureGeometry';
-
-/** Integer offset added to cosmetic hash coordinates (a map's `cosmeticOffset`). */
-interface Offset {
-  readonly x: number;
-  readonly z: number;
-}
+import { cosmetic, createFarmhouseGeometry, farmhousePlacement, type CosmeticOffset } from './structureGeometry';
 
 /** Per-feature salts, combined with Salt.Cosmetic (structureGeometry uses 11–61, sceneryGeometry 71–81, chickenLayout 121). */
 const FEATURE = { hedge: 91, crate: 101, prop: 111 } as const;
-
-function cosmetic(offset: Offset, feature: number, a: number, b: number, k: number): number {
-  return hashFloat(Salt.Cosmetic, feature, a + offset.x, b + offset.z, k);
-}
 
 /** World-space bounds of a tile rect. */
 interface RectBounds {
@@ -529,7 +518,7 @@ const SHOP_FRONTS: Readonly<Record<ShopKind, { readonly signSide: -1 | 1; readon
 /** A brand poster beside a shop's door: its height and centre above the floor, as Juniper's. */
 const BRAND_POSTER = { height: 0.66, centerHeight: 1 } as const;
 
-function shopParts(grid: GridSpec, offset: Offset, kind: ShopKind, s: StructurePlacement, out: PartSet): void {
+function shopParts(grid: GridSpec, offset: CosmeticOffset, kind: ShopKind, s: StructurePlacement, out: PartSet): void {
   const { spec, origin } = shopPlacement(grid, s.rect, s.door);
   const style = SHOP_STYLES[kind];
   const f = shopFrame(spec, style);
@@ -783,7 +772,7 @@ function createPartsExchangeParts(spec: ShopSpec, unit: (i: number, k: number) =
  * The parts exchange, placed in its rect exactly like a shop (the same insets, the door centred on
  * the door tile's column), so it stays inside the rect as the shops do.
  */
-function partsExchangeParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
+function partsExchangeParts(grid: GridSpec, offset: CosmeticOffset, s: StructurePlacement, out: PartSet): void {
   const { spec, origin } = shopPlacement(grid, s.rect, s.door);
   const local = createPartSet();
   createPartsExchangeParts(spec, (i, k) => cosmetic(offset, FEATURE.crate, s.rect.x0, i, k), local);
@@ -1061,7 +1050,7 @@ export const HEDGE_SHAPE = { inset: 0.06, height: 0.95, capHeight: 0.18, bump: 0
 const HEDGE_GREENS = [0x5c9e5a, 0x66a860, 0x579455, 0x6bae62] as const;
 
 /** A trimmed box hedge over the whole rect with a softer cap and one leafy mound per tile on top. */
-function hedgeParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
+function hedgeParts(grid: GridSpec, offset: CosmeticOffset, s: StructurePlacement, out: PartSet): void {
   const H = HEDGE_SHAPE;
   const b = rectBounds(grid, s.rect);
   const cx = (b.minX + b.maxX) / 2;
@@ -1312,7 +1301,7 @@ const SLOP_BOOTH_COLORS = {
 } as const;
 
 /** The booth on its front rows, and a hedge on the rows behind it. */
-function slopBoothParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
+function slopBoothParts(grid: GridSpec, offset: CosmeticOffset, s: StructurePlacement, out: PartSet): void {
   const B = SLOP_BOOTH_SHAPE;
   const C = SLOP_BOOTH_COLORS;
   const hedgeDepth = s.rect.depth - B.rows;
@@ -1374,9 +1363,6 @@ function slopBoothParts(grid: GridSpec, offset: Offset, s: StructurePlacement, o
 // Props
 // ---------------------------------------------------------------------------
 
-/** Tallest point of any prop: they stand in the open, so none is taller than the well (part 4d spec §7.1). */
-export const PROP_MAX_HEIGHT = WELL_MAX_HEIGHT;
-
 /** How far every prop stays inside its rect. */
 const PROP_INSET = 0.08;
 
@@ -1408,7 +1394,7 @@ interface PropFrame {
   readonly unit: (i: number, k: number) => number;
 }
 
-function propFrame(grid: GridSpec, offset: Offset, s: StructurePlacement): PropFrame {
+function propFrame(grid: GridSpec, offset: CosmeticOffset, s: StructurePlacement): PropFrame {
   const b = rectBounds(grid, s.rect);
   const minX = b.minX + PROP_INSET;
   const maxX = b.maxX - PROP_INSET;
@@ -1566,7 +1552,7 @@ function cartParts(f: PropFrame, out: PartSet): void {
 type PropKind = Extract<StructureKind, 'marketStall' | 'bench' | 'planter' | 'crates' | 'barrels' | 'cart'>;
 
 /** One prop, low and inside its rect. */
-function propParts(grid: GridSpec, offset: Offset, kind: PropKind, s: StructurePlacement, out: PartSet): void {
+function propParts(grid: GridSpec, offset: CosmeticOffset, kind: PropKind, s: StructurePlacement, out: PartSet): void {
   const f = propFrame(grid, offset, s);
   switch (kind) {
     case 'marketStall':
@@ -1597,7 +1583,7 @@ function propParts(grid: GridSpec, offset: Offset, kind: PropKind, s: StructureP
 // ---------------------------------------------------------------------------
 
 /** World-space parts for one structure of a map. */
-export function structureParts(grid: GridSpec, offset: Offset, s: StructurePlacement, out: PartSet): void {
+export function structureParts(grid: GridSpec, offset: CosmeticOffset, s: StructurePlacement, out: PartSet): void {
   const kind = s.kind;
   if (isShopKind(kind)) {
     shopParts(grid, offset, kind, s, out);

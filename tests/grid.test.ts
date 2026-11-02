@@ -2,8 +2,8 @@
  * Grid & chunk mathematics (src/world/grid.ts).
  *
  * Covers spec validation, the tile ⇄ index ⇄ chunk bijections for full and partial (edge)
- * chunks on regular and odd grids, world ⇄ tile conversion at exact tile boundaries, the
- * seamless tiling of world rectangles, direction maths, and the Amanatides & Woo ray
+ * chunks on regular and odd grids, world ⇄ grid conversion at exact tile boundaries, the
+ * world rectangle, direction maths, and the Amanatides & Woo ray
  * traversal — including a brute-force cross-check that samples random rays densely.
  */
 import * as THREE from 'three';
@@ -18,7 +18,6 @@ import {
   chunkIndex,
   chunkRect,
   chunkRectByIndex,
-  chunkWorldRect,
   createGridSpec,
   directionStep,
   directionYaw,
@@ -41,8 +40,6 @@ import {
   worldRect,
   worldToGridX,
   worldToGridZ,
-  worldToTile,
-  type WorldRect,
 } from '../src/world/grid';
 import { HEAVY_TEST_TIMEOUT_MS, Violations, must } from './testUtils';
 
@@ -73,8 +70,11 @@ function worldZ(grid: GridSpec, gz: number): number {
   return grid.originZ + gz * grid.tileSize;
 }
 
-function containsHalfOpen(rect: WorldRect, x: number, z: number): boolean {
-  return x >= rect.minX && x < rect.maxX && z >= rect.minZ && z < rect.maxZ;
+/** The tile containing the world point, or null outside the grid; the ray tests' reference for where a point lands. */
+function tileUnder(grid: GridSpec, x: number, z: number): TileCoord | null {
+  const tx = Math.floor(worldToGridX(grid, x));
+  const tz = Math.floor(worldToGridZ(grid, z));
+  return inBounds(grid, tx, tz) ? { tx, tz } : null;
 }
 
 /** Grids with regular, partial-edge and degenerate chunk layouts. */
@@ -362,7 +362,6 @@ describe('locateTile / chunkRect / localIndexToTile', () => {
     ];
     for (const [cx, cz] of badChunks) {
       expect(() => chunkRect(grid, cx, cz)).toThrow(RangeError);
-      expect(() => chunkWorldRect(grid, cx, cz)).toThrow(RangeError);
     }
     for (const index of [-1, 9, 1.5]) expect(() => chunkRectByIndex(grid, index)).toThrow(RangeError);
     const badTiles: readonly (readonly [number, number])[] = [
@@ -400,7 +399,7 @@ describe('locateTile / chunkRect / localIndexToTile', () => {
 // World-space conversion
 // ---------------------------------------------------------------------------
 
-describe('world ⇄ tile conversion', () => {
+describe('world ⇄ grid conversion', () => {
   /** Tile sizes whose products and quotients are exact in binary floating point. */
   const EXACT_GRIDS: readonly GridSpec[] = [
     createGridSpec(48, 40, 16, 1),
@@ -409,63 +408,6 @@ describe('world ⇄ tile conversion', () => {
     createGridSpec(6, 4, 4, 0.25),
     createGridSpec(6, 4, 4, 2.5),
   ];
-
-  it('maps each tile min corner (a boundary point), centre and far interior back to that tile', () => {
-    const v = new Violations();
-    for (const grid of EXACT_GRIDS) {
-      for (let tz = 0; tz < grid.depth; tz++) {
-        for (let tx = 0; tx < grid.width; tx++) {
-          const label = `${grid.width}×${grid.depth}@${grid.tileSize} (${tx}, ${tz})`;
-          const x0 = tileMinX(grid, tx);
-          const z0 = tileMinZ(grid, tz);
-          const x1 = tileMinX(grid, tx + 1);
-          const z1 = tileMinZ(grid, tz + 1);
-          const eps = grid.tileSize * 1e-9;
-          v.equal(`${label} width`, x1 - x0, grid.tileSize);
-          v.equal(`${label} min corner`, worldToTile(grid, x0, z0), { tx, tz });
-          v.equal(`${label} centre`, worldToTile(grid, tileCenterX(grid, tx), tileCenterZ(grid, tz)), { tx, tz });
-          v.equal(`${label} max corner − ε`, worldToTile(grid, x1 - eps, z1 - eps), { tx, tz });
-          // Just below the min boundary belongs to the previous tile (or nothing).
-          v.equal(`${label} left of min x`, worldToTile(grid, x0 - eps, z0), tx > 0 ? { tx: tx - 1, tz } : null);
-          v.equal(`${label} above min z`, worldToTile(grid, x0, z0 - eps), tz > 0 ? { tx, tz: tz - 1 } : null);
-        }
-      }
-    }
-    expect(v.head()).toEqual([]);
-  });
-
-  it('treats the far edge (x = maxX, z = maxZ) as out of bounds', () => {
-    for (const grid of EXACT_GRIDS) {
-      const rect = worldRect(grid);
-      const eps = grid.tileSize * 1e-9;
-      expect(worldToTile(grid, rect.maxX, rect.minZ)).toBeNull();
-      expect(worldToTile(grid, rect.minX, rect.maxZ)).toBeNull();
-      expect(worldToTile(grid, rect.maxX, rect.maxZ)).toBeNull();
-      expect(worldToTile(grid, rect.maxX - eps, rect.maxZ - eps)).toEqual({ tx: grid.width - 1, tz: grid.depth - 1 });
-      expect(worldToTile(grid, rect.minX, rect.minZ)).toEqual({ tx: 0, tz: 0 });
-      expect(worldToTile(grid, rect.minX - eps, rect.minZ)).toBeNull();
-      expect(worldToTile(grid, rect.minX, rect.minZ - eps)).toBeNull();
-    }
-  });
-
-  it('handles negative world space around the centred origin', () => {
-    const grid = createGridSpec(48, 40, 16);
-    expect(worldToTile(grid, 0, 0)).toEqual({ tx: 24, tz: 20 });
-    expect(worldToTile(grid, -0.5, -0.5)).toEqual({ tx: 23, tz: 19 });
-    expect(worldToTile(grid, -1e-6, -1e-6)).toEqual({ tx: 23, tz: 19 });
-    expect(worldToTile(grid, -24, -20)).toEqual({ tx: 0, tz: 0 });
-    expect(worldToTile(grid, -24.000001, 0)).toBeNull();
-    expect(worldToTile(grid, 23.999999, 19.999999)).toEqual({ tx: 47, tz: 39 });
-    expect(worldToTile(grid, -100, -100)).toBeNull();
-  });
-
-  it('returns null for non-finite points', () => {
-    const grid = createGridSpec(48, 40, 16);
-    expect(worldToTile(grid, Number.NaN, 0)).toBeNull();
-    expect(worldToTile(grid, 0, Number.NaN)).toBeNull();
-    expect(worldToTile(grid, Number.POSITIVE_INFINITY, 0)).toBeNull();
-    expect(worldToTile(grid, 0, Number.NEGATIVE_INFINITY)).toBeNull();
-  });
 
   it('converts to continuous grid space consistently with tile centres and corners', () => {
     for (const grid of EXACT_GRIDS) {
@@ -483,97 +425,17 @@ describe('world ⇄ tile conversion', () => {
     }
   });
 
-  it('puts random in-bounds points inside the half-open extent of the tile it returns', () => {
-    const rng = mulberry32(0x5eed);
-    const grids = [...EXACT_GRIDS, createGridSpec(13, 11, 5, 0.3), createGridSpec(3, 8, 2, 1.7)];
-    const v = new Violations();
-    for (const grid of grids) {
-      const rect = worldRect(grid);
-      for (let i = 0; i < 2000; i++) {
-        const x = rect.minX + rng() * (rect.maxX - rect.minX);
-        const z = rect.minZ + rng() * (rect.maxZ - rect.minZ);
-        const tile = worldToTile(grid, x, z);
-        if (tile === null) {
-          v.check(false, `(${x}, ${z}) should be in bounds of ${grid.width}×${grid.depth}@${grid.tileSize}`);
-          continue;
-        }
-        const gx = worldToGridX(grid, x);
-        const gz = worldToGridZ(grid, z);
-        v.check(gx >= tile.tx && gx < tile.tx + 1 && gz >= tile.tz && gz < tile.tz + 1, () => `(${x}, ${z}) → ${JSON.stringify(tile)}`);
-      }
-    }
-    expect(v.head()).toEqual([]);
-  });
 });
 
-describe('worldRect / chunkWorldRect', () => {
-  const grids: readonly GridSpec[] = [
-    createGridSpec(48, 40, 16, 1),
-    createGridSpec(17, 5, 4, 0.5),
-    createGridSpec(33, 33, 16, 2),
-    createGridSpec(1, 1, 16, 1.5),
-    createGridSpec(7, 3, 1, 0.25),
-  ];
-
-  it('tiles the world exactly: areas sum up, neighbours share edges, outer chunks touch the border', () => {
-    for (const grid of grids) {
-      const world = worldRect(grid);
-      let area = 0;
-      for (let cz = 0; cz < grid.chunksZ; cz++) {
-        for (let cx = 0; cx < grid.chunksX; cx++) {
-          const rect = chunkWorldRect(grid, cx, cz);
-          expect(rect.maxX).toBeGreaterThan(rect.minX);
-          expect(rect.maxZ).toBeGreaterThan(rect.minZ);
-          area += (rect.maxX - rect.minX) * (rect.maxZ - rect.minZ);
-
-          if (cx + 1 < grid.chunksX) expect(chunkWorldRect(grid, cx + 1, cz).minX).toBe(rect.maxX);
-          else expect(rect.maxX).toBe(world.maxX);
-          if (cz + 1 < grid.chunksZ) expect(chunkWorldRect(grid, cx, cz + 1).minZ).toBe(rect.maxZ);
-          else expect(rect.maxZ).toBe(world.maxZ);
-          if (cx === 0) expect(rect.minX).toBe(world.minX);
-          if (cz === 0) expect(rect.minZ).toBe(world.minZ);
-
-          // Chunks in the same column / row share the same X / Z extent (no ragged seams).
-          const columnHead = chunkWorldRect(grid, cx, 0);
-          expect(rect.minX).toBe(columnHead.minX);
-          expect(rect.maxX).toBe(columnHead.maxX);
-          const rowHead = chunkWorldRect(grid, 0, cz);
-          expect(rect.minZ).toBe(rowHead.minZ);
-          expect(rect.maxZ).toBe(rowHead.maxZ);
-        }
-      }
-      expect(area).toBeCloseTo((world.maxX - world.minX) * (world.maxZ - world.minZ), 9);
-    }
-  });
-
-  it('places every tile centre and random point in exactly one chunk (no gaps, no overlaps)', () => {
-    const rng = mulberry32(42);
-    for (const grid of grids) {
-      const rects: { readonly cx: number; readonly cz: number; readonly rect: WorldRect }[] = [];
-      for (let cz = 0; cz < grid.chunksZ; cz++) {
-        for (let cx = 0; cx < grid.chunksX; cx++) rects.push({ cx, cz, rect: chunkWorldRect(grid, cx, cz) });
-      }
-      const v = new Violations();
-      for (let tz = 0; tz < grid.depth; tz++) {
-        for (let tx = 0; tx < grid.width; tx++) {
-          const x = tileCenterX(grid, tx);
-          const z = tileCenterZ(grid, tz);
-          const hits = rects.filter(({ rect }) => containsHalfOpen(rect, x, z));
-          const loc = locateTile(grid, tx, tz);
-          v.check(hits.length === 1 && hits[0]?.cx === loc.cx && hits[0]?.cz === loc.cz, `centre of (${tx}, ${tz}) in ${hits.length} chunks`);
-          // Tile corners (exact boundaries) are also owned by exactly one chunk.
-          const corner = rects.filter(({ rect }) => containsHalfOpen(rect, tileMinX(grid, tx), tileMinZ(grid, tz)));
-          v.check(corner.length === 1, `corner of (${tx}, ${tz}) in ${corner.length} chunks`);
-        }
-      }
-      const world = worldRect(grid);
-      for (let i = 0; i < 500; i++) {
-        const x = world.minX + rng() * (world.maxX - world.minX);
-        const z = world.minZ + rng() * (world.maxZ - world.minZ);
-        const hits = rects.filter(({ rect }) => containsHalfOpen(rect, x, z)).length;
-        v.check(hits === 1, `(${x}, ${z}) in ${hits} chunks`);
-      }
-      expect(v.head()).toEqual([]);
+describe('worldRect', () => {
+  it('spans the grid from its origin by its width and depth in tiles', () => {
+    for (const grid of [createGridSpec(48, 40, 16, 1), createGridSpec(17, 5, 4, 0.5), createGridSpec(7, 3, 1, 0.25)]) {
+      expect(worldRect(grid)).toEqual({
+        minX: grid.originX,
+        maxX: grid.originX + grid.width * grid.tileSize,
+        minZ: grid.originZ,
+        maxZ: grid.originZ + grid.depth * grid.tileSize,
+      });
     }
   });
 });
@@ -808,7 +670,7 @@ describe('traverseGrid', () => {
         const visits = collect(grid, ox, oz, ux, uz, maxDistance);
         const ray = `ray #${r}`;
         totalVisits += visits.length;
-        if (visits.length > 0 && worldToTile(grid, ox, oz) === null) raysEnteringFromOutside++;
+        if (visits.length > 0 && tileUnder(grid, ox, oz) === null) raysEnteringFromOutside++;
 
         for (let i = 0; i < visits.length; i++) {
           const visit = must(visits[i]);
@@ -837,7 +699,7 @@ describe('traverseGrid', () => {
         const sampled: string[] = [];
         const h = grid.tileSize * 0.002;
         for (let s = 0; s < maxDistance; s += h) {
-          const tile = worldToTile(grid, ox + ux * s, oz + uz * s);
+          const tile = tileUnder(grid, ox + ux * s, oz + uz * s);
           if (tile === null) continue;
           const key = `${tile.tx},${tile.tz}`;
           if (sampled[sampled.length - 1] !== key) sampled.push(key);

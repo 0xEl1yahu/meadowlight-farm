@@ -17,7 +17,6 @@ import type {
   SeedItemId,
   SlotRef,
 } from '../core/types';
-import type { ShopId } from '../people/shops';
 
 export type GameAction =
   | { readonly type: 'time/tick'; readonly minutes: number }
@@ -35,9 +34,6 @@ export type GameAction =
   /** Moves `quantity` units (null = the whole stack) between two slots: player ↔ player or player ↔ open chest. */
   | { readonly type: 'inventory/move'; readonly from: SlotRef; readonly to: SlotRef; readonly quantity: number | null }
   | { readonly type: 'shop/setOpen'; readonly open: boolean }
-  | { readonly type: 'shop/door'; readonly shop: ShopId }
-  /** Opens DEALZ's chat at SLOPMART, at any hour (farmclaws part 4d spec §6.2). */
-  | { readonly type: 'slop/open' }
   /** Buys one mystery box from DEALZ, or hears why not. */
   | { readonly type: 'slop/buy' }
   | { readonly type: 'ui/setInventoryOpen'; readonly open: boolean }
@@ -84,8 +80,6 @@ export type GameAction =
   /** Take the job: the job card's button for an offered job (farmclaws part 4c spec §2.2). */
   | { readonly type: 'job/take'; readonly job: JobId };
 
-export type GameActionType = GameAction['type'];
-
 export const actions = {
   tick: (minutes: number): GameAction => ({ type: 'time/tick', minutes }),
   sleep: (): GameAction => ({ type: 'day/sleep' }),
@@ -103,18 +97,6 @@ export const actions = {
     quantity,
   }),
   setShopOpen: (open: boolean): GameAction => ({ type: 'shop/setOpen', open }),
-  /**
-   * The `shopDoor` intent's way into the reducer, without its position check: nothing asks
-   * whether the player stands on the tile in front of the door. The game dispatches E, whose
-   * intent plans from that tile; this action is for tests.
-   */
-  shopDoor: (shop: ShopId): GameAction => ({ type: 'shop/door', shop }),
-  /**
-   * The `slopShop` intent's way into the reducer, without its position check: nothing asks
-   * whether the player stands on the tile in front of the booth's door. The game dispatches E,
-   * whose intent plans from that tile; this action is for tests.
-   */
-  openSlopShop: (): GameAction => ({ type: 'slop/open' }),
   buySlopBox: (): GameAction => ({ type: 'slop/buy' }),
   setInventoryOpen: (open: boolean): GameAction => ({ type: 'ui/setInventoryOpen', open }),
   closePanel: (): GameAction => ({ type: 'ui/closePanel' }),

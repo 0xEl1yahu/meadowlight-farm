@@ -142,10 +142,6 @@ function reduceAction(state: GameState, action: GameAction): GameState {
       return moveItem(state, action.from, action.to, action.quantity);
     case 'shop/setOpen':
       return action.open ? openSeedShop(state) : setPanelOpen(state, { kind: 'shop' }, false);
-    case 'shop/door':
-      return selectIsFrozen(state) ? state : useShopDoor(state, action.shop);
-    case 'slop/open':
-      return selectIsFrozen(state) ? state : openSlopShop(state);
     case 'slop/buy':
       return buySlopBox(state);
     case 'ui/setInventoryOpen':
@@ -744,7 +740,7 @@ function openSeedShop(state: GameState): GameState {
 }
 
 /**
- * `shop/door` (part 4d spec §5.2): a shop's door opens its menu in hours, and gives the closed
+ * The `shopDoor` intent (part 4d spec §5.2): a shop's door opens its menu in hours, and gives the closed
  * toast outside them. Behind a shut 4c gate, and for a shop with no menu in hours, it does nothing.
  */
 function useShopDoor(state: GameState, shop: ShopId): GameState {
@@ -755,7 +751,7 @@ function useShopDoor(state: GameState, shop: ShopId): GameState {
   return { ...state, ui: { ...state.ui, panel: { kind: door.menu } } };
 }
 
-/** `slop/open` (part 4d spec §6.2): DEALZ's chat opens with the greeting, at any hour. */
+/** The `slopShop` intent (part 4d spec §6.2): DEALZ's chat opens with the greeting, at any hour. */
 function openSlopShop(state: GameState): GameState {
   return { ...state, ui: { ...state.ui, panel: { kind: 'slopShop', line: dealzGreeting(state) } } };
 }

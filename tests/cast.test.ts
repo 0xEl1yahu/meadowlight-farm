@@ -15,9 +15,8 @@ import { placementProblem } from '../src/state/intents';
 import { gameReducer } from '../src/state/reducer';
 import { stepTile } from '../src/world/grid';
 import { MAPS, assertMapDefinitions, isReservedTile } from '../src/world/maps';
-import { arrivalTiles } from '../src/world/maps/lookup';
 import { isWalkable } from '../src/world/tiles';
-import { BASE, holding, reachableFrom, tileAt, withPlayer, withWalkerAt } from './testUtils';
+import { BASE, arrivalTiles, holding, reachableFrom, tileAt, withPlayer, withWalkerAt } from './testUtils';
 
 /** A character's 4a spot: where they stand, and which way they face. */
 interface Spot extends TileCoord {

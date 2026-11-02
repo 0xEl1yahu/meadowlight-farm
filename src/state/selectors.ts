@@ -1,7 +1,7 @@
 /**
  * Read-only derivations from GameState, shared by reducers, render systems and the HUD.
  */
-import { FARMING, PLAYER, SHOP_STOCK, TIME } from '../config';
+import { FARMING, PLAYER, SHOP_STOCK } from '../config';
 import type {
   BasicPartId,
   ChestSlots,
@@ -10,14 +10,12 @@ import type {
   RobotMapId,
   RobotSize,
   SeedItemId,
-  Tile,
   TileCoord,
   Weather,
   WorldState,
 } from '../core/types';
 import { cropsInSeason, seedItemId } from '../farming/crops';
 import { getItem, sellPriceFor, type ItemDefinition, type SeedItem } from '../items/items';
-import { formatClock, formatDate } from '../time/clock';
 import { rollWeather } from '../time/weather';
 import { DIRECTION_STEPS, forwardTile, inBounds } from '../world/grid';
 import { getMap, type MapDefinition } from '../world/maps';
@@ -90,11 +88,6 @@ export function selectScatterPatch(state: GameState): readonly TileCoord[] {
   return patch;
 }
 
-export function selectTargetTileData(state: GameState): Tile | null {
-  const target = selectTargetTile(state);
-  return target === null ? null : getTile(selectActiveWorld(state), target.tx, target.tz);
-}
-
 export function selectSelectedItem(state: GameState): ItemDefinition | null {
   const stack = selectedStack(state.inventory);
   return stack === null ? null : getItem(stack.itemId);
@@ -119,14 +112,6 @@ export function selectOpenChest(
   const tile = getTile(state.maps[panel.mapId], panel.tx, panel.tz);
   if (tile === null || tile.object === null || tile.object.kind !== 'chest') return null;
   return { mapId: panel.mapId, tx: panel.tx, tz: panel.tz, slots: tile.object.slots };
-}
-
-export function selectClockLabel(state: GameState): string {
-  return formatClock(state.time.minuteOfDay);
-}
-
-export function selectDateLabel(state: GameState): string {
-  return formatDate(state.time);
 }
 
 export function selectForecast(state: GameState): Weather {
@@ -168,7 +153,3 @@ export function seedsLeft(state: GameState, seedId: SeedItemId): number {
   return SHOP_STOCK.seedsPerDay - state.shopsSoldToday.seeds[seedId];
 }
 
-/** Minutes left before the player passes out. */
-export function selectMinutesUntilPassOut(state: GameState): number {
-  return Math.max(0, TIME.passOutMinute - state.time.minuteOfDay);
-}

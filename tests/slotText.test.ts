@@ -4,17 +4,18 @@
  */
 import { describe, expect, it } from 'vitest';
 import { FARMING } from '../src/config';
+import { qualityPrefix } from '../src/core/text';
 import { getItem, sellPriceFor } from '../src/items/items';
-import { qualityPrefix, slotAriaLabel, slotTitle, stackName, stackUnitPrice } from '../src/ui/slots';
+import { slotAriaLabel, slotTitle, stackName, stackUnitPrice } from '../src/ui/slots';
 import { BASE, stack } from './testUtils';
 
 const inventory = BASE.inventory;
 
 describe('slot text', () => {
   it('names silver and gold stacks', () => {
-    expect(qualityPrefix(stack('parsnip', 1))).toBe('');
-    expect(qualityPrefix(stack('parsnip', 1, 1))).toBe('Silver ');
-    expect(qualityPrefix(stack('parsnip', 1, 2))).toBe('Gold ');
+    expect(qualityPrefix(0)).toBe('');
+    expect(qualityPrefix(1)).toBe('Silver ');
+    expect(qualityPrefix(2)).toBe('Gold ');
     expect(stackName(stack('parsnip', 3, 2))).toBe(`Gold ${getItem('parsnip').name}`);
   });
 

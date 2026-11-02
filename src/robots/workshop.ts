@@ -67,7 +67,7 @@ export const WORKSHOP_NAMES: readonly string[] = [
 
 /**
  * The checkout's suggested name (spec §4.5): from index hash32(seed, nextId + deliveries due),
- * wrapping, the first name no robot on the farm and no delivery due already has. The cap keeps
+ * wrapping, the first name no robot anywhere and no delivery due already has. The cap keeps
  * at least half the list free.
  */
 export function suggestedName(state: GameState): string {

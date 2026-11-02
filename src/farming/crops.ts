@@ -254,10 +254,6 @@ for (const id of CROP_IDS) {
   validateCropDefinition(def);
 }
 
-export function getCrop(id: CropId): CropDefinition {
-  return CROPS[id];
-}
-
 export function stageCount(def: CropDefinition): number {
   return def.stageDays.length;
 }

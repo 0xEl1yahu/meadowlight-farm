@@ -25,8 +25,6 @@ import {
   type ToolType,
 } from '../core/types';
 
-export type ItemKind = 'tool' | 'seed' | 'produce' | 'material' | 'placeable' | 'fertilizer' | 'part' | 'slop';
-
 interface ItemBase {
   readonly id: ItemId;
   readonly name: string;

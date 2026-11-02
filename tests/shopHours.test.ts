@@ -12,7 +12,7 @@ import { SHOP_DOORS, SHOP_IDS, closedLine, nextOpening, shopOpen, type ShopId } 
 import { actions } from '../src/state/actions';
 import { describeIntent, planInteraction } from '../src/state/intents';
 import { gameReducer } from '../src/state/reducer';
-import { BASE, atMinute, withJobsDone, withPlayer, withWalkerAt } from './testUtils';
+import { BASE, atMinute, atShop, withJobsDone, withPlayer, withWalkerAt } from './testUtils';
 
 const AM = (hour: number, minute = 0): number => hour * 60 + minute;
 const NINE_AM = 'Sorry, we are closed! Open again at 9:00 am.';
@@ -147,15 +147,14 @@ describe('E on a shop door (spec §5.2)', () => {
     expect(gameReducer(state, actions.interact()).ui.panel).toEqual(panel);
   });
 
-  it('the shop/door action does the same as E, and is frozen with the game', () => {
+  it('E at the door is frozen with the game and waits behind a shut gate', () => {
+    expect(lastToast(atShop(atMinute(OPEN_GATES, AM(8)), 'generalStore'))).toBe(NINE_AM);
+    expect(atShop(atMinute(OPEN_GATES, AM(10)), 'generalStore').ui.panel).toEqual({ kind: 'shop' });
     const closed = atDoor(OPEN_GATES, 'generalStore', AM(8));
-    expect(lastToast(gameReducer(closed, actions.shopDoor('generalStore')))).toBe(NINE_AM);
-    const open = atDoor(OPEN_GATES, 'generalStore', AM(10));
-    expect(gameReducer(open, actions.shopDoor('generalStore')).ui.panel).toEqual({ kind: 'shop' });
     const paused = { ...closed, ui: { ...closed.ui, paused: true } };
-    expect(gameReducer(paused, actions.shopDoor('generalStore'))).toBe(paused);
+    expect(gameReducer(paused, actions.interact())).toBe(paused);
     const gated = atDoor(BASE, 'carpenter', AM(8));
-    expect(gameReducer(gated, actions.shopDoor('carpenter'))).toBe(gated);
+    expect(atShop(gated, 'carpenter')).toEqual(gated);
   });
 
   it.each(['blacksmith', 'ranch'] as const)("%s has no menu: closed toast outside hours, nothing in hours", (shop) => {

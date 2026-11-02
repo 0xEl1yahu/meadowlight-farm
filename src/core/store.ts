@@ -129,22 +129,3 @@ export function deepFreeze<T>(value: T): T {
   }
   return value;
 }
-
-/** Records every action that reaches the reducer; used for deterministic replay tests. */
-export function createActionRecorder<S, A extends Action>(): {
-  readonly middleware: Middleware<S, A>;
-  readonly actions: readonly A[];
-  clear(): void;
-} {
-  const recorded: A[] = [];
-  return {
-    middleware: () => (next) => (action) => {
-      recorded.push(action);
-      return next(action);
-    },
-    actions: recorded,
-    clear() {
-      recorded.length = 0;
-    },
-  };
-}

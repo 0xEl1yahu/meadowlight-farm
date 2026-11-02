@@ -112,10 +112,6 @@ export function setTiles(world: WorldState, edits: readonly TileEdit[]): WorldSt
   return chunks === null ? world : { ...world, chunks };
 }
 
-export function updateTile(world: WorldState, tx: number, tz: number, update: (tile: Tile) => Tile): WorldState {
-  return setTile(world, tx, tz, update(requireTile(world, tx, tz)));
-}
-
 /**
  * Maps every tile. Chunks where `fn` returns the same reference for every tile are kept as-is,
  * and the world itself is returned unchanged when no tile changed.

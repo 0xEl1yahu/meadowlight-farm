@@ -3,10 +3,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { INVENTORY } from '../src/config';
-import { Blocker, Direction, PLACEABLE_ITEM_IDS, TileState, type GameState } from '../src/core/types';
+import { Blocker, Direction, PLACEABLE_ITEM_IDS, TileState, type GameState, type PlaceableItemId } from '../src/core/types';
 import { actions } from '../src/state/actions';
 import { countItem } from '../src/state/inventory';
-import { isFarmOnlyPlaceable, pickUpTool, placementProblem, planPrimaryAction } from '../src/state/intents';
+import { isFarmOnlyPlaceable, placementProblem, planPrimaryAction } from '../src/state/intents';
 import { gameReducer } from '../src/state/reducer';
 import { getMap } from '../src/world/maps';
 import { EMPTY_TILE, blockedTile, getTile, isWalkable } from '../src/world/tiles';
@@ -91,10 +91,13 @@ describe('placing', () => {
 });
 
 describe('picking up', () => {
+  /** The axe lifts the wooden things; the pickaxe lifts the rest. */
+  const AXE_ITEMS: readonly PlaceableItemId[] = ['chest', 'woodFence', 'woodPath', 'scarecrow'];
+
   it('lifts each object with its tool, returning the item', () => {
     for (const id of PLACEABLE_ITEM_IDS) {
       const tile = id === 'chest' ? { ...EMPTY_TILE, object: EMPTY_CHEST } : { ...EMPTY_TILE, object: id === 'woodBurner' ? { kind: id, fuel: 0 } : { kind: id } };
-      const tool = pickUpTool(id);
+      const tool = AXE_ITEMS.includes(id) ? 'axe' : 'pickaxe';
       const state = holding(scenario(tile), tool);
       const next = useTool(state);
       expect(tileAt(next, TARGET)).toEqual(EMPTY_TILE);
@@ -106,7 +109,6 @@ describe('picking up', () => {
       expect(untouched.maps).toBe(other.maps);
       expect(untouched.messages).toBe(other.messages);
     }
-    expect(PLACEABLE_ITEM_IDS.filter((id) => pickUpTool(id) === 'axe')).toEqual(['chest', 'woodFence', 'woodPath', 'scarecrow']);
   });
 
   it('keeps a chest that still holds items', () => {

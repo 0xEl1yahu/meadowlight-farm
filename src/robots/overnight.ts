@@ -279,7 +279,7 @@ function morningStats(stats: RobotStats, weekStart: boolean): RobotStats {
 
 /**
  * Every robot not at repairs stays where it is, restarts its script and resets its day. One whose
- * tile is no longer walkable (weeds or a giant crop grew there) moves to the nearest walkable
+ * tile is no longer walkable (something now stands on it) moves to the nearest walkable
  * tile; a broken robot may keep standing in water. Broken robots are included so a broken robot
  * on land is never left on an unwalkable tile, which the save validator rejects.
  *

@@ -3,6 +3,7 @@
  * icon, a quality star (bottom-left), a quantity badge (bottom-right), the watering can's water
  * gauge and an optional key label. `renderSlotView` rewrites only what changed.
  */
+import { qualityPrefix } from '../core/text';
 import type { InventoryState, ItemId, ItemStack, Quality } from '../core/types';
 import { getItem, sellPriceFor } from '../items/items';
 import { clamp01, h, hudButton, setHidden, setText, setTitle } from './dom';
@@ -54,14 +55,9 @@ export interface SlotViewOptions {
   readonly name: string;
 }
 
-/** "Silver " or "Gold " before an item name; empty for normal quality. */
-export function qualityPrefix(stack: ItemStack): string {
-  return stack.quality === 2 ? 'Gold ' : stack.quality === 1 ? 'Silver ' : '';
-}
-
 /** The item's display name with its quality, e.g. "Gold Parsnip". */
 export function stackName(stack: ItemStack): string {
-  return `${qualityPrefix(stack)}${getItem(stack.itemId).name}`;
+  return `${qualityPrefix(stack.quality)}${getItem(stack.itemId).name}`;
 }
 
 /** Sell price per unit for a stack at its quality, or null for items that can't be shipped. */

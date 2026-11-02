@@ -4,7 +4,8 @@
  * and processed in order), middleware composition, deep freezing and action recording.
  */
 import { describe, expect, it } from 'vitest';
-import { createActionRecorder, createStore, deepFreeze, type Middleware, type Store } from '../src/core/store';
+import { createStore, deepFreeze, type Middleware, type Store } from '../src/core/store';
+import { createActionRecorder } from './testUtils';
 
 interface CounterState {
   readonly count: number;

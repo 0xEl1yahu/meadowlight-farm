@@ -5,7 +5,7 @@
  * map modules themselves can use them without an import cycle.
  */
 import { Salt, hash32 } from '../../core/hash';
-import { DIRECTIONS, MAP_IDS, type Direction, type GridSpec, type MapId, type TileCoord, type WorldState } from '../../core/types';
+import { DIRECTIONS, type Direction, type GridSpec, type MapId, type TileCoord, type WorldState } from '../../core/types';
 import { inBounds, rectContains, stepTile, tileCount, tileIndex } from '../grid';
 import { getTile, isWalkable } from '../tiles';
 import type { MapDefinition, StructurePlacement, Surface, Warp } from './types';
@@ -34,17 +34,6 @@ export function findWarp(def: MapDefinition, tx: number, tz: number, dir: Direct
     if (warp.from.tx === tx && warp.from.tz === tz && warp.exit === dir) return warp;
   }
   return null;
-}
-
-/** Where the warps into map `id` land: every map's warps in MAP_IDS order, each map's in its own order. */
-export function arrivalTiles(defs: Readonly<Record<MapId, MapDefinition>>, id: MapId): readonly TileCoord[] {
-  const tiles: TileCoord[] = [];
-  for (const from of MAP_IDS) {
-    for (const warp of defs[from].warps) {
-      if (warp.to.mapId === id) tiles.push({ tx: warp.to.tx, tz: warp.to.tz });
-    }
-  }
-  return tiles;
 }
 
 /**

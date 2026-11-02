@@ -357,10 +357,6 @@ const PICKUP_TOOL: Readonly<Record<PlaceableItemId, 'pickaxe' | 'axe'>> = {
   woodBurner: 'pickaxe',
 };
 
-export function pickUpTool(kind: PlaceableItemId): 'pickaxe' | 'axe' {
-  return PICKUP_TOOL[kind];
-}
-
 function isPlaceableKind(kind: PlacedObject['kind']): kind is PlaceableItemId {
   return (PLACEABLE_ITEM_IDS as readonly string[]).includes(kind);
 }

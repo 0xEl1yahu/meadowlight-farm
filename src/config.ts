@@ -142,7 +142,7 @@ export const INVENTORY = {
   hotbarSize: 12,
   /** Every inventory holds this many slots; those at or above `unlockedSlots` stay empty. */
   slotCount: 36,
-  /** The hotbar plus the first backpack row; the general-store upgrade (later) unlocks all 36. */
+  /** The hotbar plus the first backpack row; Marigold's backpack upgrade at the general store unlocks all 36. */
   startingUnlockedSlots: 24,
   maxStack: 999,
   /** Slots in every placed chest. */

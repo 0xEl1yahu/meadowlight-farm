@@ -210,30 +210,12 @@ export function worldToGridZ(grid: GridSpec, z: number): number {
   return (z - grid.originZ) / grid.tileSize;
 }
 
-/** Tile containing the world point, or null when the point is outside the grid. */
-export function worldToTile(grid: GridSpec, x: number, z: number): TileCoord | null {
-  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
-  const tx = Math.floor(worldToGridX(grid, x));
-  const tz = Math.floor(worldToGridZ(grid, z));
-  return inBounds(grid, tx, tz) ? { tx, tz } : null;
-}
-
 export function worldRect(grid: GridSpec): WorldRect {
   return {
     minX: grid.originX,
     maxX: grid.originX + grid.width * grid.tileSize,
     minZ: grid.originZ,
     maxZ: grid.originZ + grid.depth * grid.tileSize,
-  };
-}
-
-export function chunkWorldRect(grid: GridSpec, cx: number, cz: number): WorldRect {
-  const rect = chunkRect(grid, cx, cz);
-  return {
-    minX: tileMinX(grid, rect.x0),
-    maxX: tileMinX(grid, rect.x0 + rect.width),
-    minZ: tileMinZ(grid, rect.z0),
-    maxZ: tileMinZ(grid, rect.z0 + rect.depth),
   };
 }
 

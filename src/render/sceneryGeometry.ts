@@ -8,7 +8,6 @@
  * wall blocks) against the map's own grid: nothing outside the grid may hide a playable edge tile.
  */
 import * as THREE from 'three';
-import { Salt, hashFloat } from '../core/hash';
 import { Direction } from '../core/types';
 import { tileMinX, tileMinZ, worldRect, type WorldRect } from '../world/grid';
 import type { MapDefinition, SceneryStyle } from '../world/maps';
@@ -19,6 +18,7 @@ import {
   BUSH_TINTS,
   FARM_DENSITIES,
   boundaryRuns,
+  cosmetic,
   FARM_MEADOW_TONES,
   isBackSide,
   wouldBoxOccludeFarm,
@@ -258,10 +258,6 @@ export function planScenery(def: MapDefinition): SceneryPlan {
 
 /** Per-feature salts, combined with Salt.Cosmetic (structureGeometry uses 11–61). */
 const FEATURE = { trail: 71, wall: 81 } as const;
-
-function cosmetic(offset: CosmeticOffset, feature: number, a: number, b: number, k: number): number {
-  return hashFloat(Salt.Cosmetic, feature, a + offset.x, b + offset.z, k);
-}
 
 const TRAIL = {
   /** Length of one strip quad (tiles). */
